@@ -1,0 +1,471 @@
+import { AuthAPI } from './ClientAPI/AuthApi';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  Modal,
+  FlatList,
+  StyleSheet,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+
+import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { UserStore } from '../store/UserStore';
+import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../components/ui/ToastProvider';
+import { getTalukas } from '../pages/locationData';
+import styles from '../styles/RegisterStyles';
+
+function DropdownModal({ visible, title, items, selected, onSelect, onClose }) {
+  const [search, setSearch] = useState('');
+  const filtered = items.filter((i) => i.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <TouchableOpacity style={dropStyles.overlay} activeOpacity={1} onPress={onClose}>
+      <View style={dropStyles.sheet}>
+        <View style={dropStyles.handle} />
+        <Text style={dropStyles.title}>{title}</Text>
+        <View style={dropStyles.searchWrap}>
+          <Ionicons name="search-outline" size={16} color="#e8732a" />
+          <TextInput
+            style={dropStyles.searchInput}
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Search taluka..."
+            placeholderTextColor="#b0a898"
+            autoCorrect={false}
+            autoCapitalize="none"
+            selectionColor="#e8732a"
+          />
+        </View>
+        <FlatList
+          data={filtered}
+          keyExtractor={(item) => item}
+          showsVerticalScrollIndicator={false}
+          style={{ maxHeight: 320 }}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={[dropStyles.item, selected === item && dropStyles.itemSelected]}
+              onPress={() => { onSelect(item); onClose(); setSearch(''); }}
+            >
+              <Text style={[dropStyles.itemText, selected === item && dropStyles.itemTextSelected]}>
+                {item}
+              </Text>
+              {selected === item && <Ionicons name="checkmark-circle" size={18} color="#e8732a" />}
+            </TouchableOpacity>
+          )}
+        />
+      </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+const dropStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(180,170,160,0.5)',
+    ...(Platform.OS === 'web' && {
+      alignItems: 'center',
+      justifyContent: 'center',
+    }),
+  },
+  sheet: {
+    ...(Platform.OS === 'web'
+      ? {
+          width: '100%',
+          maxWidth: 480,
+          maxHeight: '80%',
+          borderRadius: 24,
+        }
+      : {
+          position: 'absolute',
+          bottom: 0, left: 0, right: 0,
+          borderTopLeftRadius: 28,
+          borderTopRightRadius: 28,
+        }),
+    backgroundColor: '#ece7e0',
+    padding: 20,
+    paddingBottom: 36,
+    shadowColor: '#b8afa6',
+    shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 16,
+    elevation: 16,
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#c8c0b8',
+    borderRadius: 99,
+    alignSelf: 'center',
+    marginBottom: 14,
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#2d2a26',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  searchWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#ece7e0',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 10,
+    shadowColor: '#b8afa6',
+    shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#2d2a26',
+    paddingVertical: 0,
+    ...(Platform.OS === 'web' && { outlineStyle: 'none' }),
+  },
+  item: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    marginBottom: 3,
+  },
+  itemSelected: {
+    backgroundColor: 'rgba(232,115,42,0.12)',
+  },
+  itemText: {
+    fontSize: 14,
+    color: '#4a4540',
+    fontWeight: '500',
+  },
+  itemTextSelected: {
+    color: '#e8732a',
+    fontWeight: '700',
+  },
+});
+
+export default function TalukaSelectScreen({ navigation, route }) {
+  const { login } = useAuth();
+  const { showPopup } = useToast();
+  const { selectedState, selectedDistrict, fromPremium, needsCreateUser } = route.params || {};
+
+  const [taluka, setTaluka] = useState('');
+  const [talukaModal, setTalukaModal] = useState(false);
+  const allowLeaveRef = useRef(false);
+  const registrationJustCompleted = !fromPremium;
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      if (allowLeaveRef.current) return;
+      const targetRoute = e.data.action.payload?.name;
+      if (targetRoute === 'Home') return;
+      e.preventDefault();
+    });
+    return unsubscribe;
+  }, [navigation]);
+
+  const handleClose = () => {
+    allowLeaveRef.current = true;
+    navigation.replace('DistrictSelect', {
+      selectedState, fromPremium, needsCreateUser, preselectedDistrict: selectedDistrict,
+    });
+  };
+
+  const talukaList = selectedDistrict ? getTalukas(selectedState, selectedDistrict) : [];
+
+  const goToHome = (userName) => {
+    navigation.replace('Home', {
+      fromRegistration: true,
+      registrationJustCompleted,
+      userName: userName || 'User',
+    });
+  };
+
+  const syncRegistrationLocation = async (pending, talukaValue = '') => {
+    try {
+      const apiResult = await AuthAPI.register({
+        firstName: (pending.name || '').split(' ')[0] || '',
+        middleName: '',
+        lastName: (pending.name || '').split(' ').slice(1).join(' ') || '',
+        mobile: pending.mobile || '',
+        email: pending.email,
+        password: pending.password,
+        referralCode: pending.referral_code_used || '',
+      });
+
+      if (!apiResult.ok) {
+        console.warn('[TalukaSelect] Register API failed:', apiResult.message);
+        return;
+      }
+
+      const token = apiResult.token || apiResult.data?.authorization?.token || null;
+
+      if (!token) {
+        console.warn('[TalukaSelect] No token in register response');
+        return;
+      }
+
+      await AsyncStorage.setItem('auth_token', token);
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('auth_token', token);
+      }
+
+      const stateResult = await AuthAPI.updateState({
+        state: selectedState,
+        district: selectedDistrict,
+        taluka: talukaValue,
+      }, token);
+
+      if (!stateResult.ok) {
+        console.warn('[TalukaSelect] State API failed:', stateResult.message);
+      }
+    } catch (error) {
+      console.warn('[TalukaSelect] API sync failed:', error);
+    }
+  };
+  const handleComplete = async () => {
+    if (!taluka.trim()) {
+      showPopup('Please select or enter your taluka', 'error');
+      return;
+    }
+    const talukaValue = taluka.trim();
+
+    if (needsCreateUser) {
+      const pending = await UserStore.getPendingRegistration();
+      if (!pending?.email) {
+        showPopup('Registration data not found. Please register again.', 'error');
+        navigation.replace('Register');
+        return;
+      }
+
+      const created = await UserStore.saveUser({
+        name: pending.name, mobile: pending.mobile, email: pending.email,
+        referral_code_used: pending.referral_code_used || null,
+        password: pending.password, state: selectedState,
+        district: selectedDistrict, taluka: talukaValue,
+      });
+
+      if (created && !created.ok) {
+        showPopup(created.message || 'Registration failed. Please try again.', 'error');
+        return;
+      }
+
+      await UserStore.setCurrentUser(pending.email);
+      login();
+      await UserStore.completeLocationSetup(pending.email, selectedState, selectedDistrict, talukaValue);
+      await UserStore.clearPendingRegistration();
+
+      syncRegistrationLocation(pending, talukaValue);
+
+      goToHome(pending.name);
+      return;
+    }
+
+    const user = await UserStore.getCurrentUser();
+    if (!user) { navigation.replace('Login'); return; }
+
+    const result = await UserStore.completeLocationSetup(user.email, selectedState, selectedDistrict, talukaValue);
+    if (!result) { showPopup('Failed to save location. Please try again.', 'error'); return; }
+    // API update
+    AuthAPI.updateState({
+      state:    selectedState,
+      district: selectedDistrict,
+      taluka:   talukaValue,
+    }).catch(() => {});
+
+    goToHome(user.name);
+  };
+
+  const handleSkip = async () => {
+    if (needsCreateUser) {
+      const pending = await UserStore.getPendingRegistration();
+      if (!pending?.email) {
+        showPopup('Registration data not found. Please register again.', 'error');
+        navigation.replace('Register');
+        return;
+      }
+
+      const created = await UserStore.saveUser({
+        name: pending.name, mobile: pending.mobile, email: pending.email,
+        referral_code_used: pending.referral_code_used || null,
+        password: pending.password, state: selectedState,
+        district: selectedDistrict, taluka: '',
+      });
+
+      if (created && !created.ok) {
+        showPopup(created.message || 'Registration failed. Please try again.', 'error');
+        return;
+      }
+
+      await UserStore.setCurrentUser(pending.email);
+      login();
+      await UserStore.completeLocationSetup(pending.email, selectedState, selectedDistrict, '');
+      await UserStore.clearPendingRegistration();
+
+      syncRegistrationLocation(pending, '');
+
+      goToHome(pending.name);
+      return;
+    }
+
+    const user = await UserStore.getCurrentUser();
+    if (!user) { navigation.replace('Login'); return; }
+
+    await UserStore.completeLocationSetup(user.email, selectedState, selectedDistrict, '');
+    goToHome(user.name);
+  };
+
+  return (
+    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <View style={styles.root}>
+        <View style={[styles.glow, styles.glowTop]} />
+        <View style={[styles.glow, styles.glowBottom]} />
+
+        <ScrollView
+          contentContainerStyle={styles.formScroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bounces={false}
+        >
+          <View style={styles.formContainer}>
+            {/* Back Button */}
+            <TouchableOpacity
+              style={[styles.closeButton, { width: 'auto', paddingHorizontal: 10 }]}
+              onPress={handleClose}
+              activeOpacity={0.7}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="arrow-back-outline" size={18} color="#8a8078" />
+                <Text style={{ color: '#8a8078', fontWeight: '800', fontSize: 13 }}>Back</Text>
+              </View>
+            </TouchableOpacity>
+
+            <View style={styles.topAccent} />
+
+            {/* Header — label + title + state/district info, no logo/icon */}
+            <View style={styles.headerBlock}>
+              <Text style={styles.welcomeBack}>Setup Location</Text>
+              <Text style={styles.formTitle}>Select Your Taluka</Text>
+              {(selectedState || selectedDistrict) && (
+                <Text style={localStyles.locationInfo}>
+                  {[selectedState, selectedDistrict].filter(Boolean).join(' › ')}
+                </Text>
+              )}
+            </View>
+
+            {talukaList.length > 0 ? (
+              <>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>
+                    Taluka <Text style={styles.required}>*</Text>
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.inputWrap}
+                    onPress={() => setTalukaModal(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="map-outline" size={16} color="#a09890" />
+                    <Text style={[styles.input, !taluka && { color: '#b0a898' }]}>
+                      {taluka || 'Select your taluka'}
+                    </Text>
+                    <Ionicons name="chevron-down-outline" size={16} color="#a09890" />
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.submitBtn, !taluka && styles.submitBtnDisabled]}
+                  onPress={handleComplete}
+                  disabled={!taluka}
+                >
+                  <Text style={styles.submitBtnText}>Complete Setup</Text>
+                  <Ionicons name="checkmark" size={18} color="#ffffff" />
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>
+                    Taluka <Text style={styles.required}>*</Text>
+                  </Text>
+                  <View style={styles.inputWrap}>
+                    <Ionicons name="map-outline" size={16} color="#a09890" />
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Enter your taluka"
+                      placeholderTextColor="#b0a898"
+                      value={taluka}
+                      onChangeText={setTaluka}
+                    />
+                  </View>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.submitBtn, !taluka.trim() && styles.submitBtnDisabled]}
+                  onPress={handleComplete}
+                  disabled={!taluka.trim()}
+                >
+                  <Text style={styles.submitBtnText}>Complete Setup</Text>
+                  <Ionicons name="checkmark" size={18} color="#ffffff" />
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* Skip Button */}
+            <TouchableOpacity style={localStyles.skipBtn} onPress={handleSkip} activeOpacity={0.75}>
+              <Text style={localStyles.skipBtnText}>Skip for now</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+
+        {talukaList.length > 0 && (
+          <DropdownModal
+            visible={talukaModal}
+            title="Select Taluka"
+            items={talukaList}
+            selected={taluka}
+            onSelect={setTaluka}
+            onClose={() => setTalukaModal(false)}
+          />
+        )}
+      </View>
+    </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+const localStyles = StyleSheet.create({
+  locationInfo: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#a09890',
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  skipBtn: {
+    marginTop: 12,
+    alignItems: 'center',
+    paddingVertical: 10,
+  },
+  skipBtnText: {
+    color: '#a09890',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+});

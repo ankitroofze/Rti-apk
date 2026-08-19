@@ -1,0 +1,2344 @@
+// ClientAPI/AuthApi.js
+// ─────────────────────────────────────────────────────────
+// RTI News — Auth API Client
+// Native (iOS/Android): direct hit -> https://rtiapi.roofze.in/api
+// Web: relative path -> /api-proxy (dev-server / production reverse-proxy
+//      forwards this to https://rtiapi.roofze.in/api, avoiding CORS)
+// ─────────────────────────────────────────────────────────
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+import { getIdbMediaBlob, isIdbMediaUri } from '../../utils/webMediaStore';
+
+const BASE_URL = Platform.OS === 'web'
+  ? '/api-proxy'
+  : 'https://rtiapi.roofze.in/api';
+
+const REQUEST_TIMEOUT_MS = 30000;
+
+const redactHeaders = (headers = {}) => {
+  const safe = { ...headers };
+  if (safe.Authorization) safe.Authorization = 'Bearer <redacted>';
+  return safe;
+};
+
+const serializeError = (err) => ({
+  name: err?.name,
+  message: err?.message,
+  stack: err?.stack,
+  cause: err?.cause ? String(err.cause) : undefined,
+});
+
+const summarizePayload = (payload) => {
+  if (!payload) return null;
+  if (typeof FormData !== 'undefined' && payload instanceof FormData) {
+    return '[FormData payload]';
+  }
+  if (typeof payload === 'string') return payload;
+  try {
+    return JSON.stringify(payload);
+  } catch {
+    return '[Unserializable payload]';
+  }
+};
+
+const readResponseBody = async (response, context) => {
+  const text = await response.text();
+  if (!text) return null;
+
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    const rawBody = text.slice(0, 1000);
+    console.error('[AuthAPI] Response JSON parse failed:', {
+      ...context,
+      status: response.status,
+      contentType: response.headers?.get?.('content-type'),
+      rawBody,
+      error: serializeError(err),
+    });
+    return {
+      message: rawBody || `Unexpected non-JSON response (${response.status}).`,
+      rawBody,
+      parseError: serializeError(err),
+    };
+  }
+};
+
+const fetchWithDebug = async (endpoint, options = {}, debugBody = null) => {
+  const url = `${BASE_URL}${endpoint}`;
+  const startedAt = Date.now();
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeoutId = controller
+    ? setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+    : null;
+
+  const context = {
+    url,
+    method: options.method || 'GET',
+    platform: Platform.OS,
+    timeoutMs: REQUEST_TIMEOUT_MS,
+  };
+
+  console.log('[AuthAPI] Request:', {
+    ...context,
+    headers: redactHeaders(options.headers),
+    body: summarizePayload(debugBody),
+  });
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller?.signal,
+    });
+    const data = await readResponseBody(response, context);
+    const result = {
+      status: response.status,
+      ok: response.ok,
+      contentType: response.headers?.get?.('content-type'),
+      durationMs: Date.now() - startedAt,
+      data,
+    };
+
+    console.log('[AuthAPI] Response:', {
+      ...context,
+      status: result.status,
+      ok: result.ok,
+      contentType: result.contentType,
+      durationMs: result.durationMs,
+      body: result.data,
+    });
+
+    return result;
+  } catch (err) {
+    const isTimeout = err?.name === 'AbortError';
+    console.error('[AuthAPI] Fetch failed:', {
+      ...context,
+      durationMs: Date.now() - startedAt,
+      isTimeout,
+      error: serializeError(err),
+    });
+    throw err;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+};
+
+const getAuthToken = async () => {
+  const asyncToken = await AsyncStorage.getItem('auth_token');
+  if (asyncToken) return asyncToken;
+
+  if (typeof localStorage !== 'undefined') {
+    return localStorage.getItem('auth_token');
+  }
+
+  return null;
+};
+
+// ─── Helper: FormData request ─────────────────────────────
+const postFormData = async (endpoint, fields = {}, token = null) => {
+  const formData = new FormData();
+  Object.entries(fields).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      formData.append(key, String(value));
+    }
+  });
+
+  const headers = {
+    Accept: 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+
+  const response = await fetchWithDebug(endpoint, {
+    method: 'POST',
+    headers,
+    body: formData,
+  }, formData);
+
+  return { status: response.status, data: response.data };
+};
+
+// ─── Helper: JSON request ─────────────────────────────────
+const postJSON = async (endpoint, body = {}, token = null) => {
+  const headers = {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const response = await fetchWithDebug(endpoint, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  }, body);
+
+  return { status: response.status, data: response.data };
+};
+
+const getJSON = async (endpoint, token = null) => {
+  const headers = {
+    Accept: 'application/json',
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetchWithDebug(endpoint, {
+    method: 'GET',
+    headers,
+  });
+
+  return { status: response.status, data: response.data };
+};
+
+// ─────────────────────────────────────────────────────────
+// AUTH API
+// ─────────────────────────────────────────────────────────
+export const AuthAPI = {
+
+  /**
+   * Register a new user
+   * POST /register
+   * Body: firstname, middlename, lastname, mobile_no, email, password, confirmed, referral_code
+   */
+  register: async ({ firstName, middleName = '', lastName, mobile, email, password, referralCode = '' }) => {
+    try {
+      const { status, data } = await postJSON('/register', {
+        firstname:     firstName.trim(),
+        middlename:    middleName.trim(),
+        lastname:      lastName.trim(),
+        mobile_no:     mobile.trim(),
+        email:         email.trim().toLowerCase(),
+        password:      password,
+        confirmed:     password,
+        referral_code: referralCode.trim() || '',
+      });
+
+      if (status === 200 || status === 201) {
+        // Token save karo future requests ke liye
+        const token = data?.token || data?.access_token || data?.authorization?.token || null;
+        if (token) {
+          try {
+            await AsyncStorage.setItem('auth_token', token);
+            // Web fallback
+            if (typeof localStorage !== 'undefined') {
+              localStorage.setItem('auth_token', token);
+            }
+          } catch {}
+        }
+        return {
+          ok:      true,
+          data,
+          token:   data?.token || data?.access_token || null,
+          user:    data?.user || data?.data?.user || data?.data || null,
+          message: data?.message || 'Registration successful!',
+        };
+      }
+
+      if (status === 422) {
+        const errors = data?.errors || {};
+        const firstError =
+          Object.values(errors).flat()[0] ||
+          data?.message ||
+          'Validation failed. Please check your details.';
+        return { ok: false, message: firstError, errors };
+      }
+
+      return {
+        ok:      false,
+        message: data?.message || `Server error (${status}). Please try again.`,
+        errors:  data?.errors  || {},
+      };
+
+    } catch (err) {
+      console.error('[AuthAPI.register] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error. Please check your internet connection.' };
+    }
+  },
+
+  /**
+   * Login user
+   * POST /login
+   * Body: email, password
+   */
+  login: async ({ email, password }) => {
+    try {
+      const { status, data } = await postJSON('/login', {
+        email:    email.trim().toLowerCase(),
+        password: password,
+      });
+
+      if (status === 200 || status === 201) {
+        const token = data?.token || data?.access_token || data?.authorization?.token || null;
+        console.log('[AuthAPI.login] Response data:', JSON.stringify(data));
+        console.log('[AuthAPI.login] Token found:', token);
+        if (token) {
+          try {
+            await AsyncStorage.setItem('auth_token', token);
+            if (typeof localStorage !== 'undefined') {
+              localStorage.setItem('auth_token', token);
+            }
+            console.log('[AuthAPI.login] Token saved successfully');
+          } catch (e) {
+            console.warn('[AuthAPI.login] Token save failed:', e);
+          }
+        }
+        return {
+          ok:      true,
+          token:   token,
+          user:    data?.user  || null,
+          message: data?.message || 'Login successful!',
+        };
+      }
+
+      return {
+        ok:      false,
+        message: data?.message || 'Invalid credentials.',
+      };
+    } catch (err) {
+      console.error('[AuthAPI.login] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error. Please check your internet connection.' };
+    }
+  },
+
+  /**
+   * Forgot Password — Step 1: Request OTP
+   * POST /forgot-password/request-otp
+   * Body: email
+   */
+  requestForgotOTP: async ({ email }) => {
+    try {
+      const { status, data } = await postFormData('/forgot-password/request-otp', {
+        email: email.trim().toLowerCase(),
+      });
+
+      if (status === 200 || status === 201) {
+        return { ok: true, message: data?.message || 'OTP sent successfully!', data };
+      }
+
+      if (status === 422) {
+        const errors = data?.errors || {};
+        const firstError = Object.values(errors).flat()[0] || data?.message || 'Invalid email address.';
+        return { ok: false, message: firstError, errors };
+      }
+
+      return { ok: false, message: data?.message || `Server error (${status}). Please try again.` };
+    } catch (err) {
+      console.error('[AuthAPI.requestForgotOTP] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error. Please check your internet connection.' };
+    }
+  },
+
+  /**
+   * Forgot Password — Step 2: Verify OTP
+   * POST /forgot-password/verify-otp
+   * Body: email, otp
+   */
+  verifyForgotOTP: async ({ email, otp }) => {
+    try {
+      const { status, data } = await postFormData('/forgot-password/verify-otp', {
+        email: email.trim().toLowerCase(),
+        otp:   String(otp).trim(),
+      });
+
+      if (status === 200 || status === 201) {
+        return {
+          ok:         true,
+          message:    data?.message || 'OTP verified successfully!',
+          resetToken: data?.reset_token || data?.token || null,
+          data,
+        };
+      }
+
+      if (status === 422) {
+        const errors = data?.errors || {};
+        const firstError = Object.values(errors).flat()[0] || data?.message || 'Invalid or expired OTP.';
+        return { ok: false, message: firstError, errors };
+      }
+
+      return { ok: false, message: data?.message || 'Invalid or expired OTP. Please try again.' };
+    } catch (err) {
+      console.error('[AuthAPI.verifyForgotOTP] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error. Please check your internet connection.' };
+    }
+  },
+
+  /**
+   * Forgot Password — Step 3: Reset Password
+   * POST /forgot-password/reset-password
+   * Body: email, otp, password
+   */
+  resetPassword: async ({ email, otp, password }) => {
+    try {
+      const { status, data } = await postFormData('/forgot-password/reset-password', {
+        email:    email.trim().toLowerCase(),
+        otp:      String(otp).trim(),
+        password: password,
+      });
+
+      if (status === 200 || status === 201) {
+        return { ok: true, message: data?.message || 'Password reset successfully!', data };
+      }
+
+      if (status === 422) {
+        const errors = data?.errors || {};
+        const firstError = Object.values(errors).flat()[0] || data?.message || 'Reset failed. Please try again.';
+        return { ok: false, message: firstError, errors };
+      }
+
+      return { ok: false, message: data?.message || `Server error (${status}). Please try again.` };
+    } catch (err) {
+      console.error('[AuthAPI.resetPassword] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error. Please check your internet connection.' };
+    }
+  },
+
+  /**
+   * Update State / District / Taluka
+   * POST /state
+   * Headers: Authorization: Bearer {token}
+   * Body: state, district, taluka
+   */
+  updateState: async ({ state, district, taluka }, tokenOverride = null) => {
+    try {
+      const token = tokenOverride || await getAuthToken();
+      if (!token) {
+        return { ok: false, isAuth: true, message: 'Not logged in.' };
+      }
+
+      const { status, data } = await postFormData('/state', {
+        state:    state    || '',
+        district: district || '',
+        taluka:   taluka   || '',
+      }, token);
+
+      if (status === 200 || status === 201) {
+        return { ok: true, message: data?.message || 'Location updated successfully!', data };
+      }
+
+      if (status === 422) {
+        const errors = data?.errors || {};
+        const firstError = Object.values(errors).flat()[0] || data?.message || 'Validation failed.';
+        return { ok: false, message: firstError, errors };
+      }
+
+      if (status === 401) {
+        return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
+      }
+
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.updateState] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  // ── PROFILE API ────────────────────────────────────────
+
+  /**
+   * Get current user profile
+   * GET /profile
+   */
+  getProfile: async () => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const { status, data } = await getJSON('/profile', token);
+
+      if (status === 200 || status === 201) {
+        return { ok: true, user: data?.user || data?.data || data };
+      }
+      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+      return { ok: false, message: data?.message || 'Unable to fetch profile.' };
+    } catch (_err) {
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+    getPublicProfileById: async (id) => {
+    try {
+      const { status, data } = await getJSON(`/profile/${id}`);
+      if (status === 200) return { ok: true, profile: data?.profile };
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.getPublicProfileById] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  /**
+   * Upload profile image (first time)
+   * POST /profile  (form-data: profile_image)
+   */
+  uploadProfileImage: async (imageUri) => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const formData = new FormData();
+
+      if (Platform.OS === 'web') {
+        // Web: base64 uri ko Blob mein convert karo
+        const response = await fetch(imageUri);
+        const blob = await response.blob();
+        formData.append('profile_image', blob, 'profile.jpg');
+      } else {
+        // Native: file uri directly
+        formData.append('profile_image', {
+          uri: imageUri,
+          type: 'image/jpeg',
+          name: 'profile.jpg',
+        });
+      }
+
+      const res = await fetch(`${BASE_URL}/profile`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+          // Content-Type: multipart/form-data - intentionally omit, browser sets boundary
+        },
+        body: formData,
+      });
+
+      const json = await res.json();
+      if (res.status === 200 || res.status === 201) {
+        return { ok: true, data: json, imageUrl: json?.profile_image || json?.data?.profile_image || '' };
+      }
+      if (res.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+      return { ok: false, message: json?.message || 'Upload failed.' };
+    } catch (_err) {
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  /**
+   * Update profile image
+   * POST /profile/image  (form-data: profile_image)
+   */
+  updateProfileImage: async (imageUri) => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const formData = new FormData();
+
+      if (Platform.OS === 'web') {
+        const response = await fetch(imageUri);
+        const blob = await response.blob();
+        formData.append('profile_image', blob, 'profile.jpg');
+      } else {
+        formData.append('profile_image', {
+          uri: imageUri,
+          type: 'image/jpeg',
+          name: 'profile.jpg',
+        });
+      }
+
+      const res = await fetch(`${BASE_URL}/profile/image`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+     const json = await res.json();
+      if (res.status === 200 || res.status === 201) {
+        // ✅ Image turant overwrite nahi hoti — admin approve na kare tab tak
+        // pending_profile_image_url me hi save rehti hai.
+        const profile = json?.user?.profile || json?.profile || json?.data?.profile || json?.data || json;
+        return {
+          ok: true,
+          data: json,
+          pendingImageUrl: profile?.pending_profile_image_url || '',
+        };
+      }
+      if (res.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+      return { ok: false, message: json?.message || 'Update failed.' };
+    } catch (_err) {
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  /**
+   * Update profile text fields
+  /**
+   * Update profile text fields — backend ye pending-approval flow khud handle karta hai:
+   * phone/bio turant overwrite nahi hote, pending_phone/pending_bio me chale jaate hain
+   * jab tak admin approve na kare.
+   * POST /profile  (form-data: phone, bio)
+   */
+  updateProfile: async ({ phone, bio }) => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const formData = new FormData();
+      if (phone !== undefined) formData.append('phone', phone || '');
+      if (bio !== undefined) formData.append('bio', bio || '');
+
+      const res = await fetch(`${BASE_URL}/profile`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const json = await res.json();
+      if (res.status === 200 || res.status === 201) {
+        const profile = json?.user?.profile || json?.profile || json?.data?.profile || json?.data || json;
+        return { ok: true, profile };
+      }
+      if (res.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+      if (res.status === 422) {
+        const errors = json?.errors || {};
+        const firstError = Object.values(errors).flat()[0] || json?.message || 'Validation failed.';
+        return { ok: false, message: firstError, errors };
+      }
+      return { ok: false, message: json?.message || 'Update failed.' };
+    } catch (_err) {
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  // ── REFERRAL API ────────────────────────────────────────
+
+  /**
+   * Get referral summary for current user
+   * GET /referrals (no params needed — backend reads current user from token)
+   * Headers: Authorization: Bearer {token}
+   */
+  getReferrals: async () => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const { status, data } = await getJSON('/referral', token);
+
+      if (status === 200 || status === 201) {
+        return { ok: true, data };
+      }
+      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+      if (status === 422) {
+        const errors = data?.errors || {};
+        const firstError = Object.values(errors).flat()[0] || data?.message || 'Validation failed.';
+        return { ok: false, message: firstError, errors };
+      }
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.getReferrals] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  // ── NEWS API ────────────────────────────────────────────
+
+  /**
+   * Create News
+   * POST /news
+   * Body (form-data): tittle, sub_tittle, description, report_type, media_type, media (file)
+   * Headers: Authorization: Bearer {token}
+   * media_type: 0 = None, 1 = Image, 2 = Video, 3 = File  (confirm with backend if unsure)
+   */
+
+
+
+  // ─────────────────────────────────────────────────────────
+  // ROLE SUBSCRIPTION API
+  // ─────────────────────────────────────────────────────────
+
+  /**
+   * Create Razorpay order for Role Subscription
+   * POST /role-subscriptions/purchase
+   * Body: { plan_id }
+   */
+   purchaseRoleSubscription: async ({ planId, stateSeat }) => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const { status, data } = await postJSON('/role-subscriptions/purchase', {
+        plan_id: planId,
+        state_seat: stateSeat,
+      }, token);
+
+      if (status === 200 || status === 201) {
+        return { ok: true, razorpay: data?.razorpay, message: data?.message };
+      }
+      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
+      if (status === 422) {
+        const errors = data?.errors || {};
+        const firstError = Object.values(errors).flat()[0] || data?.message || 'Validation failed.';
+        return { ok: false, message: firstError, errors };
+      }
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.purchaseRoleSubscription] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error. Please check your internet connection.' };
+    }
+  },
+
+  /**
+   * Verify Role Subscription Payment
+   * POST /role-subscriptions/payment/verify
+   */
+  verifyRoleSubscriptionPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signature }) => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const { status, data } = await postJSON('/role-subscriptions/payment/verify', {
+        razorpay_order_id,
+        razorpay_payment_id,
+        razorpay_signature,
+      }, token);
+
+      if (status === 200 || status === 201) {
+        return { ok: true, data };
+      }
+      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
+      return { ok: false, message: data?.message || `Payment verification failed (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.verifyRoleSubscriptionPayment] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error during verification.' };
+    }
+  },
+ /**
+   * Get all available Role Subscription Plans
+   * GET /role-subscription-plans
+   * Headers: Authorization: Bearer {token}
+   */
+  getRoleSubscriptionPlans: async () => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const { status, data } = await getJSON('/role-subscription-plans', token);
+
+     if (status === 200 || status === 201) {
+        // ✅ FIX: backend ka actual wrapper key "role_subscription_plans" hai
+        const rawList = Array.isArray(data)
+          ? data
+          : (data?.role_subscription_plans || data?.data || data?.plans || []);
+        return { ok: true, plans: rawList };
+      }
+
+      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.getRoleSubscriptionPlans] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error. Please check your internet connection.' };
+    }
+  },
+/**
+   * Get Ad Subscription Plans (public route)
+   * GET /subscription-plans
+   * ⚠️ ASSUMPTION: exact wrapper key backend se confirm nahi hai abhi —
+   * isliye common patterns (data / subscription_plans / plans) try kiye hain.
+   * Console log check karke agar mismatch ho to yahan key fix karenge.
+   */
+  getAdSubscriptionPlans: async () => {
+    try {
+      const { status, data } = await getJSON('/subscription-plans');
+      if (status === 200 || status === 201) {
+        const rawList = Array.isArray(data)
+          ? data
+          : (data?.subscription_plans || data?.data || data?.plans || []);
+        return { ok: true, plans: rawList };
+      }
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.getAdSubscriptionPlans] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  /**
+   * Get current user's Role Subscription (Backend Sync)
+   * GET /my-role-subscriptions
+   * Headers: Authorization: Bearer {token}
+   */
+
+  getMyRoleSubscriptions: async () => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const { status, data } = await getJSON('/my-role-subscriptions', token);
+
+      if (status === 200 || status === 201) {
+        return { ok: true, subscriptions: data?.data || data?.subscriptions || data };
+      }
+      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+   console.error('[AuthAPI.getMyRoleSubscriptions] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error. Please check your internet connection.' };
+    }
+  },
+
+  /**
+   * Get current user's ALL subscriptions (combined — role/quiz/ecom/ads)
+   * GET /my-subscriptions
+   * Headers: Authorization: Bearer {token}
+   */
+  getMySubscriptions: async () => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const { status, data } = await getJSON('/my-subscriptions', token);
+
+      if (status === 200 || status === 201) {
+        const raw = data?.data || data?.subscriptions || data;
+        return { ok: true, subscriptions: Array.isArray(raw) ? raw : (raw ? [raw] : []) };
+      }
+      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.getMySubscriptions] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error. Please check your internet connection.' };
+    }
+  },
+
+
+  // ─────────────────────────────────────────────────────────
+  // ADS SUBSCRIPTION — ORDER CREATE + VERIFY
+  // ─────────────────────────────────────────────────────────
+  createAdSubscriptionOrder: async ({ planId }) => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const { status, data } = await postJSON('/subscription-plans/purchase', {
+        plan_id: planId,
+      }, token);
+
+      if (status === 200 || status === 201) {
+        return { ok: true, razorpay: data?.razorpay, message: data?.message };
+      }
+      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.createAdSubscriptionOrder] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────
+  // ECOM SUBSCRIPTION — ORDER CREATE
+  // POST /ecom-subscriptions/purchase (route khud type='ecom' set karta hai,
+  // body mein sirf plan_id chahiye — type bhejne ki zaroorat nahi)
+  // ─────────────────────────────────────────────────────────
+  createEcomSubscriptionOrder: async ({ planId }) => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const { status, data } = await postJSON('/ecom-subscriptions/purchase', {
+        plan_id: planId,
+      }, token);
+      if (status === 200 || status === 201) {
+        return { ok: true, razorpay: data?.razorpay, message: data?.message };
+      }
+      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.createEcomSubscriptionOrder] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────
+  // ADS / ECOM — SHARED VERIFY
+  // POST /subscriptions/payment/verify
+  // ─────────────────────────────────────────────────────────
+  verifySubscriptionPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signature }) => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const { status, data } = await postJSON('/subscriptions/payment/verify', {
+        razorpay_order_id,
+        razorpay_payment_id,
+        razorpay_signature,
+      }, token);
+
+      if (status === 200 || status === 201) {
+        return { ok: true, data };
+      }
+      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
+      return { ok: false, message: data?.message || `Payment verification failed (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.verifySubscriptionPayment] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error during verification.' };
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────
+  // COMMON — PAYMENT FAILED (sab plan types ke liye)
+  // POST /subscriptions/payment/failed
+  // ─────────────────────────────────────────────────────────
+  markSubscriptionPaymentFailed: async ({ razorpay_order_id, error_code, error_description }) => {
+    try {
+      const token = await getAuthToken();
+      const { status, data } = await postJSON('/subscriptions/payment/failed', {
+        razorpay_order_id,
+        error_code,
+        error_description,
+      }, token);
+
+      return { ok: status === 200 || status === 201, data, message: data?.message };
+    } catch (err) {
+      console.error('[AuthAPI.markSubscriptionPaymentFailed] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  // ─────────────────────────────────────────────────────────
+  // NEWS API
+  // ─────────────────────────────────────────────────────────
+  // Public quiz-type lists used by the certification screen.
+ getQuizType: async (type, subject, difficulty) => {
+    try {
+      const allowedTypes = ['practice', 'training', 'exam'];
+      if (!allowedTypes.includes(type)) return { ok: false, message: 'Invalid quiz type.' };
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Please login to view quizzes.' };
+      const qs = new URLSearchParams();
+      if (subject) qs.append('subject', subject);
+      if (difficulty && type === 'practice') qs.append('difficulty', difficulty);
+      const query = qs.toString() ? `?${qs.toString()}` : '';
+     const { status, data } = await getJSON(`/quiz-types/${type}${query}`, token);
+      if (status === 200 || status === 201) {
+        const raw = data?.quiz_type || data?.data || data?.quizzes || data?.quiz_types || data;
+        const quizzes = Array.isArray(raw) ? raw : (raw && typeof raw === 'object' ? [raw] : []);
+        return { ok: true, quizzes };
+      }
+      if (status === 401) return { ok: false, isAuth: true, message: data?.message || 'Session expired. Please login again.' };
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.getQuizType] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+ getPracticeQuizzes: async (subject, difficulty) => AuthAPI.getQuizType('practice', subject, difficulty),
+  getTrainingQuizzes: async (subject) => AuthAPI.getQuizType('training', subject),
+  getExamQuizzes: async (subject) => AuthAPI.getQuizType('exam', subject),
+
+  // Full quiz attempt history for the logged-in user — used by the "My Attempts" screen.
+  // GET /quiz/history?user_id=<id>
+  getQuizHistory: async (userId) => {
+    try {
+      const numericUserId = Number(userId);
+      if (!Number.isFinite(numericUserId) || numericUserId <= 0) {
+        return { ok: false, message: 'Unable to identify your account. Please re-login.' };
+      }
+      const token = await getAuthToken();
+      // ✅ quiz_type=exam bhejna hai (My Attempts/Certificate flow sirf Exam type
+      // attempts ke liye history maangta hai).
+      const { status, data } = await getJSON(`/quiz/history?user_id=${numericUserId}&quiz_type=exam`, token);
+      if (status === 200 || status === 201) {
+        const raw = data?.data || data?.history || data?.quizzes || data;
+        const history = Array.isArray(raw) ? raw : (raw && typeof raw === 'object' ? [raw] : []);
+        return { ok: true, history };
+      }
+      if (status === 401) return { ok: false, isAuth: true, message: data?.message || 'Session expired. Please login again.' };
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.getQuizHistory] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error. Please check your internet connection.' };
+    }
+  },
+  // Quiz attempt endpoints. These accept the same optional bearer token used by
+  // the rest of the app, while still working with the backend's user_id payload.
+
+  
+  startQuiz: async ({ userId, quizTypeId, subject, difficulty }) => {
+    try {
+      const numericUserId = Number(userId);
+      const numericQuizTypeId = Number(quizTypeId);
+
+      if (!Number.isFinite(numericUserId) || numericUserId <= 0) {
+        return { ok: false, message: 'Unable to identify your account. Please re-login.' };
+      }
+      if (!Number.isFinite(numericQuizTypeId) || numericQuizTypeId <= 0) {
+        return { ok: false, message: 'Invalid quiz. Please go back and select a quiz again.' };
+      }
+     const token = await getAuthToken();
+      const payload = {
+        user_id: numericUserId,
+        quiz_type_id: numericQuizTypeId,
+      };
+      if (subject) payload.subject = subject;
+      if (difficulty) payload.difficulty = difficulty;
+
+    const { status, data } = await postJSON('/quiz/start', payload, token);
+console.log('[startQuiz RAW]', JSON.stringify(data));
+if (status === 200 || status === 201) {
+  const payload = data?.data || data;
+  return { ok: true, attempt: payload, attemptId: payload?.attempt_id || payload?.id };
+}
+      if (status === 401) return { ok: false, isAuth: true, message: data?.message || 'Session expired. Please login again.' };
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.startQuiz] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error. Please check your internet connection.' };
+    }
+  },
+ submitQuiz: async ({ attemptId, answers }) => {
+    try {
+      const numericAttemptId = Number(attemptId);
+      if (!Number.isFinite(numericAttemptId) || numericAttemptId <= 0) {
+        return { ok: false, message: 'Invalid quiz attempt. Please restart the quiz.' };
+      }
+      if (!Array.isArray(answers) || answers.length === 0) {
+        return { ok: false, message: 'No answers to submit.' };
+      }
+
+      const token = await getAuthToken();
+      const { status, data } = await postJSON('/quiz/submit', {
+        attempt_id: numericAttemptId,
+        answers,
+      }, token);
+      if (status === 200 || status === 201) return { ok: true, result: data?.data || data };
+      if (status === 401) return { ok: false, isAuth: true, message: data?.message || 'Session expired. Please login again.' };
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.submitQuiz] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error. Please check your internet connection.' };
+    }
+  },
+  getQuizResult: async (attemptId) => {
+    try {
+      const token = await getAuthToken();
+      const { status, data } = await getJSON(`/quiz/result/${attemptId}`, token);
+      if (status === 200 || status === 201) return { ok: true, result: data?.data || data };
+      if (status === 401) return { ok: false, isAuth: true, message: data?.message || 'Session expired. Please login again.' };
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.getQuizResult] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error. Please check your internet connection.' };
+    }
+  },
+
+
+  // ─────────────────────────────────────────────────────────
+  // QUIZ SUBSCRIPTION API
+  // ─────────────────────────────────────────────────────────
+
+  /**
+   * Get all active Quiz Subscription Plans (public route)
+   * GET /quiz-subscription-plans
+   */
+  getQuizSubscriptionPlans: async () => {
+    try {
+      const { status, data } = await getJSON('/quiz-subscription-plans');
+      if (status === 200 || status === 201) {
+        const rawList = Array.isArray(data)
+          ? data
+          : (data?.quiz_subscription_plans || data?.data || data?.plans || []);
+        return { ok: true, plans: rawList };
+      }
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.getQuizSubscriptionPlans] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  /**
+   * Create Razorpay order for Quiz Subscription
+   * POST /quiz-subscriptions/purchase
+   * Body: { plan_id }
+   */
+  purchaseQuizSubscription: async ({ planId }) => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const { status, data } = await postJSON('/quiz-subscriptions/purchase', {
+        plan_id: planId,
+      }, token);
+
+      if (status === 200 || status === 201) {
+        return { ok: true, razorpay: data?.razorpay, message: data?.message };
+      }
+      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
+      if (status === 422) {
+        const errors = data?.errors || {};
+        const firstError = Object.values(errors).flat()[0] || data?.message || 'Validation failed.';
+        return { ok: false, message: firstError, errors };
+      }
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.purchaseQuizSubscription] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error. Please check your internet connection.' };
+    }
+  },
+
+  /**
+   * Verify Quiz Subscription Payment
+   * POST /quiz-subscriptions/payment/verify
+   */
+  verifyQuizSubscriptionPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signature }) => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const { status, data } = await postJSON('/quiz-subscriptions/payment/verify', {
+        razorpay_order_id,
+        razorpay_payment_id,
+        razorpay_signature,
+      }, token);
+
+      if (status === 200 || status === 201) return { ok: true, data };
+      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
+      return { ok: false, message: data?.message || `Payment verification failed (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.verifyQuizSubscriptionPayment] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error during verification.' };
+    }
+  },
+
+  /**
+   * Get current user's Quiz Subscriptions
+   * GET /my-quiz-subscriptions
+   */
+  getMyQuizSubscriptions: async () => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const { status, data } = await getJSON('/my-quiz-subscriptions', token);
+      if (status === 200 || status === 201) {
+        return { ok: true, subscriptions: data?.data || data?.subscriptions || data };
+      }
+      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.getMyQuizSubscriptions] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error. Please check your internet connection.' };
+    }
+  },
+  // getQuizHistory: async (userId) => {
+  //   try {
+  //     const token = await getAuthToken();
+  //     // ✅ quiz_type=exam bhejna hai.
+  //     const { status, data } = await getJSON(`/quiz/history?user_id=${encodeURIComponent(String(userId))}&quiz_type=exam`, token);
+  //     if (status === 200 || status === 201) return { ok: true, history: data?.data || data?.history || data };
+  //     if (status === 401) return { ok: false, isAuth: true, message: data?.message || 'Session expired. Please login again.' };
+  //     return { ok: false, message: data?.message || `Server error (${status}).` };
+  //   } catch (err) {
+  //     console.error('[AuthAPI.getQuizHistory] Error:', err);
+  //     return { ok: false, isNetwork: true, message: 'Network error. Please check your internet connection.' };
+  //   }
+  // },
+
+  createNews: async ({
+    title,
+    subTitle = '',
+    description,
+    reportType,
+    mediaType = 0,
+    mediaUri = null,
+    mediaName = 'media',
+    mediaMime = '',
+  }) => {
+    try {
+      console.log("Received mediaUri:", mediaUri);
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const formData = new FormData();
+      formData.append('tittle', title || '');
+      formData.append('sub_tittle', subTitle || '');
+      formData.append('description', description || '');
+      formData.append('report_type', reportType || '');
+      formData.append('media_type', String(mediaType));
+
+      if (mediaUri) {
+        if (Platform.OS === 'web') {
+          const fileRes = await fetch(mediaUri);
+          const blob = await fileRes.blob();
+          formData.append('media', blob, mediaName);
+        } else {
+          formData.append('media', {
+            uri: mediaUri,
+            type: mediaMime || 'application/octet-stream',
+            name: mediaName,
+          });
+        }
+      }
+
+      const res = await fetch(`${BASE_URL}/news`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+          // Content-Type intentionally omit — browser/RN sets multipart boundary
+        },
+        body: formData,
+      });
+
+      const json = await res.json();
+
+      if (res.status === 200 || res.status === 201) {
+        return { ok: true, data: json, news: json?.news || json?.data || json };
+      }
+      if (res.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+      if (res.status === 422) {
+        const errors = json?.errors || {};
+        const firstError = Object.values(errors).flat()[0] || json?.message || 'Validation failed.';
+        return { ok: false, message: firstError, errors };
+      }
+      return { ok: false, message: json?.message || `Server error (${res.status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.createNews] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+
+  /**
+   * Like a news item (toggle-style backend — POST /likes creates a like)
+   * POST /likes
+   * Body (form-data): user_id, news_id
+   * Headers: Authorization: Bearer {token}
+   * Response: { message, like: { like: 1|0, is_deleted: 0|1, ... } }
+   */
+  likeNews: async ({ userId, newsId, adsId = null }) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+    const numericNewsId = Number(adsId || newsId);
+    const numericUserId = Number(userId);
+    if (!Number.isFinite(numericNewsId) || numericNewsId <= 0) {
+      return { ok: false, message: 'This post is not synced with the server yet.' };
+    }
+    if (!Number.isFinite(numericUserId) || numericUserId <= 0) {
+      return { ok: false, message: 'Unable to identify your account. Please re-login.' };
+    }
+
+    const { status, data } = await postFormData('/likes', {
+      user_id: numericUserId,
+      ...(adsId ? { ads_id: numericNewsId } : { news_id: numericNewsId }),
+    }, token);
+
+    if (status === 200 || status === 201) {
+      const liked = Number(data?.like?.like) === 1 && Number(data?.like?.is_deleted) !== 1;
+      return { ok: true, liked, data };
+    }
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    if (status === 422) {
+      const errors = data?.errors || {};
+      const firstError = Object.values(errors).flat()[0] || data?.message || 'Validation failed.';
+      return { ok: false, message: firstError, errors };
+    }
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.likeNews] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+
+
+  /**
+   * Unlike a news item — explicit DELETE route
+   * DELETE /likes/{newsId}
+   * Headers: Authorization: Bearer {token}
+   * ⚠️ ASSUMPTION: newsId jaata hai URL mein, koi body nahi. Agar 422/404 aaye to yahan fix karenge.
+   */
+  unlikeNews: async (newsId) => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const response = await fetch(`${BASE_URL}/likes/${newsId}`, {
+        method: 'DELETE',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const json = await response.json().catch(() => null);
+
+      if (response.status === 200 || response.status === 201 || response.status === 204) {
+        return { ok: true, message: json?.message || 'Unliked.', data: json };
+      }
+      if (response.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+      if (response.status === 404) return { ok: false, message: 'Like not found.' };
+      return { ok: false, message: json?.message || `Server error (${response.status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.unlikeNews] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  /**
+
+   * Get comments for a news item
+   * GET /comments/{newsId}
+   * Headers: Authorization: Bearer {token}
+   * ⚠️ ASSUMPTION: response array ka exact shape/wrapper pata nahi — sab common patterns try karta hai
+   */
+  getComments: async (newsId) => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const { status, data } = await getJSON(`/comments/${newsId}`, token);
+
+      if (status === 200 || status === 201) {
+        const rawList = Array.isArray(data) ? data : (data?.data || data?.comments || []);
+        return { ok: true, comments: rawList };
+      }
+      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.getComments] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+
+postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+    const numericNewsId = Number(adsId || newsId);
+    if (!Number.isFinite(numericNewsId) || numericNewsId <= 0) {
+      return { ok: false, message: 'This post is not synced with the server yet.' };
+    }
+
+    // ✅ FIX: backend "comment" field chahta hai top-level ke liye,
+    // aur reply ke liye "sub_comment" + parent_id
+    const contentIdField = adsId ? { ads_id: numericNewsId } : { news_id: numericNewsId };
+    const fields = parentId
+      ? { ...contentIdField, sub_comment: text || '', parent_id: String(parentId) }
+      : { ...contentIdField, comment: text || '' };
+
+    const { status, data } = await postFormData('/comments', fields, token);
+
+    if (status === 200 || status === 201) {
+      return { ok: true, comment: data?.data || data?.comment || data };
+    }
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    if (status === 422) {
+      const errors = data?.errors || {};
+      const firstError = Object.values(errors).flat()[0] || data?.message || 'Validation failed.';
+      return { ok: false, message: firstError, errors };
+    }
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.postComment] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+
+  /**
+   * Delete a comment
+   * DELETE /comments/{commentId}
+   * Headers: Authorization: Bearer {token}
+   */
+  deleteComment: async (commentId) => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const response = await fetch(`${BASE_URL}/comments/${commentId}`, {
+        method: 'DELETE',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const json = await response.json().catch(() => null);
+
+      if (response.status === 200 || response.status === 201 || response.status === 204) {
+        return { ok: true, message: json?.message || 'Comment deleted.', data: json };
+      }
+      if (response.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+      if (response.status === 404) return { ok: false, message: 'Comment not found.' };
+      return { ok: false, message: json?.message || `Server error (${response.status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.deleteComment] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  
+
+  /**
+   * Get News List (Index)
+   * GET /news
+   * Headers: Authorization: Bearer {token}
+   */
+  getNewsList: async (params = {}) => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      // Agar query params bhejne ho (page, filter etc) to yaha build karo
+      const query = new URLSearchParams(params).toString();
+      const endpoint = query ? `/news?${query}` : '/news';
+
+      const { status, data } = await getJSON(endpoint, token);
+
+      if (status === 200 || status === 201) {
+        return { ok: true, news: data?.data || data?.news || data };
+      }
+      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.getNewsList] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  /**
+   * Get single News by ID (Show)
+   * GET /news/{id}
+   * Headers: Authorization: Bearer {token}
+   */
+  getNewsById: async (newsId) => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const { status, data } = await getJSON(`/news/${newsId}`, token);
+
+      if (status === 200 || status === 201) {
+        return { ok: true, news: data?.data || data?.news || data };
+      }
+      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+      if (status === 404) return { ok: false, message: 'News not found.' };
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.getNewsById] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  /**
+   * Update News
+   * POST /news/{id}  (Laravel mein _method: PUT bhejna form-data ke saath)
+   * Body (form-data): tittle, sub_tittle, description, report_type, media_type, media (file, optional)
+   * Headers: Authorization: Bearer {token}
+   */
+  updateNews: async (newsId, {
+    title,
+    subTitle = '',
+    description,
+    reportType,
+    mediaType = 0,
+    mediaUri = null,
+    mediaName = 'media',
+    mediaMime = '',
+  }) => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const formData = new FormData();
+      formData.append('_method', 'PUT'); // Laravel form-data + PUT trick
+      formData.append('tittle', title || '');
+      formData.append('sub_tittle', subTitle || '');
+      formData.append('description', description || '');
+      formData.append('report_type', reportType || '');
+      formData.append('media_type', String(mediaType));
+
+      if (mediaUri) {
+        if (Platform.OS === 'web') {
+          const fileRes = await fetch(mediaUri);
+          const blob = await fileRes.blob();
+          formData.append('media', blob, mediaName);
+        } else {
+          formData.append('media', {
+            uri: mediaUri,
+            type: mediaMime || 'application/octet-stream',
+            name: mediaName,
+          });
+        }
+      }
+
+      const res = await fetch(`${BASE_URL}/news/${newsId}`, {
+        method: 'POST', // _method override PUT ke liye
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      const json = await res.json();
+
+      if (res.status === 200 || res.status === 201) {
+        return { ok: true, data: json, news: json?.news || json?.data || json };
+      }
+      if (res.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+      if (res.status === 404) return { ok: false, message: 'News not found.' };
+      if (res.status === 422) {
+        const errors = json?.errors || {};
+        const firstError = Object.values(errors).flat()[0] || json?.message || 'Validation failed.';
+        return { ok: false, message: firstError, errors };
+      }
+      return { ok: false, message: json?.message || `Server error (${res.status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.updateNews] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  /**
+   * Update News Status
+   * POST /news/{id}/status  (ya PUT, backend route confirm kar lena)
+   * Body (form-data): status
+   * Headers: Authorization: Bearer {token}
+   */
+  updateNewsStatus: async (newsId, status) => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const { status: resStatus, data } = await postFormData(`/news/${newsId}/status`, {
+        status: status,
+      }, token);
+
+      if (resStatus === 200 || resStatus === 201) {
+        return { ok: true, message: data?.message || 'Status updated successfully!', data };
+      }
+      if (resStatus === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+      if (resStatus === 404) return { ok: false, message: 'News not found.' };
+      if (resStatus === 422) {
+        const errors = data?.errors || {};
+        const firstError = Object.values(errors).flat()[0] || data?.message || 'Validation failed.';
+        return { ok: false, message: firstError, errors };
+      }
+      return { ok: false, message: data?.message || `Server error (${resStatus}).` };
+    } catch (err) {
+      console.error('[AuthAPI.updateNewsStatus] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  /**
+   * Delete News (Destroy)
+   * DELETE /news/{id}
+   * Headers: Authorization: Bearer {token}
+   */
+  deleteNews: async (newsId) => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const response = await fetch(`${BASE_URL}/news/${newsId}`, {
+        method: 'DELETE',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const json = await response.json();
+
+      if (response.status === 200 || response.status === 201 || response.status === 204) {
+        return { ok: true, message: json?.message || 'News deleted successfully!', data: json };
+      }
+      if (response.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+      if (response.status === 404) return { ok: false, message: 'News not found.' };
+      return { ok: false, message: json?.message || `Server error (${response.status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.deleteNews] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  /**
+   * Get news counts (likes, comments, shares, views)
+   * POST /counts
+   * Body (form-data): news_id
+   * Headers: Authorization: Bearer {token}
+   */
+  getNewsCounts: async ({ newsId }) => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+      const { status, data } = await postFormData('/counts', {
+        news_id: String(newsId),
+      }, token);
+
+      if (status === 200 || status === 201) {
+        return { ok: true, counts: data?.counts || data?.data || data };
+      }
+      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.getNewsCounts] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+
+ getAdsDetails: async () => {
+  try {
+    const { status, data } = await getJSON('/ads-details'); // token nahi chahiye, public route
+    // ✅ FIX: backend ka actual wrapper key "ads_details" hai (pehle "data"/"ads"
+    // dhoondh raha tha jo kabhi match hi nahi hota tha — isi wajah se Home screen
+    // pe ads kabhi dikhte hi nahi the, hamesha khaali array milta tha)
+    if (status === 200 || status === 201) return { ok: true, ads: data?.ads_details || data?.data || data?.ads || data };
+  } catch (err) {
+    console.error('[AuthAPI.getAdsDetails] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+getAdsDetailsById: async (id) => {
+  try {
+    const { status, data } = await getJSON(`/ads-details/${id}`);
+    if (status === 200 || status === 201) return { ok: true, ad: data?.data || data?.ad || data };
+    if (status === 404) return { ok: false, message: 'Ad not found.' };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getAdsDetailsById] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+
+createAdsDetails: async ({
+  title, description, image, url, adsSubId = 1, redirection = '',
+  redirectionUrl = '', startDate = '', endDate = '', status = 1,
+}) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+    const redirectionIds = {
+      profile: 1,
+      'my rti profile': 1,
+      website: 2,
+      'my website': 2,
+      shop: 3,
+      'my shop': 3,
+      lead_form: 4,      // ✅ FIX: app screens/AdvertiseScreen.js hamesha 'lead_form' (underscore)
+      'lead form': 4,    //    bhejta hai — pehle sirf space-wale keys the isliye ye kabhi match
+      'lead forms': 4,   //    nahi hota tha aur redirectionId hamesha default 1 (profile) ban jaata tha
+      whatsapp: 5,
+      'my whatsapp number': 5,
+    };
+    // ✅ FIX: 'lead_form' jaisa underscore-wala id normalize karke bhi match karo,
+    // taaki key naming kahin bhi thodi alag ho to bhi sahi id mile
+    const normalizedRedirection = String(redirection).trim().toLowerCase().replace(/_/g, ' ');
+    const redirectionId = Number(redirection)
+      || redirectionIds[String(redirection).trim().toLowerCase()]
+      || redirectionIds[normalizedRedirection]
+      || 1;
+
+    // ✅ FIX: image ab generic postFormData() se plain STRING ki tarah nahi bheji jaati
+    // (jo blob:/file: URI ko sirf text bana deta tha — isliye backend pe image kabhi
+    // khulti hi nahi thi, chahe preview me dikh bhi rahi ho). Ab yaha khud FormData
+    // banake asli image Blob/file bheja ja raha hai — bilkul wahi pattern jo
+    // uploadProfileImage() aur ecom images upload me already sahi se use ho raha hai.
+    const formData = new FormData();
+    formData.append('title', title || '');
+    formData.append('description', description || '');
+    formData.append('url', url || '');
+    formData.append('ads_sub_id', String(Number(adsSubId) || 1));
+    formData.append('redirection', String(redirectionId));
+    formData.append('redirection_url', redirectionUrl || url || 'rti-news://advertisement');
+    formData.append('start_date', startDate || new Date().toISOString().slice(0, 10));
+    formData.append('end_date', endDate || new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10));
+    formData.append('status', String(status));
+
+    if (image) {
+      if (Platform.OS === 'web') {
+        let imageBlob = image instanceof Blob ? image : null;
+        // blob: URL kabhi-kabhi revoke ho jaata hai — IndexedDB me store kiya
+        // hua media hoga to wahan se uthao, warna seedha fetch() se blob banao
+        if (!imageBlob && isIdbMediaUri(image)) imageBlob = await getIdbMediaBlob(image);
+        if (!imageBlob) {
+          try { imageBlob = await fetch(image).then((response) => response.blob()); } catch { /* niche validation handle karega */ }
+        }
+        if (imageBlob) formData.append('image', imageBlob, 'ad-image.jpg');
+      } else {
+        // Native (Android/iOS): local file uri seedha bhej do
+        formData.append('image', {
+          uri: image,
+          type: 'image/jpeg',
+          name: 'ad-image.jpg',
+        });
+      }
+    }
+
+    const { status: resStatus, data } = await fetchWithDebug('/ads-details', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+        // Content-Type jaan-bujhke set nahi kiya — browser/RN khud multipart boundary set karega
+      },
+      body: formData,
+    }, formData);
+
+    if (resStatus === 200 || resStatus === 201) return { ok: true, ad: data?.data || data?.ad || data };
+    if (resStatus === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    if (resStatus === 422) {
+      const errors = data?.errors || {};
+      const firstError = Object.values(errors).flat()[0] || data?.message || 'Validation failed.';
+      return { ok: false, message: firstError, errors };
+    }
+    return { ok: false, message: data?.message || `Server error (${resStatus}).` };
+  } catch (err) {
+    console.error('[AuthAPI.createAdsDetails] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+updateAdsDetails: async (id, fields = {}) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+    // ✅ FIX: agar image update ho rahi hai aur wo ek naya local uri hai (blob:/file:),
+    // to usko bhi createAdsDetails ki tarah asli Blob/file banake bhejo — text string
+    // ki tarah nahi, warna edit karne pe bhi image backend pe kabhi save/khulti nahi thi.
+    const { image, ...restFields } = fields;
+    const isLocalImageUri = typeof image === 'string' && /^(blob:|file:|content:|idb-media:|data:)/i.test(image);
+
+    let status, data;
+    if (isLocalImageUri || image instanceof Blob) {
+      const formData = new FormData();
+      Object.entries({ ...restFields, _method: 'PUT' }).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) formData.append(key, String(value));
+      });
+      if (Platform.OS === 'web') {
+        let imageBlob = image instanceof Blob ? image : null;
+        if (!imageBlob && isIdbMediaUri(image)) imageBlob = await getIdbMediaBlob(image);
+        if (!imageBlob) {
+          try { imageBlob = await fetch(image).then((response) => response.blob()); } catch { /* niche validation handle karega */ }
+        }
+        if (imageBlob) formData.append('image', imageBlob, 'ad-image.jpg');
+      } else {
+        formData.append('image', { uri: image, type: 'image/jpeg', name: 'ad-image.jpg' });
+      }
+      const res = await fetchWithDebug(`/ads-details/${id}`, {
+        method: 'POST',
+        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+        body: formData,
+      }, formData);
+      status = res.status; data = res.data;
+    } else {
+      // Image change nahi hui (ya already ek hosted URL hai) — purane simple text flow se bhejo
+      const res = await postFormData(`/ads-details/${id}`, { ...fields, _method: 'PUT' }, token);
+      status = res.status; data = res.data;
+    }
+    if (status === 200 || status === 201) return { ok: true, ad: data?.data || data?.ad || data };
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    if (status === 404) return { ok: false, message: 'Ad not found.' };
+    if (status === 422) {
+      const errors = data?.errors || {};
+      const firstError = Object.values(errors).flat()[0] || data?.message || 'Validation failed.';
+      return { ok: false, message: firstError, errors };
+    }
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.updateAdsDetails] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+deleteAdsDetails: async (id) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const response = await fetch(`${BASE_URL}/ads-details/${id}`, {
+      method: 'DELETE',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    });
+    const json = await response.json().catch(() => null);
+    if (response.status === 200 || response.status === 201 || response.status === 204) {
+      return { ok: true, message: json?.message || 'Ad deleted.' };
+    }
+    if (response.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    if (response.status === 404) return { ok: false, message: 'Ad not found.' };
+    return { ok: false, message: json?.message || `Server error (${response.status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.deleteAdsDetails] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+// ── ADS VIEWS API ───────────────────────────────────────────
+recordAdView: async (adsId) => {
+  try {
+    const token = await getAuthToken(); // optional — agar route auth nahi maangta to bhi chalega
+    const { status, data } = await postFormData('/ads-views', { ads_id: String(adsId) }, token);
+    if (status === 200 || status === 201) return { ok: true, data };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.recordAdView] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+getAdViews: async (adsId) => {
+  try {
+    const { status, data } = await getJSON(`/ads-views/${adsId}`);
+    if (status === 200 || status === 201) return { ok: true, views: data?.data || data?.views || data };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getAdViews] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+// ✅ NEW: /ads-views index route (image me diya hua GET /ads-views, public)
+getAdViewsList: async () => {
+  try {
+    // This request belongs to My Ads. Include a token when available so an
+    // auth-protected backend does not return 401; public ad rendering never
+    // needs to call this endpoint.
+    const token = await getAuthToken();
+    const { status, data } = await getJSON('/ads-views', token);
+    if (status === 200 || status === 201) {
+      const rawList = Array.isArray(data) ? data : (data?.data || data?.ads_views || data?.views || []);
+      return { ok: true, views: rawList };
+    }
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getAdViewsList] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+// ── ECOM ENQUIRIES API ──────────────────────────────────────
+getEcomEnquiries: async () => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const { status, data } = await getJSON('/ecom-enquiries', token);
+    if (status === 200 || status === 201) return { ok: true, enquiries: data?.data || data?.enquiries || data };
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getEcomEnquiries] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+getEcomEnquiryById: async (id) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const { status, data } = await getJSON(`/ecom-enquiries/${id}`, token);
+    if (status === 200 || status === 201) return { ok: true, enquiry: data?.data || data?.enquiry || data };
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    if (status === 404) return { ok: false, message: 'Enquiry not found.' };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getEcomEnquiryById] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+createEcomEnquiry: async (fields = {}) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const { status, data } = await postFormData('/ecom-enquiries', fields, token);
+    if (status === 200 || status === 201) return { ok: true, enquiry: data?.data || data?.enquiry || data };
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    if (status === 422) {
+      const errors = data?.errors || {};
+      const firstError = Object.values(errors).flat()[0] || data?.message || 'Validation failed.';
+      return { ok: false, message: firstError, errors };
+    }
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.createEcomEnquiry] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+updateEcomEnquiry: async (id, fields = {}) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const { status, data } = await postFormData(`/ecom-enquiries/${id}`, { ...fields, _method: 'PUT' }, token);
+    if (status === 200 || status === 201) return { ok: true, enquiry: data?.data || data?.enquiry || data };
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    if (status === 404) return { ok: false, message: 'Enquiry not found.' };
+    if (status === 422) {
+      const errors = data?.errors || {};
+      const firstError = Object.values(errors).flat()[0] || data?.message || 'Validation failed.';
+      return { ok: false, message: firstError, errors };
+    }
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.updateEcomEnquiry] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+
+deleteEcomEnquiry: async (id) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const response = await fetch(`${BASE_URL}/ecom-enquiries/${id}`, {
+      method: 'DELETE',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    });
+    const json = await response.json().catch(() => null);
+    if (response.status === 200 || response.status === 201 || response.status === 204) {
+      return { ok: true, message: json?.message || 'Enquiry deleted.' };
+    }
+    if (response.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    if (response.status === 404) return { ok: false, message: 'Enquiry not found.' };
+    return { ok: false, message: json?.message || `Server error (${response.status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.deleteEcomEnquiry] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+// ─────────────────────────────────────────────────────────
+// ECOM SUBSCRIPTIONS API (Sell screen ke monthly plans)
+// GET /ecom-subscriptions
+// Headers: Authorization: Bearer {token}
+// ─────────────────────────────────────────────────────────
+getEcomSubscriptions: async () => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+    const { status, data } = await getJSON('/ecom-subscriptions', token);
+
+    if (status === 200 || status === 201) {
+      // ⚠️ ASSUMPTION: exact wrapper key backend se confirm nahi hai —
+      // common patterns (ecom_subscriptions / data / plans) try kiye hain.
+      const rawList = Array.isArray(data)
+        ? data
+        : (data?.ecom_subscriptions || data?.data || data?.plans || []);
+      return { ok: true, plans: rawList };
+    }
+
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getEcomSubscriptions] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error. Please check your internet connection.' };
+  }
+},
+
+// ─────────────────────────────────────────────────────────
+// ECOM DETAILS API (product add/update/delete/view/status)
+// GET /ecom-details is PUBLIC, baaki sab auth token se
+// ─────────────────────────────────────────────────────────
+getEcomDetails: async () => {
+  try {
+    const { status, data } = await getJSON('/ecom-details'); // public route, token nahi chahiye
+    if (status === 200 || status === 201) {
+      const rawList = Array.isArray(data) ? data : (data?.data || data?.ecom_details || data?.details || []);
+      return { ok: true, details: rawList };
+    }
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getEcomDetails] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+getEcomDetailsById: async (id) => {
+  try {
+    const { status, data } = await getJSON(`/ecom-details/${id}`);
+    if (status === 200 || status === 201) return { ok: true, detail: data?.data || data?.detail || data };
+    if (status === 404) return { ok: false, message: 'Product not found.' };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getEcomDetailsById] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+createEcomDetails: async ({
+  ecomSubId, category, productName, quantity, price, description, city, contact,
+  startDate = '', endDate = '', images = [],
+}) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+    const formData = new FormData();
+    formData.append('ecom_sub_id', String(ecomSubId ?? ''));
+    formData.append('category', category || '');
+    formData.append('product_name', productName || '');
+    formData.append('quantity', String(quantity ?? ''));
+    formData.append('price', String(price ?? ''));
+    formData.append('description', description || '');
+    formData.append('city', city || '');
+    // ⚠️ backend field name "conatct" (typo) hai, curl example ke hisaab se waisa hi bhejna hai
+    formData.append('conatct', contact || '');
+    if (startDate) formData.append('start_date', startDate);
+    if (endDate) formData.append('end_date', endDate);
+
+    for (let idx = 0; idx < (images || []).length; idx += 1) {
+      const img = images[idx];
+      if (!img) return;
+      if (Platform.OS === 'web') {
+        let imageBlob = img instanceof Blob ? img : null;
+        const imageUri = typeof img === 'string' ? img : (img.previewUri || img.uri || '');
+        if (!imageBlob && isIdbMediaUri(imageUri)) imageBlob = await getIdbMediaBlob(imageUri);
+        if (!imageBlob && imageUri) {
+          try { imageBlob = await fetch(imageUri).then((response) => response.blob()); } catch { /* validation below handles it */ }
+        }
+        if (imageBlob) formData.append('images[]', imageBlob, img.name || `image_${idx}.jpg`);
+      } else {
+        formData.append('images[]', {
+          uri: img.uri || img,
+          type: img.type || 'image/jpeg',
+          name: img.name || `image_${idx}.jpg`,
+        });
+      }
+    }
+
+   const res = await fetch(`${BASE_URL}/ecom-details`, {
+      method: 'POST',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+
+    const json = await res.json().catch(() => null);
+    if (res.status === 200 || res.status === 201) return { ok: true, detail: json?.data || json?.detail || json };
+    // ✅ FIX: backend "Token has expired." bhi 401 ke sath dega, isko clearly session-expired maano
+    if (res.status === 401) return { ok: false, isAuth: true, message: json?.message || 'Session expired. Please login again.' };
+    if (res.status === 422) {
+      const errors = json?.errors || {};
+      const firstError = Object.values(errors).flat()[0] || json?.message || 'Validation failed.';
+      return { ok: false, message: firstError, errors };
+    }
+    return { ok: false, message: json?.message || `Server error (${res.status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.createEcomDetails] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+updateEcomDetails: async (id, fields = {}) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+
+    // ✅ curl example seedha PUT + form-data bhej raha hai, isliye direct fetch se PUT
+    const formData = new FormData();
+    Object.entries(fields).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) formData.append(key, String(value));
+    });
+
+    const res = await fetch(`${BASE_URL}/ecom-details/${id}`, {
+      method: 'PUT',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+const json = await res.json().catch(() => null);
+    if (res.status === 200 || res.status === 201) return { ok: true, detail: json?.data || json?.detail || json };
+    if (res.status === 401) return { ok: false, isAuth: true, message: json?.message || 'Session expired. Please login again.' };
+    if (res.status === 404) return { ok: false, message: 'Product not found.' };
+    if (res.status === 422) {
+      const errors = json?.errors || {};
+      const firstError = Object.values(errors).flat()[0] || json?.message || 'Validation failed.';
+      return { ok: false, message: firstError, errors };
+    }
+    return { ok: false, message: json?.message || `Server error (${res.status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.updateEcomDetails] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+updateEcomDetailsStatus: async (id, statusValue) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const res = await fetch(`${BASE_URL}/ecom-details/${id}/status`, {
+      method: 'PATCH',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ status: statusValue }),
+    });
+    const json = await res.json().catch(() => null);
+    if (res.status === 200 || res.status === 201) return { ok: true, detail: json?.data || json?.detail || json };
+    if (res.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    if (res.status === 404) return { ok: false, message: 'Product not found.' };
+    return { ok: false, message: json?.message || `Server error (${res.status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.updateEcomDetailsStatus] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+deleteEcomDetails: async (id) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const response = await fetch(`${BASE_URL}/ecom-details/${id}`, {
+      method: 'DELETE',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    });
+    const json = await response.json().catch(() => null);
+    if (response.status === 200 || response.status === 201 || response.status === 204) {
+      return { ok: true, message: json?.message || 'Product deleted.' };
+    }
+    if (response.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    if (response.status === 404) return { ok: false, message: 'Product not found.' };
+    return { ok: false, message: json?.message || `Server error (${response.status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.deleteEcomDetails] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+getMyNews: async () => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const { status, data } = await getJSON('/my-news', token);
+    if (status === 200 || status === 201) return { ok: true, news: data?.data || data?.news || data };
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch {
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+getMyNewsById: async (id) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const { status, data } = await getJSON(`/my-news/${id}`, token);
+    if (status === 200 || status === 201) return { ok: true, news: data?.data || data?.news || data };
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    if (status === 404) return { ok: false, message: 'News not found.' };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getMyNewsById] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+
+  },
+// ── YOUTUBE LIVE STREAMING API ──────────────────────────────
+getYoutubeAuthUrl: async () => {
+  const token = await getAuthToken();
+  if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+  try {
+    const { status, data } = await getJSON(`/youtube/auth?token=${token}`, token);
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    const authUrl = data?.authorization_url || data?.data?.authorization_url || data?.url;
+    if ((status === 200 || status === 201) && authUrl) {
+      return { ok: true, url: authUrl };
+    }
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getYoutubeAuthUrl] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+getYoutubeLiveList: async () => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const { status, data } = await getJSON('/youtube/live/list', token);
+    if (status === 200 || status === 201) {
+      const liveData = data?.data;
+      return {
+        ok: true,
+        items: Array.isArray(liveData) ? liveData : (liveData?.watch_url ? [liveData] : []),
+      };
+    }
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getYoutubeLiveList] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+createYoutubeLive: async (streamTitle, privacyStatus = 'unlisted', scheduledStartTime) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const { status, data } = await postJSON('/youtube/live/create', {
+      title: streamTitle,                 // 'stream_title' nahi, backend 'title' maangta hai
+      privacyStatus,
+      scheduledStartTime,                 // ISO string
+      // The backend must pass this to YouTube's liveBroadcast.contentDetails
+      // so the returned watch URL can play inside the app's WebView.
+      enableEmbed: true,
+    }, token);
+    if (status === 200 || status === 201) return { ok: true, data: data?.data || data };
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.createYoutubeLive] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+startYoutubeBroadcast: async (broadcastId) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) {
+      return { ok: false, isAuth: true, message: "Not logged in." };
+    }
+
+    const { status, data } = await postJSON(
+      "/youtube/live/start",
+      { broadcast_id: broadcastId },
+      token
+    );
+
+    if (status === 200 || status === 201) {
+      return { ok: true, data };
+    }
+
+    return {
+      ok: false,
+      status,
+      message: data?.message || data?.error?.message || `Server error (${status}).`,
+    };
+  } catch (err) {
+    console.error(err);
+
+    return {
+      ok: false,
+      isNetwork: true,
+      message: "Network error.",
+    };
+  }
+},
+
+endYoutubeBroadcast: async (broadcastId) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const { status, data } = await postJSON('/youtube/live/end', { broadcast_id: broadcastId }, token);
+    if (status === 200 || status === 201) return { ok: true, data };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.endYoutubeBroadcast] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+// ── FOLLOW / BLOCK API ──────────────────────────────────────
+followUserApi: async (userId) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+     const { status, data } = await postJSON('/users/follow', { user_id: userId }, token);
+    if (status === 200 || status === 201) return { ok: true, data };
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.followUserApi] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+unfollowUserApi: async (userId) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+       const { status, data } = await postJSON('/users/unfollow', { user_id: userId }, token);
+    if (status === 200 || status === 201) return { ok: true, data };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.unfollowUserApi] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+getFollowersApi: async () => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const { status, data } = await getJSON('/users/followers', token);
+    if (status === 200 || status === 201) return { ok: true, list: data?.data || data || [] };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getFollowersApi] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+getFollowingApi: async () => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const { status, data } = await getJSON('/users/following', token);
+    if (status === 200 || status === 201) return { ok: true, list: data?.data || data || [] };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getFollowingApi] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+blockUserApi: async (userId) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const { status, data } = await postJSON('/users/block', { user_id: userId }, token);
+    if (status === 200 || status === 201) return { ok: true, data };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.blockUserApi] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+unblockUserApi: async (userId) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const { status, data } = await postJSON('/users/unblock', { user_id: userId }, token);
+    if (status === 200 || status === 201) return { ok: true, data };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.unblockUserApi] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+getBlockedUsersApi: async () => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const { status, data } = await getJSON('/users/blocked', token);
+    if (status === 200 || status === 201) return { ok: true, list: data?.data || data || [] };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getBlockedUsersApi] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+};
+
+export { postFormData, postJSON, getJSON };

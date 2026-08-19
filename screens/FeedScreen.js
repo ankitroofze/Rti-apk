@@ -1,0 +1,2189 @@
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import {
+  View, Text, TouchableOpacity, StyleSheet,
+  FlatList, Image, Dimensions, Modal, TextInput,
+  KeyboardAvoidingView, Platform, ScrollView, Alert, Keyboard,
+  Animated, useWindowDimensions, Share, Linking,
+} from 'react-native';
+import styles from './FeedScreenStyles';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
+import { VideoView, useVideoPlayer } from 'expo-video';
+import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
+import AppNavbar from '../components/AppNavbar';
+import ProfileAvatar from '../components/ProfileAvatar';
+import VerifiedBadge from '../components/VerifiedBadge';
+import WebLayout from '../components/WebLayout';
+import { UserStore } from '../store/UserStore';
+import { AuthAPI } from '../auth/ClientAPI/AuthApi';
+import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl, storeWebUriToIdbMedia } from '../utils/webMediaStore';
+import { safePause, safePlay, safeSetMuted } from '../utils/videoPlayerSafe';
+import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
+import { getAdRedirectMeta, openAdRedirect } from '../utils/adRedirect';
+
+const USE_NATIVE_DRIVER = Platform.OS !== 'web';
+const MOBILE_BREAKPOINT = 900;
+
+function useKeyboardInset() {
+  const [inset, setInset] = useState(0);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') return undefined;
+
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      const nextHeight = Math.max(0, Number(event?.endCoordinates?.height || 0));
+      setInset(nextHeight);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => setInset(0));
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  return inset;
+}
+
+// Real video with audio — public domain MP4
+const SAMPLE_REEL_VIDEO       = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+const SAMPLE_REEL_VIDEO_ALT   = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4';
+const SAMPLE_REEL_VIDEO_ALT2  = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4';
+
+function isValidImageUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  if (url.startsWith('idb-media:')) return true;
+  if (url.startsWith('blob:')) return true;
+  if (url.startsWith('http://localhost')) return false;
+  return true;
+}
+
+function isPlayableVideoSource(uri) {
+  if (typeof uri !== 'string' || !uri.trim()) return false;
+  if (/(youtube\.com|youtu\.be)/i.test(uri)) return false;
+
+  if (Platform.OS !== 'web') return true;
+  if (/^(blob:|data:|idb-media:)/i.test(uri)) return true;
+  return /^https?:/i.test(uri) && /\.(mp4|m4v|mov|webm|ogv|m3u8)(\?.*)?$/i.test(uri);
+}
+
+// Share Handler
+function handleSharePost(post) {
+  const shareText = `📰 ${post.headline}\n\n${post.caption}\n\n📍 ${post.location}\n\n🗞️ Read more on RTI News`;
+  const shareUrl  = `https://rtinews.in/reel/${post.id}`;
+  const fullMsg   = `${shareText}\n${shareUrl}`;
+
+  if (Platform.OS === 'web') {
+    return { text: shareText, url: shareUrl };
+  }
+  Share.share({ message: fullMsg, title: post.headline, url: shareUrl })
+    .catch(() => {});
+  return null;
+}
+
+function normalizeFeedComment(comment = {}, fallbackId = 'cmt-temp', profileByEmail = {}) {
+  const authorEmail = String(comment.author_email || comment.user_email || '').trim().toLowerCase();
+  const matchedProfile = authorEmail ? profileByEmail[authorEmail] || null : null;
+  const authorAvatar = String(
+    comment.author_profile_image ||
+    comment.profile_image ||
+    comment.avatar ||
+    matchedProfile?.avatar ||
+    matchedProfile?.profile_image ||
+    ''
+  ).trim();
+
+  return {
+    id: String(comment.id || fallbackId),
+    user: String(comment.user || comment.author || 'User'),
+    author: String(comment.author || comment.user || 'User'),
+    author_email: authorEmail,
+    author_profile_image: authorAvatar,
+    avatar: authorAvatar,
+    text: String(comment.text || ''),
+    likes: Number(comment.likes || 0),
+    liked_by: Array.isArray(comment.liked_by) ? comment.liked_by : [],
+    date: String(comment.date || ''),
+    edited_at: comment.edited_at || null,
+    replies: Array.isArray(comment.replies)
+      ? comment.replies.map((reply, index) => normalizeFeedComment(reply, `${fallbackId}-reply-${index + 1}`, profileByEmail))
+      : [],
+  };
+}
+
+function countFeedComments(comments = []) {
+  return (Array.isArray(comments) ? comments : []).reduce(
+    (total, comment) => total + 1 + countFeedComments(comment.replies),
+    0
+  );
+}
+
+function getDisplayCommentAvatar(comment = {}, fallbackAvatar = '') {
+  const avatar = String(
+    comment.author_profile_image ||
+    comment.avatar ||
+    comment.profile_image ||
+    fallbackAvatar ||
+    ''
+  ).trim();
+  return avatar;
+}
+
+// Icons
+function HeartIcon({ filled, size = 24 }) {
+  if (Platform.OS === 'web') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24"
+        fill={filled ? '#ff3b5c' : 'none'} stroke={filled ? '#ff3b5c' : '#fff'}
+        strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
+      </svg>
+    );
+  }
+  return <Text style={{ fontSize: size - 2, color: filled ? '#ff3b5c' : '#fff' }}>{filled ? '♥' : '♡'}</Text>;
+}
+
+function CommentIcon({ size = 24 }) {
+  if (Platform.OS === 'web') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+      </svg>
+    );
+  }
+  return <Text style={{ fontSize: size - 2, color: '#fff' }}>💬</Text>;
+}
+
+function ShareIcon({ size = 24 }) {
+  if (Platform.OS === 'web') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="22" y1="2" x2="11" y2="13" />
+        <polygon points="22 2 15 22 11 13 2 9 22 2" />
+      </svg>
+    );
+  }
+  return <Text style={{ fontSize: size - 2, color: '#fff' }}>📤</Text>;
+}
+
+function BookmarkIcon({ filled, size = 24 }) {
+  if (Platform.OS === 'web') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24"
+        fill={filled ? '#f97316' : 'none'} stroke={filled ? '#f97316' : '#fff'}
+        strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+      </svg>
+    );
+  }
+  return <Text style={{ fontSize: size - 2, color: filled ? '#f97316' : '#fff' }}>{filled ? '🔖' : '🏷'}</Text>;
+}
+
+function MuteIcon({ muted, size = 20 }) {
+  if (Platform.OS === 'web') {
+    return muted ? (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+        <line x1="23" y1="9" x2="17" y2="15" /><line x1="17" y1="9" x2="23" y2="15" />
+      </svg>
+    ) : (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+        <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+        <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+      </svg>
+    );
+  }
+  return <Text style={{ fontSize: size, color: '#fff' }}>{muted ? '🔇' : '🔊'}</Text>;
+}
+
+// Share Modal
+function ShareModal({ visible, onClose, post }) {
+  if (!post) return null;
+
+  const shareText = encodeURIComponent(`📰 ${post.headline}\n\n${post.caption}\n\n📍 ${post.location}`);
+  const shareUrl  = encodeURIComponent(`https://rtinews.in/reel/${post.id}`);
+
+  const platforms = [
+    {
+      name: 'WhatsApp',
+      emoji: '💬',
+      color: '#25D366',
+      action: () => {
+        const url = `https://wa.me/?text=${shareText}%0A${shareUrl}`;
+        Platform.OS === 'web' ? window.open(url, '_blank') : Linking.openURL(url);
+      },
+    },
+    {
+      name: 'Telegram',
+      emoji: '✈️',
+      color: '#0088cc',
+      action: () => {
+        const url = `https://t.me/share/url?url=${shareUrl}&text=${shareText}`;
+        Platform.OS === 'web' ? window.open(url, '_blank') : Linking.openURL(url);
+      },
+    },
+    {
+      name: 'Twitter / X',
+      emoji: '🐦',
+      color: '#1DA1F2',
+      action: () => {
+        const url = `https://twitter.com/intent/tweet?text=${shareText}&url=${shareUrl}`;
+        Platform.OS === 'web' ? window.open(url, '_blank') : Linking.openURL(url);
+      },
+    },
+    {
+      name: 'Facebook',
+      emoji: '📘',
+      color: '#1877F2',
+      action: () => {
+        const url = `https://www.facebook.com/sharer/sharer.php?u=${shareUrl}`;
+        Platform.OS === 'web' ? window.open(url, '_blank') : Linking.openURL(url);
+      },
+    },
+    {
+      name: 'Copy Link',
+      emoji: '🔗',
+      color: '#6b7280',
+      action: () => {
+        const link = `https://rtinews.in/reel/${post.id}`;
+        if (Platform.OS === 'web' && navigator?.clipboard) {
+          navigator.clipboard.writeText(link).then(() => Alert.alert('Copied!', 'Link copied to clipboard'));
+        } else {
+          Alert.alert('Link', link);
+        }
+        onClose();
+      },
+    },
+  ];
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent>
+      <View style={localShareStyles.overlay}>
+        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
+        <View style={localShareStyles.sheet}>
+          <View style={localShareStyles.handle} />
+          <Text style={localShareStyles.title}>🚀 Share This Story</Text>
+
+          <View style={localShareStyles.previewBox}>
+            <Text style={localShareStyles.previewHeadline} numberOfLines={2}>{post.headline}</Text>
+            <Text style={localShareStyles.previewCaption} numberOfLines={2}>{post.caption}</Text>
+            <Text style={localShareStyles.previewLocation}>📍 {post.location}</Text>
+          </View>
+
+          <View style={localShareStyles.grid}>
+            {platforms.map((p) => (
+              <TouchableOpacity key={p.name} style={localShareStyles.platformBtn} onPress={p.action} activeOpacity={0.8}>
+                <View style={[localShareStyles.platformCircle, { backgroundColor: p.color }]}>
+                  <Text style={{ fontSize: 22 }}>{p.emoji}</Text>
+                </View>
+                <Text style={localShareStyles.platformName}>{p.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <TouchableOpacity style={localShareStyles.closeBtn} onPress={onClose}>
+            <Text style={localShareStyles.closeBtnText}>Cancel</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+const localShareStyles = StyleSheet.create({
+  overlay:         { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  sheet:           { backgroundColor: '#0f172a', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: Platform.OS === 'ios' ? 40 : 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  handle:          { width: 44, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.18)', alignSelf: 'center', marginBottom: 14 },
+  title:           { fontSize: 18, fontWeight: '800', color: '#f1f5f9', textAlign: 'center', marginBottom: 14, letterSpacing: -0.3 },
+  previewBox:      { backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 14, padding: 14, marginBottom: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  previewHeadline: { color: '#f1f5f9', fontWeight: '800', fontSize: 14, marginBottom: 4 },
+  previewCaption:  { color: '#94a3b8', fontSize: 12, lineHeight: 18, marginBottom: 6 },
+  previewLocation: { color: '#f97316', fontSize: 11, fontWeight: '700' },
+  grid:            { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-around', marginBottom: 16 },
+  platformBtn:     { alignItems: 'center', width: '18%', marginBottom: 8 },
+  platformCircle:  { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', marginBottom: 6 },
+  platformName:    { color: '#94a3b8', fontSize: 11, fontWeight: '600', textAlign: 'center' },
+  closeBtn:        { alignItems: 'center', paddingVertical: 14, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  closeBtnText:    { color: '#64748b', fontSize: 14, fontWeight: '700' },
+});
+
+// Description Modal
+function DescriptionModal({ visible, onClose, post, onShare, onAddComment, currentUser }) {
+  const [text, setText] = useState('');
+  const keyboardInset = useKeyboardInset();
+  const currentUserEmail = String(currentUser?.email || '').trim().toLowerCase();
+  const currentUserHasBlueTick = Boolean(currentUser && UserStore.hasBlueTick(currentUser));
+  const currentUserAvatar = String(currentUser?.avatar || currentUser?.profile_image || '').trim();
+  const authorEmail = String(post?.createdBy || post?.created_by || '').trim().toLowerCase();
+  const verified = Boolean(
+    post?.verified ||
+    post?.author_has_blue_tick ||
+    post?.has_blue_tick ||
+    post?.authorHasBlueTick ||
+    post?.createdByBlueTick ||
+    (authorEmail && currentUserEmail && authorEmail === currentUserEmail && currentUserHasBlueTick)
+  );
+
+  useEffect(() => {
+    if (visible) setText('');
+  }, [visible, post?.id]);
+
+  if (!post) return null;
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent statusBarTranslucent>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
+      >
+        <View style={{ flex: 1, backgroundColor: 'transparent' }}>
+          <TouchableOpacity
+            style={{ flex: 0.14, backgroundColor: 'transparent' }}
+            activeOpacity={1}
+            onPress={onClose}
+          />
+
+          <View style={{
+            flex: 0.86,
+            backgroundColor: '#0f172a',
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            paddingBottom: 0,
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.08)',
+            overflow: 'hidden',
+          }}>
+          <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.3)', alignSelf: 'center', marginTop: 10, marginBottom: 14 }} />
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginBottom: 10 }}>
+            <ProfileAvatar
+              uri={post.avatar || post.author_profile_image}
+              size={40}
+              style={{ marginRight: 10 }}
+              imageStyle={{ borderWidth: 2, borderColor: '#f97316' }}
+              placeholderStyle={{ borderWidth: 2, borderColor: '#f97316', backgroundColor: 'rgba(255,255,255,0.08)' }}
+              iconColor="#ffffff"
+            />
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={{ color: '#fff', fontWeight: '800', fontSize: 14 }}>{post.user}</Text>
+                {verified ? <VerifiedBadge size={16} /> : null}
+              </View>
+              <Text style={{ color: '#94a3b8', fontSize: 11 }}>{post.role} · {post.time}</Text>
+            </View>
+            <TouchableOpacity
+              style={{ backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#fff', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 6 }}
+              onPress={onShare}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 13 }}>Share</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={{ paddingHorizontal: 16, marginBottom: 10 }}>
+            <Text style={{ color: 'rgba(255,255,255,0.88)', fontSize: 13, lineHeight: 20 }}>
+              <Text style={{ fontWeight: '800' }}>{post.user} </Text>
+              {post.caption}
+            </Text>
+            {post.location ? (
+              <Text style={{ color: '#f97316', fontSize: 11, fontWeight: '600', marginTop: 4 }}>📍 {post.location}</Text>
+            ) : null}
+          </View>
+
+          <View style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.08)', marginHorizontal: 16, marginBottom: 10 }} />
+
+          <ScrollView
+            style={{ flex: 1, paddingHorizontal: 16 }}
+            contentContainerStyle={{ paddingBottom: 16 }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {Array.isArray(post.comments) && post.comments.length === 0 && (
+              <Text style={{ color: '#475569', fontSize: 13, textAlign: 'center', marginVertical: 16 }}>No comments yet. Be the first! 👇</Text>
+            )}
+            {Array.isArray(post.comments) && post.comments.map((c) => (
+              <View key={c.id} style={{ flexDirection: 'row', marginBottom: 14, alignItems: 'flex-start' }}>
+                <ProfileAvatar
+                  uri={getDisplayCommentAvatar(c)}
+                  size={32}
+                  style={{ marginRight: 10 }}
+                  imageStyle={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
+                  placeholderStyle={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                  iconColor="#ffffff"
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: '#f1f5f9', fontSize: 13, lineHeight: 18 }}>
+                    <Text style={{ fontWeight: '800' }}>{c.user} </Text>
+                    {c.text}
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 12, marginTop: 4 }}>
+                    <Text style={{ color: '#64748b', fontSize: 11 }}>{c.date || ''}</Text>
+                    <TouchableOpacity><Text style={{ color: '#64748b', fontSize: 11, fontWeight: '700' }}>Reply</Text></TouchableOpacity>
+                  </View>
+                </View>
+                <View style={{ alignItems: 'center', marginLeft: 8 }}>
+                  <Text style={{ color: '#fff', fontSize: 16 }}>♡</Text>
+                  <Text style={{ color: '#64748b', fontSize: 10 }}>{c.likes || ''}</Text>
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 10, paddingBottom: Platform.OS === 'android' ? Math.max(12, keyboardInset) : 12, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.08)', gap: 10 }}>
+            <ProfileAvatar
+              uri={currentUserAvatar}
+              size={32}
+              placeholderStyle={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+              iconColor="#ffffff"
+            />
+            <TextInput
+              style={{
+                flex: 1, height: 40, backgroundColor: 'rgba(255,255,255,0.08)',
+                borderRadius: 20, paddingHorizontal: 14, fontSize: 13, color: '#f1f5f9',
+                borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
+              }}
+              placeholder={`Add a comment for ${post.user}...`}
+              placeholderTextColor="#64748b"
+              value={text}
+              onChangeText={setText}
+            />
+            <TouchableOpacity
+              style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: '#f97316', alignItems: 'center', justifyContent: 'center' }}
+              onPress={async () => {
+                if (!text.trim()) return;
+                await onAddComment?.(text.trim(), null, post.id);
+                setText('');
+              }}
+            >
+              <Text style={{ color: '#fff', fontSize: 16 }}>➤</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// Dummy Data
+const DUMMY_POSTS = [
+  {
+    id: '1', user: 'Rahul Sharma', avatar: 'https://i.pravatar.cc/100?img=11',
+    verified: false, role: 'RTI Activist', location: 'Lucknow, Uttar Pradesh', time: '2 min ago',
+    type: 'video', media: SAMPLE_REEL_VIDEO,
+    thumbnail: 'https://picsum.photos/seed/rti1/600/900',
+    headline: 'RTI exposed missing water supply funds!',
+    caption: 'Ward 14 in Lucknow had no water for 3 months. Filed an RTI, got a response in 30 days — pipeline repair budget was finally released. 🎉 #RTI #JanAdhikar #Water',
+    fullDescription: 'Under the Right to Information Act 2005, I filed an application to the Municipal Corporation seeking records of water pipeline maintenance for Ward 14. After initial denial and first appeal, the information was finally provided revealing Rs. 14 lakh allocated for repairs had not been utilized for over 2 years. Following media coverage of the RTI response, the civic body released the funds and work commenced within 15 days. This is the power of RTI — every citizen can hold their government accountable.',
+    likes: 1240, shares: 312,
+    comments: [{ id: 'c1', user: 'Priya Verma', text: 'Great work bhai! 👏' }, { id: 'c2', user: 'Mohan Lal', text: 'RTI is a powerful tool!' }],
+    liked: false, bookmarked: false, tag: 'Success Story', tagColor: '#16a34a',
+  },
+  {
+    id: '2', user: 'Anjali Singh', avatar: 'https://i.pravatar.cc/100?img=47',
+    verified: false, role: 'Teacher', location: 'Bhopal, Madhya Pradesh', time: '15 min ago',
+    type: 'video', media: SAMPLE_REEL_VIDEO_ALT,
+    thumbnail: 'https://picsum.photos/seed/rti2/600/900',
+    headline: 'Where did the school funds go? Filed an RTI!',
+    caption: 'Government Primary School No. 7 had no account of mid-day meal funds. Filed an RTI — documents requested within 20 days. #RTI #Education',
+    fullDescription: 'As a teacher in a government primary school, I noticed discrepancies in the mid-day meal scheme records. Children were not receiving adequate meals despite full budget allocation. I filed an RTI application to the District Education Office requesting meal distribution records and fund utilization reports for the past 3 years. The response revealed significant irregularities which have now been referred to the State Vigilance Commission.',
+    likes: 890, shares: 145,
+    comments: [{ id: 'c3', user: 'Admin RTI', text: 'Best of luck!' }],
+    liked: false, bookmarked: false, tag: 'Application Filed', tagColor: '#2563eb',
+  },
+  {
+    id: '3', user: 'Vikram Patel', avatar: 'https://i.pravatar.cc/100?img=33',
+    verified: false, role: 'Journalist', location: 'Ahmedabad, Gujarat', time: '1 hr ago',
+    type: 'video', media: SAMPLE_REEL_VIDEO_ALT2,
+    thumbnail: 'https://picsum.photos/seed/rti3/600/900',
+    headline: 'Road built after RTI — this is people power!',
+    caption: 'Narol area had no road for 2 years. Filed RTI and PWD started work within 15 days. 🛣️ #RTI #Gujarat',
+    fullDescription: 'The residents of Narol locality had been complaining about a broken road for over 2 years. Multiple petitions went unheard. Using the RTI Act, I filed an application to the Public Works Department asking for the status of funds allocated for road repair under PMGSY. The RTI response revealed the funds had been sitting idle. Within 2 weeks of the RTI response being made public, the PWD commenced road construction. This story proves that transparency is the best weapon against government inaction.',
+    likes: 3120, shares: 890,
+    comments: [{ id: 'c5', user: 'Neha Shah', text: 'Inspiring!' }, { id: 'c6', user: 'Suresh Bhai', text: 'How did you file it?' }],
+    liked: true, bookmarked: false, tag: 'Victory', tagColor: '#d97706',
+  },
+  {
+    id: '4', user: 'Dr. Meera Devi', avatar: 'https://i.pravatar.cc/100?img=25',
+    verified: false, role: 'Doctor & Activist', location: 'Patna, Bihar', time: '3 hrs ago',
+    type: 'video', media: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+    thumbnail: 'https://picsum.photos/seed/rti4/600/900',
+    headline: 'Where is the hospital medicine stock?',
+    caption: 'Essential medicines were out of stock at Patna Civil Hospital. Filed an RTI for medicine purchase records. 💊 #RTI #Health',
+    fullDescription: 'Essential medicines including antibiotics, antihypertensives and diabetes medication were consistently out of stock at Patna Civil Hospital for months. Patients were being forced to buy expensive medicines from private pharmacies. I filed an RTI application to the Civil Surgeon office demanding medicine procurement records, stock registers and expenditure statements. The documents revealed systematic pilferage and a parallel black market operation. The matter is now under CBI investigation.',
+    likes: 2050, shares: 567,
+    comments: [{ id: 'c8', user: 'Asha Devi', text: 'Same problem here!' }],
+    liked: false, bookmarked: true, tag: 'Health RTI', tagColor: '#dc2626',
+  },
+  {
+    id: '5', user: 'RTI Portal Official', avatar: 'https://i.pravatar.cc/100?img=60',
+    verified: false, role: 'Official Account', location: 'New Delhi', time: '5 hrs ago',
+    type: 'video', media: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4',
+    thumbnail: 'https://picsum.photos/seed/rti5/600/900',
+    headline: 'File RTI from home — takes just 5 minutes!',
+    caption: '📢 File RTI online at rtionline.gov.in. No fee, no agents! #RTIOnline #DigitalIndia',
+    fullDescription: 'The RTI Online Portal (rtionline.gov.in) allows any Indian citizen to file an RTI application from their home in under 5 minutes. No fee is required for BPL cardholders. The application fee is just Rs. 10 for others (payable online). You can track your application status, receive responses digitally, and file first appeals — all without visiting any government office. Over 2 crore RTI applications have been filed online since 2013. Know your rights, exercise your rights.',
+    likes: 8910, shares: 4200,
+    comments: [{ id: 'c10', user: 'Raj Mishra', text: 'Very useful!' }],
+    liked: false, bookmarked: false, tag: 'Official Update', tagColor: '#7c3aed',
+  },
+];
+
+function feedPostFromNewsItem(item = {}, currentEmail = '') {
+  const videoUri = String(
+    typeof item.video === 'string'
+      ? item.video
+      : item.video?.uri || ''
+  ).trim();
+  const firstImage = Array.isArray(item.images)
+    ? item.images.find((uri) => typeof uri === 'string' && uri.trim())
+    : '';
+  const imageUri = String(item.thumbnail || item.image || firstImage || '').trim();
+  const isVideo = Boolean(videoUri);
+  const authorEmail = String(item.createdBy || item.created_by || '').trim().toLowerCase();
+  const title = String(item.title || item.headline || 'News Update').trim();
+  const subtitle = String(item.subtitle || item.caption || '').trim();
+  const description = String(item.description || item.fullDescription || subtitle || '').trim();
+  const commentsList = Array.isArray(item.comments_list) ? item.comments_list : [];
+  const likedBy = Array.isArray(item.liked_by) ? item.liked_by : [];
+
+  return {
+    id: String(item.id || `feed-${Date.now()}`),
+    user: String(item.author_name || item.createdByName || item.createdBy || 'User'),
+    avatar: String(item.author_profile_image || item.authorProfileImage || item.createdByProfileImage || item.profile_image || ''),
+    verified: Boolean(item.author_has_blue_tick || item.authorHasBlueTick || item.createdByBlueTick),
+    author_has_blue_tick: Boolean(item.author_has_blue_tick || item.authorHasBlueTick || item.createdByBlueTick),
+    role: String(item.author_role_label || item.authorRoleLabel || item.author_role || item.authorRole || ''),
+    location: String(item.author_seat_name || item.authorSeatName || [item.taluka, item.district, item.state].filter(Boolean).join(', ') || 'India'),
+    time: String(item.time || item.createdAt || item.date || ''),
+    type: isVideo ? 'video' : 'image',
+    media: isVideo ? videoUri : imageUri,
+    video: isVideo ? videoUri : null,
+    thumbnail: imageUri,
+    image: imageUri,
+    headline: title,
+    caption: subtitle || description,
+    fullDescription: description || subtitle || title,
+    likes: Number(item.likes || 0),
+    shares: Number(item.shares || 0),
+    comments: commentsList,
+    commentsCount: Number(item.comments ?? commentsList.length ?? 0),
+    liked: Boolean(currentEmail && likedBy.includes(currentEmail)),
+    bookmarked: Boolean(item.bookmarked),
+    tag: String(item.report_type || item.category || item.state || 'General'),
+    tagColor: '#16a34a',
+    createdAt: item.createdAt || item.date || null,
+    createdBy: authorEmail,
+  };
+}
+
+function feedPostFromAdItem(ad = {}) {
+  const title = String(ad.title || 'Sponsored Advertisement').trim();
+  const description = String(ad.description || '').trim();
+  const location = [ad.district, ad.state].filter(Boolean).join(', ') || 'Sponsored';
+
+  return {
+    id: String(ad.feed_id || `ad-feed-${ad.id || Date.now()}`),
+    isAd: true,
+    originalAdId: ad.id,
+    user: String(ad.owner_name || 'Advertiser'),
+    avatar: String(ad.owner_profile_image || ''),
+    verified: Boolean(ad.owner_has_blue_tick),
+    author_has_blue_tick: Boolean(ad.owner_has_blue_tick),
+    role: 'Sponsored',
+    location,
+    time: String(ad.updated_at || ad.created_at || ''),
+    type: 'image',
+    media: String(ad.photo || ''),
+    thumbnail: String(ad.photo || ''),
+    image: String(ad.photo || ''),
+    headline: title,
+    caption: description,
+    fullDescription: description || title,
+    likes: 0,
+    shares: 0,
+    comments: [],
+    commentsCount: 0,
+    liked: false,
+    bookmarked: false,
+    tag: 'Sponsored',
+    tagColor: '#F97316',
+    createdAt: ad.created_at || null,
+    createdBy: String(ad.owner_email || '').trim().toLowerCase(),
+    redirect: ad.redirect || '',
+    extraValues: ad.extraValues || {},
+    allowCalls: ad.allowCalls !== false,
+  };
+}
+
+function interleaveSponsoredPosts(posts = [], ads = []) {
+  if (!Array.isArray(ads) || ads.length === 0) return posts;
+  if (!Array.isArray(posts) || posts.length === 0) return ads;
+  const mixed = [];
+  let adIndex = 0;
+  posts.forEach((post, index) => {
+    mixed.push(post);
+    if ((index + 1) % 3 === 0 && adIndex < ads.length) {
+      mixed.push(ads[adIndex]);
+      adIndex += 1;
+    }
+  });
+  return [...mixed, ...ads.slice(adIndex)];
+}
+
+// Upload Modal
+function UploadModal({ visible, onClose, onPost }) {
+  const [caption, setCaption] = useState('');
+  const [headline, setHeadline] = useState('');
+  const [tag, setTag] = useState('Success Story');
+  const [mediaUri, setMediaUri] = useState('');
+  const [mediaType, setMediaType] = useState('Video');
+  const [picking, setPicking] = useState(false);
+  const tagOptions = ['Success Story', 'Application Filed', 'Victory', 'Question', 'Official Update', 'Corruption Exposed'];
+
+  const pickMedia = async () => {
+    if (picking) return;
+    setPicking(true);
+    try {
+      if (Platform.OS === 'web') {
+        const result = await DocumentPicker.getDocumentAsync({
+          type: ['video/*', 'image/*'],
+          multiple: false,
+          copyToCacheDirectory: true,
+        });
+        if (result.canceled) return;
+        const asset = result.assets?.[0] || result;
+        if (!asset?.uri) return;
+        const isVideo = String(asset.mimeType || asset.type || '').toLowerCase().startsWith('video');
+        const persisted = await storeWebUriToIdbMedia(asset.uri, {
+          prefix: isVideo ? 'video' : 'image',
+          mimeType: asset.mimeType || '',
+        });
+        setMediaType(isVideo ? 'Video' : 'Image');
+        setMediaUri(persisted);
+        return;
+      }
+
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (permission.status !== 'granted') {
+        Alert.alert('Permission required', 'Please allow media access to upload a reel.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions?.All || undefined,
+        allowsMultipleSelection: false,
+        quality: 0.8,
+        videoMaxDuration: 60,
+      });
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+      const asset = result.assets[0];
+      const isVideo = asset.type === 'video' || String(asset.mimeType || '').startsWith('video/');
+      setMediaType(isVideo ? 'Video' : 'Image');
+      setMediaUri(asset.uri);
+    } catch {
+      Alert.alert('Upload failed', 'Unable to select this media.');
+    } finally {
+      setPicking(false);
+    }
+  };
+
+  const handlePost = () => {
+    if (!caption.trim()) { Alert.alert('Caption required', 'Please write something.'); return; }
+    if (!mediaUri) { Alert.alert('Media required', 'Please choose a video or photo.'); return; }
+    onPost({ caption, headline, tag, mediaUri, mediaType });
+    setCaption('');
+    setHeadline('');
+    setMediaUri('');
+    setMediaType('Video');
+    onClose();
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
+        <View style={styles.uploadSheet}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>📰 New Post</Text>
+          <TouchableOpacity style={styles.mediaBox} activeOpacity={0.7} onPress={pickMedia}>
+            <Text style={styles.mediaBoxIcon}>🎥</Text>
+            <Text style={styles.mediaBoxText}>{mediaUri ? `${mediaType} selected` : (picking ? 'Opening...' : 'Add Video / Photo')}</Text>
+            <Text style={styles.mediaBoxSub}>{mediaUri ? 'Tap to change media' : '(choose from gallery)'}</Text>
+          </TouchableOpacity>
+          <TextInput style={[styles.captionInput, { minHeight: 44, marginBottom: 10 }]} placeholder="Headline..." placeholderTextColor="#475569" value={headline} onChangeText={setHeadline} maxLength={100} />
+          <TextInput style={styles.captionInput} placeholder="Write your RTI story..." placeholderTextColor="#475569" multiline value={caption} onChangeText={setCaption} maxLength={300} />
+          <Text style={styles.charCount}>{caption.length}/300</Text>
+          <Text style={styles.tagLabel}>CATEGORY</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagRow}>
+            {tagOptions.map((t) => (
+              <TouchableOpacity key={t} style={[styles.tagChip, tag === t && styles.tagChipActive]} onPress={() => setTag(t)}>
+                <Text style={[styles.tagChipText, tag === t && styles.tagChipTextActive]}>{t}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <View style={styles.modalBtns}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose}><Text style={styles.cancelBtnText}>Cancel</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.postBtn} onPress={handlePost}><Text style={styles.postBtnText}>Post 🚀</Text></TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// Comments Modal
+function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditComment, onDeleteComment, onLikeComment }) {
+  const [text, setText] = useState('');
+  const [replyTo, setReplyTo] = useState(null);
+  const [editingCommentId, setEditingCommentId] = useState(null);
+  const [editingCommentText, setEditingCommentText] = useState('');
+  const [replyingToCommentId, setReplyingToCommentId] = useState(null);
+  const [replyText, setReplyText] = useState('');
+  const [expandedReplyThreads, setExpandedReplyThreads] = useState({});
+  const [currentUserEmail, setCurrentUserEmail] = useState(null);
+  const [currentUserName, setCurrentUserName] = useState(null);
+  const [currentUserAvatar, setCurrentUserAvatar] = useState('');
+  const keyboardInset = useKeyboardInset();
+  const { height: WH } = useWindowDimensions();
+  const safeComments = Array.isArray(comments) ? comments : [];
+
+  useEffect(() => {
+    if (visible) {
+      const getCurrentUser = async () => {
+        try {
+          const user = await UserStore.getCurrentUser();
+          if (user) {
+            if (user.email) {
+              setCurrentUserEmail(String(user.email).trim().toLowerCase());
+            }
+            const realName = String(user.name || user.full_name || user.username || user.email?.split('@')[0] || 'User');
+            setCurrentUserName(realName.trim());
+            setCurrentUserAvatar(String(user.profile_image || user.avatar || '').trim());
+          }
+        } catch (error) {
+          console.error('Error getting current user:', error);
+        }
+      };
+      getCurrentUser();
+      setExpandedReplyThreads({});
+    }
+  }, [visible]);
+  const totalCount = safeComments.reduce((sum, c) => sum + 1 + (Array.isArray(c.replies) ? c.replies.length : 0), 0);
+
+  const handleStartEdit = (comment) => {
+    setEditingCommentId(comment.id);
+    setEditingCommentText(comment.text);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingCommentId(null);
+    setEditingCommentText('');
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingCommentText.trim()) return;
+    if (onEditComment) {
+      await onEditComment(editingCommentId, editingCommentText.trim());
+    }
+    setEditingCommentId(null);
+    setEditingCommentText('');
+  };
+
+  const handleReplyComment = (commentId) => {
+    const nextReplyTarget = safeComments.find((comment) => comment.id === commentId) || null;
+    setReplyTo(nextReplyTarget);
+    setExpandedReplyThreads((prev) => ({ ...prev, [commentId]: true }));
+    setReplyingToCommentId(commentId);
+    setReplyText('');
+  };
+
+  const handleCancelReply = () => {
+    setReplyTo(null);
+    setReplyingToCommentId(null);
+    setReplyText('');
+  };
+
+  const handleSubmitReply = async () => {
+    if (!replyText.trim()) return;
+    if (onAddComment) {
+      await onAddComment(replyText.trim(), replyingToCommentId);
+    }
+    if (replyingToCommentId) {
+      setExpandedReplyThreads((prev) => ({ ...prev, [replyingToCommentId]: true }));
+    }
+    setReplyTo(null);
+    setReplyingToCommentId(null);
+    setReplyText('');
+  };
+
+  const handleToggleReplies = (commentId) => {
+    setExpandedReplyThreads((prev) => ({
+      ...prev,
+      [commentId]: !prev[commentId],
+    }));
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
+      >
+      <View style={styles.modalOverlay}>
+        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
+        <View style={[styles.commentsSheet, { height: WH * 0.86 }]}>
+          <View style={styles.sheetHandle} />
+          <Text style={styles.sheetTitle}>Comments {totalCount ? `(${totalCount})` : ''}</Text>
+          {post ? (
+            <View style={{ marginBottom: 10 }}>
+              {post.headline ? <Text style={styles.commentPostHeadline} numberOfLines={2}>{post.headline}</Text> : null}
+              {post.caption ? <Text style={styles.commentPostCaption} numberOfLines={2}>{post.caption}</Text> : null}
+            </View>
+          ) : null}
+          <ScrollView
+            style={{ flex: 1, minHeight: 120, marginBottom: 10 }}
+            contentContainerStyle={{ paddingBottom: 8 }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {safeComments.length === 0 && <Text style={styles.noComments}>No comments yet. Be the first! 👇</Text>}
+            {safeComments.map((c) => {
+              const ownerMatch = (
+                (currentUserEmail && String(c.author_email || '').trim().toLowerCase() === currentUserEmail) ||
+                (currentUserName && String(c.user || c.author || '').trim().toLowerCase() === currentUserName.trim().toLowerCase())
+              );
+              const liked = Array.isArray(c.liked_by) && currentUserEmail && c.liked_by.includes(currentUserEmail);
+              const replyCount = Array.isArray(c.replies) ? c.replies.length : 0;
+              const areRepliesExpanded = Boolean(expandedReplyThreads[c.id]);
+
+              return (
+                <View key={c.id} style={styles.commentRow}>
+                  <ProfileAvatar
+                    uri={getDisplayCommentAvatar(c)}
+                    size={34}
+                    style={styles.commentAvatar}
+                    imageStyle={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
+                    placeholderStyle={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                    iconColor="#ffffff"
+                  />
+                  <View style={styles.commentBubble}>
+                    <View style={styles.commentTopRow}>
+                      <Text style={styles.commentUser}>{c.user}</Text>
+                      <Text style={styles.commentDate}>{c.date || ''}{c.edited_at ? ' • Edited' : ''}</Text>
+                    </View>
+
+                    {editingCommentId === c.id ? (
+                      <TextInput
+                        style={styles.commentEditInput}
+                        value={editingCommentText}
+                        onChangeText={setEditingCommentText}
+                        multiline
+                      />
+                    ) : (
+                      <Text style={styles.commentText}>{c.text}</Text>
+                    )}
+
+                    <View style={styles.commentActionRow}>
+                      <TouchableOpacity
+                        style={[styles.commentActionBtn, liked && styles.commentActionBtnActive]}
+                        onPress={() => onLikeComment && onLikeComment(c.id)}
+                      >
+                        <Text style={[styles.commentActionText, liked && styles.commentActionTextActive]}>
+                          {liked ? '♥' : '♡'} {c.likes ? `(${c.likes})` : ''}
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.commentActionBtn}
+                        onPress={() => handleReplyComment(c.id)}
+                      >
+                        <Text style={styles.commentActionText}>Reply</Text>
+                      </TouchableOpacity>
+
+                      {ownerMatch ? (
+                        editingCommentId === c.id ? (
+                          <>
+                            <TouchableOpacity style={styles.commentMiniBtn} onPress={handleSaveEdit}>
+                              <Text style={styles.commentMiniBtnText}>Save</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.commentMiniBtn} onPress={handleCancelEdit}>
+                              <Text style={styles.commentMiniBtnText}>Cancel</Text>
+                            </TouchableOpacity>
+                          </>
+                        ) : (
+                          <>
+                            <TouchableOpacity style={styles.commentMiniBtn} onPress={() => handleStartEdit(c)}>
+                              <Text style={styles.commentMiniBtnText}>Edit</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.commentMiniBtn} onPress={() => onDeleteComment && onDeleteComment(c.id)}>
+                              <Text style={[styles.commentMiniBtnText, { color: '#ef4444' }]}>Delete</Text>
+                            </TouchableOpacity>
+                          </>
+                        )
+                      ) : null}
+                    </View>
+
+                    {replyingToCommentId === c.id && (
+                      <View style={styles.commentReplyForm}>
+                        <TextInput
+                          style={styles.commentReplyInput}
+                          placeholder="Write a reply..."
+                          placeholderTextColor="#94a3b8"
+                          value={replyText}
+                          onChangeText={setReplyText}
+                          multiline
+                        />
+                        <View style={styles.commentReplyActions}>
+                          <TouchableOpacity
+                            style={styles.commentReplyBtn}
+                            onPress={handleSubmitReply}
+                            disabled={!replyText.trim()}
+                          >
+                            <Text style={styles.commentReplyBtnText}>Reply</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.commentReplyBtn, styles.commentCancelBtn]}
+                            onPress={handleCancelReply}
+                          >
+                            <Text style={styles.commentCancelBtnText}>Cancel</Text>
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    )}
+
+                    {replyCount > 0 && (
+                      <View style={styles.commentRepliesWrap}>
+                        <TouchableOpacity
+                          style={styles.commentRepliesToggle}
+                          onPress={() => handleToggleReplies(c.id)}
+                          activeOpacity={0.8}
+                        >
+                          <View style={styles.commentRepliesLine} />
+                          <Text style={styles.commentRepliesToggleText}>
+                            {areRepliesExpanded
+                              ? 'Hide replies'
+                              : `View ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`}
+                          </Text>
+                        </TouchableOpacity>
+
+                        {areRepliesExpanded ? (
+                          <View style={styles.commentReplies}>
+                        {c.replies.map((reply) => {
+                          const replyOwnerMatch = (
+                            (currentUserEmail && String(reply.author_email || '').trim().toLowerCase() === currentUserEmail) ||
+                            (currentUserName && String(reply.user || reply.author || '').trim().toLowerCase() === currentUserName.trim().toLowerCase())
+                          );
+                          const replyLiked = Array.isArray(reply.liked_by) && currentUserEmail && reply.liked_by.includes(currentUserEmail);
+
+                          return (
+                            <View key={reply.id} style={styles.commentReplyItem}>
+                              <View style={styles.commentReplyRow}>
+                                <ProfileAvatar
+                                  uri={getDisplayCommentAvatar(reply)}
+                                  size={28}
+                                  style={styles.commentReplyAvatar}
+                                  imageStyle={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' }}
+                                  placeholderStyle={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                                  iconColor="#ffffff"
+                                />
+                                <View style={{ flex: 1 }}>
+                                  <View style={styles.commentTopRow}>
+                                    <Text style={styles.commentAuthor}>{reply.author || 'User'}</Text>
+                                    <Text style={styles.commentDate}>{reply.date || ''}{reply.edited_at ? ' • Edited' : ''}</Text>
+                                  </View>
+
+                                  {editingCommentId === reply.id ? (
+                                    <TextInput
+                                      style={styles.commentEditInput}
+                                      value={editingCommentText}
+                                      onChangeText={setEditingCommentText}
+                                      multiline
+                                    />
+                                  ) : (
+                                    <Text style={styles.commentText}>{reply.text}</Text>
+                                  )}
+
+                                  <View style={styles.commentActionRow}>
+                                    <TouchableOpacity
+                                      style={[styles.commentActionBtn, replyLiked && styles.commentActionBtnActive]}
+                                      onPress={() => onLikeComment && onLikeComment(reply.id)}
+                                    >
+                                      <Text style={[styles.commentActionText, replyLiked && styles.commentActionTextActive]}>
+                                        {replyLiked ? '♥' : '♡'} {reply.likes ? `(${reply.likes})` : ''}
+                                      </Text>
+                                    </TouchableOpacity>
+
+                                    {replyOwnerMatch ? (
+                                      editingCommentId === reply.id ? (
+                                        <>
+                                          <TouchableOpacity style={styles.commentMiniBtn} onPress={handleSaveEdit}>
+                                            <Text style={styles.commentMiniBtnText}>Save</Text>
+                                          </TouchableOpacity>
+                                          <TouchableOpacity style={styles.commentMiniBtn} onPress={handleCancelEdit}>
+                                            <Text style={styles.commentMiniBtnText}>Cancel</Text>
+                                          </TouchableOpacity>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <TouchableOpacity style={styles.commentMiniBtn} onPress={() => handleStartEdit(reply)}>
+                                            <Text style={styles.commentMiniBtnText}>Edit</Text>
+                                          </TouchableOpacity>
+                                          <TouchableOpacity style={styles.commentMiniBtn} onPress={() => onDeleteComment && onDeleteComment(reply.id)}>
+                                            <Text style={[styles.commentMiniBtnText, { color: '#ef4444' }]}>Delete</Text>
+                                          </TouchableOpacity>
+                                        </>
+                                      )
+                                    ) : null}
+                                  </View>
+                                </View>
+                              </View>
+                            </View>
+                          );
+                        })}
+                          </View>
+                        ) : null}
+                      </View>
+                    )}
+                  </View>
+                </View>
+              );
+            })}
+          </ScrollView>
+          <View style={[styles.commentInputRow, { paddingBottom: Platform.OS === 'android' ? Math.max(12, keyboardInset) : 12 }]}>
+            <ProfileAvatar uri={currentUserAvatar} size={32} style={{ marginRight: 10 }} />
+            <View style={{ flex: 1 }}>
+              {replyTo ? (
+                <View style={styles.replyingPill}>
+                  <Text style={styles.replyingText}>Replying to {replyTo.user}</Text>
+                  <TouchableOpacity onPress={() => setReplyTo(null)}>
+                    <Text style={styles.replyingClose}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+              <TextInput
+                style={styles.commentInput}
+                placeholder={replyTo ? `Reply to ${replyTo.user}...` : 'Write a comment...'}
+                placeholderTextColor="#475569"
+                value={text}
+                onChangeText={setText}
+              />
+            </View>
+            <TouchableOpacity style={styles.sendBtn} onPress={() => { if (!text.trim()) return; onAddComment(text.trim()); setText(''); }}>
+              <Text style={styles.sendBtnText}>➤</Text>
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity style={styles.closeBtn} onPress={onClose}><Text style={styles.closeBtnText}>Close</Text></TouchableOpacity>
+        </View>
+      </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// Action Column
+function ActionColumn({ post, onLike, onComment, onShare, onBookmark, onDescription, scaleAnim, isMobileLayout }) {
+  const formatCount = (n) =>
+    n >= 1_000_000 ? (n / 1_000_000).toFixed(1) + 'M' :
+    n >= 1_000 ? (n / 1_000).toFixed(1) + 'K' : String(n);
+
+  const likeCount    = formatCount(post.liked ? (Number(post.likes) + 1) : Number(post.likes));
+  const shareCount   = formatCount(Number(post.shares));
+  const commentCount = post.commentsCount ?? (Array.isArray(post.comments) ? post.comments.length : 0);
+
+  const sz = isMobileLayout ? 44 : 52;
+  const iconSz = isMobileLayout ? 22 : 26;
+
+  const circle = (bg) => ({
+    width: sz, height: sz, borderRadius: sz / 2,
+    backgroundColor: bg, alignItems: 'center', justifyContent: 'center', marginBottom: 3,
+  });
+
+  const textShadow = Platform.OS !== 'web'
+    ? { textShadowColor: 'rgba(0,0,0,0.9)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 }
+    : {};
+
+  const containerStyle = isMobileLayout
+  ? { position: 'absolute', right: 6, bottom: 100, alignItems: 'center', gap: 14, zIndex: 20 }
+    : { width: 90, paddingLeft: 16, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', height: '100%', gap: 22, flexShrink: 0 };
+
+  const btn          = { alignItems: 'center', gap: 2 };
+  const countStyle   = { color: '#fff', fontSize: 12, fontWeight: '700', ...textShadow };
+  const labelStyle   = { color: 'rgba(255,255,255,0.9)', fontSize: 11, fontWeight: '600', ...textShadow };
+
+  return (
+    <View style={containerStyle}>
+      <TouchableOpacity style={btn} onPress={() => onLike(post.id)} activeOpacity={0.75}>
+        <Animated.View style={[circle(post.liked ? 'rgba(255,59,92,0.28)' : 'rgba(0,0,0,0.5)'), { transform: [{ scale: scaleAnim }] }]}>
+          <HeartIcon filled={post.liked} size={iconSz} />
+        </Animated.View>
+        <Text style={[countStyle, { color: post.liked ? '#ff3b5c' : '#fff' }]}>{likeCount}</Text>
+        <Text style={labelStyle}>Like</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={btn} onPress={() => onComment(post.id)} activeOpacity={0.75}>
+        <View style={circle('rgba(0,0,0,0.5)')}><CommentIcon size={iconSz} /></View>
+        <Text style={countStyle}>{commentCount}</Text>
+        <Text style={labelStyle}>Comment</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={btn} onPress={() => onShare(post.id)} activeOpacity={0.75}>
+        <View style={circle('rgba(0,0,0,0.5)')}><ShareIcon size={iconSz} /></View>
+        <Text style={countStyle}>{shareCount}</Text>
+        <Text style={labelStyle}>Share</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity style={btn} onPress={() => onBookmark(post.id)} activeOpacity={0.75}>
+        <View style={circle(post.bookmarked ? 'rgba(249,115,22,0.3)' : 'rgba(0,0,0,0.5)')}>
+          <BookmarkIcon filled={post.bookmarked} size={iconSz} />
+        </View>
+        <Text style={labelStyle}>Save</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// Reel Card
+function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription, onProfilePress, onAdPress, onFollow, isActive, cardWidth, cardHeight, isMobileLayout }) {
+  const safePost = post || {};
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const [captionExpanded, setCaptionExpanded] = useState(false);
+ const [muted, setMuted] = useState(true);
+  const [paused, setPaused] = useState(false);
+  const [showPoster, setShowPoster] = useState(true);
+  const [thumbnailError, setThumbnailError] = useState(false);
+  const [resolvedMediaUri, setResolvedMediaUri] = useState(null);
+  const [playerReady, setPlayerReady] = useState(false);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followLoading, setFollowLoading] = useState(false);
+  const [currentUserEmail, setCurrentUserEmail] = useState(null);
+  const [currentUserHasBlueTick, setCurrentUserHasBlueTick] = useState(false);
+
+  const comments    = Array.isArray(safePost.comments) ? safePost.comments : [];
+  const caption     = String(safePost.caption || '');
+  const userName    = String(safePost.user || 'User');
+  const avatarUri   = String(safePost.avatar || safePost.author_profile_image || '');
+  const location    = String(safePost.location || safePost.author_seat_name || '');
+  const headline    = String(safePost.headline || '');
+  const role        = String(safePost.role || safePost.author_role || '');
+  const time        = String(safePost.time || '');
+  const postId      = String(safePost.id || '');
+  const authorEmail = String(safePost.createdBy || safePost.created_by || '').trim().toLowerCase();
+  const verified    = Boolean(
+    safePost.verified ||
+    safePost.author_has_blue_tick ||
+    safePost.has_blue_tick ||
+    safePost.authorHasBlueTick ||
+    safePost.createdByBlueTick ||
+    (authorEmail && currentUserEmail && authorEmail === currentUserEmail && currentUserHasBlueTick)
+  );
+  const shares      = Number(safePost.shares || 0);
+  const isAd        = Boolean(safePost.isAd);
+  const adRedirectMeta = isAd ? getAdRedirectMeta(safePost) : null;
+
+  useEffect(() => {
+    const initializeComponent = async () => {
+      try {
+        const currentUser = await UserStore.getCurrentUser();
+        if (currentUser && currentUser.email) {
+          setCurrentUserEmail(currentUser.email);
+          setCurrentUserHasBlueTick(UserStore.hasBlueTick(currentUser));
+        }
+        if (authorEmail && onFollow) {
+          const status = await UserStore.getFollowStatus(authorEmail);
+          setIsFollowing(status.isFollowing);
+        }
+      } catch (error) {
+        console.error('Error initializing component:', error);
+      }
+    };
+    initializeComponent();
+  }, [authorEmail, onFollow]);
+
+  const handleFollowPress = async () => {
+    if (!authorEmail || followLoading) return;
+    try {
+      const currentUser = await UserStore.getCurrentUser();
+      if (currentUser && currentUser.email === authorEmail) {
+        Alert.alert('Cannot Follow', 'You cannot follow yourself.');
+        return;
+      }
+    } catch (error) {
+      console.error('Error getting current user:', error);
+      Alert.alert('Error', 'Unable to verify user. Please try again.');
+      return;
+    }
+    setFollowLoading(true);
+    try {
+      if (isFollowing) {
+        await UserStore.unfollowUser(authorEmail);
+        setIsFollowing(false);
+      } else {
+        await UserStore.followUser(authorEmail);
+        setIsFollowing(true);
+      }
+    } catch (error) {
+      console.error('Error updating follow status:', error);
+      Alert.alert('Error', 'Unable to update follow status. Please try again.');
+    } finally {
+      setFollowLoading(false);
+    }
+  };
+
+  const [resolvedThumbnailUrl, setResolvedThumbnailUrl] = useState(null);
+
+  useEffect(() => {
+  let alive = true;
+  let objectUrl = null;
+  const t = safePost?.thumbnail || safePost?.image;
+  if (!t) { setResolvedThumbnailUrl(null); return; }
+  if (isIdbMediaUri(t)) {
+    resolveIdbMediaUriToObjectUrl(t).then((url) => {
+      if (!alive) { if (url) { try { URL.revokeObjectURL(url); } catch {} } return; }
+      objectUrl = url;
+      if (url) setResolvedThumbnailUrl(url);
+    });
+  } else {
+    setResolvedThumbnailUrl(t);
+  }
+  return () => {
+    alive = false;
+    try { if (objectUrl) URL.revokeObjectURL(objectUrl); } catch {}
+  };
+}, [safePost?.thumbnail, safePost?.image]);
+  const safeThumbnailUrl = useMemo(() => {
+    const t = resolvedThumbnailUrl;
+    if (!thumbnailError && t && (
+      t.startsWith('blob:') ||
+      t.startsWith('https://') ||
+      t.startsWith('http://') ||
+      isValidImageUrl(t)
+    )) {
+      return t;
+    }
+   // Agar thumbnail resolve nahi hua abhi, blank rakho — picsum mat dikhao
+return t || '';
+  }, [resolvedThumbnailUrl, thumbnailError, postId]);
+
+  const mediaUri = String(safePost.media || '').trim();
+
+  // ✅ FIX: Resolve IDB media URI to blob URL for web
+  useEffect(() => {
+    let alive = true;
+    let objectUrl = null;
+
+    (async () => {
+      if (Platform.OS !== 'web') { setResolvedMediaUri(null); return; }
+      if (!isIdbMediaUri(mediaUri)) { setResolvedMediaUri(null); return; }
+      const next = await resolveIdbMediaUriToObjectUrl(mediaUri);
+      if (!alive) { if (next) { try { URL.revokeObjectURL(next); } catch {} } return; }
+      objectUrl = next;
+      setResolvedMediaUri(next);
+    })();
+
+    return () => {
+      alive = false;
+      try { if (objectUrl) URL.revokeObjectURL(objectUrl); } catch {}
+    };
+  }, [mediaUri]);
+
+  // ✅ FIX: videoSource computed via useMemo so useVideoPlayer
+  //         re-initializes when the blob URL becomes available.
+  //         On web, IDB URIs wait for the resolved blob URL.
+  //         On native, use mediaUri directly.
+  const videoSource = useMemo(() => {
+    if (safePost.type !== 'video') return null;
+
+    if (Platform.OS === 'web' && isIdbMediaUri(mediaUri)) {
+      // Wait until IDB has been resolved to a blob URL
+      if (!resolvedMediaUri) return null;
+      return { uri: resolvedMediaUri };
+    }
+
+    if (!mediaUri || !isPlayableVideoSource(mediaUri)) return null;
+    return { uri: mediaUri };
+  }, [safePost.type, mediaUri, resolvedMediaUri]);
+
+  // ✅ FIX: canPlayVideo derived from videoSource (not effectiveMediaUri)
+  const canPlayVideo = Boolean(videoSource);
+
+  // ✅ FIX: useVideoPlayer uses videoSource — re-initializes when blob URL ready
+  const player = useVideoPlayer(videoSource, (p) => {
+  p.loop = true;
+  p.muted = false;   // ✅ start unmuted
+  p.volume = 1;      // ✅ full volume
+  p.autoplay = false;
+
+    p.addListener('statusChange', ({ status }) => {
+      if (status === 'readyToPlay') {
+        setPlayerReady(true);
+      }
+    });
+
+    p.addListener('playbackStateChange', ({ playbackState }) => {
+      if (playbackState === 'playing') {
+        setShowPoster(false);
+      }
+    });
+  });
+
+  // Reset poster/ready when video source changes
+  useEffect(() => {
+    setShowPoster(true);
+    setPlayerReady(false);
+  }, [videoSource]);
+
+  useEffect(() => { setCaptionExpanded(false); }, [postId]);
+
+  // Apply muted state to player
+  useEffect(() => {
+    if (!canPlayVideo || !player) return;
+    safeSetMuted(player, muted);
+  }, [canPlayVideo, muted, player]);
+
+  // Handle play/pause based on active state + player readiness
+  useEffect(() => {
+    if (!canPlayVideo || !player || !playerReady) return;
+
+    const playVideo = async () => {
+      if (isActive && !paused) {
+        try {
+          await safePlay(player);
+        } catch (error) {
+          console.log('Auto-play failed:', error);
+          setPaused(true);
+        }
+      } else {
+        safePause(player);
+      }
+    };
+
+    playVideo();
+  }, [canPlayVideo, isActive, paused, player, playerReady]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (player) {
+        safePause(player);
+        player.removeAllListeners();
+      }
+    };
+  }, [player]);
+
+  // Pause video when card scrolls out of view
+  useEffect(() => {
+    if (!canPlayVideo || !player) return;
+    if (!isActive) {
+      safePause(player);
+      setPaused(false);
+      setShowPoster(true);
+    }
+  }, [isActive, canPlayVideo, player]);
+
+  const handleVideoToggle = useCallback(() => {
+    if (isAd) {
+      onAdPress?.(safePost);
+      return;
+    }
+    if (!canPlayVideo || !player || !playerReady) return;
+
+    if (paused) {
+      setPaused(false);
+      setShowPoster(false);
+      safePlay(player);
+    } else {
+      safePause(player);
+      setPaused(true);
+      setShowPoster(true);
+    }
+  }, [canPlayVideo, isAd, onAdPress, paused, player, playerReady, safePost]);
+
+  const handleLikePress = () => {
+    Animated.sequence([
+      Animated.timing(scaleAnim, { toValue: 1.45, duration: 110, useNativeDriver: USE_NATIVE_DRIVER }),
+      Animated.timing(scaleAnim, { toValue: 1, duration: 110, useNativeDriver: USE_NATIVE_DRIVER }),
+    ]).start();
+    onLike(postId);
+  };
+
+  const navbarH = Platform.OS === 'ios' ? 60 : 56;
+const safeBot = Platform.OS === 'ios' ? 34 : 0;
+  const bottomBottom = isMobileLayout 
+    ? (Platform.OS === 'web' ? 80 : navbarH + safeBot + 12) 
+    : 28;
+  // const bottomRight = isMobileLayout ? 60 : 14;
+  const bottomRight = isMobileLayout ? 80 : 14;
+
+  const showPlayOverlay = paused && !showPoster && playerReady;
+
+  return (
+    <View style={{
+      width: cardWidth, 
+      height: cardHeight, 
+      backgroundColor: '#000',
+      flexDirection: isMobileLayout ? 'column' : 'row',
+      overflow: 'hidden',
+    }}>
+      <View style={{
+    flex: 1,
+    height: cardHeight,
+    position: 'relative', 
+    overflow: 'hidden',
+    backgroundColor: '#000',
+    borderRadius: isMobileLayout ? 0 : 12,
+    ...(Platform.OS === 'web' && isMobileLayout ? {
+      maxHeight: '100%',
+    } : {}),
+  }}>
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
+          onPress={handleVideoToggle}
+        >
+          {canPlayVideo ? (
+            <>
+              <VideoView
+                player={player}
+                style={[StyleSheet.absoluteFill, { width: '100%', height: '100%', backgroundColor: '#000' }]}
+                contentFit="cover"
+                nativeControls={false}
+                fullscreenOptions={{ enabled: false }}
+                playsInline
+              />
+              {showPoster && safeThumbnailUrl ? (
+                <Image
+                  source={{ uri: safeThumbnailUrl }}
+                  style={StyleSheet.absoluteFill}
+                  resizeMode="cover"
+                  onError={() => setThumbnailError(true)}
+                />
+              ) : null}
+            </>
+          ) : safeThumbnailUrl ? (
+            <Image
+              source={{ uri: safeThumbnailUrl }}
+              style={StyleSheet.absoluteFill}
+              resizeMode="cover"
+              onError={() => setThumbnailError(true)}
+            />
+          ) : null}
+        </TouchableOpacity>
+
+        <View style={{ ...styles.reelOverlayBottom, pointerEvents: 'none' }} />
+
+        {showPlayOverlay && (
+          <View style={[styles.pausedOverlay, Platform.OS === 'web' ? { pointerEvents: 'none' } : null]}>
+            <Text style={[styles.pausedIcon, { fontSize: 48 }]}>▶</Text>
+          </View>
+        )}
+
+        <View style={styles.reelTopBar}>
+          <TouchableOpacity
+            style={[styles.muteBtn, { backgroundColor: muted ? 'rgba(249,115,22,0.8)' : 'rgba(0,0,0,0.5)' }]}
+            onPress={() => setMuted(v => !v)}
+            activeOpacity={0.8}
+          >
+            <MuteIcon muted={muted} size={20} />
+          </TouchableOpacity>
+        </View>
+
+        {isMobileLayout ? (
+          <ActionColumn
+            post={{ ...safePost, likes: Number(safePost.likes || 0), shares, comments, commentsCount: safePost.commentsCount ?? comments.length }}
+            onLike={handleLikePress} onComment={onComment} onShare={onShare}
+            onBookmark={onBookmark} onDescription={onDescription}
+            scaleAnim={scaleAnim} isMobileLayout={true}
+          />
+        ) : null}
+
+        <View style={[styles.reelBottom, { bottom: bottomBottom, right: bottomRight }]}>
+          {safePost.tag ? (
+            <View style={[styles.reelTagBadge, { backgroundColor: String(safePost.tagColor || '#16a34a') }]}>
+              <Text style={styles.reelTagText}>{String(safePost.tag || '')}</Text>
+            </View>
+          ) : null}
+
+          <View style={styles.reelUserRow}>
+            <TouchableOpacity style={{ flexDirection: 'row', flex: 1, alignItems: 'center' }} onPress={() => onProfilePress(safePost)} activeOpacity={0.85}>
+              <ProfileAvatar uri={avatarUri} size={34} style={styles.reelUserAvatar} />
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text style={styles.reelUserName}>{userName}</Text>
+                  {Boolean(verified) ? <VerifiedBadge size={16} /> : null}
+                </View>
+                <Text style={styles.reelUserRole}>{role} · {time}</Text>
+              </View>
+            </TouchableOpacity>
+            {authorEmail && currentUserEmail !== authorEmail ? (
+              <TouchableOpacity
+                style={[styles.followBtn, isFollowing && styles.followBtnFollowing]}
+                onPress={handleFollowPress}
+                disabled={followLoading}
+                activeOpacity={0.8}
+              >
+                <Text style={[styles.followBtnText, isFollowing && styles.followBtnTextFollowing]}>
+                  {followLoading ? '...' : (isFollowing ? 'Following' : 'Follow')}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+
+          <View style={styles.reelLocationRow}>
+            <Text style={styles.reelLocationIcon}>📍</Text>
+            <Text style={styles.reelLocationText}>{location}</Text>
+          </View>
+
+          {headline ? <Text style={styles.reelHeadline}>{headline}</Text> : null}
+
+          <TouchableOpacity activeOpacity={0.85} onPress={() => onDescription(postId)}>
+            <Text style={styles.reelCaption} numberOfLines={captionExpanded ? undefined : 2}>{caption}</Text>
+            {caption.length > 80 && (
+              <Text style={styles.reelCaptionMore}>▼ Read More</Text>
+            )}
+          </TouchableOpacity>
+
+          {isAd && adRedirectMeta ? (
+            <TouchableOpacity
+              style={{
+                marginTop: 12,
+                alignSelf: 'flex-start',
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 8,
+                backgroundColor: '#f97316',
+                borderRadius: 999,
+                paddingHorizontal: 16,
+                paddingVertical: 10,
+                borderWidth: 1,
+                borderColor: 'rgba(255,255,255,0.35)',
+              }}
+              onPress={() => onAdPress?.(safePost)}
+              activeOpacity={0.86}
+            >
+              <Text style={{ color: '#ffffff', fontWeight: '900', fontSize: 13 }}>{adRedirectMeta.label}</Text>
+              <Text style={{ color: '#ffffff', fontWeight: '900', fontSize: 15 }}>›</Text>
+            </TouchableOpacity>
+          ) : null}
+
+          {(safePost.commentsCount > 0 || comments.length > 0) && (
+            <TouchableOpacity onPress={() => onComment(postId)} style={{ marginTop: 5 }}>
+              <Text style={styles.reelViewComments}>💬 View all {safePost.commentsCount ?? comments.length} comments</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {!isMobileLayout && (
+        <ActionColumn
+          post={{ ...safePost, likes: Number(safePost.likes || 0), shares, comments }}
+          onLike={handleLikePress} onComment={onComment} onShare={onShare}
+          onBookmark={onBookmark} onDescription={onDescription}
+          scaleAnim={scaleAnim} isMobileLayout={false}
+        />
+      )}
+    </View>
+  );
+}
+
+// Main Feed Screen
+export default function FeedScreen({ navigation }) {
+  const [posts, setPosts]               = useState([]);
+  const [uploadVisible, setUploadVisible] = useState(false);
+  const [commentPost, setCommentPost]   = useState(null);
+  const [sharePost, setSharePost]       = useState(null);
+  const [descPost, setDescPost]         = useState(null);
+  const [activeIndex, setActiveIndex]   = useState(0);
+  const [currentUser, setCurrentUser]   = useState({ name: 'User', email: '', avatar: '', has_blue_tick: false });
+  const [currentUserEmail, setCurrentUserEmail] = useState(null);
+  const [commentProfilesByEmail, setCommentProfilesByEmail] = useState({});
+  const [feedViewportHeight, setFeedViewportHeight] = useState(0);
+  const isScreenFocused = useIsFocused();
+
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+
+  const responsiveWidth = getResponsiveWindowWidth(windowWidth);
+  const isMobileLayout = Platform.OS !== 'web' || (() => {
+  if (typeof window === 'undefined') return false;
+  const ua = window.navigator?.userAgent || '';
+  const isMobileUA = /Android|iPhone|iPad|iPod|Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua);
+  const isNarrow = window.innerWidth <= 900;
+  return isMobileUA || isNarrow;
+})();
+  const isWebPlatform   = Platform.OS === 'web';
+
+ const WEB_TOPNAV_H = 0;
+const WEB_BOTTOMNAV_H = 0;
+  const NAVBAR_H = Platform.OS === 'ios' ? 94 : 70;
+const APPROX_NAVBAR_H = Platform.OS === 'web' ? 56 : (Platform.OS === 'ios' ? 94 : 70);
+
+const MOBILE_CHROME_BAR = (Platform.OS === 'web' && isMobileLayout) ? 0 : 0;
+const browserHeight = typeof window !== 'undefined' ? window.innerHeight : windowHeight;
+const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
+
+  const cardWidth = isMobileLayout ? responsiveWidth : Math.min(responsiveWidth * 0.65, 560);
+  // ✅ YAHAN ADD KARO — cardWidth ke bilkul baad:
+  const effectiveCardWidth = isMobileLayout && Platform.OS === 'web' && typeof window !== 'undefined'
+    ? window.innerWidth
+    : cardWidth;
+
+  const syncPostComments = useCallback(async (id) => {
+    try {
+      const summary = await UserStore.getNewsFeedSummary({ focusItemId: id });
+      const item = summary?.items?.find((entry) => String(entry.id) === String(id));
+      const rawComments = Array.isArray(item?.comments_list) ? item.comments_list : [];
+      const normalizedComments = rawComments.map((comment, index) =>
+        normalizeFeedComment(comment, `cmt-${index + 1}`, commentProfilesByEmail)
+      );
+
+      setPosts((prev) => prev.map((post) => (
+        post.id === id
+          ? {
+              ...post,
+              comments: normalizedComments,
+              commentsCount: countFeedComments(normalizedComments),
+            }
+          : post
+      )));
+    } catch {}
+  }, [commentProfilesByEmail]);
+
+  const handleLike = useCallback(async (id) => {
+    const targetPost = posts.find((post) => String(post.id) === String(id));
+    if (targetPost?.isAd) {
+      setPosts(prev => prev.map(p => p.id === id ? {
+        ...p,
+        liked: !p.liked,
+        likes: Math.max(0, Number(p.likes || 0) + (p.liked ? -1 : 1)),
+      } : p));
+      return;
+    }
+    setPosts(prev => prev.map(p => p.id === id ? { ...p, liked: !p.liked } : p));
+    try {
+      const result = await UserStore.updateNewsFeedItem(id, 'like');
+      if (result?.ok && typeof result.liked === 'boolean') {
+        setPosts(prev => prev.map(p => p.id === id ? { ...p, liked: result.liked } : p));
+      } else {
+        setPosts(prev => prev.map(p => p.id === id ? { ...p, liked: !p.liked } : p));
+      }
+    } catch {
+      setPosts(prev => prev.map(p => p.id === id ? { ...p, liked: !p.liked } : p));
+    }
+  }, [posts]);
+
+  const handleBookmark = useCallback(async (id) => {
+    const targetPost = posts.find((post) => String(post.id) === String(id));
+    if (targetPost?.isAd) {
+      setPosts(prev => prev.map(p => p.id === id ? { ...p, bookmarked: !p.bookmarked } : p));
+      return;
+    }
+    setPosts(prev => prev.map(p => p.id === id ? { ...p, bookmarked: !p.bookmarked } : p));
+    try {
+      const result = await UserStore.updateNewsFeedItem(id, 'bookmark');
+      if (result?.ok && typeof result.bookmarked === 'boolean') {
+        setPosts(prev => prev.map(p => p.id === id ? { ...p, bookmarked: result.bookmarked } : p));
+      } else {
+        setPosts(prev => prev.map(p => p.id === id ? { ...p, bookmarked: !p.bookmarked } : p));
+      }
+    } catch {
+      setPosts(prev => prev.map(p => p.id === id ? { ...p, bookmarked: !p.bookmarked } : p));
+    }
+  }, [posts]);
+
+  const handleComment = useCallback(async (id) => {
+    setCommentPost(id);
+    await syncPostComments(id);
+  }, [syncPostComments]);
+
+  const handleShare = useCallback((id) => {
+    setPosts(prev => prev.map(p => p.id === id ? { ...p, shares: (Number(p.shares) || 0) + 1 } : p));
+    setSharePost(id);
+  }, []);
+
+  const handleDescription = useCallback(async (id) => {
+    setDescPost(id);
+    await syncPostComments(id);
+  }, [syncPostComments]);
+
+  const handleAddComment = useCallback(async (text, replyToId = null, targetPostId = commentPost || descPost) => {
+    if (!targetPostId) return;
+    const tempId = Date.now().toString();
+    const currentAvatar = String(currentUser.avatar || currentUser.profile_image || '').trim();
+    const newComment = {
+      id: tempId,
+      user: currentUser.name || 'User',
+      author: currentUser.name || 'User',
+      author_email: currentUserEmail || '',
+      author_profile_image: currentAvatar,
+      avatar: currentAvatar,
+      text,
+      date: new Date().toISOString().split('T')[0],
+      likes: 0,
+      liked_by: [],
+    };
+
+    setPosts(prev =>
+      prev.map(p => p.id === targetPostId
+        ? {
+            ...p,
+            comments: replyToId
+              ? p.comments.map(c => c.id === replyToId
+                  ? { ...c, replies: [...(c.replies || []), newComment] }
+                  : c
+                )
+              : [...(Array.isArray(p.comments) ? p.comments : []), newComment],
+            commentsCount: (p.commentsCount ?? (Array.isArray(p.comments) ? p.comments.length : 0)) + 1,
+          }
+        : p)
+    );
+
+    try {
+      if (replyToId) {
+        await UserStore.replyNewsComment(targetPostId, replyToId, text);
+      } else {
+        await UserStore.addNewsComment(targetPostId, text);
+      }
+      await syncPostComments(targetPostId);
+    } catch {
+      await syncPostComments(targetPostId);
+    }
+  }, [commentPost, currentUser.avatar, currentUser.name, currentUser.profile_image, currentUserEmail, descPost, syncPostComments]);
+
+  const handleEditComment = useCallback(async (commentId, newText) => {
+    setPosts(prev =>
+      prev.map(p => ({
+        ...p,
+        comments: Array.isArray(p.comments) ? p.comments.map(c => {
+          if (c.id === commentId) return { ...c, text: newText, edited_at: new Date().toISOString() };
+          if (Array.isArray(c.replies)) {
+            return {
+              ...c,
+              replies: c.replies.map(r => r.id === commentId ? { ...r, text: newText, edited_at: new Date().toISOString() } : r)
+            };
+          }
+          return c;
+        }) : p.comments
+      }))
+    );
+    try {
+      await UserStore.editNewsComment(commentPost, commentId, newText);
+    } catch {}
+  }, [commentPost]);
+
+  const handleDeleteComment = useCallback(async (commentId) => {
+    setPosts(prev =>
+      prev.map(p => ({
+        ...p,
+        comments: Array.isArray(p.comments) ? p.comments.filter(c => {
+          if (c.id === commentId) return false;
+          if (Array.isArray(c.replies)) {
+            c.replies = c.replies.filter(r => r.id !== commentId);
+          }
+          return true;
+        }) : p.comments,
+        commentsCount: Math.max(0, (p.commentsCount ?? (Array.isArray(p.comments) ? p.comments.length : 0)) - 1)
+      }))
+    );
+    try {
+      await UserStore.deleteNewsComment(commentPost, commentId);
+    } catch {}
+  }, [commentPost]);
+
+  const handleLikeComment = useCallback(async (commentId) => {
+    setPosts(prev =>
+      prev.map(p => ({
+        ...p,
+        comments: Array.isArray(p.comments) ? p.comments.map(c => {
+          if (c.id === commentId) {
+            const liked = Array.isArray(c.liked_by) && currentUserEmail && c.liked_by.includes(currentUserEmail);
+            return {
+              ...c,
+              liked_by: liked
+                ? c.liked_by.filter(email => email !== currentUserEmail)
+                : [...(c.liked_by || []), currentUserEmail],
+              likes: liked ? (c.likes || 0) - 1 : (c.likes || 0) + 1
+            };
+          }
+          if (Array.isArray(c.replies)) {
+            return {
+              ...c,
+              replies: c.replies.map(r => {
+                if (r.id === commentId) {
+                  const liked = Array.isArray(r.liked_by) && currentUserEmail && r.liked_by.includes(currentUserEmail);
+                  return {
+                    ...r,
+                    liked_by: liked
+                      ? r.liked_by.filter(email => email !== currentUserEmail)
+                      : [...(r.liked_by || []), currentUserEmail],
+                    likes: liked ? (r.likes || 0) - 1 : (r.likes || 0) + 1
+                  };
+                }
+                return r;
+              })
+            };
+          }
+          return c;
+        }) : p.comments
+      }))
+    );
+    try {
+      await UserStore.likeNewsComment(commentPost, commentId);
+    } catch {}
+  }, [commentPost, currentUserEmail]);
+
+  const handleNewPost = useCallback(async ({ caption, headline, tag, mediaUri, mediaType }) => {
+  const isVideoPost = mediaType === 'Video';
+  const currentEmail = String(currentUser.email || currentUserEmail || '').trim().toLowerCase();
+  const mediaTypeMap = { None: 0, Image: 1, Video: 2, File: 3 };
+
+  // ✅ FIX: pehle backend pe asli news banao, tabhi like/comment/view kaam karenge
+  const apiResult = await AuthAPI.createNews({
+    title: headline || 'My RTI Story',
+    subTitle: '',
+    description: caption,
+    reportType: tag,
+    mediaType: mediaTypeMap[mediaType] ?? 0,
+    mediaUri,
+    mediaName: isVideoPost ? 'video.mp4' : 'image.jpg',
+    mediaMime: isVideoPost ? 'video/mp4' : 'image/jpeg',
+  });
+
+  if (!apiResult.ok) {
+    Alert.alert('Save failed', apiResult.message || 'Unable to save this reel. Please try again.');
+    return;
+  }
+
+  const backendNewsId = apiResult?.news?.id ?? apiResult?.data?.id ?? apiResult?.data?.news?.id;
+  if (!backendNewsId) {
+    Alert.alert('Save failed', 'News created but ID missing from server response.');
+    return;
+  }
+
+  const postId = String(backendNewsId);
+  const nextPost = {
+    id: postId,
+    user: currentUser.name || 'User',
+    avatar: currentUser.avatar || '',
+    verified: Boolean(currentUser.has_blue_tick), role: 'Citizen', location: 'India', time: 'Just now',
+    author_has_blue_tick: Boolean(currentUser.has_blue_tick),
+    type: isVideoPost ? 'video' : 'image',
+    media: mediaUri,
+    video: isVideoPost ? mediaUri : null,
+    thumbnail: mediaUri,
+    image: mediaUri,
+    headline: headline || 'My RTI Story',
+    caption, fullDescription: caption,
+    likes: 0, shares: 0, comments: [],
+    liked: false, bookmarked: false, tag, tagColor: '#16a34a',
+    createdAt: new Date().toISOString(),
+    createdBy: currentEmail,
+  };
+  setPosts(prev => [nextPost, ...prev]);
+
+  try {
+    const user = await UserStore.getCurrentUser();
+    if (!user?.email) return;
+    const newsItem = {
+      id: postId, // ✅ ab real backend id
+      title: headline || 'My RTI Story',
+      subtitle: caption,
+      description: caption,
+      mediaType,
+      images: isVideoPost ? [] : [mediaUri],
+      video: isVideoPost ? mediaUri : null,
+      image: isVideoPost ? '' : mediaUri,
+      thumbnail: isVideoPost ? '' : mediaUri,
+      file: null,
+      report_type: tag,
+      category: tag,
+      state: user.state || '', district: user.district || '', taluka: user.taluka || '',
+      status: 'approved',
+      createdBy: user.email,
+      author_name: user.name || 'User',
+      author_profile_image: user.profile_image || '',
+      author_has_blue_tick: UserStore.hasBlueTick(user),
+      author_is_premium: UserStore.hasPremiumAccess(user),
+      author_is_subscriber: UserStore.hasActiveSubscription(user),
+      author_role: user.role || 'free',
+      author_role_label: user.role_label || '',
+      author_seat_id: user.state_seat?.seat_id || '', author_seat_name: user.state_seat?.seat_name || '',
+      createdAt: new Date().toISOString(), date: new Date().toLocaleDateString('en-IN'),
+      views: 0, shares: 0, likes: 0, comments: 0, liked_by: [],
+    };
+    await UserStore.updateUser(user.email, { news: [newsItem, ...(Array.isArray(user.news) ? user.news : [])] });
+  } catch {
+    Alert.alert('Save failed', 'Unable to save this reel right now.');
+  }
+}, [currentUser, currentUserEmail]);
+
+const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
+    if (viewableItems.length > 0) setActiveIndex(viewableItems[0].index ?? 0);
+  });
+
+  const viewabilityConfigCallbackPairs = useRef([
+    {
+      viewabilityConfig: { itemVisiblePercentThreshold: 60 },
+      onViewableItemsChanged: (params) => onViewableItemsChangedRef.current(params),
+    },
+  ]).current;
+
+  const activeCommentData = posts.find(p => p.id === commentPost);
+  const activeShareData   = posts.find(p => p.id === sharePost);
+  const activeDescData    = posts.find(p => p.id === descPost);
+
+  useEffect(() => {
+    if (!isScreenFocused) {
+      setActiveIndex(-1);
+    }
+  }, [isScreenFocused]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      const fetchFeed = async () => {
+        try {
+          let nextProfileMap = {};
+          const reelsSummary = typeof UserStore.getReelsFeedSummary === 'function'
+            ? await UserStore.getReelsFeedSummary()
+            : null;
+          const summaryValue = reelsSummary?.items?.length
+            ? reelsSummary
+            : await UserStore.getNewsFeedSummary();
+          const userProfileValue = summaryValue?.currentUser || await UserStore.getCurrentUser();
+          if (!active) return;
+
+          const profileData = userProfileValue;
+          if (profileData) {
+            const realName   = profileData.name || profileData.full_name || profileData.username || profileData.email?.split('@')[0] || 'User';
+            const realAvatar = isValidImageUrl(profileData.avatar || profileData.profile_image) ? (profileData.avatar || profileData.profile_image) : null;
+            setCurrentUser({
+              name: realName,
+              email: String(profileData.email || '').trim().toLowerCase(),
+              avatar: realAvatar,
+              has_blue_tick: Boolean(UserStore.hasBlueTick(profileData)),
+            });
+            if (profileData.email) {
+              setCurrentUserEmail(String(profileData.email).trim().toLowerCase());
+            }
+          }
+
+          try {
+            const allUsers = await UserStore.getAllUsers();
+            if (active && Array.isArray(allUsers)) {
+              nextProfileMap = allUsers.reduce((acc, user) => {
+                const email = String(user?.email || '').trim().toLowerCase();
+                if (!email) return acc;
+                acc[email] = {
+                  name: String(user?.name || user?.full_name || user?.username || '').trim(),
+                  avatar: String(user?.profile_image || user?.avatar || '').trim(),
+                  profile_image: String(user?.profile_image || user?.avatar || '').trim(),
+                };
+                return acc;
+              }, {});
+              setCommentProfilesByEmail(nextProfileMap);
+            }
+          } catch {}
+
+          if (summaryValue?.items) {
+            const currentEmail = String(profileData?.email || '').trim().toLowerCase();
+            const sourceItems = summaryValue.items.map((item) => {
+  const videoUri = String(
+    typeof item.video === 'string' ? item.video : item.video?.uri || item.media || ''
+  ).trim();
+  const firstImage = Array.isArray(item.images)
+    ? item.images.find((u) => typeof u === 'string' && u.trim()) || ''
+    : '';
+  const imageUri = String(item.thumbnail || item.image || firstImage || '').trim();
+  const isVideo = Boolean(videoUri);
+
+  return {
+    ...item,
+    id: String(item.id || Date.now()),
+    type: isVideo ? 'video' : 'image',
+    media: isVideo ? videoUri : imageUri,
+    video: isVideo ? videoUri : null,
+    thumbnail: imageUri || '',
+    image: imageUri || '',
+    avatar: item.avatar || item.author_profile_image || '',
+    liked: Boolean(item.liked),
+    bookmarked: Boolean(item.bookmarked),
+    likes: Number(item.likes) || 0,
+    shares: Number(item.shares) || 0,
+  };
+});
+            const cleanedPosts = sourceItems.map((item) => {
+              const rawComments = Array.isArray(item.comments_list)
+                ? item.comments_list
+                : (Array.isArray(item.comments) ? item.comments : []);
+              const normalizedComments = rawComments.map((comment, index) =>
+                normalizeFeedComment(comment, `cmt-${item.id || 'post'}-${index + 1}`, nextProfileMap)
+              );
+
+              return {
+  ...item,
+  id: String(item.id || Date.now()),
+  avatar: isValidImageUrl(item.avatar) ? item.avatar : null,
+  media: item.media || '',
+  video: item.video || null,
+  thumbnail: item.thumbnail || null,
+image: item.image || null,
+  comments: normalizedComments,
+  commentsCount: Number(
+    item.commentsCount ??
+    item.comments_count ??
+    item.comments ??
+    countFeedComments(normalizedComments)
+  ),
+  likes: Number(item.likes) || 0,
+  shares: Number(item.shares) || 0,
+  liked: Boolean(item.liked),
+  bookmarked: Boolean(item.bookmarked),
+};
+            });
+            setPosts(cleanedPosts);
+          } else {
+            setPosts([]);
+          }
+        } catch (e) { console.log('Feed fetch error:', e); }
+      };
+      fetchFeed();
+      return () => { active = false; };
+    }, [])
+  );
+
+  const page = (
+    <View style={{ flex: 1, backgroundColor: '#000', overflow: 'hidden' }}>
+  {isWebPlatform ? <AppNavbar navigation={navigation} activeScreen="Feed" hideTopHeader={true} /> : null}
+
+      <View
+  style={{ flex: 1, backgroundColor: '#000', alignItems: isMobileLayout ? 'stretch' : 'center', justifyContent: 'flex-start', overflow: 'hidden' }}
+  onLayout={(event) => {
+    const nextHeight = Math.round(event?.nativeEvent?.layout?.height || 0);
+    if (nextHeight > 0 && nextHeight !== feedViewportHeight) {
+      setFeedViewportHeight(nextHeight);
+    }
+  }}
+>
+        <View style={{
+  width: isMobileLayout ? '100%' : effectiveCardWidth,
+  height: cardHeight, 
+  overflow: 'hidden',
+  ...(!isMobileLayout && responsiveWidth > MOBILE_BREAKPOINT
+    ? { borderLeftWidth: 1, borderRightWidth: 1, borderColor: 'rgba(255,255,255,0.06)' }
+    : {}),
+}}>
+          <FlatList
+            data={posts}
+            keyExtractor={item => item.id}
+            renderItem={({ item, index }) => (
+              <ReelCard
+                post={item}
+                onLike={handleLike}
+                onBookmark={handleBookmark}
+                onComment={handleComment}
+                onShare={handleShare}
+                onDescription={handleDescription}
+                onProfilePress={(postData) =>
+                  navigation.navigate('UserProfile', {
+                    email: String(postData.createdBy || postData.created_by || '').trim().toLowerCase(),
+                    author: {
+                      name: postData.user,
+                      author_profile_image: isValidImageUrl(postData.avatar) ? postData.avatar : null,
+                      author_role_label: postData.role,
+                      author_seat_name: postData.location,
+                      author_has_blue_tick: Boolean(postData.author_has_blue_tick || postData.verified),
+                      has_blue_tick: Boolean(postData.author_has_blue_tick || postData.verified),
+                      author_is_premium: Boolean(postData.author_is_premium),
+                      author_is_subscriber: false,
+                      createdBy: String(postData.createdBy || postData.created_by || '').trim().toLowerCase(),
+                    },
+                  })
+                }
+                onAdPress={(adPost) => openAdRedirect(adPost, navigation, {
+                  onProfilePress: (targetAd) =>
+                    navigation.navigate('UserProfile', {
+                      email: String(targetAd.createdBy || targetAd.created_by || '').trim().toLowerCase(),
+                      author: {
+                        name: targetAd.user,
+                        author_profile_image: isValidImageUrl(targetAd.avatar) ? targetAd.avatar : null,
+                        author_role_label: targetAd.role,
+                        author_seat_name: targetAd.location,
+                        author_has_blue_tick: Boolean(targetAd.author_has_blue_tick || targetAd.verified),
+                        has_blue_tick: Boolean(targetAd.author_has_blue_tick || targetAd.verified),
+                        createdBy: String(targetAd.createdBy || targetAd.created_by || '').trim().toLowerCase(),
+                      },
+                    }),
+                })}
+                onFollow={true}
+                isActive={index === activeIndex && isScreenFocused}
+                cardWidth={effectiveCardWidth}
+                cardHeight={cardHeight}
+                isMobileLayout={isMobileLayout}
+              />
+            )}
+            pagingEnabled
+            snapToInterval={cardHeight}
+            snapToAlignment="start"
+            decelerationRate="fast"
+            showsVerticalScrollIndicator={false}
+viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
+            getItemLayout={(_, index) => ({ length: cardHeight, offset: cardHeight * index, index })}
+            initialNumToRender={2}
+            maxToRenderPerBatch={2}
+            windowSize={3}
+            removeClippedSubviews={Platform.OS !== 'web'}
+            style={{ flex: 1 }}
+            contentContainerStyle={{ flexGrow: 0 }}
+          />
+        </View>
+      </View>
+
+      <UploadModal visible={uploadVisible} onClose={() => setUploadVisible(false)} onPost={handleNewPost} />
+
+      {activeCommentData ? (
+        <CommentsModal
+          visible={!!commentPost}
+          onClose={() => setCommentPost(null)}
+          post={activeCommentData}
+          comments={Array.isArray(activeCommentData?.comments) ? activeCommentData.comments.map(c => ({
+            ...c,
+            user: c.user || c.author || 'User',
+            text: c.text || '',
+          })) : []}
+          onAddComment={handleAddComment}
+          onEditComment={handleEditComment}
+          onDeleteComment={handleDeleteComment}
+          onLikeComment={handleLikeComment}
+        />
+      ) : null}
+
+      <ShareModal
+        visible={!!sharePost}
+        onClose={() => setSharePost(null)}
+        post={activeShareData}
+      />
+
+      <DescriptionModal
+        visible={!!descPost}
+        onClose={() => setDescPost(null)}
+        post={activeDescData}
+        onShare={() => { setDescPost(null); handleShare(descPost); }}
+        onAddComment={handleAddComment}
+        currentUser={currentUser}
+      />
+
+      {!isWebPlatform && (
+        <AppNavbar
+          navigation={navigation}
+          activeScreen="Feed"
+          hideTopHeader={true}
+        />
+      )}
+    </View>
+  );
+
+  return isWebPlatform && !isMobileLayout ? <WebLayout>{page}</WebLayout> : page;
+}

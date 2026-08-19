@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+
+    <!--
+      ✅ FIX 1: viewport-fit=cover
+      - iOS Safari mein notch aur address bar dono handle hoga
+      - user-scalable=no se zoom nahi hoga (app jaisa feel)
+    -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+
+    <!-- PWA / Mobile browser chrome -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="theme-color" content="#0a1628" />
+
+    <title>RTI News</title>
+
+    <style>
+      /*
+        ✅ FIX 2: CSS Variable approach
+        --app-height = real visible height (JS se set hoga)
+        Fallback: 100dvh (modern browsers) → 100vh (old browsers)
+      */
+      :root {
+        --app-height: 100dvh;
+        --sat: env(safe-area-inset-top, 0px);
+        --sab: env(safe-area-inset-bottom, 0px);
+        --sal: env(safe-area-inset-left, 0px);
+        --sar: env(safe-area-inset-right, 0px);
+      }
+
+      * {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      html {
+        height: 100%;
+        height: -webkit-fill-available;
+        background-color: #0a1628;
+        overflow: hidden;
+      }
+
+      body {
+        margin: 0;
+        padding: 0;
+        /* ✅ FIX 3: fill-available — iOS Safari ke liye */
+        height: 100%;
+        height: -webkit-fill-available;
+        min-height: var(--app-height);
+        background-color: #0a1628;
+        overflow: hidden;
+        /* ✅ FIX 4: bounce scroll band karo */
+        overscroll-behavior: none;
+        -webkit-overflow-scrolling: touch;
+        position: fixed;
+        width: 100%;
+      }
+
+      #root {
+        height: 100%;
+        height: var(--app-height);
+        width: 100%;
+        max-width: 100vw;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        background-color: #0a1628;
+        /* ✅ FIX 5: Safe area padding — notch wale phones ke liye */
+        padding-top: var(--sat);
+        padding-bottom: var(--sab);
+        padding-left: var(--sal);
+        padding-right: var(--sar);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script>
+      /**
+       * ✅ FIX 6: Real height set karo CSS variable mein
+       *
+       * Problem: mobile browsers mein window.innerHeight mein
+       * address bar ki height include hoti hai — isliye black space aata hai.
+       *
+       * Solution: visualViewport.height use karo — ye actual visible area hai.
+       */
+      function updateAppHeight() {
+        var h =
+          (window.visualViewport && window.visualViewport.height) ||
+          window.innerHeight ||
+          document.documentElement.clientHeight;
+
+        if (h > 0) {
+          document.documentElement.style.setProperty('--app-height', h + 'px');
+          var root = document.getElementById('root');
+          if (root) {
+            root.style.height = h + 'px';
+            root.style.maxHeight = h + 'px';
+          }
+        }
+      }
+
+      // Pehli baar
+      updateAppHeight();
+
+      // Keyboard open/close, orientation change, address bar show/hide
+      window.addEventListener('resize', updateAppHeight);
+      window.addEventListener('orientationchange', function () {
+        // Orientation change ke baad thoda delay dena padta hai
+        setTimeout(updateAppHeight, 200);
+        setTimeout(updateAppHeight, 500);
+      });
+
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', updateAppHeight);
+        window.visualViewport.addEventListener('scroll', updateAppHeight);
+      }
+
+      // Page visible hone par bhi update karo
+      document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) updateAppHeight();
+      });
+    </script>
+  </body>
+</html>
