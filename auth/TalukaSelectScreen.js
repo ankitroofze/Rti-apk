@@ -10,12 +10,14 @@ import {
   Platform,
   Modal,
   FlatList,
+  ImageBackground,
   StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold } from '@expo-google-fonts/roboto';
 import { UserStore } from '../store/UserStore';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../components/ui/ToastProvider';
@@ -161,6 +163,7 @@ const dropStyles = StyleSheet.create({
 });
 
 export default function TalukaSelectScreen({ navigation, route }) {
+  useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold });
   const { login } = useAuth();
   const { showPopup } = useToast();
   const { selectedState, selectedDistrict, fromPremium, needsCreateUser } = route.params || {};
@@ -189,7 +192,7 @@ export default function TalukaSelectScreen({ navigation, route }) {
 
   const talukaList = selectedDistrict ? getTalukas(selectedState, selectedDistrict) : [];
 
-  const goToHome = (userName) => {
+    const goToHome = (userName) => {
     navigation.replace('Home', {
       fromRegistration: true,
       registrationJustCompleted,
@@ -197,48 +200,32 @@ export default function TalukaSelectScreen({ navigation, route }) {
     });
   };
 
-  const syncRegistrationLocation = async (pending, talukaValue = '') => {
+  const goToVillageSelect = (talukaValue) => {
+    navigation.replace('VillageSelect', {
+      selectedState,
+      selectedDistrict,
+      selectedTaluka: talukaValue,
+      fromPremium,
+      needsCreateUser: false, // account/taluka already saved neeche — VillageSelect sirf update karega
+    });
+  };
+
+  // Registration (verified email OTP ke saath) Register screen par hi server par ho chuki hoti hai.
+  // Yahan sirf location server par update hoti hai.
+  const syncRegistrationLocation = async (talukaValue = '') => {
     try {
-      const apiResult = await AuthAPI.register({
-        firstName: (pending.name || '').split(' ')[0] || '',
-        middleName: '',
-        lastName: (pending.name || '').split(' ').slice(1).join(' ') || '',
-        mobile: pending.mobile || '',
-        email: pending.email,
-        password: pending.password,
-        referralCode: pending.referral_code_used || '',
-      });
-
-      if (!apiResult.ok) {
-        console.warn('[TalukaSelect] Register API failed:', apiResult.message);
-        return;
-      }
-
-      const token = apiResult.token || apiResult.data?.authorization?.token || null;
-
-      if (!token) {
-        console.warn('[TalukaSelect] No token in register response');
-        return;
-      }
-
-      await AsyncStorage.setItem('auth_token', token);
-      if (typeof localStorage !== 'undefined') {
-        localStorage.setItem('auth_token', token);
-      }
-
       const stateResult = await AuthAPI.updateState({
         state: selectedState,
         district: selectedDistrict,
         taluka: talukaValue,
-      }, token);
-
-      if (!stateResult.ok) {
-        console.warn('[TalukaSelect] State API failed:', stateResult.message);
-      }
+      });
+      if (!stateResult.ok) console.warn('[TalukaSelect] State API failed:', stateResult.message);
     } catch (error) {
       console.warn('[TalukaSelect] API sync failed:', error);
     }
   };
+
+
   const handleComplete = async () => {
     if (!taluka.trim()) {
       showPopup('Please select or enter your taluka', 'error');
@@ -250,46 +237,53 @@ export default function TalukaSelectScreen({ navigation, route }) {
       const pending = await UserStore.getPendingRegistration();
       if (!pending?.email) {
         showPopup('Registration data not found. Please register again.', 'error');
+        allowLeaveRef.current = true;
         navigation.replace('Register');
         return;
       }
 
-      const created = await UserStore.saveUser({
+           const created = await UserStore.saveUser({
         name: pending.name, mobile: pending.mobile, email: pending.email,
         referral_code_used: pending.referral_code_used || null,
         password: pending.password, state: selectedState,
         district: selectedDistrict, taluka: talukaValue,
+        profile_image: pending.profile_image || '',
+        bio: pending.bio || '',
       });
 
       if (created && !created.ok) {
-        showPopup(created.message || 'Registration failed. Please try again.', 'error');
+        // Account server par ban chuka hai (Register screen par) — sirf local copy save nahi hui.
+        // Login karte hi profile server se sync ho jaati hai.
+        await UserStore.clearPendingRegistration();
+        allowLeaveRef.current = true;
+        showPopup('Your account has been created. Please sign in to continue.', 'success');
+        navigation.replace('Login');
         return;
       }
 
       await UserStore.setCurrentUser(pending.email);
       login();
-      await UserStore.completeLocationSetup(pending.email, selectedState, selectedDistrict, talukaValue);
+          await UserStore.completeLocationSetup(pending.email, selectedState, selectedDistrict, talukaValue);
       await UserStore.clearPendingRegistration();
 
-      syncRegistrationLocation(pending, talukaValue);
+      syncRegistrationLocation(talukaValue);
 
-      goToHome(pending.name);
+      goToVillageSelect(talukaValue);
       return;
     }
-
     const user = await UserStore.getCurrentUser();
-    if (!user) { navigation.replace('Login'); return; }
+    if (!user) { allowLeaveRef.current = true; navigation.replace('Login'); return; }
 
     const result = await UserStore.completeLocationSetup(user.email, selectedState, selectedDistrict, talukaValue);
     if (!result) { showPopup('Failed to save location. Please try again.', 'error'); return; }
     // API update
-    AuthAPI.updateState({
+      AuthAPI.updateState({
       state:    selectedState,
       district: selectedDistrict,
       taluka:   talukaValue,
     }).catch(() => {});
 
-    goToHome(user.name);
+    goToVillageSelect(talukaValue);
   };
 
   const handleSkip = async () => {
@@ -297,19 +291,26 @@ export default function TalukaSelectScreen({ navigation, route }) {
       const pending = await UserStore.getPendingRegistration();
       if (!pending?.email) {
         showPopup('Registration data not found. Please register again.', 'error');
+        allowLeaveRef.current = true;
         navigation.replace('Register');
         return;
       }
 
-      const created = await UserStore.saveUser({
+              const created = await UserStore.saveUser({
         name: pending.name, mobile: pending.mobile, email: pending.email,
         referral_code_used: pending.referral_code_used || null,
         password: pending.password, state: selectedState,
         district: selectedDistrict, taluka: '',
+        profile_image: pending.profile_image || '',
+        bio: pending.bio || '',
       });
-
       if (created && !created.ok) {
-        showPopup(created.message || 'Registration failed. Please try again.', 'error');
+        // Account server par ban chuka hai (Register screen par) — sirf local copy save nahi hui.
+        // Login karte hi profile server se sync ho jaati hai.
+        await UserStore.clearPendingRegistration();
+        allowLeaveRef.current = true;
+        showPopup('Your account has been created. Please sign in to continue.', 'success');
+        navigation.replace('Login');
         return;
       }
 
@@ -318,23 +319,23 @@ export default function TalukaSelectScreen({ navigation, route }) {
       await UserStore.completeLocationSetup(pending.email, selectedState, selectedDistrict, '');
       await UserStore.clearPendingRegistration();
 
-      syncRegistrationLocation(pending, '');
+      syncRegistrationLocation('');
 
       goToHome(pending.name);
       return;
     }
 
     const user = await UserStore.getCurrentUser();
-    if (!user) { navigation.replace('Login'); return; }
+    if (!user) { allowLeaveRef.current = true; navigation.replace('Login'); return; }
 
     await UserStore.completeLocationSetup(user.email, selectedState, selectedDistrict, '');
     goToHome(user.name);
   };
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+    <SafeAreaView style={{ flex: 1 }} edges={[]}>
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.root}>
+      <ImageBackground source={require('../assets/images/profile-red.png')} resizeMode="cover" style={styles.root}>
         <View style={[styles.glow, styles.glowTop]} />
         <View style={[styles.glow, styles.glowBottom]} />
 
@@ -352,8 +353,8 @@ export default function TalukaSelectScreen({ navigation, route }) {
               activeOpacity={0.7}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons name="arrow-back-outline" size={18} color="#8a8078" />
-                <Text style={{ color: '#8a8078', fontWeight: '800', fontSize: 13 }}>Back</Text>
+                <Ionicons name="arrow-back" size={18} color="#ffffff" />
+                <Text style={{ color: '#ffffff', fontWeight: '800', fontSize: 13, fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold' }}>Back</Text>
               </View>
             </TouchableOpacity>
 
@@ -394,8 +395,10 @@ export default function TalukaSelectScreen({ navigation, route }) {
                   onPress={handleComplete}
                   disabled={!taluka}
                 >
-                  <Text style={styles.submitBtnText}>Complete Setup</Text>
-                  <Ionicons name="checkmark" size={18} color="#ffffff" />
+                  <LinearGradient colors={['#ffffff', '#f8fafc', '#f1f5f9']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.loginButtonGradient}>
+                    <Text style={styles.submitBtnText}>Complete Setup</Text>
+                    <Ionicons name="checkmark" size={18} color="#B91C1C" />
+                  </LinearGradient>
                 </TouchableOpacity>
               </>
             ) : (
@@ -421,8 +424,10 @@ export default function TalukaSelectScreen({ navigation, route }) {
                   onPress={handleComplete}
                   disabled={!taluka.trim()}
                 >
-                  <Text style={styles.submitBtnText}>Complete Setup</Text>
-                  <Ionicons name="checkmark" size={18} color="#ffffff" />
+                  <LinearGradient colors={['#ffffff', '#f8fafc', '#f1f5f9']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.loginButtonGradient}>
+                    <Text style={styles.submitBtnText}>Complete Setup</Text>
+                    <Ionicons name="checkmark" size={18} color="#B91C1C" />
+                  </LinearGradient>
                 </TouchableOpacity>
               </>
             )}
@@ -444,7 +449,7 @@ export default function TalukaSelectScreen({ navigation, route }) {
             onClose={() => setTalukaModal(false)}
           />
         )}
-      </View>
+      </ImageBackground>
     </KeyboardAvoidingView>
     </SafeAreaView>
   );

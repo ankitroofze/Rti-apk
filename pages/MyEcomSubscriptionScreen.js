@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { UserStore } from '../store/UserStore';
 import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
+import { getCardTheme, getNativeThemeImage } from '../constants/subscriptionThemes';
 
 export default function MyEcomSubscriptionScreen({ navigation }) {
   const insets = useSafeAreaInsets();
@@ -52,8 +53,10 @@ const load = useCallback(async () => {
             countLabel={sub ? `${credits} listing credit${credits === 1 ? '' : 's'} remaining` : null}
             purchasedAt={sub?.purchased_at}
             expiresAt={sub?.expires_at}
-            buyButtonLabel="Subscribe to E-Commerce Plan"
+                      buyButtonLabel="Subscribe to E-Commerce Plan"
             onBuyPress={() => navigation.navigate('EcomSubscription', { redirectTo: 'My Ecom Subscription' })}
+            themeImage={getNativeThemeImage(getCardTheme(3))}
+            textColor="#ffffff"
           />
         )}
       </ScrollView>

@@ -1,6 +1,8 @@
 ﻿import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  ImageBackground,
+  Platform,
   SafeAreaView,
   ScrollView,
   StatusBar,
@@ -13,7 +15,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFonts, Roboto_400Regular, Roboto_700Bold } from '@expo-google-fonts/roboto';
 import { UserStore } from '../store/UserStore';
+import ModuleWebHeader from '../components/Modulewebheader';
 
 const notify = (title, message) => {
   if (typeof alert !== 'undefined') {
@@ -51,6 +55,7 @@ const ActionButton = ({ icon, label, onPress, color, cardWidth }) => (
 );
 
 export default function CommerceAdsCenterScreen({ navigation }) {
+  const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_700Bold });
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
   const [user, setUser] = useState(null);
@@ -135,23 +140,31 @@ export default function CommerceAdsCenterScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.root}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <View style={{ height: insets.top, backgroundColor: '#fff' }} />
+         <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
-      <View style={[styles.header, { paddingHorizontal: horizontalPadding }]}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => navigation.goBack()}
-          activeOpacity={0.85}
+      {/* Web header — same shared red header as Settings/Wallet */}
+      <ModuleWebHeader title="Commerce Hub" navigation={navigation} />
+
+      {/* Native header — same red image design as Settings screen */}
+      {Platform.OS !== 'web' && (
+        <ImageBackground
+          source={require('../assets/images/profile-red.png')}
+          resizeMode="cover"
+          style={[styles.header, { paddingHorizontal: horizontalPadding, paddingTop: insets.top + 8 }]}
         >
-          <Ionicons name="chevron-back" size={22} color="#334155" />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Commerce Hub</Text>
-          <Text style={styles.headerSub}>Manage listings and enquiries</Text>
-        </View>
-      </View>
-
+          <TouchableOpacity
+            style={styles.backBtn}
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="chevron-back" size={22} color="#ffffff" />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>Commerce Hub</Text>
+            <Text style={styles.headerSub}>Manage listings and enquiries</Text>
+          </View>
+        </ImageBackground>
+      )}
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
@@ -248,28 +261,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 14,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
     gap: 12,
   },
   backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f5f9',
   },
   headerTitle: {
     fontSize: 19,
     fontWeight: '800',
-    color: '#0f172a',
+    color: '#ffffff',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
   },
   headerSub: {
     fontSize: 13,
-    color: '#64748b',
+    color: '#ffffff',
     marginTop: 2,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
   },
   scrollContent: {
     alignItems: 'center',
@@ -295,15 +305,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  welcomeTitle: {
+   welcomeTitle: {
     fontSize: 18,
     fontWeight: '800',
     color: '#0f172a',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
   },
   welcomeSub: {
     fontSize: 13,
     color: '#295e20',
     marginTop: 2,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
   },
   statsGrid: {
     flexDirection: 'row',

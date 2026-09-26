@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
-
+import { LinearGradient } from 'expo-linear-gradient';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const RESPONSIVE_SCREEN_WIDTH = getResponsiveWindowWidth(SCREEN_WIDTH);
 
@@ -83,7 +83,7 @@ function LanguageSelector({ compact = false }) {
         activeOpacity={0.8}
       >
         <Text style={s.langBtnIcon}>🌐</Text>
-        <Text style={[s.langBtnText, compact && s.langBtnTextCompact]}>
+        <Text style={[s.langBtnText, compact && s.langBtnTextCompact]} numberOfLines={1}>
           {selected.native}
         </Text>
         <Text style={s.langChevron}>{open ? '▴' : '▾'}</Text>
@@ -183,15 +183,25 @@ export default function AppHeader({ navigation, compact = false }) {
           </TouchableOpacity>
         </View>
 
-        {/* Row 2: Language + SignIn */}
+            {/* Row 2: Language + SignIn */}
         <View style={s.mobileRow2}>
-          <LanguageSelector compact />
+          <View style={{ flexShrink: 1, minWidth: 0 }}>
+            <LanguageSelector compact />
+          </View>
           <TouchableOpacity
-            style={s.signInBtn}
+            style={s.signInBtnWrap}
             onPress={() => navigation?.navigate('Login')}
+            activeOpacity={0.85}
           >
-            <Text style={s.signInIcon}>{'👤'}</Text>
-            <Text style={s.signInText}>{'Sign IN'}</Text>
+            <LinearGradient
+              colors={['#fdba74', '#f97316', '#c2410c']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={s.signInBtn}
+            >
+              <Text style={s.signInIcon}>{'👤'}</Text>
+              <Text style={s.signInText}>{'Sign IN'}</Text>
+            </LinearGradient>
           </TouchableOpacity>
         </View>
 
@@ -284,21 +294,26 @@ const s = StyleSheet.create({
     color: '#f97316',
     textAlign: 'center',
   },
-  mobileRow2: {
+   mobileRow2: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 12,
     paddingBottom: 8,
     zIndex: 1000,
+    gap: 8,
   },
 
-  // ── Sign In Button (mobile) — FIX: ye styles missing thi ──
+  // ── Sign In Button (mobile) ──
+  signInBtnWrap: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    flexShrink: 0, // 👈 ye kabhi cut/shrink nahi hoga, hamesha poora dikhega
+  },
   signInBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    backgroundColor: '#f97316',
     borderRadius: 20,
     paddingHorizontal: 13,
     paddingVertical: 7,

@@ -20,6 +20,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useToast } from '../components/ui/ToastProvider';
 import { UserStore } from '../store/UserStore';
 import styles from '../styles/CertificatePreviewStyles';
+import { getAwardeeFontSize } from '../utils/profileHelpers';
+import { getQuizResultTier } from '../utils/quizResultLogic';
 
 /* ── IMAGES ── */
 const CERT_TEMPLATE   = require('../assets/images/certificate_template_v3.png');
@@ -55,6 +57,15 @@ const escapeHtml = (value = '') =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+
+const formatIssueDate = (value) => {
+  if (!value) return new Date().toLocaleDateString('en-IN');
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return String(value).split('T')[0];
+  return d.toLocaleDateString('en-IN', {
+    day: '2-digit', month: 'short', year: 'numeric',
+  });
+};
 
 const mimeTypeFromUri = (uri = '') => {
   const normalized = String(uri).toLowerCase().split('?')[0];
@@ -115,7 +126,7 @@ const resolvePhotoUriForHtml = async (uri) => {
   return str;
 };
 
-const buildCertificateHtml = ({ images, userName, issueDate, photoUri }) => `
+const buildCertificateHtml = ({ images, userName, issueDate, photoUri, resultTier }) => `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -160,11 +171,12 @@ const buildCertificateHtml = ({ images, userName, issueDate, photoUri }) => `
       font-size: ${11 * FONT_SCALE}px; font-weight: 700;
     }
     .ribbon { top: 26%; left: 8%; width: 84%; height: 9%; object-fit: contain; }
-    .awardee-name {
-      top: 36%; left: 8%; right: 8%;
-      color: #b00000; text-align: center;
-      font-size: ${22 * FONT_SCALE}px; font-weight: 800;
-    }
+      .awardee-name {
+  top: 36%; left: 6%; right: 6%;
+  color: #b00000; text-align: center;
+  font-size: ${getAwardeeFontSize(userName, 18) * FONT_SCALE}px; font-weight: 800;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
     .passed-text {
       top: 41%; left: 10%; right: 10%;
       color: #3a2a1a; text-align: center;
@@ -175,9 +187,9 @@ const buildCertificateHtml = ({ images, userName, issueDate, photoUri }) => `
       position: absolute; top: 48%; left: 8%; right: 8%;
       text-align: center;
     }
-    .excellent { width: 98%; height: auto; object-fit: contain; }
-    .since-text {
-      top: 56%; left: 12%; right: 12%;
+        .result-badge { display: inline-block; padding: ${4 * FONT_SCALE}px ${12 * FONT_SCALE}px; border: 1.5px solid ${resultTier.color}; border-radius: ${14 * FONT_SCALE}px; color: ${resultTier.color}; font-size: ${10 * FONT_SCALE}px; font-weight: 800; }
+     .since-text {
+      top: 52%; left: 12%; right: 12%;
       color: #3a2a1a; text-align: center;
       font-size: ${9.5 * FONT_SCALE}px; line-height: ${14 * FONT_SCALE}px;
     }
@@ -200,12 +212,12 @@ const buildCertificateHtml = ({ images, userName, issueDate, photoUri }) => `
       font-size: ${7.5 * FONT_SCALE}px; line-height: ${11 * FONT_SCALE}px;
     }
     .signatory-role .small { color: #555555; font-size: ${7 * FONT_SCALE}px; }
-    .photo-wrapper { position: absolute; top: 67%; right: 5%; width: 28%; height: 18%; }
+    .photo-wrapper { position: absolute; top: 66%; right: 4%; width: 31%; height: 20%; }
     .photo-frame { inset: 0; width: 100%; height: 100%; object-fit: fill; }
-    .photo-inner {
-      position: absolute; top: 12%; left: 21%; right: 21%; bottom: 30%;
-      overflow: hidden; border-radius: 6px; background: #dddddd;
-    }
+   .photo-inner {
+  position: absolute; top: 9%; left: 17%; right: 17%; bottom: 24%;
+  overflow: hidden; border-radius: 6px; background: #dddddd;
+}
     .photo-inner img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .photo-placeholder {
       width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
@@ -217,10 +229,11 @@ const buildCertificateHtml = ({ images, userName, issueDate, photoUri }) => `
       display: flex; align-items: center; justify-content: center;
     }
     .date-banner { position: absolute; left: 0; top: 0; width: 75%; height: 100%; object-fit: fill; }
-    .date-banner-text {
-      position: relative; margin-right: ${59 * FONT_SCALE}px;
-      color: #3a2a1a; font-size: ${9 * FONT_SCALE}px; font-weight: 600;
-    }
+   .date-banner-text {
+  position: relative; margin-right: ${45 * FONT_SCALE}px;
+  color: #3a2a1a; font-size: ${9.5 * FONT_SCALE}px; font-weight: 600;
+  white-space: nowrap;
+}
     .footer-note {
       bottom: 11%; left: 12%; right: 12%;
       color: #555555; text-align: center; font-style: italic;
@@ -256,7 +269,7 @@ const buildCertificateHtml = ({ images, userName, issueDate, photoUri }) => `
       <p class="text awardee-name">${escapeHtml(userName)}</p>
       <p class="text passed-text">has successfully passed the examination conducted by
 <strong>Bhartiya Mahiti Adhikar</strong> with</p>
-      <div class="result-wrap"><img class="excellent" src="${images.excellent}" alt="" /></div>
+      <div class="result-wrap"><span class="result-badge">${resultTier.dot} ${escapeHtml(resultTier.result)} — ${escapeHtml(resultTier.badge)}</span></div>
       <p class="text since-text">Subjected to the movement of Right to Information in the
 organisational social work field since <span class="highlight">"15th"</span> Years</p>
       <p class="text congrats">Congratulations on your
@@ -312,7 +325,7 @@ export default function CertificatePreviewScreen({ navigation, route }) {
         if (Platform.OS === 'web') {
           try {
             const userNameForHtml = user?.name || result?.user_name || 'Participant';
-            const issueDateForHtml = result?.date || new Date().toLocaleDateString('en-IN');
+           const issueDateForHtml = formatIssueDate(result?.date);
             const photoForHtml = user?.profile_image || result?.user_photo || '';
 
             const [
@@ -377,6 +390,7 @@ export default function CertificatePreviewScreen({ navigation, route }) {
               userName: userNameForHtml,
               issueDate: issueDateForHtml,
               photoUri: resolvedPhotoUri,
+              resultTier: getQuizResultTier(result?.percentage),
             })
               .replace('%BODY_CLASS%', 'preview')
               .replace('%PAGE_CLASS%', 'scale')
@@ -394,8 +408,9 @@ export default function CertificatePreviewScreen({ navigation, route }) {
   );
 
   const userName = currentUser?.name || result?.user_name || 'Participant';
-  const issueDate = result?.date || new Date().toLocaleDateString('en-IN');
+ const issueDate = formatIssueDate(result?.date);
   const photoUri = currentUser?.profile_image || result?.user_photo || '';
+  const resultTier = getQuizResultTier(result?.percentage);
 
   const handleDownload = async () => {
     setDownloading(true);
@@ -450,6 +465,7 @@ export default function CertificatePreviewScreen({ navigation, route }) {
         userName,
         issueDate,
         photoUri: resolvedPhotoUri,
+        resultTier,
       })
         .replace('%BODY_CLASS%', '')
         .replace('%PAGE_CLASS%', '')
@@ -497,6 +513,7 @@ export default function CertificatePreviewScreen({ navigation, route }) {
           userName,
           issueDate,
           photoUri: resolvedPhotoUri,
+          resultTier,
         })
           .replace('%BODY_CLASS%', '')
           .replace('%PAGE_CLASS%', '')
@@ -548,10 +565,11 @@ export default function CertificatePreviewScreen({ navigation, route }) {
       <View style={[styles.customHeader, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity 
           style={styles.backButton}
-          onPress={() => navigation.goBack()}
+          onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Certification'))}
           activeOpacity={0.7}
         >
-          <Feather name="arrow-left" size={24} color="#333" />
+          <Feather name="arrow-left" size={25} color="#111" />
+          <Text style={styles.backButtonText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Certificate Preview</Text>
         <View style={styles.headerPlaceholder} />
@@ -602,7 +620,13 @@ export default function CertificatePreviewScreen({ navigation, route }) {
              
 
               {/* ── USER NAME ── */}
-              <Text style={styles.awardeeName}>{userName}</Text>
+                          <Text
+                style={[styles.awardeeName, { fontSize: getAwardeeFontSize(userName, 18) }]}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                {userName}
+              </Text>
 
               {/* ── PASSED TEXT ── */}
               <Text style={styles.passedText}>
@@ -612,7 +636,9 @@ export default function CertificatePreviewScreen({ navigation, route }) {
 
               {/* ── EXCELLENT RESULT IMAGE ── */}
               <View style={styles.resultContainer}>
-                <Image source={EXCELLENT_IMG} style={styles.excellentIcon} resizeMode="contain" />
+                <Text style={[styles.resultBadgeText, { color: resultTier.color, borderColor: resultTier.color }]}>
+                  {resultTier.dot} {resultTier.result} — {resultTier.badge}
+                </Text>
               </View>
 
               {/* ── SINCE TEXT ── */}

@@ -9,10 +9,29 @@ import {
   StyleSheet,
   StatusBar,
   Platform,
+  Image,
+  ImageBackground,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SUBSCRIPTION_CARD_THEMES } from '../constants/subscriptionThemes';
+
+// ✅ Subscription header wala hi red asset — sidebar bhi isi se match karega.
+// Metro web build me require(png) khud hi ek usable value deta hai — kabhi
+// plain string URL, kabhi { uri } object — dono cases handle kar rahe hain.
+const _redAsset = SUBSCRIPTION_CARD_THEMES[1].image;
+const SIDEBAR_RED_URI =
+  Platform.OS === 'web'
+    ? (typeof _redAsset === 'string'
+        ? _redAsset
+        : (typeof Image.resolveAssetSource === 'function'
+            ? (Image.resolveAssetSource(_redAsset)?.uri || _redAsset?.uri || '')
+            : (_redAsset?.uri || _redAsset?.default || '')))
+    : '';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../contexts/AuthContext';
+import { UserStore } from '../store/UserStore';
+import { getProfileTier } from '../utils/profileHelpers';
+import { PROFILE_TIERS } from '../constants/profileConstants';
 import ProfileScreen from '../pages/ProfileScreen';
 import AddNewsScreen from '../pages/Addnewsscreen';
 import NewsFeedScreen from '../pages/NewsFeedScreen';
@@ -35,7 +54,7 @@ const FONT_FAMILY = Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto';
 // ─────────────────────────────────────────────
 const QM_CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap');
-  html, body, #root { height: 100%; margin: 0; padding: 0; overflow: hidden; background: #f5f4f0; }
+  html, body, #root { height: 100%; margin: 0; padding: 0; overflow: hidden; background: #fff; }
   ::-webkit-scrollbar { display: none; }
   * { scrollbar-width: none; -ms-overflow-style: none; box-sizing: border-box; font-family: 'Roboto', sans-serif; }
   @keyframes qmFadeUp {
@@ -50,7 +69,7 @@ const QM_CSS = `
   .qm-live-icon { animation: qmBlink 1.3s ease-in-out infinite; }
   .qm-card.is-live { border-color: #fb7185 !important; }
   .qm-card.is-live:hover { box-shadow: 0 6px 20px rgba(225,29,72,0.18) !important; }
-  .qm-root { display: flex; flex-direction: column; height: 100vh; overflow: hidden; font-family: 'Roboto', sans-serif; background: #f5f4f0; }
+  .qm-root { display: flex; flex-direction: column; height: 100vh; overflow: hidden; font-family: 'Roboto', sans-serif; background: #fff; }
   .qm-topbar { height: 60px; background: #fff; border-bottom: 1px solid rgba(0,0,0,0.07); display: flex; align-items: center; padding: 0 24px; gap: 14px; flex-shrink: 0; }
   .qm-logo { font-family: 'Roboto', sans-serif; font-size: 20px; color: #1e293b; flex: 1; font-weight: 600; }
   .qm-logo span { color: #94a3b8; }
@@ -85,57 +104,47 @@ const QM_CSS = `
   .qm-card:active { transform: scale(0.97); }
   .qm-card.danger { background: #fff1f2; border-color: #fecdd3; }
   .qm-card.danger:hover { border-color: #fda4af; }
-  .qm-card.ecome { background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border-color: #86efac; }
+  .qm-card.ecome { background: linear-gradient(180deg, #79070d 0%, #a7010c 45%, #8f000a 100%); border-color: #86efac; }
   .qm-card.ecome:hover { border-color: #4ade80; box-shadow: 0 6px 24px rgba(22,163,74,0.12); }
   .qm-card-icon { width: 44px; height: 44px; border-radius: 6px; display: flex; align-items: center; justify-content: center; }
   .qm-card-name { font-size: 14px; font-weight: 600; color: #1e293b; margin-bottom: 3px; font-family: 'Roboto', sans-serif; }
   .qm-card-desc { font-size: 12px; color: #94a3b8; line-height: 1.4; font-family: 'Roboto', sans-serif; font-weight: 400; }
   .qm-card-arrow { position: absolute; top: 15px; right: 14px; font-size: 13px; color: #e2e8f0; }
   .qm-card-badge { position: absolute; top: 13px; right: 34px; font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 20px; letter-spacing: 0.6px; text-transform: uppercase; font-family: 'Roboto', sans-serif; }
-  .qm-root { width: 100vw; min-height: 100vh; height: 100vh; background: #f8fafc; align-items: stretch; justify-content: stretch; padding: 0; }
-  .qm-shell { width: 100vw; height: 100vh; display: grid; grid-template-columns: 216px minmax(0, 1fr); background: #fffdfb; border: 1px solid #fed7aa; border-radius: 0; overflow: hidden; box-shadow: none; }
+  .qm-root { width: 100vw; min-height: 100vh; height: 100vh; background: #fff; align-items: stretch; justify-content: stretch; padding: 0; }
+  .qm-shell { width: 100vw; height: 100vh; display: grid; grid-template-columns: 216px minmax(0, 1fr); background: #fff; border: 0; border-radius: 0; overflow: hidden; box-shadow: none; }
   .qm-topbar { display: none; }
   .qm-body { display: contents; }
-  .qm-sidebar {
+      .qm-sidebar {
     width: auto;
-    border-right: 1px solid #f1e8e0;
-    background: linear-gradient(180deg, #fff8f3 0%, #fffaf7 100%);
+    background: var(--qm-sidebar-bg, #9d0410);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
     padding: 0;
     overflow-y: auto;
     overflow-x: hidden;
     display: flex;
     flex-direction: column;
   }
-  .qm-back-btn {
+  .qm-brand {
+    height: 60px;
+    box-sizing: border-box;
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin: 14px 16px 0;
-    padding: 7px 10px;
-    border-radius: 6px;
-    color: #64748b;
-    font-size: 12px;
-    font-weight: 700;
-    cursor: pointer;
-    width: fit-content;
-    transition: background 0.15s, color 0.15s;
-    font-family: 'Roboto', sans-serif;
-  }
-  .qm-back-btn:hover { background: #fff7ed; color: #ea580c; }
-  .qm-brand {
     font-size: 20px;
     line-height: 26px;
     font-weight: 600;
-    color: #0f172a;
-    padding: 22px 20px 18px;
-    border-bottom: 1px solid #ffe8d6;
+    color: #ffffff;
+    padding: 0 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.25);
     margin-bottom: 8px;
     letter-spacing: -0.5px;
     font-family: 'Roboto', sans-serif;
   }
-  .qm-brand span { color: #ea580c; }
-  .qm-sec-title {
-    color: #f97316;
+  .qm-brand span { color: #ffe4d1; }
+   .qm-sec-title {
+    color: rgba(255,255,255,0.75);
     font-size: 9px;
     letter-spacing: 2.5px;
     font-weight: 600;
@@ -148,31 +157,31 @@ const QM_CSS = `
     padding: 10px 16px;
     margin: 1px 10px;
     border-radius: 6px;
-    color: #64748b;
+    color: #ffffff;
     font-size: 13px;
     font-weight: 600;
     transition: all 0.15s;
     font-family: 'Roboto', sans-serif;
   }
   .qm-nav-item:hover {
-    color: #ea580c;
-    background: #fff7ed;
+    color: #ffffff;
+    background: rgba(255,255,255,0.18);
     transform: translateX(2px);
   }
   .qm-nav-item.active {
-    background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%) !important;
-    color: #9a3412 !important;
+    background: #ffffff !important;
+    color: #c2410c !important;
     font-weight: 800;
-    border-left: 3px solid #ea580c;
+    border-left: 3px solid #ffffff;
     padding-left: 13px;
-    box-shadow: 0 2px 8px rgba(234,88,12,0.1);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
   }
-  .qm-nav-item.danger { color: #e11d48 !important; }
-  .qm-nav-item.danger:hover { background: #fff1f2 !important; }
+  .qm-nav-item.danger { color: #ffe4e6 !important; }
+  .qm-nav-item.danger:hover { background: rgba(225,29,72,0.25) !important; }
   .qm-nav-icon { width: 22px !important; height: 22px !important; background: transparent !important; }
-  .qm-divider { display: block; height: 1px; background: linear-gradient(90deg, transparent, #ffe8d6, transparent); margin: 6px 16px; }
-  .qm-main { position: relative; padding: 26px 28px 32px; overflow-y: auto; background: #fffdfb; }
-  .qm-main::after { content: '•••'; position: absolute; top: 10px; right: 12px; color: #92400e; font-size: 13px; letter-spacing: 1px; }
+  .qm-divider { display: block; height: 1px; background: rgba(255,255,255,0.25); margin: 6px 16px; }
+  .qm-main { position: relative; padding: 26px 28px 32px; overflow-y: auto; background: #fff; }
+  .qm-main::after { display: none; }
   .qm-page-header { display: none; }
   .qm-stats { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0 0 22px; width: 100%; }
   .qm-stat { min-height: 134px; border-radius: 6px; padding: 24px 16px 16px; background: #fff; box-shadow: none; }
@@ -229,21 +238,35 @@ const QM_CSS = `
   }
   .qm-shell { grid-template-columns: 256px minmax(0, 1fr); }
   .qm-sidebar { height: 100vh; overflow-y: auto; }
-  .qm-module-item.active { background: #ffedd5 !important; color: #9a3412 !important; }
+    .qm-module-item.active { background: #ffffff !important; color: #9d0410 !important; }
   .qm-module-item.danger { color: #e11d48 !important; }
-  .qm-content-panel { min-width: 0; height: 100vh; overflow: auto; background: #f8fafc; }
-  .qm-main { padding: 0 !important; overflow: hidden !important; background: #f8fafc !important; }
+ .qm-content-panel { min-width: 0; height: 100vh; overflow: hidden; background: #fff; display: flex; flex-direction: column; }
+  .qm-main { padding: 0 !important; overflow: hidden !important; background: #fff !important; }
   .qm-main > .qm-page-header,
   .qm-main > .qm-stats,
   .qm-main > div[class^="qm-section-"] { display: none !important; }
-  .qm-embedded-page { height: 100vh; overflow: auto; }
-  .qm-embedded-page > div { min-height: 100%; }
+  .qm-embedded-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+  .qm-embedded-page > div {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
   @media (max-width: 760px) {
     html, body, #root { overflow: auto; }
     .qm-root { height: auto; min-height: 100vh; overflow: auto; }
     .qm-shell { width: 100vw; height: auto; min-height: 100vh; display: block; grid-template-columns: 1fr !important; overflow: visible; border-width: 0; }
     .qm-sidebar { display: none !important; }
-    .qm-main { height: auto !important; min-height: 100vh; overflow: auto !important; padding: 14px !important; background: #fffdfb !important; }
+    .qm-main { height: auto !important; min-height: 100vh; overflow: auto !important; padding: 14px !important; background: #fff !important; }
     .qm-content-panel { display: none !important; }
     .qm-main > .qm-page-header,
     .qm-main > .qm-stats,
@@ -359,7 +382,7 @@ const ICON_STYLES = {
 // Single uniform icon color/background used everywhere (cards + list rows)
 // so icons no longer differ per category. Destructive (Logout) and the
 // active sidebar item still get their own colors on purpose.
-const UNIFORM_ICON = { bg: '#fff7ed', border: '#fed7aa', color: '#ea580c' };
+const UNIFORM_ICON = { bg: '#fff7ed', border: '#fed7aa', color: '#94a3b8' };
 
 const CARD_DESCS = {
   'Post News': 'Share a story with your network',
@@ -402,6 +425,30 @@ const WEB_MODULES = [
 function QuickMenuWeb({ navigation }) {
   const { logout } = useAuth();
   const [activeScreen, setActiveScreen] = React.useState('Profile');
+  const [profileTier, setProfileTier] = React.useState(PROFILE_TIERS.common);
+
+  React.useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const user = await UserStore.getCurrentUser();
+      if (mounted && user) setProfileTier(getProfileTier({ ...user, has_blue_tick: UserStore.hasBlueTick(user) }));
+    })();
+    return () => { mounted = false; };
+  }, [activeScreen]);
+
+  React.useEffect(() => {
+    if (typeof document === 'undefined') return;
+    // Profile open ho to profile-owner ki exact tier artwork sidebar me bhi
+    // dikhe. Baaki sab modules par normal profile-red artwork return hota hai.
+    const activeAsset = activeScreen === 'Profile' ? profileTier?.bgImage : _redAsset;
+    const uri = typeof activeAsset === 'string'
+      ? activeAsset
+       : (typeof Image.resolveAssetSource === 'function'
+          ? (Image.resolveAssetSource(activeAsset)?.uri || activeAsset?.uri || SIDEBAR_RED_URI)
+          : (activeAsset?.uri || activeAsset?.default || SIDEBAR_RED_URI));
+    const bg = uri ? `url("${uri}")` : '#9d0410';
+    document.documentElement.style.setProperty('--qm-sidebar-bg', bg);
+  }, [activeScreen, profileTier]);
   const [isMobileWeb, setIsMobileWeb] = React.useState(() => {
     return Platform.OS === 'web' && typeof window !== 'undefined' && window.innerWidth <= 760;
   });
@@ -482,12 +529,8 @@ function QuickMenuWeb({ navigation }) {
       </div>
 
       <div className="qm-shell">
-        <aside className="qm-sidebar">
-          <div className="qm-back-btn" onClick={() => navigation.navigate('Home')}>
-            <Ionicons name="chevron-back" size={16} color="inherit" />
-            <span>Back</span>
-          </div>
-          <div className="qm-brand">News<span>Hub</span></div>
+             <aside className="qm-sidebar">
+                    <div className="qm-brand">RTI India <span>News</span></div>
           {[{ title: 'Navigation', items: WEB_MODULES }].map((section) => (
             <div key={section.title}>
               <div className="qm-sec-title">{section.title}</div>
@@ -501,10 +544,10 @@ function QuickMenuWeb({ navigation }) {
                     className="qm-nav-icon"
                     style={{ width: 26, height: 26, borderRadius: 6, background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                   >
-                    <Ionicons
+                                   <Ionicons
                       name={item.icon}
                       size={16}
-                      color={item.isDestructive ? '#e11d48' : item.screen === activeScreen ? '#9a3412' : UNIFORM_ICON.color}
+                                           color={item.isDestructive ? '#ffe4e6' : item.screen === activeScreen ? '#9d0410' : '#ffffff'}
                     />
                   </div>
                   <span>{item.label}</span>
@@ -618,17 +661,20 @@ function QuickMenuMobile({ navigation }) {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <View style={{ height: insets.top, backgroundColor: '#fff' }} />
-      <View style={styles.header}>
+     <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <ImageBackground
+        source={require('../assets/images/profile-red.png')}
+        resizeMode="cover"
+        style={[styles.header, { paddingTop: insets.top + 8 }]}
+      >
         <TouchableOpacity onPress={() => navigation.navigate('Home')} style={styles.backBtn} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={20} color="#334155" />
+          <Ionicons name="chevron-back" size={24} color="#ffffff" />
         </TouchableOpacity>
         <View>
           <Text style={styles.headerTitle}>Quick Menu</Text>
           <Text style={styles.headerSubtitle}>Access all features quickly</Text>
         </View>
-      </View>
+      </ImageBackground>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.listContainer, { paddingBottom: insets.bottom + 20 }]}
@@ -647,16 +693,16 @@ function QuickMenuMobile({ navigation }) {
                   onPress={() => handlePress(item)}
                   activeOpacity={0.6}
                 >
-                  {isLive ? (
-                    <BlinkBadge style={[styles.iconWrap, { backgroundColor: style.bg, borderColor: style.border }]}>
-                      <Ionicons name={item.icon} size={21} color={style.color} />
+                             {isLive ? (
+                    <BlinkBadge style={styles.iconWrap}>
+                      <Ionicons name={item.icon} size={30} color={style.color} />
                     </BlinkBadge>
                   ) : (
-                    <View style={[styles.iconWrap, { backgroundColor: style.bg, borderColor: style.border }]}>
-                      <Ionicons name={item.icon} size={21} color={style.color} />
+                    <View style={styles.iconWrap}>
+                      <Ionicons name={item.icon} size={30} color={style.color} />
                     </View>
                   )}
-                  <View style={{ flex: 1 }}>
+                                    <View style={{ flex: 1, justifyContent: 'center' }}>
                     <Text style={[styles.label, item.isDestructive && styles.labelDestructive, isEcome && styles.ecomeLabel, isLive && styles.liveLabel]}>
                       {item.label}
                     </Text>
@@ -703,55 +749,47 @@ const styles = StyleSheet.create({
     alignItems: 'center', 
     gap: 12, 
     paddingHorizontal: 16, 
-    paddingVertical: 12, 
-    backgroundColor: '#ffffff', 
-    borderBottomWidth: 1, 
-    borderBottomColor: '#f1f5f9' 
+    paddingBottom: 5, 
   },
   backBtn: { 
     width: 36, 
     height: 36, 
-    borderRadius: 6, // ✅ Border radius 6px
     alignItems: 'center', 
     justifyContent: 'center', 
-    backgroundColor: '#f8fafc', 
-    borderWidth: 1, 
-    borderColor: '#e2e8f0' 
   },
-  headerTitle: { 
+ headerTitle: { 
     fontSize: 15, 
-    fontWeight: '600', // ✅ Weight 600
-    color: '#0f172a',
-    fontFamily: FONT_FAMILY, // ✅ Roboto font
+    fontWeight: '400',
+    color: '#ffffff',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
   },
   headerSubtitle: { 
     fontSize: 11, 
-    color: '#94a3b8', 
+    color: '#ffffff', 
     marginTop: 1,
-    fontFamily: FONT_FAMILY,
-    fontWeight: '500',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
+    fontWeight: '400',
   },
   listContainer: { paddingHorizontal: 14, paddingTop: 4 },
-  sectionLabel: { 
+ sectionLabel: { 
     fontSize: 10, 
-    fontWeight: '600', // ✅ Weight 600
+    fontWeight: '400',
     color: '#94a3b8', 
     letterSpacing: 1.1, 
     textTransform: 'uppercase', 
     paddingTop: 16, 
     paddingBottom: 6, 
     paddingHorizontal: 4,
-    fontFamily: FONT_FAMILY,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
   },
-  listItem: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    paddingVertical: 9, 
-    paddingHorizontal: 10, 
-    borderRadius: 6, // ✅ Border radius 6px
-    gap: 13, 
-    marginBottom: 2 
-  },
+ listItem: { 
+  flexDirection: 'row', 
+  alignItems: 'center',   // 👈 ye line honi chahiye
+  paddingVertical: 12,     // 9 se bada kar do thoda breathing space ke liye
+  paddingHorizontal: 10, 
+  gap: 13, 
+  marginBottom: 2 
+},
   ecomeItem: {
     backgroundColor: '#f0fdf4',
     borderWidth: 1,
@@ -793,20 +831,19 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   iconWrap: { 
-    width: 40, 
-    height: 40, 
-    borderRadius: 6, // ✅ Border radius 6px
+    width: 48, 
+    height: 48, 
     alignItems: 'center', 
     justifyContent: 'center', 
-    borderWidth: 1 
   },
-  label: { 
-    flex: 1, 
-    fontSize: 14, 
-    fontWeight: '600', // ✅ Weight 600
-    color: '#1e293b',
-    fontFamily: FONT_FAMILY,
-  },
+ label: { 
+  flex: 1, 
+  fontSize: 17,              // bada kiya (16/14 se)
+  lineHeight: 20,             // 👈 ye add karo — vertical center thik karega
+  fontWeight: '500',          // thoda bold ("font width bada")
+  color: '#1e293b',
+  fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
+},
   labelDestructive: { 
     color: '#e11d48' 
   },

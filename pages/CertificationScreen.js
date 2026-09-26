@@ -1,46 +1,51 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
+  Image,
   Platform,
   ScrollView,
   StatusBar,
   Text,
   TouchableOpacity,
   View,
+  ImageBackground,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useToast } from '../components/ui/ToastProvider';
 import CertificationStyles from '../styles/CertificationStyles';
 import { UserStore } from '../store/UserStore';
-
+import { MODULE_HEADER_HEIGHT_WEB } from '../constants/subscriptionThemes';
+import ModuleWebHeader from '../components/Modulewebheader';
 // Compact "input-style" dropdown — click to open a small anchored menu, not a full-screen modal.
-function DropdownField({ label, value, options, onChange, placeholder = 'Select', disabled = false }) {
+function DropdownField({ label, value, options, onChange, placeholder = 'Select', disabled = false, icon = 'chevron-down' }) {
   const [open, setOpen] = useState(false);
   const selected = options.find((o) => o.value === value);
   return (
-    <View style={{ flex: 1, alignItems: 'center' }}>
-      <Text style={[CertificationStyles.sectionTitle, { textAlign: 'center', marginBottom: 8 }]}>{label}</Text>
+    <View style={{ flex: 1 }}>
+      <Text style={{ fontSize: 14, fontWeight: '800', color: '#111111', marginBottom: 8 }}>{label}</Text>
       <TouchableOpacity
         activeOpacity={disabled ? 1 : 0.7}
         onPress={() => !disabled && setOpen((o) => !o)}
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          justifyContent: 'space-between',
           borderWidth: 1,
-          borderColor: '#E5E7EB',
-          borderRadius: 8,
+          borderColor: '#EDE8E1',
+          borderRadius: 10,
           paddingHorizontal: 12,
           paddingVertical: 10,
-     minWidth: Platform.OS === 'web' ? 160 : 108,
           backgroundColor: disabled ? '#F9FAFB' : '#fff',
         }}
       >
+        <View style={{ width: 30, height: 30, borderRadius: 8, backgroundColor: '#FDECEC', alignItems: 'center', justifyContent: 'center', marginRight: 10 }}>
+          <Feather name={icon} size={14} color="#dc2626" />
+        </View>
         <Text
           numberOfLines={1}
-          style={{ color: selected ? '#111827' : '#9CA3AF', fontSize: 13, fontWeight: '600', marginRight: 6 }}
+          style={{ flex: 1, color: selected ? '#111827' : '#9CA3AF', fontSize: 13, fontWeight: '600', marginRight: 6 }}
         >
           {selected ? selected.label : placeholder}
         </Text>
@@ -52,12 +57,13 @@ function DropdownField({ label, value, options, onChange, placeholder = 'Select'
           style={{
             position: 'absolute',
             top: 66,
+            left: 0,
+            right: 0,
             zIndex: 30,
             backgroundColor: '#fff',
             borderWidth: 1,
             borderColor: '#E5E7EB',
             borderRadius: 8,
-            minWidth: 120,
             paddingVertical: 4,
             shadowColor: '#000',
             shadowOpacity: 0.12,
@@ -72,7 +78,7 @@ function DropdownField({ label, value, options, onChange, placeholder = 'Select'
               style={{ paddingVertical: 9, paddingHorizontal: 14 }}
               onPress={() => { onChange(o.value); setOpen(false); }}
             >
-              <Text style={{ fontSize: 13, color: o.value === value ? '#F97316' : '#374151', fontWeight: o.value === value ? '700' : '500' }}>
+              <Text style={{ fontSize: 13, color: o.value === value ? '#dc2626' : '#374151', fontWeight: o.value === value ? '700' : '500' }}>
                 {o.label}
               </Text>
             </TouchableOpacity>
@@ -136,13 +142,13 @@ const [difficulty, setDifficulty] = useState(null);
 
   // Har filter change par aur jab bhi screen focus me aaye (Back se QuickMenu se wapas
   // aane par bhi) records fetch honge — filter chuna ho ya nahi.
-  useEffect(() => { loadCertification(); }, [loadCertification]);
-  useFocusEffect(useCallback(() => { loadCertification(); }, [loadCertification]));
+   useEffect(() => { loadCertification(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useFocusEffect(useCallback(() => { loadCertification(); }, [])); // eslint-disable-line react-hooks/exhaustive-deps
 
   const promptSubscriptionRequired = useCallback(() => {
     Alert.alert(
       'Subscription Required',
-      'Certificate dekhne ya download karne ke liye subscription lena zaroori hai.',
+     'A subscription is required to view or download the certificate.',
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Take Subscription', onPress: () => navigation.navigate('Subscription Plans') },
@@ -153,7 +159,7 @@ const handleAttemptQuiz = useCallback((item) => {
     // Result already record ho chuka hai (Pass ya Fail dono) — dobara attempt allowed nahi,
     // naya attempt lene ke liye user ko dobara subscription/quiz-count lena hoga.
     if (item.result_type) {
-      showToast('Is quiz ka attempt already ho chuka hai.', 'error');
+   showToast('You have already attempted this quiz.', 'error');
       return;
     }
     // Listing API only returns quiz metadata — questions come later from /quiz/start
@@ -210,7 +216,7 @@ const handleAttemptQuiz = useCallback((item) => {
 
  const handleDownload = async (item) => {
     if (item.quiz_type !== 'exam') {
-      showToast('Certificate sirf Exam type ke liye milta hai.', 'error');
+     showToast('Certificate is only available for Exam type quizzes.', 'error');
       return;
     }
     // if (!item.certificate_file) {
@@ -239,21 +245,38 @@ const handleAttemptQuiz = useCallback((item) => {
       ? CertificationStyles.passBadge
       : CertificationStyles.retryBadge;
 
-  return (
+   return (
     <View style={[CertificationStyles.root]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F3F4F6" />
-      <View style={{ height: insets.top, backgroundColor: '#fff' }} />
-
-      {/* Back Header */}
-      <TouchableOpacity
-        style={CertificationStyles.backRow}
-        onPress={() => navigation.navigate('QuickMenu')}
-        activeOpacity={0.75}
-      >
-        <Feather name="arrow-left" size={20} color="#F97316" />
-        <Text style={CertificationStyles.backText}>Back</Text>
-      </TouchableOpacity>
-
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+{Platform.OS === 'web' ? (
+  /* ✅ Web header — design ek hi jagah (components/ModuleWebHeader.js) se aata hai */
+  <ModuleWebHeader title="Certification" navigation={navigation} />
+) : (
+<View
+  style={{
+    width: '100%',
+    alignSelf: 'stretch',
+    overflow: 'hidden',
+    backgroundColor: '#b91c1c',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+    paddingTop: insets.top + 8,
+  }}
+>
+  <Image
+    source={require('../assets/images/profile-red.png')}
+    resizeMode="cover"
+    style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
+  />
+  <TouchableOpacity onPress={() => navigation.navigate('QuickMenu')} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }} activeOpacity={0.7}>
+    <Ionicons name="chevron-back" size={24} color="#ffffff" />
+  </TouchableOpacity>
+  <Text style={{ fontSize: 15, color: '#fff', fontFamily: 'Roboto_400Regular' }}>Certification</Text>
+</View>
+)}
       <ScrollView
         style={CertificationStyles.scrollView}
         contentContainerStyle={[
@@ -262,45 +285,93 @@ const handleAttemptQuiz = useCallback((item) => {
         ]}
         showsVerticalScrollIndicator={false}
       >
-       {/* Hero */}
-        <View style={CertificationStyles.heroCard}>
-          <Text style={CertificationStyles.heroEyebrow}>RTI Certification</Text>
-          <Text style={CertificationStyles.heroTitle}>My Certifications</Text>
+                   {/* Hero */}
+        <View
+          style={{
+            width: '100%',
+            maxWidth: 1100,
+            alignSelf: 'center',
+            borderRadius: 12,
+            padding: 22,
+            marginBottom: 16,
+            flexDirection: 'row',
+            alignItems: 'center',
+            overflow: 'hidden',
+            backgroundColor: '#7f1d1d',
+          }}
+        >
+          {/* <Image
+            source={require('../assets/images/profile-red.png')}
+            resizeMode="cover"
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%', borderRadius: 12 }}
+          /> */}
+          <View style={{ width: 54, height: 54, borderRadius: 32, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
+            <Feather name="award" size={28} color="#ffffff" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.85)', letterSpacing: 1, textTransform: 'uppercase' }}>RTI Certification</Text>
+            <Text style={{ fontSize: 24, fontWeight: '800', color: '#ffffff', marginTop: 2 }}>My Certifications</Text>
+            <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', marginTop: 3 }}>Manage your certifications, track progress and download your records.</Text>
+          </View>
+          <Feather name="file-text" size={64} color="rgba(255,255,255,0.15)" style={{ marginLeft: 10 }} />
         </View>
 
-     {/* My Attempts + My Subscriptions — horizontal row, 90% width */}
-        <View style={CertificationStyles.topButtonRow}>
+                     {/* My Attempts + Quiz Subscription */}
+        <View style={{ width: '100%', maxWidth: 1100, alignSelf: 'center', flexDirection: 'row', gap: 8, marginBottom: 16 }}>
           <TouchableOpacity
-            style={CertificationStyles.topButton}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FEF5F5', borderWidth: 1, borderColor: '#EDE8E1', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 14 }}
             onPress={() => navigation.navigate('MyAttempts')}
             activeOpacity={0.75}
           >
-            <Feather name="list" size={14} color="#F97316" />
-            <Text style={CertificationStyles.actionBtnText}>My Attempts</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 }}>
+              <Feather name="list" size={14} color="#dc2626" />
+              <Text style={{ fontSize: 12.5, fontWeight: '700', color: '#dc2626' }} numberOfLines={1}>My Attempts</Text>
+            </View>
+            <Feather name="chevron-right" size={14} color="#dc2626" />
           </TouchableOpacity>
 
-        <TouchableOpacity
-            style={CertificationStyles.topButton}
+          <TouchableOpacity
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FEF5F5', borderWidth: 1, borderColor: '#EDE8E1', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 14 }}
             onPress={() => navigation.navigate('My Quiz Subscription')}
             activeOpacity={0.75}
           >
-            <Feather name="check-square" size={14} color="#F97316" />
-            <Text style={CertificationStyles.actionBtnText}>Quiz Subscription</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 }}>
+              <Feather name="external-link" size={14} color="#dc2626" />
+              <Text style={{ fontSize: 12.5, fontWeight: '700', color: '#dc2626' }} numberOfLines={1}>Quiz Subscription</Text>
+            </View>
+            <Feather name="chevron-right" size={14} color="#dc2626" />
           </TouchableOpacity>
         </View>
-        {/* Metrics */}
-        <View style={CertificationStyles.metricsRow}>
-          <View style={[CertificationStyles.metricCard, CertificationStyles.metricPrimary]}>
-            <Text style={CertificationStyles.metricValue}>{certData.totalAttempts}</Text>
-            <Text style={CertificationStyles.metricLabel}>Attempts</Text>
+                    {/* Metrics */}
+        <View style={{ width: '100%', maxWidth: 1100, alignSelf: 'center', flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FDF3F3', borderWidth: 1, borderColor: '#EDE8E1', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 10, overflow: 'hidden' }}>
+            <View style={{ width: Platform.OS === 'android' ? 32 : 36, height: Platform.OS === 'android' ? 32 : 36, borderRadius: Platform.OS === 'android' ? 16 : 18, backgroundColor: '#FBC7C7', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Feather name="file-text" size={Platform.OS === 'android' ? 14 : 16} color="#dc2626" />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: '#111111' }}>{certData.totalAttempts}</Text>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: '#888888', textTransform: 'uppercase', letterSpacing: 0.3 }} numberOfLines={1}>Attempts</Text>
+            </View>
           </View>
-          <View style={[CertificationStyles.metricCard, CertificationStyles.metricSecondary]}>
-            <Text style={CertificationStyles.metricValue}>{certData.passedCount}</Text>
-            <Text style={CertificationStyles.metricLabel}>Passed</Text>
+
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F1FAF4', borderWidth: 1, borderColor: '#EDE8E1', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 10, overflow: 'hidden' }}>
+            <View style={{ width: Platform.OS === 'android' ? 32 : 36, height: Platform.OS === 'android' ? 32 : 36, borderRadius: Platform.OS === 'android' ? 16 : 18, backgroundColor: '#A7E3BE', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Feather name="check" size={Platform.OS === 'android' ? 14 : 16} color="#15803D" />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: '#111111' }}>{certData.passedCount}</Text>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: '#888888', textTransform: 'uppercase', letterSpacing: 0.3 }} numberOfLines={1}>Passed</Text>
+            </View>
           </View>
-          <View style={[CertificationStyles.metricCard, CertificationStyles.metricAccent]}>
-            <Text style={CertificationStyles.metricValue}>{certData.totalDownloads}</Text>
-            <Text style={CertificationStyles.metricLabel}>Downloads</Text>
+
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F1F6FE', borderWidth: 1, borderColor: '#EDE8E1', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 10, overflow: 'hidden' }}>
+            <View style={{ width: Platform.OS === 'android' ? 32 : 36, height: Platform.OS === 'android' ? 32 : 36, borderRadius: Platform.OS === 'android' ? 16 : 18, backgroundColor: '#AFC9F5', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Feather name="download" size={Platform.OS === 'android' ? 14 : 16} color="#1D4ED8" />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: '#111111' }}>{certData.totalDownloads}</Text>
+              <Text style={{ fontSize: 10, fontWeight: '700', color: '#888888', textTransform: 'uppercase', letterSpacing: 0.3 }} numberOfLines={1}>Downloads</Text>
+            </View>
           </View>
         </View>
 
@@ -316,18 +387,17 @@ const handleAttemptQuiz = useCallback((item) => {
           </View>
         )}
 
-        {/* Subject + Test Type + Difficulty */}
-        <View style={[CertificationStyles.card, { zIndex: 20 }]}>
-          <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+          {/* Subject + Test Type + Difficulty */}
+              <View style={{ width: '100%', maxWidth: 1100, alignSelf: 'center', backgroundColor: '#ffffff', borderRadius: 14, borderWidth: 1, borderColor: '#EDE8E1', padding: 20, marginBottom: 16, zIndex: 20, elevation: Platform.OS === 'android' ? 20 : 0 }}>
+                   <View style={{ flexDirection: Platform.OS === 'android' ? 'column' : 'row', gap: 16, zIndex: 30, elevation: Platform.OS === 'android' ? 20 : 0 }}>
             <DropdownField
               label="Subject"
               value={subject}
               options={SUBJECTS}
               onChange={setSubject}
               placeholder="Choose"
+              icon="book-open"
             />
-
-            <View style={{ width: 1, alignSelf: 'stretch', backgroundColor: '#E5E7EB', marginHorizontal: 16 }} />
 
             <DropdownField
               label="Test Type"
@@ -335,9 +405,8 @@ const handleAttemptQuiz = useCallback((item) => {
               options={TEST_TYPES}
               onChange={(v) => { setTestType(v); if (v !== 'practice') setDifficulty(null); }}
               placeholder="Choose"
+              icon="file-text"
             />
-
-            <View style={{ width: 1, alignSelf: 'stretch', backgroundColor: '#E5E7EB', marginHorizontal: 16 }} />
 
             <DropdownField
               label="Difficulty"
@@ -346,13 +415,43 @@ const handleAttemptQuiz = useCallback((item) => {
               onChange={setDifficulty}
               placeholder={testType === 'practice' ? 'Choose' : 'N/A'}
               disabled={testType !== 'practice'}
+              icon="activity"
             />
           </View>
-        </View>
 
-        {/* Records */}
-        <View style={CertificationStyles.card}>
-          <Text style={CertificationStyles.sectionTitle}>Certification Records</Text>
+          <TouchableOpacity onPress={loadCertification} activeOpacity={0.8} style={{ marginTop: 18, zIndex: 1, elevation: 0 }}>
+            <LinearGradient
+              colors={['#7f1d1d', '#ef4444', '#7f1d1d']}
+              locations={[0, 0.5, 1]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={{ borderRadius: 10, paddingVertical: 13, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 }}
+            >
+              <Feather name="send" size={15} color="#ffffff" />
+              <Text style={{ color: '#fff', fontWeight: '700', fontSize: 14 }}>Submit</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+            {/* Records */}
+                <View style={{
+          width: '100%', maxWidth: 1100, alignSelf: 'center',
+          backgroundColor: '#ffffff', borderRadius: 14, padding: 20,
+          borderTopWidth: 3, borderTopColor: '#dc2626',
+          borderLeftWidth: 1, borderRightWidth: 1, borderBottomWidth: 1, borderColor: '#EDE8E1',
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={{ width: 36, height: 36, borderRadius: 10, backgroundColor: '#FDECEC', alignItems: 'center', justifyContent: 'center' }}>
+                <Feather name="award" size={16} color="#dc2626" />
+              </View>
+              <Text style={{ fontSize: 16, fontWeight: '800', color: '#111111' }}>Certification Records</Text>
+            </View>
+            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }} onPress={() => navigation.navigate('MyAttempts')}>
+              <Feather name="external-link" size={13} color="#dc2626" />
+              <Text style={{ fontSize: 13, fontWeight: '700', color: '#dc2626' }}>View All</Text>
+              <Feather name="chevron-right" size={13} color="#dc2626" />
+            </TouchableOpacity>
+          </View>
 
 {loading ? (
             <Text style={CertificationStyles.loadingText}>Loading certification records...</Text>
@@ -451,8 +550,14 @@ const handleAttemptQuiz = useCallback((item) => {
                 </View>
               </View>
             ))
-          ) : (
-            <Text style={CertificationStyles.emptyText}>No certification records found.</Text>
+                ) : (
+            <View style={{ alignItems: 'center', paddingVertical: 30 }}>
+              <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: '#FDECEC', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>
+                <Feather name="file-text" size={26} color="#dc2626" />
+              </View>
+              <Text style={{ fontSize: 15, fontWeight: '800', color: '#111111', marginBottom: 4 }}>No certification records found.</Text>
+              <Text style={{ fontSize: 13, color: '#888888' }}>Complete a test to see your certification records here.</Text>
+            </View>
           )}
         </View>
       </ScrollView>

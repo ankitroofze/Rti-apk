@@ -7,6 +7,9 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { LinearGradient } from 'expo-linear-gradient';
+import ModuleWebHeader from '../components/Modulewebheader';
+import { HEADER_BG_IMAGE } from '../constants/subscriptionThemes';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { getResponsiveWindowWidth } from '../utils/webDevice';
 import { UserStore } from '../store/UserStore';
@@ -36,6 +39,19 @@ const C = {
   greenLight:   '#f0fdf4',
   greenBorder:  '#bbf7d0',
 };
+
+const ADV_RED = '#b91c1c';
+const ADV_GREY = '#d1d5db';
+const ADV_GRADIENT = ['#7F1D1D', '#EF4444', '#991B1B'];   // 3-color gradient (next btn + checkbox)
+const adv = StyleSheet.create({
+  input: { borderColor: ADV_GREY },
+  uploadOuter: { borderColor: ADV_RED },
+  nextBtn: { backgroundColor: 'transparent', overflow: 'hidden' },
+  checkboxOn: { backgroundColor: 'transparent', borderWidth: 0, overflow: 'hidden' },
+  checkGrad: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
+  header: { backgroundColor: ADV_RED, overflow: 'hidden', borderBottomWidth: 0 },
+  headerImg: { ...StyleSheet.absoluteFillObject, width: '100%', height: '100%' },
+});
 
 const FONT = {
   regular: 'Roboto_400Regular',
@@ -865,7 +881,8 @@ const editAd = route?.params?.editAd || null;
   if (Platform.OS === 'web') {
     return (
       <View style={ws.root}>
-        <View style={[ws.topBar, isWebCompact && ws.topBarCompact]}>
+       <ModuleWebHeader title="Fill advertisement information below" navigation={navigation} onBack={() => navigation.goBack()} />
+        <View style={[ws.topBar, isWebCompact && ws.topBarCompact, { display: 'none' }]}>
           <TouchableOpacity style={ws.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
             <Ionicons name="arrow-back" size={16} color={C.primaryDark} />
           </TouchableOpacity>
@@ -887,7 +904,7 @@ const editAd = route?.params?.editAd || null;
             <View style={ws.section}>
               <SectionLabel number="1" title="Select Advertisement Photo or Video" />
               <Text style={ws.subLabel}>Add photo or video of visiting card, shop, pamphlet, or poster</Text>
-              <TouchableOpacity style={ws.uploadOuter} onPress={handlePickPhoto} activeOpacity={0.85}>
+              <TouchableOpacity style={[ws.uploadOuter, adv.uploadOuter]} onPress={handlePickPhoto} activeOpacity={0.85}>
                 {photo ? (
                   <>
                     <Image source={{ uri: photo }} style={ws.photoPreview} resizeMode="cover" />
@@ -898,7 +915,7 @@ const editAd = route?.params?.editAd || null;
                   </>
                 ) : (
                   <View style={ws.uploadInnerDashed}>
-                    <MaterialIcons name="add-photo-alternate" size={44} color={C.primary} />
+                    <MaterialIcons name="add-photo-alternate" size={44} color={ADV_RED} />
                     <Text style={ws.uploadCaption}>Add Advertisement Photo or Video (jpeg/png/mp4)</Text>
                   </View>
                 )}
@@ -911,7 +928,7 @@ const editAd = route?.params?.editAd || null;
               <Text style={ws.subLabel}>Add a main headline for your promotion or advertisement</Text>
               <TextInput
                 ref={titleInputRef}
-                style={ws.input}
+                style={[ws.input, adv.input]}
                 placeholder="Eg. Best Electronics Shop in your area"
                 placeholderTextColor={C.neutral400}
                 value={title}
@@ -929,7 +946,7 @@ const editAd = route?.params?.editAd || null;
               <Text style={ws.subLabel}>Add promotional message for this advertisment</Text>
               <TextInput
                 ref={descriptionInputRef}
-                style={ws.inputMulti}
+                style={[ws.inputMulti, adv.input]}
                 placeholder="Eg. We sell washing machines, air conditioner and televisions."
                 placeholderTextColor={C.neutral400}
                 value={description}
@@ -953,8 +970,12 @@ const editAd = route?.params?.editAd || null;
             {/* Allow contact */}
             <View style={ws.section}>
               <TouchableOpacity style={ws.checkRow} onPress={() => setAllowCalls(!allowCalls)} activeOpacity={0.8}>
-                <View style={[ws.checkbox, allowCalls && ws.checkboxOn]}>
-                  {allowCalls && <Ionicons name="checkmark" size={13} color="#fff" />}
+<View style={[ws.checkbox, allowCalls && ws.checkboxOn, allowCalls && adv.checkboxOn]}>
+                 {allowCalls && (
+                <LinearGradient colors={ADV_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={adv.checkGrad}>
+                  <Ionicons name="checkmark" size={13} color="#fff" />
+                </LinearGradient>
+              )}
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={ws.checkLabel}>Allow people to call you</Text>
@@ -963,7 +984,8 @@ const editAd = route?.params?.editAd || null;
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity style={[ws.nextBtn, isWebSmall && ws.nextBtnFull]} onPress={handleNext} activeOpacity={0.85}>
+            <TouchableOpacity style={[ws.nextBtn, isWebSmall && ws.nextBtnFull, adv.nextBtn]} onPress={handleNext} activeOpacity={0.85}>
+<LinearGradient colors={ADV_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
               <Text style={ws.nextBtnText}>Next</Text>
             </TouchableOpacity>
           </View>
@@ -1000,11 +1022,12 @@ const editAd = route?.params?.editAd || null;
   // ── MOBILE LAYOUT ─────────────────────────────────────────────────────────────
   return (
     <View style={s.root}>
-      <View style={s.header}>
+      <View style={[s.header, adv.header]}>
+      <Image source={HEADER_BG_IMAGE} style={adv.headerImg} resizeMode="cover" />
         <TouchableOpacity onPress={() => navigation.goBack()} style={s.backRow} activeOpacity={0.6}>
-          <Ionicons name="arrow-back" size={22} color="#000" />
+          <Ionicons name="arrow-back" size={22} color="#fff" />
         </TouchableOpacity>
-        <Text style={s.headerTitle}>Fill advertisement information below</Text>
+       <Text style={[s.headerTitle, { color: '#fff' }]}>Fill advertisement information below</Text>
       </View>
 
       <ScrollView ref={mobileScrollRef} style={s.scroll} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="none">
@@ -1020,7 +1043,7 @@ const editAd = route?.params?.editAd || null;
         <View style={s.section}>
           <SectionLabel number="1" title="Select Advertisement Photo or Video" />
           <Text style={s.subLabel}>Add photo or video of visiting card, shop, pamphlet, or poster</Text>
-          <TouchableOpacity style={s.uploadOuter} onPress={handlePickPhoto} activeOpacity={0.85}>
+          <TouchableOpacity style={[s.uploadOuter, adv.uploadOuter]} onPress={handlePickPhoto} activeOpacity={0.85}>
             {photo ? (
               <>
                 <Image source={{ uri: photo }} style={s.photoPreview} resizeMode="cover" />
@@ -1031,7 +1054,7 @@ const editAd = route?.params?.editAd || null;
               </>
             ) : (
               <View style={s.uploadInnerDashed}>
-                <MaterialIcons name="add-photo-alternate" size={44} color={C.primary} />
+              <MaterialIcons name="add-photo-alternate" size={44} color={ADV_RED} />
                 <Text style={s.uploadCaption}>Add Advertisement Photo or Video (jpeg/png/mp4)</Text>
               </View>
             )}
@@ -1044,7 +1067,7 @@ const editAd = route?.params?.editAd || null;
           <Text style={s.subLabel}>Add a main headline for your promotion or advertisement</Text>
           <TextInput
             ref={titleInputRef}
-            style={s.input}
+           	style={[s.input, adv.input]}
             placeholder="Eg. Best Electronics Shop in your area"
             placeholderTextColor={C.neutral400}
             value={title}
@@ -1062,7 +1085,7 @@ const editAd = route?.params?.editAd || null;
           <Text style={s.subLabel}>Add promotional message for this advertisment</Text>
           <TextInput
             ref={descriptionInputRef}
-            style={s.inputMulti}
+            style={[s.inputMulti, adv.input]}
             placeholder="Eg. We sell washing machines, air conditioner and televisions."
             placeholderTextColor={C.neutral400}
             value={description}
@@ -1086,8 +1109,12 @@ const editAd = route?.params?.editAd || null;
         {/* Allow contact */}
         <View style={s.section}>
           <TouchableOpacity style={s.checkRow} onPress={() => setAllowCalls(!allowCalls)} activeOpacity={0.8}>
-            <View style={[s.checkbox, allowCalls && s.checkboxOn]}>
-              {allowCalls && <Ionicons name="checkmark" size={13} color="#fff" />}
+<View style={[s.checkbox, allowCalls && s.checkboxOn, allowCalls && adv.checkboxOn]}>
+{allowCalls && (
+              <LinearGradient colors={ADV_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={adv.checkGrad}>
+                <Ionicons name="checkmark" size={13} color="#fff" />
+              </LinearGradient>
+            )}
             </View>
             <View style={{ flex: 1 }}>
               <Text style={s.checkLabel}>Allow people to call you</Text>
@@ -1096,7 +1123,8 @@ const editAd = route?.params?.editAd || null;
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={s.nextBtn} onPress={handleNext} activeOpacity={0.85}>
+        <TouchableOpacity style={[s.nextBtn, adv.nextBtn]} onPress={handleNext} activeOpacity={0.85}>
+         <LinearGradient colors={ADV_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
           <Text style={s.nextBtnText}>Next</Text>
         </TouchableOpacity>
       </ScrollView>

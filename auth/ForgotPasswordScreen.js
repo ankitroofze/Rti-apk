@@ -1,161 +1,142 @@
-// import add karo upar
+// auth/ForgotPasswordScreen.js  (POORA REPLACE)
+// Android/iOS: LoginScreen.js jaisa hi design (profile-red background, white text, white pill button).
+// "Send OTP" dabane par email par OTP jaata hai aur center me OTP popup card khulta hai.
+
 import React, { useState } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
+  ActivityIndicator, ImageBackground, KeyboardAvoidingView, Platform, ScrollView,
+  StatusBar, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
 import { AuthAPI } from './ClientAPI/AuthApi';
 import styles from '../styles/LoginStyles';
-import { UserStore } from '../store/UserStore';
-import { useToast } from '../components/ui/ToastProvider';
-// import
+import OtpModal from '../components/Otpmodal';
+
 export default function ForgotPasswordScreen({ navigation }) {
-  const { showToast } = useToast();
+  useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [errors, setErrors] = useState({ email: '', general: '' });
+  const [otpVisible, setOtpVisible] = useState(false);
+
+  const normalizedEmail = email.trim().toLowerCase();
 
   const handleSendOtp = async () => {
-    if (!email) {
-      showToast('Please enter your email', 'error');
+    if (!normalizedEmail) {
+      setErrors({ email: 'Email is required.', general: '' });
+      return;
+    }
+    if (!/\S+@\S+\.\S+/.test(normalizedEmail)) {
+      setErrors({ email: 'Enter a valid email address.', general: '' });
       return;
     }
 
-    setLoading(true);
-
-    const result = await AuthAPI.requestForgotOTP({ email: email.trim() });
-    setLoading(false);
+    setSubmitting(true);
+    setErrors({ email: '', general: '' });
+    const result = await AuthAPI.requestForgotOTP({ email: normalizedEmail });
+    setSubmitting(false);
 
     if (!result.ok) {
-      showToast(result.message, 'error');
+      setErrors({ email: '', general: result.message || 'Unable to send OTP. Please try again.' });
       return;
     }
-
-    showToast(result.message || 'OTP sent to your email!', 'success');
-    navigation.navigate('Otp', { email: email.trim() });
+    setOtpVisible(true); // center popup
   };
-  return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      bbehavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <View style={{ flex: 1 }}>
-        <View style={styles.root}>
-          <View style={[styles.glow, styles.glowTop]} />
-          <View style={[styles.glow, styles.glowBottom]} />
 
+  const handleVerified = (otp) => {
+    setOtpVisible(false);
+    navigation.navigate('ResetPassword', { email: normalizedEmail, otp });
+  };
+
+  return (
+    <SafeAreaView style={styles.flex} edges={[]}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ImageBackground source={require('../assets/images/profile-red.png')} resizeMode="cover" style={styles.root}>
           <ScrollView
-            contentContainerStyle={styles.formScroll}
-            keyboardShouldPersistTaps="always"
+            style={styles.scrollView}
+            contentContainerStyle={[styles.formScroll, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 40 }]}
+            keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
           >
-            <View
-              style={[
-                styles.formContainer,
-                styles.forgotFormContainer,
-              ]}
-            >
-              <View style={styles.topAccent} />
-
-              <View style={styles.logoCircle}>
-                <Ionicons
-                  name="lock-open-outline"
-                  size={28}
-                  color="#eff6ff"
-                />
-              </View>
-
-              <Text style={styles.brandName}>RTI News</Text>
-
-              <View style={styles.headerBlock}>
-                <View style={styles.formIconWrap}>
-                  <Ionicons
-                    name="mail-open-outline"
-                    size={18}
-                    color="#7dd3fc"
-                  />
-                </View>
-
-                <Text style={styles.welcomeBack}>
-                  Password recovery
-                </Text>
-
-                <Text style={styles.formTitle}>
-                  Forgot Password
-                </Text>
-
-                <Text style={styles.formSubtitle}>
-                  Enter your email to receive an OTP
-                </Text>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>
-                  Email address
-                </Text>
-
-                <View style={styles.inputWrap}>
-                  <Ionicons
-                    name="mail-outline"
-                    size={18}
-                    color="#38bdf8"
-                  />
-
-                  <TextInput
-                    style={styles.input}
-                    placeholder="you@example.com"
-                    placeholderTextColor="#64748b"
-                    value={email}
-                    onChangeText={setEmail}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    returnKeyType="done"
-                  />
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={[
-                  styles.submitBtn,
-                  loading && styles.btnDisabled,
-                ]}
-                onPress={handleSendOtp}
-                disabled={loading}
-              >
-                <Text style={styles.submitBtnText}>
-                  {loading ? 'Sending OTP...' : 'Send OTP'}
-                </Text>
-
-                <Ionicons
-                  name="arrow-forward"
-                  size={18}
-                  color="#ffffff"
-                />
+            <View style={styles.formContainer}>
+              <TouchableOpacity style={styles.closeButton} onPress={() => navigation.navigate('Login')}>
+                <Ionicons name="arrow-back" size={22} color="#fff" />
               </TouchableOpacity>
 
+              <Text style={styles.pageTitle}>Forgot Password</Text>
+              <Text style={styles.pageSubtitle}>Enter your email to receive an OTP</Text>
+
+              {errors.general ? (
+                <View style={styles.generalErrorBox}>
+                  <Ionicons name="alert-circle-outline" size={16} color="#e8732a" />
+                  <Text style={styles.generalErrorText}>{errors.general}</Text>
+                </View>
+              ) : null}
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Email address</Text>
+                <View style={[styles.inputWrap, errors.email && styles.inputWrapError]}>
+                  <Ionicons name="mail-outline" size={18} color="#888" />
+                  <TextInput
+                    style={styles.input}
+                    value={email}
+                    onChangeText={(value) => { setEmail(value); setErrors({ email: '', general: '' }); }}
+                    placeholder="you@example.com"
+                    placeholderTextColor="#9ca3af"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    returnKeyType="done"
+                    onSubmitEditing={handleSendOtp}
+                  />
+                </View>
+                {errors.email ? <Text style={styles.inlineErrorText}>{errors.email}</Text> : null}
+              </View>
+
               <TouchableOpacity
-                style={styles.switchBtn}
-                onPress={() => navigation.navigate('Login')}
+                style={[styles.submitBtnWrap, submitting && styles.btnDisabled]}
+                disabled={submitting}
+                onPress={handleSendOtp}
               >
+                <LinearGradient
+                  colors={['#ffffff', '#f8fafc', '#f1f5f9']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.submitBtn}
+                >
+                  {submitting ? (
+                    <ActivityIndicator color="#B91C1C" />
+                  ) : (
+                    <>
+                      <Text style={styles.submitBtnText}>Send OTP</Text>
+                      <Ionicons name="arrow-forward" size={18} color="#B91C1C" />
+                    </>
+                  )}
+                </LinearGradient>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.switchBtn} onPress={() => navigation.navigate('Login')}>
                 <Text style={styles.switchText}>
-                  Back to{' '}
-                  <Text style={styles.switchLink}>
-                    Sign In
-                  </Text>
+                  Back to <Text style={styles.switchLink}>Sign In</Text>
                 </Text>
               </TouchableOpacity>
             </View>
           </ScrollView>
-        </View>
-      </View>           
-    </KeyboardAvoidingView>
+
+          {/* OTP popup — screen ke center me card */}
+          <OtpModal
+            visible={otpVisible}
+            email={normalizedEmail}
+            onClose={() => setOtpVisible(false)}
+            onVerified={handleVerified}
+          />
+        </ImageBackground>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

@@ -1,15 +1,120 @@
 // Images
 export const RTI_VOICE_LOGO = require('../assets/images/logo.jpg');
 export const MIC_ICON = require('../assets/images/mic_icon.png');
-export const QR_CODE = require('../assets/images/QR.png');
+// export const QR_CODE = require('../assets/images/QR.png');
 export const CERT_LOGO = require('../assets/images/certificate_logo.jpg');
+export const ID_LOGO = require('../assets/images/id-logo.png');
+export const IDENTITY_BANNER_IMAGE = require('../assets/images/id-identity.png');
 export const RIBBON_IMAGE = require('../assets/images/ribon.png');
 export const GREEN_BANNER = require('../assets/images/green_banner.jpeg');
+export const BACK_ID_CARD_IMAGE = require('../assets/images/id-back.jpeg');
 
 // Document Types
 export const GENERATED_ID_CARD = 'generated:id-card';
 export const GENERATED_APPOINTMENT_LETTER = 'generated:appointment-letter';
 
+// Role Seat Colors — 6 purchased roles ke liye alag theme, profile pill / ID card accents ke liye
+export const ROLE_SEAT_COLORS = {
+  chief_editor_published:   { bg: '#FEF3C7', border: '#F59E0B', text: '#92400E' }, // Gold
+  executive_editor:         { bg: '#DBEAFE', border: '#3B82F6', text: '#1D4ED8' }, // Blue
+  deputy_editor_national:   { bg: '#F3E8FF', border: '#A855F7', text: '#7E22CE' }, // Purple
+  public_relations_officer: { bg: '#FFEDD5', border: '#F97316', text: '#C2410C' }, // Orange
+  national_bureau_chief:    { bg: '#FBE7EA', border: '#800020', text: '#800020' }, // Burgundy
+  // pratinidhi ka apna alag color hata diya — ab ye normal user jaisa hi dikhega
+};
+export const COMMON_USER_COLOR = { bg: '#FFFFFF', border: '#E2E8F0', text: '#64748B' }; // Simple/Neutral white
+
+// ── Role Based Profile Look (6-tier design) ──────────────────────────────────
+// Common(grey) -> Premium(green) -> Verified Blue Tick(blue) -> Authorised
+// Representative(orange) -> Executive(purple) -> Chief(red). Har tier ka apna
+// background card image (assets/images me pehle se maujood) + accent color.
+export const PROFILE_BG_GREY   = require('../assets/images/profile-grey.png');
+export const PROFILE_BG_GREEN  = require('../assets/images/profile-green.png');
+export const PROFILE_BG_BLUE   = require('../assets/images/profile-blue.png');
+export const PROFILE_BG_ORANGE = require('../assets/images/profile-orange.png');
+export const PROFILE_BG_PURPLE = require('../assets/images/profile-purple.png');
+export const PROFILE_BG_RED    = require('../assets/images/profile-red.png');
+
+// Har tier ke liye 2 gradients:
+//  - gradient: avatar camera badge + "Premium/Verified/..." pill ke liye
+//  - gradientDark: "Edit Profile" button ke liye (thoda darker shade)
+// Common (no subscription) tier ka gradient purposely grey hai — jaise he user
+// koi bhi subscription/seat/blue-tick le leta hai, dono gradients automatically
+// us tier ke color me badal jaate hain (yahi single source of truth hai).
+export const PROFILE_TIERS = {
+  common: {
+    key: 'common', order: 0, label: 'Common User',
+    bgImage: PROFILE_BG_GREY, accent: '#6B7280',
+    gradient: ['#4B5563', '#9CA3AF', '#6B7280'],
+    gradientDark: ['#374151', '#6B7280', '#374151'],
+    badgeBg: 'rgba(255,255,255,0.22)', badgeText: '#FFFFFF',
+  },
+  premium: {
+    key: 'premium', order: 1, label: 'Premium User',
+    bgImage: PROFILE_BG_GREEN, accent: '#10B981',
+    gradient: ['#0d502d', '#39af72', '#056B37'],
+    gradientDark: ['#0b4427', '#2caf6b', '#084928'],
+    badgeBg: 'rgba(255,255,255,0.22)', badgeText: '#FFFFFF',
+  },
+  verified: {
+    key: 'verified', order: 2, label: 'Verified User',
+    bgImage: PROFILE_BG_BLUE, accent: '#3B82F6',
+    gradient: ['#1E3A8A', '#3B82F6', '#1D4ED8'],
+    gradientDark: ['#1E3A8A', '#2563EB', '#1E40AF'],
+    badgeBg: 'rgba(255,255,255,0.22)', badgeText: '#FFFFFF',
+  },
+  representative: {
+    key: 'representative', order: 3, label: 'Authorised Representative',
+    bgImage: PROFILE_BG_ORANGE, accent: '#F97316',
+    gradient: ['#9A3412', '#FB923C', '#C2410C'],
+    gradientDark: ['#7C2D12', '#F97316', '#9A3412'],
+    badgeBg: 'rgba(255,255,255,0.22)', badgeText: '#FFFFFF',
+  },
+  executive: {
+    key: 'executive', order: 4, label: 'Executive Editor',
+    bgImage: PROFILE_BG_PURPLE, accent: '#7C3AED',
+    gradient: ['#4C1D95', '#A855F7', '#6D28D9'],
+    gradientDark: ['#3B0764', '#7C3AED', '#4C1D95'],
+    badgeBg: 'rgba(255,255,255,0.22)', badgeText: '#FFFFFF',
+  },
+  chief: {
+    key: 'chief', order: 5, label: 'Chief Role',
+    bgImage: PROFILE_BG_RED, accent: '#B91C1C',
+    gradient: ['#7F1D1D', '#EF4444', '#991B1B'],
+    gradientDark: ['#450A0A', '#B91C1C', '#7F1D1D'],
+    badgeBg: 'rgba(255,255,255,0.24)', badgeText: '#FFFFFF',
+  },
+};
+
+// State-seat id -> tier key. Seat naam ke hisaab se group kiya hai (chief/bureau
+// chief = Chief tier, editor seats = Executive tier, PRO/pratinidhi = Representative tier).
+export const SEAT_ID_TO_TIER = {
+  chief_editor_published:   'chief',
+  national_bureau_chief:    'chief',
+  executive_editor:         'executive',
+  deputy_editor_national:   'executive',
+  public_relations_officer: 'representative',
+  state_chief_editor:             'representative',
+  state_bureau_chief:             'representative',
+  state_coordinator:              'representative',
+  senior_state_correspondent:     'representative',
+  special_state_reporter:         'representative',
+  district_head:                  'representative',
+  district_bureau_chief:          'representative',
+  district_correspondent:         'representative',
+  senior_district_reporter:       'representative',
+  district_coordinator:           'representative',
+  taluka_head:                    'representative',
+  taluka_correspondent:           'representative',
+  sub_reporter:                   'representative',
+  taluka_representative:          'representative',
+  regional_reporter:              'representative',
+  village_correspondent:          'representative',
+  village_representative:         'representative',
+  village_reporter:               'representative',
+  public_communication_associate: 'representative',
+  rural_reporter:                 'representative',
+};
 // Ranks Configuration
 export const RANKS = [
   { id: 'platinum', minReferrals: 500, title: 'Platinum', icon: '👑', color: '#e5e7eb', bgColor: '#f3f4f6', badgeColor: '#d1d5db' },
@@ -21,7 +126,7 @@ export const RANKS = [
 
 // Initial Form State
 export const initialForm = {
-  name: '',
+   name: '',
   email: '',
   village: '',
   state: '',

@@ -1,16 +1,20 @@
 import React, { useCallback, useState } from 'react';
 import {
-  Alert,
+  Alert, StatusBar,
   FlatList, Linking, Modal, ScrollView, StyleSheet, Switch,
-  Text, TextInput, TouchableOpacity, View, Platform,
+  Text, TextInput, TouchableOpacity, View, Platform, ImageBackground,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
+import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
 import { useToast } from '../components/ui/ToastProvider';
 import s from '../styles/SettingsStyles';
 import { UserStore } from '../store/UserStore';
-import { INDIAN_STATES, getDistricts, getTalukas } from './locationData';
+import ModuleWebHeader from '../components/Modulewebheader';
+import { INDIAN_STATES, getDistricts, getTalukas, getVillages } from './locationData';
+import { AuthAPI } from '../auth/ClientAPI/AuthApi';
+
 
 // ── Dropdown Modal ────────────────────────────────────────────────────────────
 const dropStyles = StyleSheet.create({
@@ -78,14 +82,16 @@ function DropdownModal({ visible, title, items, selected, onSelect, onClose }) {
 }
 
 // ── Settings Row Item ─────────────────────────────────────────────────────────
-function SettingsItem({ emoji, label, onPress, isToggle, toggleValue, onToggleChange, isDestructive }) {
+function SettingsItem({ icon, label, onPress, isToggle, toggleValue, onToggleChange, isDestructive }) {
   return (
     <TouchableOpacity
       style={[s.item, isDestructive && s.itemDestructive]}
       onPress={onPress}
       activeOpacity={isToggle ? 1 : 0.6}
     >
-      <Text style={s.itemEmoji}>{emoji}</Text>
+      <View style={s.iconWrap}>
+        <Ionicons name={icon} size={30} color={isDestructive ? '#e11d48' : '#94a3b8'} />
+      </View>
       <Text style={[s.itemLabel, isDestructive && s.itemLabelDestructive]}>{label}</Text>
       {isToggle ? (
         <Switch
@@ -108,7 +114,9 @@ function SectionHeader({ title }) {
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
 export default function SettingsScreen({ navigation }) {
+  const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const { showToast } = useToast();
+    const insets = useSafeAreaInsets();
   const [saving, setSaving]               = useState(false);
   const [savingLocation, setSavingLocation] = useState(false);
   const [settingsData, setSettingsData]   = useState({ currentUser: null, settings: { language: 'English', password: '' } });
@@ -119,7 +127,9 @@ export default function SettingsScreen({ navigation }) {
 
   const [locState, setLocState]           = useState('');
   const [locDistrict, setLocDistrict]     = useState('');
-  const [locTaluka, setLocTaluka]         = useState('');
+    const [locTaluka, setLocTaluka]         = useState('');
+  const [locVillage, setLocVillage]       = useState('');
+  const [villageModal, setVillageModal]   = useState(false);
   const [stateModal, setStateModal]       = useState(false);
   const [districtModal, setDistrictModal] = useState(false);
   const [talukaModal, setTalukaModal]     = useState(false);
@@ -133,25 +143,29 @@ export default function SettingsScreen({ navigation }) {
     const user = data.currentUser;
     setLocState(user?.state || '');
     setLocDistrict(user?.district || '');
-    setLocTaluka(user?.taluka || '');
+        setLocTaluka(user?.taluka || '');
+    setLocVillage(user?.village || '');
   }, [navigation]);
 
   useFocusEffect(useCallback(() => { loadSettings(); }, [loadSettings]));
 
   const districtList = locState ? getDistricts(locState) : [];
-  const talukaList   = locDistrict ? getTalukas(locState, locDistrict) : [];
+   const talukaList   = locDistrict ? getTalukas(locState, locDistrict) : [];
+  const villageList  = locTaluka ? getVillages(locState, locDistrict, locTaluka) : [];
 
-  const handleStateChange    = (val) => { setLocState(val); setLocDistrict(''); setLocTaluka(''); };
-  const handleDistrictChange = (val) => { setLocDistrict(val); setLocTaluka(''); };
+  const handleStateChange    = (val) => { setLocState(val); setLocDistrict(''); setLocTaluka(''); setLocVillage(''); };
+  const handleDistrictChange = (val) => { setLocDistrict(val); setLocTaluka(''); setLocVillage(''); };
+  const handleTalukaChange   = (val) => { setLocTaluka(val); setLocVillage(''); };
 
   const handleSaveLocation = async () => {
     if (!locState) { showToast('Please select your state.', 'error'); return; }
     setSavingLocation(true);
     const result = await UserStore.updateUser(settingsData.currentUser.email, {
-      state: locState, district: locDistrict, taluka: locTaluka,
+      state: locState, district: locDistrict, taluka: locTaluka, village: locVillage,
     });
     setSavingLocation(false);
     if (!result) { showToast('Unable to update location.', 'error'); return; }
+        AuthAPI.updateState({ state: locState, district: locDistrict, taluka: locTaluka, village: locVillage }).catch(() => {});
     showToast('Location updated! ✅', 'success');
     setLocationCardVisible(false);
     loadSettings();
@@ -232,37 +246,48 @@ export default function SettingsScreen({ navigation }) {
     }
   };
 
-  const nav = (screen) => navigation.navigate(screen);
+  const nav = (screen, params) => navigation.navigate(screen, params);
 
-  return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+   return (
+    <SafeAreaView style={{ flex: 1 }} edges={['bottom']}>
     <View style={s.root}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      {/* Web header — shared red image header, same design as Wallet/Withdraw */}
+      <ModuleWebHeader title="Settings" navigation={navigation} />
 
-      {/* Header */}
-      <View style={s.header}>
-        <TouchableOpacity onPress={() => navigation.navigate('Home')} style={s.backBtn} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={22} color="#0f172a" />
-        </TouchableOpacity>
-        <Text style={s.headerTitle}>Settings</Text>
-        <View style={{ width: 36 }} />
-      </View>
+      {/* Native header (unchanged) */}
+      {Platform.OS !== 'web' && (
+        <ImageBackground
+          source={require('../assets/images/profile-red.png')}
+          resizeMode="cover"
+          style={[s.header, { paddingTop: insets.top + 8 }]}
+        >
+          <TouchableOpacity onPress={() => navigation.navigate('Home')} style={s.backBtn} activeOpacity={0.7}>
+            <Ionicons name="chevron-back" size={24} color="#ffffff" />
+          </TouchableOpacity>
+          <View>
+            <Text style={s.headerTitle}>Settings</Text>
+            <Text style={s.headerSubtitle}>Manage your account & preferences</Text>
+          </View>
+        </ImageBackground>
+      )}
 
       <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
 
         {/* ── Account ── */}
         <SectionHeader title="Account" />
         <View style={s.card}>
-          <SettingsItem emoji="📍" label="Change Location" onPress={() => nav('ChangeLocation')} />
-          <SettingsItem emoji="🧑‍💼" label="Reporter Registration"             onPress={() => nav('Register')} />
-         <SettingsItem emoji="📢" label="Advertise"                          onPress={() => nav('Advertise')} />
-          <SettingsItem emoji="🎯" label="My Advertisement Subscription" onPress={() => nav('My Ads Subscription')} />
-          <SettingsItem emoji="✅" label="Purchase blue tick"                 onPress={() => nav('PurchaseBlueTick')} />
-          <SettingsItem emoji="📱" label="My subscriptions"                   onPress={() => nav('Subscription Plans')} />
-          <SettingsItem emoji="🛒" label="Commerce & Ads Center"             onPress={() => nav('CommerceAdsCenter')} />
-          <SettingsItem emoji="🔄" label="Refund policy"                      onPress={() => showToast('Coming soon', 'success')} />
-          <SettingsItem emoji="💬" label="Join on Whatsapp"                   onPress={handleWhatsappJoin} />
-          <SettingsItem emoji="💰" label="My earnings"                        onPress={() => showToast('Coming soon', 'success')} />
-          <SettingsItem emoji="👤" label="Update account and profile details" onPress={() => nav('Profile')} />
+             {/* Change Location — temporarily removed from all platforms */}
+          <SettingsItem icon="person-add-outline" label="Reporter Registration"             onPress={() => nav('Register')} />
+         <SettingsItem icon="megaphone-outline" label="Advertise"                          onPress={() => nav('Advertise')} />
+          <SettingsItem icon="pricetags-outline" label="My Advertisement Subscription" onPress={() => nav('My Ads Subscription')} />
+          {/* Purchase blue tick — temporarily removed from all platforms */}
+          <SettingsItem icon="card-outline" label="My subscriptions"                   onPress={() => nav('Subscription Plans')} />
+          <SettingsItem icon="cart-outline" label="Commerce & Ads Center"             onPress={() => nav('CommerceAdsCenter')} />
+          <SettingsItem icon="refresh-outline" label="Refund & Cancellation Policy"        onPress={() => nav('LegalPolicy', { document: 'RefundCancellation' })} />
+          <SettingsItem icon="logo-whatsapp" label="Join on Whatsapp"                   onPress={handleWhatsappJoin} />
+          <SettingsItem icon="wallet-outline" label="My earnings"                        onPress={() => showToast('Coming soon', 'success')} />
+          <SettingsItem icon="person-circle-outline" label="Update account and profile details" onPress={() => nav('Profile')} />
         </View>
 
         {/* Change Location Inline Card */}
@@ -297,6 +322,16 @@ export default function SettingsScreen({ navigation }) {
                 </TouchableOpacity>
               </View>
             )}
+                       {locTaluka !== '' && villageList.length > 0 && (
+              <View style={s.inputGroup}>
+                <Text style={s.inputLabel}>Village</Text>
+                <TouchableOpacity style={s.dropdown} onPress={() => setVillageModal(true)} activeOpacity={0.8}>
+                  <Ionicons name="home-outline" size={18} color="#2563eb" />
+                  <Text style={[s.dropdownText, !locVillage && s.placeholder]}>{locVillage || 'Select village'}</Text>
+                  <Ionicons name="chevron-down-outline" size={18} color="#94a3b8" />
+                </TouchableOpacity>
+              </View>
+            )}
             <TouchableOpacity style={s.saveBtn} onPress={handleSaveLocation} disabled={savingLocation}>
               <Ionicons name="checkmark-circle-outline" size={16} color="#fff" />
               <Text style={s.saveBtnText}>{savingLocation ? 'Saving...' : 'Save Location'}</Text>
@@ -307,27 +342,31 @@ export default function SettingsScreen({ navigation }) {
         {/* ── Preferences ── */}
         <SectionHeader title="Preferences" />
         <View style={s.card}>
-          <SettingsItem emoji="🌐" label="Change Language"         onPress={() => showToast('Coming soon', 'success')} />
-          <SettingsItem emoji="🚫" label="People you blocked"      onPress={() => showToast('Coming soon', 'success')} />
-          <SettingsItem emoji="⭐" label="Get Famous On The RTI" onPress={() => showToast('Coming soon', 'success')} />
+                <SettingsItem icon="language-outline" label="Change Language"         onPress={() => showToast('Coming soon', 'success')} />
+         <SettingsItem icon="card-outline" label="Payment History"      onPress={() => navigation.navigate('PaymentHistory')} />
+         <SettingsItem icon="ban-outline" label="People you blocked"      onPress={() => navigation.navigate('BlockedUsersScreen')} />
+          <SettingsItem icon="trending-up-outline" label="Get Famous On The RTI" onPress={() => showToast('Coming soon', 'success')} />
         </View>
 
         {/* ── About & Support ── */}
         <SectionHeader title="About & Support" />
         <View style={s.card}>
-          <SettingsItem emoji="⭐" label="Rate this app"                 onPress={handleRateApp} />
-          <SettingsItem emoji="📞" label="Contact our company"           onPress={handleContactCompany} />
-          <SettingsItem emoji="🔗" label="Refer your family and friends" onPress={() => nav('Refer')} />
-          <SettingsItem emoji="🔒" label="Privacy Policy"                onPress={() => showToast('Coming soon', 'success')} />
-          <SettingsItem emoji="📄" label="Terms & Conditions"            onPress={() => showToast('Coming soon', 'success')} />
+                  <SettingsItem icon="star-outline" label="Rate this app"                 onPress={handleRateApp} />
+          <SettingsItem icon="call-outline" label="Contact our company"           onPress={handleContactCompany} />
+          {UserStore.hasActiveSubscription(settingsData.currentUser) ? (
+            <SettingsItem icon="share-social-outline" label="Refer your family and friends" onPress={() => nav('Refer')} />
+          ) : null}
+          <SettingsItem icon="lock-closed-outline" label="Privacy Policy"                onPress={() => nav('LegalPolicy', { document: 'PrivacyPolicy' })} />
+          <SettingsItem icon="people-outline" label="Community Guidelines"                onPress={() => nav('LegalPolicy', { document: 'CommunityGuidelines' })} />
+          <SettingsItem icon="document-text-outline" label="Terms & Conditions"            onPress={() => nav('LegalPolicy', { document: 'TermsConditions' })} />
         </View>
 
         {/* ── Account Actions ── */}
         <SectionHeader title="Account Actions" />
         <View style={s.card}>
-          <SettingsItem emoji="🗑️" label="Delete Account"         onPress={handleDeleteAccount} isDestructive />
-          <SettingsItem emoji="0️⃣" label="Disable Media Encoding"  isToggle toggleValue={disableMedia} onToggleChange={setDisableMedia} />
-          <SettingsItem emoji="🚪" label="Logout Account"          onPress={handleLogout} isDestructive />
+                 <SettingsItem icon="trash-outline" label="Delete Account"         onPress={handleDeleteAccount} isDestructive />
+          <SettingsItem icon="flash-off-outline" label="Disable Media Encoding"  isToggle toggleValue={disableMedia} onToggleChange={setDisableMedia} />
+          <SettingsItem icon="log-out-outline" label="Logout Account"          onPress={handleLogout} isDestructive />
         </View>
 
       </ScrollView>
@@ -338,7 +377,9 @@ export default function SettingsScreen({ navigation }) {
       <DropdownModal visible={districtModal} title="Select District" items={districtList}
         selected={locDistrict} onSelect={handleDistrictChange} onClose={() => setDistrictModal(false)} />
       <DropdownModal visible={talukaModal}   title="Select Taluka"   items={talukaList}
-        selected={locTaluka}   onSelect={setLocTaluka}         onClose={() => setTalukaModal(false)} />
+       selected={locTaluka}   onSelect={handleTalukaChange}    onClose={() => setTalukaModal(false)} />
+      <DropdownModal visible={villageModal}  title="Select Village"  items={villageList}
+        selected={locVillage}  onSelect={setLocVillage}         onClose={() => setVillageModal(false)} />
     </View>
     </SafeAreaView>
   );

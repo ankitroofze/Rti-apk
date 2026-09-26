@@ -65,25 +65,24 @@ const readResponseBody = async (response, context) => {
   }
 };
 
-const fetchWithDebug = async (endpoint, options = {}, debugBody = null) => {
+const fetchWithDebug = async (endpoint, options = {}, debugBody = null, customTimeoutMs = null) => {
   const url = `${BASE_URL}${endpoint}`;
   const startedAt = Date.now();
+  const effectiveTimeoutMs = customTimeoutMs || REQUEST_TIMEOUT_MS;
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
   const timeoutId = controller
-    ? setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+    ? setTimeout(() => controller.abort(), effectiveTimeoutMs)
     : null;
-
   const context = {
     url,
     method: options.method || 'GET',
     platform: Platform.OS,
-    timeoutMs: REQUEST_TIMEOUT_MS,
+    timeoutMs: effectiveTimeoutMs,
   };
 
   console.log('[AuthAPI] Request:', {
     ...context,
     headers: redactHeaders(options.headers),
-    body: summarizePayload(debugBody),
   });
 
   try {
@@ -106,13 +105,13 @@ const fetchWithDebug = async (endpoint, options = {}, debugBody = null) => {
       ok: result.ok,
       contentType: result.contentType,
       durationMs: result.durationMs,
-      body: result.data,
     });
 
     return result;
-  } catch (err) {
+   } catch (err) {
     const isTimeout = err?.name === 'AbortError';
-    console.error('[AuthAPI] Fetch failed:', {
+    const logFn = isTimeout ? console.warn : console.error;
+    logFn('[AuthAPI] Fetch failed:', {
       ...context,
       durationMs: Date.now() - startedAt,
       isTimeout,
@@ -134,6 +133,11 @@ const getAuthToken = async () => {
 
   return null;
 };
+
+// OTP se related failure (expired / invalid / not verified) pehchano — backend `errors.otp`
+// ya message me "otp" word bhejta hai.
+const isOtpProblem = (errors = {}, message = '') =>
+  Boolean(errors && errors.otp) || /\botp\b/i.test(String(message || ''));
 
 // ─── Helper: FormData request ─────────────────────────────
 const postFormData = async (endpoint, fields = {}, token = null) => {
@@ -175,7 +179,7 @@ const postJSON = async (endpoint, body = {}, token = null) => {
   return { status: response.status, data: response.data };
 };
 
-const getJSON = async (endpoint, token = null) => {
+const getJSON = async (endpoint, token = null, timeoutMs = null) => {
   const headers = {
     Accept: 'application/json',
   };
@@ -187,7 +191,7 @@ const getJSON = async (endpoint, token = null) => {
   const response = await fetchWithDebug(endpoint, {
     method: 'GET',
     headers,
-  });
+  }, null, timeoutMs);
 
   return { status: response.status, data: response.data };
 };
@@ -200,19 +204,22 @@ export const AuthAPI = {
   /**
    * Register a new user
    * POST /register
-   * Body: firstname, middlename, lastname, mobile_no, email, password, confirmed, referral_code
+   * Body: firstname, middlename, lastname, phone, email, password, confirmed, referral_code
    */
-  register: async ({ firstName, middleName = '', lastName, mobile, email, password, referralCode = '' }) => {
+   register: async ({ firstName, middleName = '', lastName, mobile, email, password, referralCode = '', profileImage = '', bio = '', otp = '' }) => {
     try {
       const { status, data } = await postJSON('/register', {
         firstname:     firstName.trim(),
         middlename:    middleName.trim(),
         lastname:      lastName.trim(),
-        mobile_no:     mobile.trim(),
+        phone:         mobile.trim(),
         email:         email.trim().toLowerCase(),
         password:      password,
         confirmed:     password,
         referral_code: referralCode.trim() || '',
+        profile_image: profileImage || '',
+        bio:           bio.trim(),
+        otp:           String(otp || '').trim(),
       });
 
       if (status === 200 || status === 201) {
@@ -242,13 +249,15 @@ export const AuthAPI = {
           Object.values(errors).flat()[0] ||
           data?.message ||
           'Validation failed. Please check your details.';
-        return { ok: false, message: firstError, errors };
+        return { ok: false, status, message: firstError, errors, otpError: isOtpProblem(errors, firstError) };
       }
 
       return {
         ok:      false,
+        status,
         message: data?.message || `Server error (${status}). Please try again.`,
         errors:  data?.errors  || {},
+        otpError: isOtpProblem(data?.errors, data?.message),
       };
 
     } catch (err) {
@@ -365,6 +374,71 @@ export const AuthAPI = {
   },
 
   /**
+   * Registration — Step 1: email par OTP bhejo
+   * POST /register/request-otp
+   * Body: email
+   */
+  requestRegisterOTP: async ({ email }) => {
+    try {
+      const { status, data } = await postJSON('/register/request-otp', {
+        email: String(email || '').trim().toLowerCase(),
+      });
+
+      if (status === 200 || status === 201) {
+        return { ok: true, message: data?.message || 'OTP sent to your email.', data };
+      }
+
+      if (status === 422) {
+        const errors = data?.errors || {};
+        const firstError = Object.values(errors).flat()[0] || data?.message || 'Invalid email address.';
+        return { ok: false, status, message: firstError, errors };
+      }
+
+      if (status === 429) {
+        return { ok: false, status, message: data?.message || 'Too many attempts. Please wait a moment and try again.' };
+      }
+
+      return { ok: false, status, message: data?.message || `Server error (${status}). Please try again.` };
+    } catch (err) {
+      console.error('[AuthAPI.requestRegisterOTP] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error. Please check your internet connection.' };
+    }
+  },
+
+  /**
+   * Registration — Step 2: OTP verify karo
+   * POST /register/verify-otp
+   * Body: email, otp   (verified OTP hi baad me /register me bhejna hai)
+   */
+  verifyRegisterOTP: async ({ email, otp }) => {
+    try {
+      const { status, data } = await postJSON('/register/verify-otp', {
+        email: String(email || '').trim().toLowerCase(),
+        otp:   String(otp || '').trim(),
+      });
+
+      if (status === 200 || status === 201) {
+        return { ok: true, message: data?.message || 'Email verified successfully!', data };
+      }
+
+      if (status === 422) {
+        const errors = data?.errors || {};
+        const firstError = Object.values(errors).flat()[0] || data?.message || 'Invalid or expired OTP.';
+        return { ok: false, status, message: firstError, errors };
+      }
+
+      if (status === 429) {
+        return { ok: false, status, message: data?.message || 'Too many attempts. Please wait a moment and try again.' };
+      }
+
+      return { ok: false, status, message: data?.message || 'Invalid or expired OTP. Please try again.' };
+    } catch (err) {
+      console.error('[AuthAPI.verifyRegisterOTP] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error. Please check your internet connection.' };
+    }
+  },
+
+  /**
    * Forgot Password — Step 3: Reset Password
    * POST /forgot-password/reset-password
    * Body: email, otp, password
@@ -400,7 +474,7 @@ export const AuthAPI = {
    * Headers: Authorization: Bearer {token}
    * Body: state, district, taluka
    */
-  updateState: async ({ state, district, taluka }, tokenOverride = null) => {
+  updateState: async ({ state, district, taluka, village = '' }, tokenOverride = null) => {
     try {
       const token = tokenOverride || await getAuthToken();
       if (!token) {
@@ -410,7 +484,7 @@ export const AuthAPI = {
       const { status, data } = await postFormData('/state', {
         state:    state    || '',
         district: district || '',
-        taluka:   taluka   || '',
+       taluka:   taluka   || '', village:  village  || '',
       }, token);
 
       if (status === 200 || status === 201) {
@@ -550,11 +624,12 @@ export const AuthAPI = {
       if (res.status === 200 || res.status === 201) {
         // ✅ Image turant overwrite nahi hoti — admin approve na kare tab tak
         // pending_profile_image_url me hi save rehti hai.
-        const profile = json?.user?.profile || json?.profile || json?.data?.profile || json?.data || json;
+           const profile = json?.user?.profile || json?.profile || json?.data?.profile || json?.data || json;
         return {
           ok: true,
           data: json,
           pendingImageUrl: profile?.pending_profile_image_url || '',
+          profileUpdateStatus: profile?.profile_update_status ?? null,
         };
       }
       if (res.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
@@ -572,12 +647,14 @@ export const AuthAPI = {
    * jab tak admin approve na kare.
    * POST /profile  (form-data: phone, bio)
    */
-  updateProfile: async ({ phone, bio }) => {
+   updateProfile: async ({ name, email, phone, bio }) => {
     try {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
 
       const formData = new FormData();
+      if (name !== undefined) formData.append('name', name || '');
+      if (email !== undefined) formData.append('email', email || '');
       if (phone !== undefined) formData.append('phone', phone || '');
       if (bio !== undefined) formData.append('bio', bio || '');
 
@@ -658,14 +735,23 @@ export const AuthAPI = {
    * POST /role-subscriptions/purchase
    * Body: { plan_id }
    */
-   purchaseRoleSubscription: async ({ planId, stateSeat }) => {
+   purchaseRoleSubscription: async ({ planId, stateSeat, designationId = '', state = '', district = '', taluka = '', village = '' }) => {
     try {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
 
+      // ✅ NEW: backend ab sirf seat ka display-naam nahi, balki designation_id
+      // (STATE_SEAT_ROLES ka id / role_id) aur poori applicable location
+      // (state/district/taluka/village) bhi paayega — isi se woh seat ko
+      // uski exact location par lock/unlock kar sakega.
       const { status, data } = await postJSON('/role-subscriptions/purchase', {
         plan_id: planId,
         state_seat: stateSeat,
+        designation_id: designationId,
+        state,
+        district,
+        taluka,
+        village,
       }, token);
 
       if (status === 200 || status === 201) {
@@ -714,21 +800,37 @@ export const AuthAPI = {
    * GET /role-subscription-plans
    * Headers: Authorization: Bearer {token}
    */
-  getRoleSubscriptionPlans: async () => {
+getRoleSubscriptionPlans: async (userId) => {
     try {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
 
-      const { status, data } = await getJSON('/role-subscription-plans', token);
+      const numericUserId = Number(userId);
+      const endpoint = Number.isFinite(numericUserId) && numericUserId > 0
+        ? `/role-subscription-plans?user_id=${numericUserId}`
+        : '/role-subscription-plans';
 
-     if (status === 200 || status === 201) {
-        // ✅ FIX: backend ka actual wrapper key "role_subscription_plans" hai
-        const rawList = Array.isArray(data)
-          ? data
-          : (data?.role_subscription_plans || data?.data || data?.plans || []);
-        return { ok: true, plans: rawList };
+       let { status, data } = await getJSON(endpoint, token);
+
+      const pickList = (d) => (Array.isArray(d)
+        ? d
+        : (d?.role_subscription_plans || d?.data || d?.plans || d?.subscription_plans || []));
+
+      if (status === 200 || status === 201) {
+        let rawList = pickList(data);
+
+        // ✅ FIX: agar user_id ke saath list khaali aayi, to bina user_id dobara try karo
+        if ((!rawList || rawList.length === 0) && endpoint.includes('user_id=')) {
+          const retry = await getJSON('/role-subscription-plans', token);
+          console.log('[AuthAPI.getRoleSubscriptionPlans] retry raw ->', retry.status, retry.data);
+          if (retry.status === 200 || retry.status === 201) {
+            rawList = pickList(retry.data);
+          }
+        }
+
+        console.log('[AuthAPI.getRoleSubscriptionPlans] final count ->', rawList?.length, rawList?.[0]);
+        return { ok: true, plans: rawList || [] };
       }
-
       if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
       return { ok: false, message: data?.message || `Server error (${status}).` };
     } catch (err) {
@@ -1234,7 +1336,7 @@ if (status === 200 || status === 201) {
     }, token);
 
     if (status === 200 || status === 201) {
-      const liked = Number(data?.like?.like) === 1 && Number(data?.like?.is_deleted) !== 1;
+     const liked = Number(data?.like?.like) === 1;
       return { ok: true, liked, data };
     }
     if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
@@ -1274,10 +1376,13 @@ if (status === 200 || status === 201) {
       const json = await response.json().catch(() => null);
 
       if (response.status === 200 || response.status === 201 || response.status === 204) {
-        return { ok: true, message: json?.message || 'Unliked.', data: json };
+        return { ok: true, liked: false, message: json?.message || 'Unliked.', data: json };
       }
       if (response.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
-      if (response.status === 404) return { ok: false, message: 'Like not found.' };
+      // ✅ FIX: 404 ka matlab hai already unliked hai (idempotent) — isse
+      // error na maano, warna app "unlike fail hua" dikhake wapis liked
+      // state pe revert kar deta tha jabki backend pe already unliked tha.
+      if (response.status === 404) return { ok: true, liked: false, message: 'Already not liked.', data: json };
       return { ok: false, message: json?.message || `Server error (${response.status}).` };
     } catch (err) {
       console.error('[AuthAPI.unlikeNews] Error:', err);
@@ -1387,16 +1492,15 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
    * GET /news
    * Headers: Authorization: Bearer {token}
    */
-  getNewsList: async (params = {}) => {
+   getNewsList: async (params = {}) => {
     try {
-      const token = await getAuthToken();
-      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+      const token = await getAuthToken(); // token null bhi ho sakta hai (guest) — usse block mat karo
 
       // Agar query params bhejne ho (page, filter etc) to yaha build karo
       const query = new URLSearchParams(params).toString();
       const endpoint = query ? `/news?${query}` : '/news';
 
-      const { status, data } = await getJSON(endpoint, token);
+      const { status, data } = await getJSON(endpoint, token); // token null ho to bhi getJSON automatically bina Authorization header ke public call kar deta hai
 
       if (status === 200 || status === 201) {
         return { ok: true, news: data?.data || data?.news || data };
@@ -1596,11 +1700,24 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
 
  getAdsDetails: async () => {
   try {
-    const { status, data } = await getJSON('/ads-details'); // token nahi chahiye, public route
+    // Some deployments expose this route publicly while others protect it.
+    // Sending a token when one exists works in both cases and prevents a
+    // valid signed-in advertiser from receiving an empty ads response.
+    const token = await getAuthToken();
+    const { status, data } = await getJSON('/ads-details', token, 45000);
     // ✅ FIX: backend ka actual wrapper key "ads_details" hai (pehle "data"/"ads"
     // dhoondh raha tha jo kabhi match hi nahi hota tha — isi wajah se Home screen
     // pe ads kabhi dikhte hi nahi the, hamesha khaali array milta tha)
-    if (status === 200 || status === 201) return { ok: true, ads: data?.ads_details || data?.data || data?.ads || data };
+    if (status === 200 || status === 201) {
+      const ads = data?.ads_details
+        || data?.data?.ads_details
+        || data?.data?.ads
+        || data?.data
+        || data?.ads
+        || data;
+      return { ok: true, ads: Array.isArray(ads) ? ads : [] };
+    }
+    return { ok: false, message: data?.message || `Server error (${status}).` };
   } catch (err) {
     console.error('[AuthAPI.getAdsDetails] Error:', err);
     return { ok: false, isNetwork: true, message: 'Network error.' };
@@ -2275,12 +2392,20 @@ unfollowUserApi: async (userId) => {
   }
 },
 
-getFollowersApi: async () => {
+getFollowersApi: async (userId) => {
   try {
     const token = await getAuthToken();
     if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
-    const { status, data } = await getJSON('/users/followers', token);
-    if (status === 200 || status === 201) return { ok: true, list: data?.data || data || [] };
+    const endpoint = userId ? `/users/followers?user_id=${userId}` : '/users/followers';
+    const { status, data } = await getJSON(endpoint, token);
+    if (status === 200 || status === 201) {
+      // Backend kabhi { followers: [...] }, kabhi { data: [...] }, kabhi seedha [...] bhejta hai — teeno handle karo
+      const list = Array.isArray(data) ? data
+        : Array.isArray(data?.followers) ? data.followers
+        : Array.isArray(data?.data) ? data.data
+        : [];
+      return { ok: true, list };
+    }
     return { ok: false, message: data?.message || `Server error (${status}).` };
   } catch (err) {
     console.error('[AuthAPI.getFollowersApi] Error:', err);
@@ -2288,12 +2413,20 @@ getFollowersApi: async () => {
   }
 },
 
-getFollowingApi: async () => {
+getFollowingApi: async (userId) => {
   try {
     const token = await getAuthToken();
     if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
-    const { status, data } = await getJSON('/users/following', token);
-    if (status === 200 || status === 201) return { ok: true, list: data?.data || data || [] };
+    const endpoint = userId ? `/users/following?user_id=${userId}` : '/users/following';
+    const { status, data } = await getJSON(endpoint, token);
+    if (status === 200 || status === 201) {
+      // Backend kabhi { following: [...] }, kabhi { data: [...] }, kabhi seedha [...] bhejta hai — teeno handle karo
+      const list = Array.isArray(data) ? data
+        : Array.isArray(data?.following) ? data.following
+        : Array.isArray(data?.data) ? data.data
+        : [];
+      return { ok: true, list };
+    }
     return { ok: false, message: data?.message || `Server error (${status}).` };
   } catch (err) {
     console.error('[AuthAPI.getFollowingApi] Error:', err);
@@ -2326,16 +2459,120 @@ unblockUserApi: async (userId) => {
     return { ok: false, isNetwork: true, message: 'Network error.' };
   }
 },
-
 getBlockedUsersApi: async () => {
   try {
     const token = await getAuthToken();
     if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
-    const { status, data } = await getJSON('/users/blocked', token);
-    if (status === 200 || status === 201) return { ok: true, list: data?.data || data || [] };
+      const { status, data } = await getJSON('/users/blocked', token);
+    if (status === 200 || status === 201) return { ok: true, list: data?.blocked_users || data?.data || data || [] };
     return { ok: false, message: data?.message || `Server error (${status}).` };
   } catch (err) {
     console.error('[AuthAPI.getBlockedUsersApi] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+// ─────────────────────────────────────────────────────────
+// WALLET API
+// ─────────────────────────────────────────────────────────
+getWalletApi: async () => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const { status, data } = await getJSON('/wallet', token);
+    if (status === 200) return { ok: true, wallet: data?.wallet || null };
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getWalletApi] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+getWalletCommissionsApi: async ({ status: statusFilter, level, page = 1, perPage = 20 } = {}) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const params = new URLSearchParams();
+    (Array.isArray(statusFilter) ? statusFilter : statusFilter ? [statusFilter] : []).forEach((s) => params.append('status[]', s));
+    if (level) params.append('level', level);
+    params.append('page', page);
+    params.append('per_page', perPage);
+    const { status, data } = await getJSON(`/wallet/commissions?${params.toString()}`, token);
+    if (status === 200) return { ok: true, commissions: data?.data || data?.commissions || [], meta: data?.meta || null };
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getWalletCommissionsApi] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+getWalletTransactionsApi: async ({ type, page = 1, perPage = 20 } = {}) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const params = new URLSearchParams();
+    (Array.isArray(type) ? type : type ? [type] : []).forEach((t) => params.append('type[]', t));
+    params.append('page', page);
+    params.append('per_page', perPage);
+    const { status, data } = await getJSON(`/wallet/transactions?${params.toString()}`, token);
+    if (status === 200) return { ok: true, transactions: data?.data || data?.transactions || [], meta: data?.meta || null };
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getWalletTransactionsApi] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+getWalletWithdrawalsApi: async ({ page = 1, perPage = 20 } = {}) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const { status, data } = await getJSON(`/wallet/withdrawals?page=${page}&per_page=${perPage}`, token);
+    if (status === 200) return { ok: true, requests: data?.data || data?.withdrawals || [], meta: data?.meta || null };
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getWalletWithdrawalsApi] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+createWithdrawalApi: async (payload) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const { status, data } = await postJSON('/wallet/withdrawals', payload, token);
+    if (status === 201 || status === 200) return { ok: true, withdrawal: data?.withdrawal || null, wallet: data?.wallet || null };
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
+    if (status === 422) {
+      const errors = data?.errors || {};
+      const firstError = Object.values(errors).flat()[0] || data?.message || 'Validation failed.';
+      return { ok: false, message: firstError, errors };
+    }
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.createWithdrawalApi] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+cancelWithdrawalApi: async (id) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const res = await fetch(`${BASE_URL}/wallet/withdrawals/${id}/cancel`, {
+      method: 'PATCH',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+    });
+    const json = await res.json().catch(() => null);
+    if (res.status === 200 || res.status === 201) return { ok: true, wallet: json?.wallet || null };
+    if (res.status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
+    return { ok: false, message: json?.message || `Server error (${res.status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.cancelWithdrawalApi] Error:', err);
     return { ok: false, isNetwork: true, message: 'Network error.' };
   }
 },

@@ -4,7 +4,8 @@ import { useFonts } from 'expo-font';
 import { Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
 import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-
+import * as NavigationBar from 'expo-navigation-bar';
+import './components/initFontDefaults';
 import AppNavigator from './navigation/AppNavigator';
 import { ToastProvider } from './components/ui/ToastProvider';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -65,6 +66,12 @@ export default function App() {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return; // expo-navigation-bar sirf Android par kaam karta hai
+    NavigationBar.setBackgroundColorAsync('#b91c1c');
+    NavigationBar.setButtonStyleAsync('light');
+  }, []);
 
   useEffect(() => {
     if (Platform.OS !== 'web') return undefined;

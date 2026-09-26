@@ -2,7 +2,7 @@ import React from 'react';
 import { View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
-export default function VerifiedBadge({ size = 18, style }) {
+export default function VerifiedBadge({ size = 20, style }) {
   return (
     <View style={[{ width: size, height: size }, style]}>
       <Svg viewBox="0 0 24 24" width={size} height={size}>

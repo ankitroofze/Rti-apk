@@ -167,18 +167,22 @@ export default function RightUtilityPanel({
         </View>
       ) : null}
 
-      {/* ── Latest Updates ── */}
+      {/* ── Trending news: compact editorial rows ── */}
       <View style={styles.card}>
-        <View style={styles.cardHeaderRow}>
-          <Ionicons name="flash" size={15} color="#e11d48" />
-          <Text style={styles.cardTitle}>Latest Updates</Text>
+        <View style={[styles.cardHeaderRow, { justifyContent: 'space-between' }]}>
+          <View style={styles.trendingHeaderTitle}>
+          <Ionicons name="trending-up" size={18} color="#dc2626" />
+          <Text style={styles.cardTitle}>Trending News</Text>
+          </View>
+          <TouchableOpacity onPress={() => navigation?.navigate?.('News Feed')}><Text style={styles.viewMoreText}>See All <Ionicons name="arrow-forward" size={12} /></Text></TouchableOpacity>
         </View>
         {(latestUpdates.length ? latestUpdates : []).map((story, i) => (
           <TouchableOpacity key={story.id || i} style={styles.updateRow} activeOpacity={0.8} onPress={() => onOpenDetails?.(story)}>
             <Image source={{ uri: story.image || 'https://picsum.photos/seed/update' + i + '/80/80' }} style={styles.updateThumb} />
             <View style={{ flex: 1 }}>
-              <Text style={styles.updateTitle} numberOfLines={2}>{story.title}</Text>
-              <Text style={styles.updateTime}>{story.publishedAgo || story.date}</Text>
+              <Text style={styles.updateCategory}>{String(story.category || 'India')}</Text>
+              <Text style={styles.updateTitle} numberOfLines={3}>{story.title}</Text>
+              <View style={styles.updateMeta}><Ionicons name="flame" size={13} color="#ef4444" /><Text style={styles.updateTime}>{story.publishedAgo || 'Recently'}</Text><Ionicons name="eye-outline" size={13} color="#94a3b8" /><Text style={styles.updateTime}>{Number(story.views || 0).toLocaleString()} views</Text></View>
             </View>
           </TouchableOpacity>
         ))}
@@ -213,32 +217,30 @@ export default function RightUtilityPanel({
 }
 
 const styles = StyleSheet.create({
-   rail: {
+  rail: {
     width: '100%',
-    marginLeft: '-98px',
+    marginLeft: 0,
     gap: 5,
   },
 
   card: {
     borderWidth: 1,
-    borderColor: '#dddee0',
+    borderColor: '#e2e8f0',
     backgroundColor: '#fff',
-    borderRadius: 6,
-    padding: 24,
+    borderRadius: 10,
+    padding: 14,
   },
 
   cardHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginBottom: 20,
+    marginBottom: 8,
   },
+  liveDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#ef233c' },
 
-  cardTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#000000',
-  },
+  cardTitle: { fontSize: 16, fontWeight: '800', color: '#172033', fontFamily: 'Roboto' },
+  trendingHeaderTitle: { flexDirection: 'row', alignItems: 'center', gap: 8 },
 
   // Sponsored
   sponsoredAdBlock: {
@@ -346,28 +348,33 @@ const styles = StyleSheet.create({
   // Updates
   updateRow: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 16,
+    gap: 12,
+    paddingVertical: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
   },
 
   updateThumb: {
-    width: 70,
-    height: 70,
-    borderRadius: 2,
+    width: 88,
+    height: 68,
+    borderRadius: 7,
     backgroundColor: '#f1f5f9',
   },
 
   updateTitle: {
-    fontSize: 14.5,
-    fontWeight: '500',
-    color: '#0f172a',
-    lineHeight: 20,
-  },
-
-  updateTime: {
     fontSize: 13,
+    fontWeight: '700',
+    color: '#172033',
+    lineHeight: 18,
+    fontFamily: 'Roboto',
+  },
+  updateCategory: { alignSelf: 'flex-start', backgroundColor: '#fee2e2', color: '#dc2626', fontSize: 9, fontWeight: '800', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2, marginBottom: 4, fontFamily: 'Roboto' },
+  updateMeta: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 6 },
+  updateTime: {
+    fontSize: 10,
     color: '#4b596d',
-    marginTop: 8,
+    fontWeight: '800',
+    fontFamily: 'Roboto',
   },
 
   // News Desk

@@ -1,39 +1,45 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Platform } from 'react-native';
 
 const SettingsStyles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#f8fafc' },
+  root: { flex: 1, backgroundColor: '#ffffff' },
 
   // ── Header ──
-  header: {
+   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 12,
     paddingHorizontal: 16,
-    paddingVertical: 14,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+    paddingBottom: 16,
   },
   backBtn: {
     width: 36,
     height: 36,
-    borderRadius: 18,
-    backgroundColor: '#f1f5f9',
     alignItems: 'center',
     justifyContent: 'center',
   },
   headerTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#0f172a',
+    fontSize: 15,
+    fontWeight: '400',
+    color: '#ffffff',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
+  },
+  headerSubtitle: {
+    fontSize: 11,
+    color: '#ffffff',
+    marginTop: 1,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
+    fontWeight: '400',
   },
 
-  // ── Scroll ──
+   // ── Scroll ──
   scroll: { flex: 1 },
-  scrollContent: { paddingBottom: 100 },
+  scrollContent: {
+    paddingBottom: 100,
+    ...(Platform.OS === 'web' ? { alignSelf: 'center', width: '100%', maxWidth: 800 } : {}),
+  },
 
   // ── Section Header ──
-  sectionHeader: {
+   sectionHeader: {
     fontSize: 12,
     fontWeight: '700',
     color: '#94a3b8',
@@ -42,6 +48,7 @@ const SettingsStyles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 20,
     paddingBottom: 8,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
   },
 
   // ── Card ──
@@ -67,16 +74,19 @@ const SettingsStyles = StyleSheet.create({
   itemDestructive: {
     backgroundColor: '#fff5f5',
   },
-  itemEmoji: {
-    fontSize: 20,
-    width: 28,
-    textAlign: 'center',
+   iconWrap: {
+    width: 48,
+    height: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   itemLabel: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 17,
+    lineHeight: 20,
     color: '#1e293b',
     fontWeight: '500',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
   },
   itemLabelDestructive: {
     color: '#ef4444',

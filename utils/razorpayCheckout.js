@@ -1,6 +1,6 @@
 // utils/razorpayCheckout.js
 import { Platform } from 'react-native';
-
+import RazorpayCheckout from 'react-native-razorpay';
 let scriptLoadingPromise = null;
 
 /**
@@ -42,12 +42,30 @@ export const loadRazorpayScript = () => {
  *   onFailed(errorInfo)          -> called jab payment fail ho ya user cancel kare
  */
 export const openRazorpayCheckout = async (orderData, planType, { onVerified, onFailed } = {}) => {
+  // ✅ Android / iOS — native Razorpay SDK
   if (Platform.OS !== 'web') {
-    onFailed?.({
-      razorpay_order_id: orderData?.order_id,
-      error_code: 'PLATFORM_NOT_SUPPORTED',
-      error_description: 'Payment abhi sirf web par supported hai.',
-    });
+    const options = {
+      key: orderData.key,
+      amount: orderData.amount,
+      currency: orderData.currency,
+      order_id: orderData.order_id,
+      name: 'RTI',
+      description: `${planType} subscription`,
+      theme: { color: '#2563EB' },
+    };
+
+    try {
+      const response = await RazorpayCheckout.open(options);
+      // native SDK response: { razorpay_payment_id, razorpay_order_id, razorpay_signature }
+      await onVerified?.(response);
+    } catch (err) {
+      // native SDK error: { code, description }
+      onFailed?.({
+        razorpay_order_id: orderData?.order_id,
+        error_code: err?.code || 'PAYMENT_FAILED',
+        error_description: err?.description || 'Payment failed.',
+      });
+    }
     return;
   }
 

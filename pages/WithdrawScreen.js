@@ -1,47 +1,47 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import {
-  Platform,
-  ScrollView,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  useWindowDimensions,
-  View,
-  StatusBar,
-  StyleSheet,
-} from 'react-native';
+import { ScrollView, Text, View, TouchableOpacity, TextInput, Platform, useWindowDimensions, StatusBar, StyleSheet, ImageBackground } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
 import Sidebar from '../components/Sidebar';
 import { useToast } from '../components/ui/ToastProvider';
 import WithdrawStyles from '../styles/WithdrawStyles';
 import { UserStore } from '../store/UserStore';
+import { MODULE_HEADER_HEIGHT_WEB, HEADER_BG_IMAGE } from '../constants/subscriptionThemes';
+import ModuleWebHeader from '../components/Modulewebheader';
+import ModuleMobileHeader from '../components/ModuleMobileHeader';
 
 const PAGE_SIZE = 10;
 
 // === Shuru theme accent (was ORANGE '#e8603c') ===
 const ORANGE = '#dc2626';
 
+// ✅ Post News (Addnewsscreen) ke exact tokens — input border aur button color
+// dono screens par bilkul same rakhne ke liye yahin se aate hain.
+const PN_FIELD_BORDER = '#D1D5DB';
+const PN_GRADIENT_RED = ['#450A0A', '#B91C1C', '#7F1D1D'];
+
 // ─── Header override — matches AdvertiseScreen's top bar exactly (font, back arrow, spacing) ───
 const HEADER_TOP = Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 10 : 54;
 const H = StyleSheet.create({
-  header: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingTop: HEADER_TOP, paddingBottom: 14, paddingHorizontal: 16,
-    backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: '#E6E6E6',
+    header: {
+    width: '100%', alignSelf: 'stretch',
+    overflow: 'hidden',
+    backgroundColor: '#b91c1c',
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 16, paddingBottom: 14,
+    ...(Platform.OS === 'web' ? { height: MODULE_HEADER_HEIGHT_WEB, paddingBottom: 0 } : null),
   },
-  backBtn: { 
-    width: 36, height: 36, alignItems: 'center', justifyContent: 'center', 
-    borderRadius: 6, // ✅ Border radius 6px
-    marginLeft: -6 
+  headerImg: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    width: '100%', height: '100%', resizeMode: 'cover',
   },
-  title:   { 
-    flex: 1, 
-    fontSize: 15, 
-    color: '#353535',
+  backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  title: {
+    flex: 1, fontSize: 15, fontWeight: '600', color: '#ffffff',
     fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto',
-    fontWeight: '600', // ✅ Weight 600
   },
 });
 
@@ -67,11 +67,14 @@ const FS = StyleSheet.create({
     marginTop: 3,
     fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto',
   },
-  input:          {
-    marginTop: 10, minHeight: 46, borderRadius: 6, // ✅ Border radius 6px
+    // ✅ Post News ke webInput jaisa exact: 1px #D1D5DB border, radius 8, white bg
+    input:          {
+    marginTop: 10, minHeight: 48, borderRadius: 8,
     borderWidth: 1,
-    borderColor: ORANGE, paddingHorizontal: 14, paddingVertical: 12,
-    fontSize: 13, color: '#222',
+    borderColor: PN_FIELD_BORDER, backgroundColor: '#ffffff',
+    paddingHorizontal: 12, paddingVertical: 14,
+    fontSize: 13, color: '#111111',
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : null),
     fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto',
   },
   errorText:      { 
@@ -83,7 +86,7 @@ const FS = StyleSheet.create({
   },
   radioCard:      {
     marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderWidth: 1, borderColor: '#DDDDDD', borderRadius: 6, // ✅ Border radius 6px
+    borderWidth: 1, borderColor: PN_FIELD_BORDER, borderRadius: 8,
     backgroundColor: '#fff',
     paddingVertical: 12, paddingHorizontal: 14,
   },
@@ -120,10 +123,11 @@ const FS = StyleSheet.create({
     fontWeight: '500',
     fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto',
   },
-  submitBtn:      {
+   // ✅ Post News ke submit button jaisa — pill shape + red gradient
+   submitBtn:      {
     marginTop: 28, marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, backgroundColor: ORANGE, borderRadius: 6, // ✅ Border radius 6px
-    paddingVertical: 14,
+    gap: 8, borderRadius: 100,
+    paddingVertical: 13, overflow: 'hidden',
   },
   submitBtnText:  { 
     color: '#fff', 
@@ -135,17 +139,20 @@ const FS = StyleSheet.create({
 });
 
 const initialForm = {
-  amount:         '',
-  payment_mode:   'bank',
-  bank_name:      '',
-  account_number: '',
-  ifsc:           '',
-  upi_id:         '',
-  transferFull:   false,
+  amount:              '',
+  payment_mode:        'bank',
+  account_holder_name: '',
+  bank_name:           '',
+  account_number:      '',
+  ifsc:                '',
+  pan_number:          '',
+  upi_id:              '',
+  transferFull:        false,
 };
 
 const IFSC_REGEX    = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 const ACCOUNT_REGEX = /^\d{9,18}$/;
+const PAN_REGEX      = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
 
 function validateForm(form) {
   const errors = {};
@@ -154,7 +161,15 @@ function validateForm(form) {
   } else if (isNaN(form.amount) || Number(form.amount) <= 0) {
     errors.amount = 'Enter a valid amount greater than 0.';
   }
+  if (!form.pan_number.trim()) {
+    errors.pan_number = 'PAN number is required.';
+  } else if (!PAN_REGEX.test(form.pan_number.trim().toUpperCase())) {
+    errors.pan_number = 'Invalid PAN (e.g. ABCDE1234F).';
+  }
   if (form.payment_mode === 'bank') {
+    if (!form.account_holder_name.trim()) {
+      errors.account_holder_name = 'Account holder name is required.';
+    }
     if (!form.bank_name.trim()) {
       errors.bank_name = 'Bank name is required.';
     } else if (form.bank_name.trim().length < 3) {
@@ -219,6 +234,7 @@ const webStatusTextStyle = (status) => {
 };
 
 export default function WithdrawScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const { width: windowWidth } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
@@ -239,6 +255,7 @@ export default function WithdrawScreen({ navigation }) {
 
   const [withdrawData, setWithdrawData] = useState({
     currentUser:       null,
+    wallet:            null,
     available_balance: 0,
     requests:          [],
   });
@@ -291,26 +308,46 @@ export default function WithdrawScreen({ navigation }) {
     }
     setSubmitting(true);
     const payload = {
-      amount:       form.amount,
-      payment_mode: form.payment_mode,
+      amount:     Number(form.amount),
+      method:     form.payment_mode,
+      pan_number: form.pan_number.trim().toUpperCase(),
       ...(form.payment_mode === 'bank'
         ? {
-            bank_name:      form.bank_name.trim(),
-            account_number: form.account_number.trim(),
-            ifsc:           form.ifsc.trim().toUpperCase(),
+            account_holder_name: form.account_holder_name.trim(),
+            account_number:      form.account_number.trim(),
+            ifsc_code:           form.ifsc.trim().toUpperCase(),
+            bank_name:           form.bank_name.trim(),
           }
         : { upi_id: form.upi_id.trim() }),
     };
     const result = await UserStore.createWithdrawRequest(payload);
     setSubmitting(false);
     if (!result.ok) {
-      showToast(result.message, 'error');
+      if (result.errors) {
+        const mapped = {};
+        Object.entries(result.errors).forEach(([key, msgs]) => {
+          const localKey = key === 'ifsc_code' ? 'ifsc' : key; // form field key alag hai, response key alag
+          mapped[localKey] = Array.isArray(msgs) ? msgs[0] : msgs;
+        });
+        setErrors(mapped);
+      }
+      showToast(result.message || 'Withdrawal request failed.', 'error');
       return;
     }
     setForm(initialForm);
     setErrors({});
     setSuccessMessage('Withdrawal request submitted successfully.');
     setTimeout(() => setSuccessMessage(''), 3000);
+    loadWithdraw();
+  };
+
+  const handleCancelRequest = async (id) => {
+    const result = await UserStore.cancelWithdrawRequest(id);
+    if (!result.ok) {
+      showToast(result.message || 'Unable to cancel withdrawal request.', 'error');
+      return;
+    }
+    showToast('Withdrawal request cancelled.', 'success');
     loadWithdraw();
   };
 
@@ -358,23 +395,16 @@ export default function WithdrawScreen({ navigation }) {
   if (isWeb && !isMobileWeb) {
     return (
       <View style={WithdrawStyles.root}>
+        {/* ── Top Bar — red image header, subscription screen jaisa ── */}
+        {/* ✅ Web header — design ek hi jagah (components/ModuleWebHeader.js) se aata hai */}
+        <ModuleWebHeader title="Withdraw Earnings" navigation={navigation} />
+
         <ScrollView
           style={{ flex: 1 }}
           contentContainerStyle={WithdrawStyles.webPage}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* ── Back Button ── */}
-          <View style={WithdrawStyles.webBackBtn}>
-            <TouchableOpacity
-              onPress={() => navigation.navigate('QuickMenu')}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-            >
-              <Ionicons name="arrow-back" size={18} color={ORANGE} />
-              <Text style={WithdrawStyles.webBackBtnText}>Back</Text>
-            </TouchableOpacity>
-          </View>
-
        {/* ── WITHDRAW EARNING — flat, numbered, Shuru form style (web) ── */}
           <View style={{ maxWidth: 560, width: '100%', alignSelf: 'center', paddingHorizontal: 12 }}>
 
@@ -388,6 +418,22 @@ export default function WithdrawScreen({ navigation }) {
                 </Text>
               </View>
             </View>
+
+            {withdrawData.wallet?.is_frozen ? (
+              <View style={{ flexDirection: 'row', gap: 8, backgroundColor: '#FDECEC', borderWidth: 1, borderColor: '#F5B5B5', borderRadius: 10, padding: 12, marginTop: 14 }}>
+                <Feather name="alert-triangle" size={16} color="#7F1D1D" />
+                <Text style={{ color: '#7F1D1D', fontSize: 13, fontWeight: '600', flex: 1 }}>
+                  {withdrawData.wallet.freeze_reason || 'Your wallet is frozen. Withdrawals are disabled.'}
+                </Text>
+              </View>
+            ) : withdrawData.wallet?.pending_withdrawal_count > 0 ? (
+              <View style={{ flexDirection: 'row', gap: 8, backgroundColor: '#FFF8E1', borderWidth: 1, borderColor: '#FDE59A', borderRadius: 10, padding: 12, marginTop: 14 }}>
+                <Feather name="clock" size={16} color="#7A5B00" />
+                <Text style={{ color: '#7A5B00', fontSize: 13, fontWeight: '600', flex: 1 }}>
+                  Aapki {withdrawData.wallet.pending_withdrawal_count} withdrawal request process me hai.
+                </Text>
+              </View>
+            ) : null}
 
             {successMessage ? (
               <Text style={[WithdrawStyles.webSuccessText, { marginTop: 14 }]}>{successMessage}</Text>
@@ -454,6 +500,25 @@ export default function WithdrawScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
+            {/* PAN — backend har withdrawal (bank ya UPI dono) me pan_number maangta hai */}
+            <View style={FS.section}>
+              <View style={FS.labelRow}>
+                <Text style={FS.labelText}>PAN Number</Text>
+                <Text style={FS.required}> *</Text>
+              </View>
+              <Text style={FS.subtitle}>Zaroori hai — bina PAN ke withdrawal request submit nahi hogi</Text>
+              <TextInput
+                style={FS.input}
+                value={form.pan_number}
+                onChangeText={(v) => handleChange('pan_number', v.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                placeholder="e.g. ABCDE1234F"
+                placeholderTextColor="#ccc"
+                autoCapitalize="characters"
+                maxLength={10}
+              />
+              {errors.pan_number ? <Text style={FS.errorText}>{errors.pan_number}</Text> : null}
+            </View>
+
             {/* 3. Bank details */}
             {form.payment_mode === 'bank' && (
               <View style={FS.section}>
@@ -462,6 +527,15 @@ export default function WithdrawScreen({ navigation }) {
                   <Text style={FS.required}> *</Text>
                 </View>
                 <Text style={FS.subtitle}>Add your bank name, account number and IFSC code</Text>
+
+                <TextInput
+                  style={FS.input}
+                  value={form.account_holder_name}
+                  onChangeText={(v) => handleChange('account_holder_name', v)}
+                  placeholder="Account Holder Name"
+                  placeholderTextColor="#ccc"
+                />
+                {errors.account_holder_name ? <Text style={FS.errorText}>{errors.account_holder_name}</Text> : null}
 
                 <TextInput
                   style={FS.input}
@@ -520,15 +594,23 @@ export default function WithdrawScreen({ navigation }) {
               </View>
             )}
 
-            <TouchableOpacity
-              style={[FS.submitBtn, submitting && FS.submitBtnDisabled]}
+                       <TouchableOpacity
               onPress={handleSubmit}
-              disabled={submitting}
+              disabled={submitting || withdrawData.wallet?.is_frozen || withdrawData.wallet?.can_withdraw === false}
+              activeOpacity={0.85}
+              style={(submitting || withdrawData.wallet?.is_frozen) ? { opacity: 0.6 } : undefined}
             >
-              <Feather name="arrow-up-circle" size={17} color="#fff" />
-              <Text style={FS.submitBtnText}>
-                {submitting ? 'Submitting...' : 'Submit Request'}
-              </Text>
+              <LinearGradient
+                colors={PN_GRADIENT_RED}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={FS.submitBtn}
+              >
+                <Feather name="arrow-up-circle" size={17} color="#fff" />
+                <Text style={FS.submitBtnText}>
+                  {submitting ? 'Submitting...' : 'Submit Request'}
+                </Text>
+              </LinearGradient>
             </TouchableOpacity>
 
           </View>
@@ -615,7 +697,7 @@ export default function WithdrawScreen({ navigation }) {
                               <View style={WithdrawStyles.webRequestMetaRow}>
                                 <Feather name="tag" size={12} color="#ccc" />
                                 <Text style={WithdrawStyles.webRequestMeta}>
-                                  IFSC: <Text style={WithdrawStyles.webRequestMetaBold}>{item.ifsc}</Text>
+                                  IFSC: <Text style={WithdrawStyles.webRequestMetaBold}>{item.ifsc_code || item.ifsc}</Text>
                                 </Text>
                               </View>
                             </>
@@ -628,9 +710,35 @@ export default function WithdrawScreen({ navigation }) {
                             </View>
                           )}
 
+                          {item.status?.toLowerCase() === 'paid' && item.payout_reference ? (
+                            <View style={WithdrawStyles.webRequestMetaRow}>
+                              <Feather name="check-circle" size={12} color="#16a34a" />
+                              <Text style={WithdrawStyles.webRequestMeta}>
+                                UTR/Reference: <Text style={WithdrawStyles.webRequestMetaBold}>{item.payout_reference}</Text>
+                              </Text>
+                            </View>
+                          ) : null}
+                          {item.status?.toLowerCase() === 'rejected' && item.rejection_reason ? (
+                            <View style={WithdrawStyles.webRequestMetaRow}>
+                              <Feather name="alert-circle" size={12} color={ORANGE} />
+                              <Text style={WithdrawStyles.webRequestMeta}>
+                                Reason: <Text style={WithdrawStyles.webRequestMetaBold}>{item.rejection_reason}</Text>
+                              </Text>
+                            </View>
+                          ) : null}
+
                           <Text style={WithdrawStyles.webRequestDate}>
                             Requested on: {item.date}
                           </Text>
+
+                          {item.status?.toLowerCase() === 'pending' ? (
+                            <TouchableOpacity
+                              style={{ marginTop: 10, alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: ORANGE }}
+                              onPress={() => handleCancelRequest(item.id)}
+                            >
+                              <Text style={{ color: ORANGE, fontSize: 12, fontWeight: '700' }}>Cancel Request</Text>
+                            </TouchableOpacity>
+                          ) : null}
                         </View>
                       ))}
 
@@ -702,13 +810,12 @@ export default function WithdrawScreen({ navigation }) {
   return (
     <View style={WithdrawStyles.root}>
 
-      {/* Top Bar — matches AdvertiseScreen header style */}
-      <View style={H.header}>
-        <TouchableOpacity onPress={() => navigation.navigate('QuickMenu')} style={H.backBtn} activeOpacity={0.6}>
-          <Ionicons name="arrow-back" size={22} color="#000" />
-        </TouchableOpacity>
-        <Text style={[H.title, fontsLoaded && { fontFamily: 'Roboto_700Bold' }]}>Withdraw Earnings</Text>
-      </View>
+         {/* Top Bar — ek hi common header (components/ModuleMobileHeader.js) */}
+      <ModuleMobileHeader
+        title="Withdraw Earnings"
+        navigation={navigation}
+        onBack={() => navigation.navigate('QuickMenu')}
+      />
 
       <ScrollView
         style={WithdrawStyles.scrollView}
@@ -717,10 +824,15 @@ export default function WithdrawScreen({ navigation }) {
         keyboardShouldPersistTaps="handled"
       >
         {/* ── Hero ── */}
-        <View style={WithdrawStyles.heroCard}>
+        <ImageBackground
+          source={require('../assets/images/profile-red.png')}
+          resizeMode="cover"
+          imageStyle={{ borderRadius: 6 }}
+          style={WithdrawStyles.heroCard}
+        >
           <Text style={WithdrawStyles.heroEyebrow}>Earnings</Text>
           <Text style={WithdrawStyles.heroTitle}>Withdraw Earnings</Text>
-        </View>
+        </ImageBackground>
 
         {/* ── Available Balance ── */}
         <View style={WithdrawStyles.balanceCard}>
@@ -732,6 +844,22 @@ export default function WithdrawScreen({ navigation }) {
             </Text>
           </View>
         </View>
+
+        {withdrawData.wallet?.is_frozen ? (
+          <View style={{ flexDirection: 'row', gap: 8, backgroundColor: '#FDECEC', borderWidth: 1, borderColor: '#F5B5B5', borderRadius: 10, padding: 12, marginBottom: 10 }}>
+            <Feather name="alert-triangle" size={15} color="#7F1D1D" />
+            <Text style={{ color: '#7F1D1D', fontSize: 12, fontWeight: '600', flex: 1 }}>
+              {withdrawData.wallet.freeze_reason || 'Your wallet is frozen. Withdrawals are disabled.'}
+            </Text>
+          </View>
+        ) : withdrawData.wallet?.pending_withdrawal_count > 0 ? (
+          <View style={{ flexDirection: 'row', gap: 8, backgroundColor: '#FFF8E1', borderWidth: 1, borderColor: '#FDE59A', borderRadius: 10, padding: 12, marginBottom: 10 }}>
+            <Feather name="clock" size={15} color="#7A5B00" />
+            <Text style={{ color: '#7A5B00', fontSize: 12, fontWeight: '600', flex: 1 }}>
+              Aapki {withdrawData.wallet.pending_withdrawal_count} withdrawal request process me hai.
+            </Text>
+          </View>
+        ) : null}
 
         {successMessage ? (
           <Text style={WithdrawStyles.successText}>{successMessage}</Text>
@@ -801,6 +929,25 @@ export default function WithdrawScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
+          {/* PAN — backend har withdrawal (bank ya UPI dono) me pan_number maangta hai */}
+          <View style={FS.section}>
+            <View style={FS.labelRow}>
+              <Text style={FS.labelText}>PAN Number</Text>
+              <Text style={FS.required}> *</Text>
+            </View>
+            <Text style={FS.subtitle}>Zaroori hai — bina PAN ke withdrawal request submit nahi hogi</Text>
+            <TextInput
+              style={FS.input}
+              value={form.pan_number}
+              onChangeText={(v) => handleChange('pan_number', v.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+              placeholder="e.g. ABCDE1234F"
+              placeholderTextColor="#ccc"
+              autoCapitalize="characters"
+              maxLength={10}
+            />
+            {errors.pan_number ? <Text style={FS.errorText}>{errors.pan_number}</Text> : null}
+          </View>
+
           {/* 3. Bank details */}
           {form.payment_mode === 'bank' && (
             <View style={FS.section}>
@@ -809,6 +956,15 @@ export default function WithdrawScreen({ navigation }) {
                 <Text style={FS.required}> *</Text>
               </View>
               <Text style={FS.subtitle}>Add your bank name, account number and IFSC code</Text>
+
+              <TextInput
+                style={FS.input}
+                value={form.account_holder_name}
+                onChangeText={(v) => handleChange('account_holder_name', v)}
+                placeholder="Account Holder Name"
+                placeholderTextColor="#ccc"
+              />
+              {errors.account_holder_name ? <Text style={FS.errorText}>{errors.account_holder_name}</Text> : null}
 
               <TextInput
                 style={FS.input}
@@ -867,15 +1023,23 @@ export default function WithdrawScreen({ navigation }) {
             </View>
           )}
 
-          <TouchableOpacity
-            style={[FS.submitBtn, submitting && FS.submitBtnDisabled]}
+            <TouchableOpacity
             onPress={handleSubmit}
-            disabled={submitting}
+            disabled={submitting || withdrawData.wallet?.is_frozen || withdrawData.wallet?.can_withdraw === false}
+            activeOpacity={0.85}
+            style={(submitting || withdrawData.wallet?.is_frozen) ? FS.submitBtnDisabled : undefined}
           >
-            <Feather name="arrow-up-circle" size={17} color="#fff" />
-            <Text style={FS.submitBtnText}>
-              {submitting ? 'Submitting...' : 'Submit Request'}
-            </Text>
+            <LinearGradient
+              colors={PN_GRADIENT_RED}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={FS.submitBtn}
+            >
+              <Feather name="arrow-up-circle" size={17} color="#fff" />
+              <Text style={FS.submitBtnText}>
+                {submitting ? 'Submitting...' : 'Submit Request'}
+              </Text>
+            </LinearGradient>
           </TouchableOpacity>
         </View>
 
@@ -962,7 +1126,7 @@ export default function WithdrawScreen({ navigation }) {
                           <View style={WithdrawStyles.requestMetaRow}>
                             <Feather name="tag" size={12} color="#ccc" />
                             <Text style={WithdrawStyles.requestMeta}>
-                              IFSC: <Text style={WithdrawStyles.requestMetaBold}>{item.ifsc}</Text>
+                              IFSC: <Text style={WithdrawStyles.requestMetaBold}>{item.ifsc_code || item.ifsc}</Text>
                             </Text>
                           </View>
                         </>
@@ -975,9 +1139,35 @@ export default function WithdrawScreen({ navigation }) {
                         </View>
                       )}
 
+                      {item.status?.toLowerCase() === 'paid' && item.payout_reference ? (
+                        <View style={WithdrawStyles.requestMetaRow}>
+                          <Feather name="check-circle" size={12} color="#16a34a" />
+                          <Text style={WithdrawStyles.requestMeta}>
+                            UTR/Reference: <Text style={WithdrawStyles.requestMetaBold}>{item.payout_reference}</Text>
+                          </Text>
+                        </View>
+                      ) : null}
+                      {item.status?.toLowerCase() === 'rejected' && item.rejection_reason ? (
+                        <View style={WithdrawStyles.requestMetaRow}>
+                          <Feather name="alert-circle" size={12} color={ORANGE} />
+                          <Text style={WithdrawStyles.requestMeta}>
+                            Reason: <Text style={WithdrawStyles.requestMetaBold}>{item.rejection_reason}</Text>
+                          </Text>
+                        </View>
+                      ) : null}
+
                       <Text style={WithdrawStyles.requestDate}>
                         Requested on: {item.date}
                       </Text>
+
+                      {item.status?.toLowerCase() === 'pending' ? (
+                        <TouchableOpacity
+                          style={{ marginTop: 10, alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: ORANGE }}
+                          onPress={() => handleCancelRequest(item.id)}
+                        >
+                          <Text style={{ color: ORANGE, fontSize: 12, fontWeight: '700' }}>Cancel Request</Text>
+                        </TouchableOpacity>
+                      ) : null}
                     </View>
                   ))}
 

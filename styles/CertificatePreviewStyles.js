@@ -49,6 +49,14 @@ export default StyleSheet.create({
     padding: 8,
     marginLeft: -8,
     borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  backButtonText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#111',
   },
   
   headerTitle: {
@@ -170,17 +178,16 @@ headerUserName: {
   /* ─────────────────────────────
      AWARDEE NAME
   ───────────────────────────── */
-  awardeeName: {
-    position: 'absolute',
-    top: '36%',
-    left: '8%',
-    right: '8%',
-    fontSize: 22,
-    fontWeight: '800',
-    textAlign: 'center',
-    color: RED,
-  },
-
+awardeeName: {
+  position: 'absolute',
+  top: '36%',
+  left: '6%',
+  right: '6%',
+   fontSize: 18,
+  fontWeight: '800',
+  textAlign: 'center',
+  color: RED,
+},
   /* ─────────────────────────────
      PASSED TEXT
   ───────────────────────────── */
@@ -215,13 +222,20 @@ headerUserName: {
     width: '98%',
     height: 48,
   },
-
+ resultBadgeText: {
+  borderWidth: 1.5,
+  borderRadius: 14,
+  paddingHorizontal: 10,
+  paddingVertical: 4,
+  fontSize: 10,
+  fontWeight: '800',
+},
   /* ─────────────────────────────
      SINCE TEXT
   ───────────────────────────── */
-  sinceText: {
+   sinceText: {
     position: 'absolute',
-    top: '56%',
+    top: '52%',
     left: '12%',
     right: '12%',
     fontSize: 9.5,
@@ -310,12 +324,12 @@ headerUserName: {
      Original image mein right-bottom area mein hai
   ───────────────────────────── */
   photoWrapper: {
-    position: 'absolute',
-    right: '5%',
-    top: '57%',
-    width: '28%',
-    height: '18%',
-  },
+  position: 'absolute',
+  right: '4%',
+  top: '56%',
+  width: '31%',
+  height: '20%',
+},
 
   // Gold frame image (background)
   photoFrameImg: {
@@ -330,14 +344,14 @@ headerUserName: {
 
   // Actual user photo - frame ke andar centered
   photoInner: {
-    position: 'absolute',
-    top: '12%',
-    left: '21%',
-    right: '21%',
-    bottom: '30%',   // frame ke neeche ribbon hai isliye thoda upar
-    overflow: 'hidden',
-    borderRadius: 3,
-  },
+  position: 'absolute',
+  top: '9%',
+  left: '17%',
+  right: '17%',
+  bottom: '24%',
+  overflow: 'hidden',
+  borderRadius: 4,
+},
 
   photo: {
     width: '100%',
@@ -381,13 +395,13 @@ headerUserName: {
   },
 
   dateBannerText: {
-    fontSize: 9,
-    textAlign: 'center',
-    color: '#3a2a1a',
-    marginRight: 59,
-    fontWeight: '600',
-    zIndex: 1,
-  },
+  fontSize: 9.5,
+  textAlign: 'center',
+  color: '#3a2a1a',
+  marginRight: 45,
+  fontWeight: '600',
+  zIndex: 1,
+},
 
   /* ─────────────────────────────
      FOOTER

@@ -578,6 +578,7 @@ function feedPostFromNewsItem(item = {}, currentEmail = '') {
     tagColor: '#16a34a',
     createdAt: item.createdAt || item.date || null,
     createdBy: authorEmail,
+    author_id: item.author_id ?? item.authorId ?? null,
   };
 }
 
@@ -1090,7 +1091,9 @@ function ActionColumn({ post, onLike, onComment, onShare, onBookmark, onDescript
     n >= 1_000_000 ? (n / 1_000_000).toFixed(1) + 'M' :
     n >= 1_000 ? (n / 1_000).toFixed(1) + 'K' : String(n);
 
-  const likeCount    = formatCount(post.liked ? (Number(post.likes) + 1) : Number(post.likes));
+  // ✅ FIX: post.likes ab backend se aata hua TRUE total hai (apna like bhi
+  // usme already included hai), isliye yahan +1 add nahi karna.
+  const likeCount    = formatCount(Number(post.likes));
   const shareCount   = formatCount(Number(post.shares));
   const commentCount = post.commentsCount ?? (Array.isArray(post.comments) ? post.comments.length : 0);
 
@@ -1170,8 +1173,9 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription,
   const headline    = String(safePost.headline || '');
   const role        = String(safePost.role || safePost.author_role || '');
   const time        = String(safePost.time || '');
-  const postId      = String(safePost.id || '');
+    const postId      = String(safePost.id || '');
   const authorEmail = String(safePost.createdBy || safePost.created_by || '').trim().toLowerCase();
+  const authorId     = safePost.author_id ?? safePost.authorId ?? null;
   const verified    = Boolean(
     safePost.verified ||
     safePost.author_has_blue_tick ||
@@ -1216,13 +1220,13 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription,
       Alert.alert('Error', 'Unable to verify user. Please try again.');
       return;
     }
-    setFollowLoading(true);
+      setFollowLoading(true);
     try {
       if (isFollowing) {
-        await UserStore.unfollowUser(authorEmail);
+        await UserStore.unfollowUser(authorEmail, authorId);
         setIsFollowing(false);
       } else {
-        await UserStore.followUser(authorEmail);
+        await UserStore.followUser(authorEmail, authorId);
         setIsFollowing(true);
       }
     } catch (error) {
@@ -1651,6 +1655,11 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     } catch {}
   }, [commentProfilesByEmail]);
 
+  // ✅ FIX: ek post pe ek waqt sirf ek hi like-request in-flight rahe —
+  // isse fast double-tap ke wajah se backend pe do POST /likes call jaake
+  // "like → auto unlike" wala race condition nahi hota.
+  const likeInFlightRef = useRef(new Set());
+
   const handleLike = useCallback(async (id) => {
     const targetPost = posts.find((post) => String(post.id) === String(id));
     if (targetPost?.isAd) {
@@ -1661,16 +1670,40 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       } : p));
       return;
     }
-    setPosts(prev => prev.map(p => p.id === id ? { ...p, liked: !p.liked } : p));
+
+    const key = String(id);
+    if (likeInFlightRef.current.has(key)) return; // pehla tap abhi bhi pending hai
+    likeInFlightRef.current.add(key);
+
+    const originalLiked = Boolean(targetPost?.liked);
+    const originalLikes = Number(targetPost?.likes || 0);
+    const optimisticLiked = !originalLiked;
+    const optimisticLikes = Math.max(0, originalLikes + (optimisticLiked ? 1 : -1));
+
+    setPosts(prev => prev.map(p => p.id === id
+      ? { ...p, liked: optimisticLiked, likes: optimisticLikes }
+      : p));
+
     try {
-      const result = await UserStore.updateNewsFeedItem(id, 'like');
+      const result = await UserStore.updateNewsFeedItem(id, 'like', { liked: originalLiked });
       if (result?.ok && typeof result.liked === 'boolean') {
-        setPosts(prev => prev.map(p => p.id === id ? { ...p, liked: result.liked } : p));
+        const finalLiked = result.liked;
+        const finalLikes = Math.max(0, originalLikes + (finalLiked ? 1 : -1));
+        setPosts(prev => prev.map(p => p.id === id
+          ? { ...p, liked: finalLiked, likes: finalLikes }
+          : p));
       } else {
-        setPosts(prev => prev.map(p => p.id === id ? { ...p, liked: !p.liked } : p));
+        // API fail — optimistic change revert karo
+        setPosts(prev => prev.map(p => p.id === id
+          ? { ...p, liked: originalLiked, likes: originalLikes }
+          : p));
       }
     } catch {
-      setPosts(prev => prev.map(p => p.id === id ? { ...p, liked: !p.liked } : p));
+      setPosts(prev => prev.map(p => p.id === id
+        ? { ...p, liked: originalLiked, likes: originalLikes }
+        : p));
+    } finally {
+      likeInFlightRef.current.delete(key);
     }
   }, [posts]);
 
@@ -2086,8 +2119,9 @@ image: item.image || null,
                 onComment={handleComment}
                 onShare={handleShare}
                 onDescription={handleDescription}
-                onProfilePress={(postData) =>
+                          onProfilePress={(postData) =>
                   navigation.navigate('UserProfile', {
+                    userId: postData.author_id || undefined,
                     email: String(postData.createdBy || postData.created_by || '').trim().toLowerCase(),
                     author: {
                       name: postData.user,

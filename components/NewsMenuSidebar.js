@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet, ScrollView, Animated } from '
 import { Ionicons } from '@expo/vector-icons';
 import { SIDEBAR_MENU_ITEMS } from '../constants/homeData';
 import { getMenuLabel } from '../utils/storyHelpers';
+import { Platform } from 'react-native';
 
 export default function NewsMenuSidebar({ activeMenuKey, onSelectMenu, isCompactLayout, commonCopy }) {
   const scrollX = useRef(new Animated.Value(0)).current;
@@ -137,12 +138,22 @@ const styles = StyleSheet.create({
   },
 
   // ── Mobile Marquee ──
-  marqueeShell: {
+    marqueeShell: {
     width: '100%',
     paddingVertical: 10,
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
     borderBottomColor: '#f0f2f7',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.06,
+        shadowRadius: 3,
+      },
+      android: { elevation: 2 },
+      default: { boxShadow: '0 2px 3px rgba(0,0,0,0.06)' },
+    }),
   },
   marqueeContent: {
     flexDirection: 'row',

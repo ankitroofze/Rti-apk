@@ -1,34 +1,16 @@
-// if (!Array.prototype.toReversed) {
-//   Object.defineProperty(Array.prototype, 'toReversed', {
-//     value() {
-//       return [...this].reverse();
-//     },
-//     writable: true,
-//     configurable: true,
-//   });
-// }
-
-// const { getDefaultConfig } = require('expo/metro-config');
-
-// const config = getDefaultConfig(__dirname);
-
-// config.resolver.assetExts.push('wasm');
-// config.resolver.sourceExts = config.resolver.sourceExts.filter(
-//   (ext) => ext !== 'wasm'
-// );
-
-// module.exports = config;
-
 const { getDefaultConfig } = require('expo/metro-config');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 
 const config = getDefaultConfig(__dirname);
 
+// expo-sqlite web fix (yahi 500 error ki wajah thi)
+config.resolver.assetExts.push('wasm');
+
 config.server = {
   ...config.server,
   enhanceMiddleware: (metroMiddleware) => {
     return (req, res, next) => {
-       if (req.url.startsWith('/api-proxy')) {
+      if (req.url.startsWith('/api-proxy')) {
         return createProxyMiddleware({
           target: 'https://rtiapi.roofze.in',
           changeOrigin: true,

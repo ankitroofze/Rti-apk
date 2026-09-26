@@ -12,6 +12,7 @@ import { UserStore } from '../store/UserStore';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useToast } from '../components/ui/ToastProvider';
 import AdLeadFormModal from '../components/AdLeadFormModal';
+import HomePromoPopup from '../components/HomePromoPopup';
 import { getSiteCopy } from '../constants/siteCopy';
 // import { IS_WEB, DEMO_STORIES, FEATURED_STATE_OPTIONS } from '../constants/homeData';
 import { IS_WEB, FEATURED_STATE_OPTIONS } from '../constants/homeData';
@@ -20,14 +21,13 @@ import {
   buildHomeStateFromParams, buildPanelContent, buildStateDistrictList,
 } from '../utils/storyHelpers';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
+import { openExternalUrl } from '../utils/adRedirect';
 import NewsFeedCard from '../components/NewsFeedCard';
 import NewsMenuSidebar from '../components/NewsMenuSidebar';
 import LeftEcomSidebar from '../components/LeftEcomSidebar';
 import StateDirectorySection from '../components/StateDirectorySection';
 import RightUtilityPanel from '../components/RightUtilityPanel';
 import MarqueeMenuBar from '../components/MarqueeMenuBar';
-
-const DESKTOP_STICKY_TOP_OFFSET = 96;
 
 const PINK = '#FF2D78';
 const PINK_LIGHT = '#fff5f9';
@@ -121,15 +121,53 @@ function interleaveHomeStories(news = [], ads = [], ecomeListings = []) {
   let ecomeIndex = 0;
   combined.forEach((item, index) => {
     result.push(item);
-    if ((index + 1) % 4 === 0 && ecomeIndex < ecomeListings.length) result.push(ecomeListings[ecomeIndex++]);
+   if ((index + 1) % 4 === 0) {
+      for (let n = 0; n < 2 && ecomeIndex < ecomeListings.length; n += 1) result.push(ecomeListings[ecomeIndex++]);
+    }
   });
   return [...result, ...ecomeListings.slice(ecomeIndex)];
+}
+
+function EcomeGridCard({ item, navigation }) {
+  return (
+    <TouchableOpacity style={ecomeRowStyles.cell} activeOpacity={0.88} onPress={() => navigation.navigate('FarmingBuy')}>
+      {item.image
+        ? <Image source={{ uri: item.image }} style={ecomeRowStyles.image} resizeMode="cover" />
+        : <View style={[ecomeRowStyles.image, ecomeRowStyles.imageFallback]}><Ionicons name="storefront-outline" size={28} color="#dc2626" /></View>}
+      <View style={ecomeRowStyles.body}>
+        <View style={ecomeRowStyles.topRow}>
+          <Text style={ecomeRowStyles.badge}>ECOME</Text>
+          <Text style={ecomeRowStyles.category} numberOfLines={1}>{item.category}</Text>
+        </View>
+        <Text style={ecomeRowStyles.title} numberOfLines={2}>{item.title}</Text>
+        <Text style={ecomeRowStyles.price} numberOfLines={1}>{item.price ? `₹${item.price}` : 'Contact for price'}</Text>
+        <View style={ecomeRowStyles.footer}>
+          <Text style={ecomeRowStyles.seller} numberOfLines={1}>{item.city || item.sellerName}</Text>
+          <Ionicons name="arrow-forward" size={13} color="#dc2626" />
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// Ek line me 2 Ecom cards. Pehla card row banata hai, doosra (pair ka) null return karta hai.
+function EcomeHomeRow({ story, index, list, navigation }) {
+  let pos = 0;
+  for (let k = index - 1; k >= 0 && list[k]?.isEcome; k -= 1) pos += 1;
+  if (pos % 2 === 1) return null;
+  const partner = list[index + 1]?.isEcome ? list[index + 1] : null;
+  return (
+    <View style={ecomeRowStyles.row}>
+      <EcomeGridCard item={story} navigation={navigation} />
+      {partner ? <EcomeGridCard item={partner} navigation={navigation} /> : <View style={ecomeRowStyles.cell} />}
+    </View>
+  );
 }
 
 function EcomeHomeCard({ item, navigation }) {
   return (
     <TouchableOpacity style={ecomeStyles.card} activeOpacity={0.88} onPress={() => navigation.navigate('FarmingBuy')}>
-      {item.image ? <Image source={{ uri: item.image }} style={ecomeStyles.image} resizeMode="cover" /> : <View style={[ecomeStyles.image, ecomeStyles.imageFallback]}><Ionicons name="storefront-outline" size={30} color="#16a34a" /></View>}
+      {item.image ? <Image source={{ uri: item.image }} style={ecomeStyles.image} resizeMode="cover" /> : <View style={[ecomeStyles.image, ecomeStyles.imageFallback]}><Ionicons name="storefront-outline" size={30} color="#dc2626" /></View>}
       <View style={ecomeStyles.body}>
         <View style={ecomeStyles.topRow}><Text style={ecomeStyles.badge}>ECOME</Text><Text style={ecomeStyles.category}>{item.category}</Text></View>
         <Text style={ecomeStyles.title} numberOfLines={2}>{item.title}</Text>
@@ -140,6 +178,77 @@ function EcomeHomeCard({ item, navigation }) {
         </View>
         <View style={ecomeStyles.footer}><Text style={ecomeStyles.seller} numberOfLines={1}>{item.city || item.sellerName}</Text><Text style={ecomeStyles.cta}>View listing <Ionicons name="arrow-forward" size={13} /></Text></View>
       </View>
+    </TouchableOpacity>
+  );
+}
+
+function RotatingSponsoredAd({ ads = [], onClose, onPress }) {
+  const [index, setIndex] = useState(0);
+  const [visible, setVisible] = useState(false);
+  const dismissedRef = useRef(false);
+
+  useEffect(() => {
+    if (!ads.length || dismissedRef.current) { setVisible(false); return undefined; }
+    setVisible(true);
+    // Keep the same non-blocking popup open and only rotate its creative.
+    const delay = 5000 + ((index % 2) * 1000); // 5, then 6 seconds
+    const timer = setTimeout(() => {
+      if (dismissedRef.current) return;
+      setIndex((current) => (current + 1) % ads.length);
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [ads.length, index]);
+
+  const dismiss = useCallback(() => {
+    dismissedRef.current = true;
+    setVisible(false);
+    onClose?.();
+  }, [onClose]);
+
+  const ad = ads[index];
+  const image = ad?.image || ad?.photo || ad?.image_url || ad?.images?.[0] || ad?.photos?.[0];
+  if (!visible || !ad || !image) return null;
+
+  return (
+    <View style={popupStyles.overlay} pointerEvents="box-none">
+        <View style={[popupStyles.card, index % 2 ? popupStyles.cardRight : popupStyles.cardLeft]} pointerEvents="auto">
+          <TouchableOpacity style={popupStyles.close} onPress={dismiss} accessibilityLabel="Close advertisement">
+            <Ionicons name="close" size={20} color="#fff" />
+          </TouchableOpacity>
+          <TouchableOpacity activeOpacity={0.9} onPress={() => onPress?.(ad)}>
+            <Image source={{ uri: image }} style={popupStyles.image} resizeMode="cover" />
+            <View style={popupStyles.label}><Text style={popupStyles.labelText}>SPONSORED</Text></View>
+          </TouchableOpacity>
+        </View>
+    </View>
+  );
+}
+
+function TopRotatingAdSlot({ ads = [], onPress }) {
+  const [index, setIndex] = useState(0);
+  useEffect(() => {
+    if (ads.length < 2) return undefined;
+    const timer = setInterval(() => setIndex((current) => (current + 1) % ads.length), 3000);
+    return () => clearInterval(timer);
+  }, [ads.length]);
+  const ad = ads[index];
+  const image = ad?.image || ad?.photo || ad?.image_url || ad?.images?.[0] || ad?.photos?.[0];
+  if (!image) return null;
+  return (
+    <TouchableOpacity style={styles.topAdSlot} activeOpacity={0.92} onPress={() => onPress?.(ad)}>
+      <Text style={styles.adCaption}>ADVERTISEMENT</Text>
+      <Image source={{ uri: image }} style={styles.topAdImage} resizeMode="cover" />
+    </TouchableOpacity>
+  );
+}
+
+function InFeedAdSlot({ ad, onPress }) {
+  const image = ad?.image || ad?.photo || ad?.image_url || ad?.images?.[0] || ad?.photos?.[0];
+  if (!image) return null;
+  return (
+    <TouchableOpacity style={styles.inFeedAdSlot} activeOpacity={0.92} onPress={() => onPress?.(ad)}>
+      <Text style={styles.adCaption}>ADVERTISEMENT</Text>
+      <Image source={{ uri: image }} style={styles.inFeedAdImage} resizeMode="cover" />
     </TouchableOpacity>
   );
 }
@@ -405,7 +514,7 @@ export default function HomeScreen({ navigation, route }) {
   const copy = useMemo(() => getSiteCopy(language), [language]);
   const commonCopy = copy.common;
   const homeCopy = copy.home;
-  const { width } = useWindowDimensions();
+  const { width, height: windowHeight } = useWindowDimensions();
   const responsiveWidth = getResponsiveWindowWidth(width);
   const isMobileDeviceWeb = isMobileWebDevice();
   const isDesktopRailLayout = IS_WEB && !isMobileDeviceWeb && responsiveWidth >= 1180;
@@ -447,7 +556,23 @@ export default function HomeScreen({ navigation, route }) {
   const [selectedDistrictName, setSelectedDistrictName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [liveStories, setLiveStories] = useState([]);
+  const [activeAds, setActiveAds] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
+  const [leftRailHeight, setLeftRailHeight] = useState(0);
+  const [rightRailHeight, setRightRailHeight] = useState(0);
+
+  // Keep the rails in normal flow until their last card is fully visible.
+  // After that point, bottom-align the rail in the viewport while the longer
+  // center feed continues. This avoids a top gap and keeps all three columns
+  // moving together at the start of scrolling.
+  const railStickAfterFullyVisible = useCallback((railHeight) => {
+    if (!IS_WEB || !isDesktopRailLayout || !railHeight) return null;
+    return {
+      position: 'sticky',
+      top: Math.min(0, windowHeight - railHeight),
+      alignSelf: 'flex-start',
+    };
+  }, [isDesktopRailLayout, windowHeight]);
 
   useEffect(() => {
     const nextHomeState = buildHomeStateFromParams({
@@ -472,9 +597,20 @@ export default function HomeScreen({ navigation, route }) {
       const fetchedStories = Array.isArray(summary?.items)
         ? summary.items.map((item, index) => normalizeStoryItem(item, index)).filter(Boolean)
         : [];
+      // Newest published/created story must always appear first, even if the
+      // API response arrives in a different order.
+      fetchedStories.sort((a, b) => {
+        const dateA = new Date(a.createdAt || a.created_at || a.date || 0).getTime() || 0;
+        const dateB = new Date(b.createdAt || b.created_at || b.date || 0).getTime() || 0;
+        if (dateB !== dateA) return dateB - dateA;
+        return String(b.id || '').localeCompare(String(a.id || ''), undefined, { numeric: true });
+      });
       const adStories = Array.isArray(activeAds) ? activeAds.map(homeStoryFromAd) : [];
       const ecomeStories = Array.isArray(ecomeSummary?.listings) ? ecomeSummary.listings.map(homeStoryFromEcome) : [];
-      setLiveStories(interleaveHomeStories(fetchedStories, adStories, ecomeStories));
+      // Advertisements are shown only as rotating image popups, never mixed
+      // into the editorial news cards.
+      setActiveAds(adStories);
+      setLiveStories(interleaveHomeStories(fetchedStories, [], ecomeStories));
     } catch { setLiveStories([]); }
   }, []);
 
@@ -485,31 +621,28 @@ export default function HomeScreen({ navigation, route }) {
     } catch { setCurrentUser(null); }
   }, []);
 
-  useFocusEffect(useCallback(() => {
+    useFocusEffect(useCallback(() => {
     let mounted = true;
     (async () => {
-      await loadNewsStories();
-      await loadCurrentUser();
+      // ✅ SPEED FIX: teeno ab ek saath (parallel) chalte hain, ek ke baad
+      // ek nahi — total wait time sabse slow ek call jitna hoga, sum nahi.
+      const [, , seats] = await Promise.all([
+        loadNewsStories(),
+        loadCurrentUser(),
+        UserStore.getStateSeatSummary().catch(() => null),
+      ]);
       if (!mounted) return;
-      try {
-        const seats = await UserStore.getStateSeatSummary();
-        if (mounted) {
-          setSeatSummary(seats || null);
-          const seatId = seats?.current_seat?.seat_id || '';
-          setSelectedSeatId((prev) => prev || seatId);
-        }
-      } catch { }
+
+      setSeatSummary(seats || null);
+      const seatId = seats?.current_seat?.seat_id || '';
+      setSelectedSeatId((prev) => prev || seatId);
+
       if (registrationJustCompleted && !handledRegistrationToastRef.current) {
         handledRegistrationToastRef.current = true;
         showToast('Registration successful! Welcome 🎉', 'success');
       }
       if (fromRegistration && !handledSubscriptionModalRef.current) {
         handledSubscriptionModalRef.current = true;
-        // ✅ FIX: pehle yahan ek local-only dummy "Choose your plan" modal khulta tha
-        // (UserStore.saveSubscription sirf local storage me likhta tha, backend ko
-        // pata hi nahi chalta tha) — isi wajah se baad me dobara subscription maangta
-        // tha kyunki backend sync check fail ho jaata tha. Ab seedha real,
-        // backend-connected Subscription Plans screen pe bhej rahe hain.
         setTimeout(() => navigation.navigate('Subscription Plans'), 1000);
       }
     })();
@@ -536,38 +669,42 @@ export default function HomeScreen({ navigation, route }) {
     setSeatModalOpen(true);
   };
 
-  const handleDirectSubscribe = async (plan, seatId) => {
+    const handleDirectSubscribe = async (plan, seatId) => {
     try {
-      await UserStore.saveSubscription({
-        plan_id: plan.plan_id, plan_name: plan.plan_name,
-        seat_id: seatId, price: plan.price, duration: plan.duration,
-      });
-      setCurrentUser((prev) => ({ ...prev, subscription_type: plan.plan_id.replace('plan-', ''), subscription_active: true }));
+      // ⚠️ FIX: saveSubscription() sirf local storage update karta tha, backend pe
+      // asli payment verify nahi hota tha isliye referral commission trigger hi nahi
+      // hoti thi. Ab SubscriptionPlansScreen jaisa hi real Razorpay order+verify flow.
+      navigation.navigate('Subscription Plans', { preselectedPlanId: plan.plan_id, seatId });
+      return;
+      if (!subscriptionResult?.ok) throw new Error(subscriptionResult?.message || 'Subscription could not be saved.');
+      setCurrentUser((await UserStore.getCurrentUser()) || null);
       setShowSubscriptionModal(false);
       setPendingPlan(null);
       showToast(`${plan.plan_name} Subscription Successful! 🎉`, 'success');
     } catch (err) {
       console.error('Subscription save failed:', err);
-      showToast('Something went wrong. Please try again.', 'error');
+      showToast(err?.message || 'Something went wrong. Please try again.', 'error');
     }
   };
 
   const handleSeatConfirm = async () => {
     if (!pendingPlan || !selectedSeatId) return;
     try {
-      await UserStore.saveSelectedSeat(selectedSeatId);
-      await UserStore.saveSubscription({
+      const seatResult = await UserStore.saveSelectedSeat(selectedSeatId);
+      if (!seatResult?.ok) throw new Error(seatResult?.message || 'Unable to save selected seat.');
+      const subscriptionResult = await UserStore.saveSubscription({
         plan_id: pendingPlan.plan_id, plan_name: pendingPlan.plan_name,
         seat_id: selectedSeatId, price: pendingPlan.price, duration: pendingPlan.duration,
       });
-      setCurrentUser((prev) => ({ ...prev, subscription_type: pendingPlan.plan_id.replace('plan-', ''), subscription_active: true }));
+      if (!subscriptionResult?.ok) throw new Error(subscriptionResult?.message || 'Subscription could not be saved.');
+      setCurrentUser((await UserStore.getCurrentUser()) || null);
       setSeatModalOpen(false);
       setShowSubscriptionModal(false);
       setPendingPlan(null);
       showToast(`${pendingPlan.plan_name} Subscription Successful! 🎉`, 'success');
     } catch (err) {
       console.error('Subscription save failed:', err);
-      showToast('Something went wrong. Please try again.', 'error');
+      showToast(err?.message || 'Something went wrong. Please try again.', 'error');
     }
   };
 const allStories = useMemo(() => {
@@ -579,7 +716,7 @@ const allStories = useMemo(() => {
     [allStories]
   );
 
-  const allAdsList = useMemo(() => allStories.filter((s) => s.isAd), [allStories]);
+  const allAdsList = useMemo(() => activeAds, [activeAds]);
 
   const visibleStories = useMemo(() => {
     if (viewMode === 'states') return [];
@@ -637,7 +774,7 @@ const allStories = useMemo(() => {
 
   const handleOpenLocation = useCallback((stateName) => {
     if (!stateName) return;
-    setSearchQuery(''); setViewMode('feed'); setSelectedMenuKey('latest'); setSelectedStateName(stateName); setSelectedDistrictName('');
+    setSearchQuery(''); setViewMode('feed'); setSelectedMenuKey('all'); setSelectedStateName(stateName); setSelectedDistrictName('');
   }, []);
 
   const handleOpenCategory = useCallback((story) => {
@@ -646,7 +783,7 @@ const allStories = useMemo(() => {
     setSearchQuery(''); setViewMode('feed'); setSelectedStateName(''); setSelectedDistrictName(''); setSelectedMenuKey(menuTag);
   }, []);
 
-  const handleOpenAuthorProfile = useCallback((story) => {
+  const handleOpenAuthorProfile = useCallback(async (story) => {
     if (!story) return;
     const fallbackAuthor = {
       name: story.author_name || '', author_profile_image: story.author_profile_image || '',
@@ -654,14 +791,63 @@ const allStories = useMemo(() => {
       author_has_blue_tick: Boolean(story.author_has_blue_tick),
       author_is_premium: Boolean(story.author_is_premium),
     };
-       if (!story.createdBy && !fallbackAuthor.name) return;
-    navigation?.navigate?.('UserProfile', { email: story.createdBy || '', author: fallbackAuthor, userId: story.author_id || null });
+    if (!story.createdBy && !fallbackAuthor.name) return;
+    const currentUser = await UserStore.getCurrentUser();
+    const viewerEmail = String(currentUser?.email || '').trim().toLowerCase();
+    const authorEmail = String(story.createdBy || '').trim().toLowerCase();
+    const isOwnPost = (viewerEmail && authorEmail && viewerEmail === authorEmail)
+      || (currentUser?.id && story.author_id && String(currentUser.id) === String(story.author_id));
+    if (isOwnPost) {
+      navigation?.navigate?.('Profile');
+      return;
+    }
+    navigation?.navigate?.('UserPublicProfile', { email: story.createdBy || '', author: fallbackAuthor, userId: story.author_id || null });
   }, [navigation]);
 
 const handleOpenLeadForm = useCallback((story) => {
   if (!story) return;
   setLeadFormAd(story);
 }, []);
+
+  const handleSponsoredAdPress = useCallback((ad) => {
+    if (!ad) return;
+    if (ad.redirect === 'lead_form') { handleOpenLeadForm(ad); return; }
+    if (ad.redirect === 'whatsapp') {
+      const phone = String(ad.extraValues?.whatsapp_number || ad.owner_mobile || '').replace(/\D/g, '');
+      if (phone) openExternalUrl(`https://wa.me/91${phone}`);
+      return;
+    }
+    if (ad.redirect === 'website' || ad.redirect === 'shop') {
+      openExternalUrl(ad.redirect === 'shop' ? ad.extraValues?.shop_url : ad.extraValues?.website_url);
+      return;
+    }
+    if (ad.redirect === 'profile') { handleOpenAuthorProfile(ad); return; }
+    handleOpenDetails(ad);
+  }, [handleOpenAuthorProfile, handleOpenDetails, handleOpenLeadForm]);
+
+  // ── Full-screen "promo" popup (Android home only) — built from the first
+  // active sponsored ad, styled like a big brand offer card. ────────────
+  const homePromoAd = useMemo(() => {
+    const source = allAdsList?.[0];
+    if (!source) return null;
+    const image = source.image || source.photo || source.image_url || source.images?.[0] || source.photos?.[0];
+    const gallery = Array.isArray(source.images) && source.images.length
+      ? source.images.slice(0, 3)
+      : (image ? [image] : []);
+    return {
+      brandName: source.owner_name || 'Sponsored',
+      headline: source.title || 'Great Deals. Bigger Savings.',
+      subheadline: source.description || '',
+      thumbnails: gallery,
+      image,
+      ctaLabel: 'SHOP NOW',
+      redirect: source.redirect,
+      extraValues: source.extraValues,
+      owner_email: source.owner_email,
+      owner_mobile: source.owner_mobile,
+      ...source,
+    };
+  }, [allAdsList]);
 
   const handleViewMoreAds = useCallback(() => setShowAllAds(true), []);
   const handleBackFromAds = useCallback(() => setShowAllAds(false), []);
@@ -670,18 +856,19 @@ const handleOpenLeadForm = useCallback((story) => {
   // thoda compact height rakha gaya hai. ──────────────────────────────────
   const renderSearchField = viewMode === 'states' ? null : (
     <View style={[styles.sectionSearchRow, isCompactLayout && styles.sectionSearchRowCompact]}>
-      <View style={styles.sectionSearchField}>
+           <View style={styles.sectionSearchField}>
         <Ionicons name="search-outline" size={16} color="#94a3b8" />
         <TextInput
           value={searchQuery} onChangeText={setSearchQuery}
           placeholder={homeCopy.searchFeedPlaceholder} placeholderTextColor="#94a3b8"
           style={styles.sectionSearchInput}
         />
+        <Ionicons name="options-outline" size={18} color="#94a3b8" />
       </View>
-      {(selectedStateName || selectedMenuKey !== 'latest') ? (
+      {(selectedStateName || selectedMenuKey !== 'all') ? (
         <TouchableOpacity
           style={styles.sectionResetButton}
-          onPress={() => { setViewMode('feed'); setSelectedMenuKey('latest'); setSelectedStateName(''); setSelectedDistrictName(''); setSearchQuery(''); }}
+          onPress={() => { setViewMode('feed'); setSelectedMenuKey('all'); setSelectedStateName(''); setSelectedDistrictName(''); setSearchQuery(''); }}
           activeOpacity={0.84}
         >
           <Ionicons name="refresh-outline" size={16} color="#f97316" />
@@ -711,7 +898,7 @@ const handleOpenLeadForm = useCallback((story) => {
     <>
       <View style={styles.pageBodyShell}>
 
-        {/* ✅ FULL WIDTH MARQUEE — search bar ke niche, sidebar ke upar, sirf web desktop pe */}
+        {/* ✅ FULL WIDTH MARQUEE — search bar ke niche, sidebar ke upar, sirf web desktop pe
         {IS_WEB && !isMobileDeviceWeb && viewMode !== 'states' && (
           <View style={styles.marqueeFullWidthWrapper}>
             <MarqueeMenuBar
@@ -720,14 +907,22 @@ const handleOpenLeadForm = useCallback((story) => {
               commonCopy={commonCopy}
             />
           </View>
-        )}
+        )} */}
+        {viewMode !== 'states' && Platform.OS !== 'android' ? <TopRotatingAdSlot ads={allAdsList} onPress={handleSponsoredAdPress} /> : null}
 
         <View style={[styles.pageBodyInner, isCompactLayout && styles.pageBodyInnerCompact, isMobileLayout && styles.pageBodyInnerMobile]}>
 
           {/* ✅ Left sidebar — web desktop: Marketplace (Ecom) + Popular Posts. Native: category menu. */}
           {/* Desktop side rails are temporarily hidden.  The central home feed remains full-width. */}
           {!isMobileLayout && (
-         <View style={[styles.sidebarStickyWrapper, isCompactLayout && styles.sidebarStickyWrapperCompact]}>
+         <View
+              style={[
+                styles.sidebarStickyWrapper,
+                isCompactLayout && styles.sidebarStickyWrapperCompact,
+                railStickAfterFullyVisible(leftRailHeight),
+              ]}
+              onLayout={(event) => setLeftRailHeight(event.nativeEvent.layout.height)}
+            >
               {IS_WEB ? (
                 <LeftEcomSidebar
                   navigation={navigation}
@@ -745,7 +940,7 @@ const handleOpenLeadForm = useCallback((story) => {
             {false && isCompactLayout && shouldShowRightRail && !isMobileLayout ? (
               <View style={[styles.utilityStickyWrapper, styles.utilityStickyWrapperCompact]}>{utilityPanel}</View>
             ) : null}
-            <View style={[styles.feedColumnShell, isCompactLayout && styles.feedColumnShellCompact, isMobileLayout && styles.feedColumnShellMobile]}>
+            <View style={[styles.feedColumnShell, viewMode === 'states' && styles.feedColumnShellStatesView, isCompactLayout && styles.feedColumnShellCompact, isMobileLayout && styles.feedColumnShellMobile]}>
               <View style={[styles.feedColumn, viewMode === 'states' && styles.feedColumnStatesView, isMobileLayout && styles.feedColumnMobile]}>
                 {viewMode === 'states' ? (
                   <StateDirectorySection
@@ -758,7 +953,7 @@ const handleOpenLeadForm = useCallback((story) => {
                       <Ionicons name="arrow-back" size={16} color="#f97316" />
                       <Text style={{ color: '#f97316', fontWeight: '800', fontSize: 13 }}>Back to News Feed</Text>
                     </TouchableOpacity>
-                    <View style={styles.storyCardsStack}>
+                    <View style={[styles.storyCardsStack, isMobileLayout && styles.storyCardsStackMobile]}>
                       {allAdsList.map((story) => (
                         <NewsFeedCard
                           key={story.id} story={story} isCompactLayout={isMobileLayout}
@@ -767,11 +962,13 @@ const handleOpenLeadForm = useCallback((story) => {
                           onOpenCategory={handleOpenCategory} onOpenAuthorProfile={handleOpenAuthorProfile}
                           onOpenLeadForm={handleOpenLeadForm}
                           commonCopy={commonCopy}
-                          currentUser={currentUser ? {
+                                                currentUser={currentUser ? {
                             name: currentUser.name,
                             avatar: currentUser.profile_image,
                             email: currentUser.email,
                             has_blue_tick: UserStore.hasBlueTick(currentUser),
+                            state_seat: currentUser.state_seat,
+                            is_subscribed: currentUser.is_subscribed,
                           } : null}
                         />
                       ))}
@@ -779,25 +976,40 @@ const handleOpenLeadForm = useCallback((story) => {
                   </>
                 ) : (
                   <>
-                    {renderSearchField}
-                    <View style={styles.storyCardsStack}>
-                      {visibleStories.map((story) => story.isEcome ? (
-                        <EcomeHomeCard key={story.id} item={story} navigation={navigation} />
+                                        {renderSearchField}
+                                  {!IS_WEB && isMobileLayout && viewMode !== 'states' ? (
+                      <MarqueeMenuBar
+                        activeMenuKey={selectedMenuKey}
+                        onSelectMenu={handleMenuSelection}
+                        commonCopy={commonCopy}
+                      />
+                    ) : null}
+                    <View style={[styles.storyCardsStack, isMobileLayout && styles.storyCardsStackMobile]}>
+                      {visibleStories.map((story, index) => (
+                        <React.Fragment key={story.id}>
+                        {story.isEcome ? (
+                      <EcomeHomeRow story={story} index={index} list={visibleStories} navigation={navigation} />
                       ) : (
-                        <NewsFeedCard
+                                            <NewsFeedCard
                            key={story.id} story={story} isCompactLayout={isMobileLayout}
+                           altShade={isMobileLayout && index % 2 === 1}
   navigation={navigation}
   onOpenDetails={handleOpenDetails} onOpenLocation={handleOpenLocation}
   onOpenCategory={handleOpenCategory} onOpenAuthorProfile={handleOpenAuthorProfile}
   onOpenLeadForm={handleOpenLeadForm}  
   commonCopy={commonCopy}
-  currentUser={currentUser ? {
+    currentUser={currentUser ? {
     name: currentUser.name,
     avatar: currentUser.profile_image,
     email: currentUser.email,
     has_blue_tick: UserStore.hasBlueTick(currentUser),
+    state_seat: currentUser.state_seat,
+    is_subscribed: currentUser.is_subscribed,
   } : null}
-                        />
+                      />
+                      )}
+                      {(index + 1) % 4 === 0 ? <InFeedAdSlot ad={allAdsList[Math.floor(index / 4) % Math.max(allAdsList.length, 1)]} onPress={handleSponsoredAdPress} /> : null}
+                      </React.Fragment>
                       ))}
                     </View>
                   </>
@@ -805,7 +1017,12 @@ const handleOpenLeadForm = useCallback((story) => {
               </View>
             </View>
            {!isCompactLayout && shouldShowRightRail ? (
-              <View style={styles.utilityStickyWrapper}>{utilityPanel}</View>
+              <View
+                style={[styles.utilityStickyWrapper, railStickAfterFullyVisible(rightRailHeight)]}
+                onLayout={(event) => setRightRailHeight(event.nativeEvent.layout.height)}
+              >
+                {utilityPanel}
+              </View>
             ) : null}
           </View>
         </View>
@@ -855,7 +1072,11 @@ const handleOpenLeadForm = useCallback((story) => {
   ad={leadFormAd}
   onClose={() => setLeadFormAd(null)}
 />
+      {/* <RotatingSponsoredAd ads={allAdsList} onPress={handleSponsoredAdPress} /> */}
 
+            {(Platform.OS === 'android' || IS_WEB) && viewMode !== 'states' ? (
+        <HomePromoPopup ad={homePromoAd} onPress={handleSponsoredAdPress} />
+      ) : null}
     </View>
   );
 
@@ -863,16 +1084,16 @@ const handleOpenLeadForm = useCallback((story) => {
 }
 
 const styles = StyleSheet.create({
-  screenShell: { flex: 1, backgroundColor: '#f2f3f5' },
-  pageScrollView: { flex: 1, backgroundColor: '#f2f3f5' },
-  pageScrollContent: { paddingTop: 4, paddingBottom: 24, backgroundColor: '#f2f3f5' },
+  screenShell: { flex: 1, backgroundColor: '#ffffff' },
+  pageScrollView: { flex: 1, backgroundColor: '#ffffff' },
+  pageScrollContent: { paddingTop: 4, paddingBottom: 24, backgroundColor: '#ffffff' },
   pageScrollContentMobile: { paddingTop: 0 },
   pageScrollContentWithMobileNav: { paddingBottom: 90 },
   // ✅ center everything below the header: full-width row that centers its
   // child (pageBodyInner) horizontally, so the whole body section sits in
   // the middle of the page instead of drifting to one side
-  pageBodyShell: { paddingHorizontal: 0, paddingTop: 0, marginTop: -1, backgroundColor: '#f2f3f5', width: '100%', alignItems: 'center' },
-  pageBodyInner: { maxWidth: 1360, width: '100%', alignSelf: 'center', flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 4 },
+  pageBodyShell: { paddingHorizontal: 0, paddingTop: 0, marginTop: -1, backgroundColor: '#ffffff', width: '100%', alignItems: 'center' },
+  pageBodyInner: { maxWidth: 1440, width: '100%', alignSelf: 'center', flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 2 },
   pageBodyInnerCompact: { flexDirection: 'column' },
   pageBodyInnerMobile: { maxWidth: '100%' },
 
@@ -884,19 +1105,28 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f0f2f7',
     marginBottom: 4,
   },
+  topAdSlot: { width: '100%', maxWidth: 970, alignSelf: 'center', marginVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: '#e5e7eb', backgroundColor: '#fafafa', padding: 5 },
+  topAdImage: { width: '100%', height: 90, maxWidth: 960, backgroundColor: '#e2e8f0' },
+  adCaption: { fontSize: 9, color: '#64748b', fontWeight: '700', marginBottom: 3, letterSpacing: 0.3 },
+  inFeedAdSlot: { width: '100%', marginVertical: 12, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fafafa', padding: 8, alignItems: 'center' },
+  inFeedAdImage: { width: '100%', height: 230, backgroundColor: '#e2e8f0' },
 
   sidebarStickyWrapper: {
-    width: 252,
+    width: 300,
     // ✅ Left sidebar ko thoda aur left side shift kiya (screenshot request) —
     // negative marginLeft se ye workspace column ke aur kareeb / screen edge
     // ke aur paas chala jaata hai. Sirf desktop/web par lagta hai.
-        ...Platform.select({ web: { position: 'sticky', top: DESKTOP_STICKY_TOP_OFFSET, alignSelf: 'flex-start' } }),
+    // This must stay in normal document flow: the three columns scroll
+    // together from the very first wheel movement. Once this shorter rail
+    // ends, only the longer center feed continues—without a blank top gap.
+    alignSelf: 'flex-start',
   },
   sidebarStickyWrapperCompact: { width: '100%', position: 'relative' },
-  workspaceShell: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 0, paddingHorizontal: 0 },
+  workspaceShell: { minWidth: 0, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'flex-start', gap: 2, paddingHorizontal: 0 },
   workspaceShellCompact: { width: '100%', flexDirection: 'column', paddingHorizontal: 12, gap: 12 },
   workspaceShellMobile: { paddingHorizontal: 0, gap: 0 },
-  feedColumnShell: { flex: 1, minWidth: 0, alignItems: 'center', paddingHorizontal: 12 },
+  feedColumnShell: { width: 560, minWidth: 0, alignItems: 'center', paddingHorizontal: 0 },
+  feedColumnShellStatesView: { width: 840 },
   feedColumnShellCompact: { width: '100%' },
   feedColumnShellMobile: { paddingHorizontal: 0, alignItems: 'stretch' },
   feedColumn: { width: '100%', minWidth: 0, maxWidth: 560, paddingBottom: 24, paddingTop: 4 },
@@ -908,7 +1138,7 @@ const styles = StyleSheet.create({
   // tha aur left side sahi lagta tha
   utilityStickyWrapper: {
     width: 344,
-    ...Platform.select({ web: { position: 'sticky', top: DESKTOP_STICKY_TOP_OFFSET, alignSelf: 'flex-start' } }),
+    alignSelf: 'flex-start',
   },
   utilityStickyWrapperCompact: { width: '100%', position: 'relative' },
 
@@ -928,11 +1158,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  sectionSearchInput: {
+    sectionSearchInput: {
     flex: 1,
     fontSize: Platform.OS === 'android' ? 12 : 13,
     color: '#0f172a',
-    fontFamily: 'Roboto',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
     ...Platform.select({ web: { outlineStyle: 'none' } }),
   },
   sectionResetButton: {
@@ -948,22 +1178,53 @@ const styles = StyleSheet.create({
   },
   sectionResetButtonText: { color: '#f97316', fontSize: 12, fontWeight: '800', fontFamily: 'Roboto' },
   storyCardsStack: { gap: 12 },
+  storyCardsStackMobile: { gap: 0 },
+});
+
+const ecomeRowStyles = StyleSheet.create({
+  row: { flexDirection: 'row', gap: 10, marginBottom: 12, alignItems: 'stretch' },
+  cell: { flex: 1, minWidth: 0, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#d1d5db', borderRadius: 9, overflow: 'hidden' },
+  image: { width: '100%', height: 120, backgroundColor: '#f3f4f6' },
+  imageFallback: { alignItems: 'center', justifyContent: 'center' },
+  body: { padding: 8, flex: 1 },
+  topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginBottom: 6 },
+  badge: { color: '#e21111', fontSize: 9, fontWeight: '900', letterSpacing: 0.6, backgroundColor: '#f5d8d7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 2, fontFamily: 'Roboto' },
+  category: { flex: 1, textAlign: 'right', color: '#64748b', fontSize: 10, fontWeight: '700', fontFamily: 'Roboto' },
+  title: { color: '#0f172a', fontSize: 13, fontWeight: '800', lineHeight: 18, fontFamily: 'Roboto' },
+  price: { color: '#e21111', fontSize: 14, fontWeight: '900', marginTop: 6, fontFamily: 'Roboto' },
+  footer: { borderTopWidth: 1, borderTopColor: '#e5e7eb', marginTop: 8, paddingTop: 7, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
+  seller: { flex: 1, color: '#64748b', fontSize: 10.5, fontWeight: '600', fontFamily: 'Roboto' },
 });
 
 const ecomeStyles = StyleSheet.create({
-  card: { flexDirection: 'row', backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#d1fae5', borderRadius: 12, overflow: 'hidden', marginBottom: 12 },
-  image: { width: 126, minHeight: 174, backgroundColor: '#ecfdf5' },
+  card: { flexDirection: 'row', backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#d1d5db', borderRadius: 12, overflow: 'hidden', marginBottom: 12 },
+  image: { width: 126, minHeight: 174, backgroundColor: '#f3f4f6' },
   imageFallback: { alignItems: 'center', justifyContent: 'center' },
   body: { flex: 1, padding: 13, minWidth: 0 },
   topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 7 },
-  badge: { color: '#15803d', fontSize: 10, fontWeight: '900', letterSpacing: 0.8, backgroundColor: '#dcfce7', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 4, fontFamily: 'Roboto' },
+  badge: { color: '#dc2626', fontSize: 10, fontWeight: '900', letterSpacing: 0.8, backgroundColor: '#fef2f2', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 4, fontFamily: 'Roboto' },
   category: { flex: 1, textAlign: 'right', color: '#64748b', fontSize: 10.5, fontWeight: '700', fontFamily: 'Roboto' },
   title: { color: '#0f172a', fontSize: 15, fontWeight: '800', lineHeight: 20, fontFamily: 'Roboto' },
   description: { color: '#64748b', fontSize: 12, lineHeight: 17, marginTop: 5, fontFamily: 'Roboto' },
   metaRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginTop: 9 },
-  price: { color: '#15803d', fontSize: 16, fontWeight: '900', fontFamily: 'Roboto' },
+  price: { color: '#dc2626', fontSize: 16, fontWeight: '900', fontFamily: 'Roboto' },
   quantity: { color: '#64748b', fontSize: 11, fontWeight: '700', fontFamily: 'Roboto' },
-  footer: { borderTopWidth: 1, borderTopColor: '#ecfdf5', marginTop: 10, paddingTop: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  footer: { borderTopWidth: 0.5, borderTopColor: '#fafafa', marginTop: 10, paddingTop: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   seller: { flex: 1, color: '#64748b', fontSize: 11, fontWeight: '600', fontFamily: 'Roboto' },
-  cta: { color: '#15803d', fontSize: 11, fontWeight: '800', fontFamily: 'Roboto' },
+  cta: { color: '#802a15', fontSize: 11, fontWeight: '800', fontFamily: 'Roboto' },
+});
+
+const popupStyles = StyleSheet.create({
+  overlay: { ...StyleSheet.absoluteFillObject, zIndex: 50, justifyContent: 'flex-end', alignItems: 'center', padding: 16, paddingBottom: 88, pointerEvents: 'box-none' },
+  card: {
+    width: '92%', maxWidth: 480, overflow: 'hidden', borderRadius: 0,
+    backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0',
+    shadowColor: '#0f172a', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.24, shadowRadius: 18, elevation: 12,
+  },
+  cardLeft: { alignSelf: 'flex-start' },
+  cardRight: { alignSelf: 'flex-end' },
+  image: { width: '100%', height: 220, backgroundColor: '#f1f5f9' },
+  close: { position: 'absolute', zIndex: 2, right: 8, top: 8, width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(15,23,42,0.82)', alignItems: 'center', justifyContent: 'center' },
+  label: { position: 'absolute', left: 0, bottom: 0, paddingHorizontal: 9, paddingVertical: 5, backgroundColor: 'rgba(15,23,42,0.88)' },
+  labelText: { color: '#fff', fontSize: 9, fontWeight: '800', letterSpacing: 0.7 },
 });

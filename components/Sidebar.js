@@ -1,12 +1,15 @@
 // components/Sidebar.js
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  View, Text, TouchableOpacity,
+  View, Text, TouchableOpacity, ImageBackground,
   Modal, Pressable, Platform, ScrollView
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import styles from '../styles/SidebarStyles';
+import { UserStore } from '../store/UserStore';
+import { getProfileTier } from '../utils/profileHelpers';
+import { PROFILE_TIERS } from '../constants/profileConstants';
 
 const menuItems = [
   // ✅ Home sirf web pe dikhega APK mein nahi
@@ -15,10 +18,11 @@ const menuItems = [
   { label: 'Profile',            icon: 'person-outline' },
   { label: 'My Network',         icon: 'people-outline' },
   { label: 'Wallet',             icon: 'wallet-outline' },
+  { label: 'Payment History',    icon: 'card-outline' },
   { label: 'Withdraw',           icon: 'cash-outline' },
   { label: 'Subscription Plans', icon: 'star-outline' },
   { label: 'My Ads Subscription', icon: 'megaphone-outline' },
-  { label: 'My Ecom Subscription', icon: 'storefront-outline' },
+   { label: 'My Ecom Subscription', icon: 'storefront-outline' },
   { label: 'My Quiz Subscription', icon: 'school-outline' },
   { label: 'News Feed',          icon: 'newspaper-outline' },
   { label: 'e-Paper',            icon: 'document-text-outline' },
@@ -31,6 +35,16 @@ const menuItems = [
 
 export default function Sidebar({ visible, onClose, onItemPress, activeItem = 'Dashboard' }) {
   const navigation = useNavigation();
+  const [profileTier, setProfileTier] = useState(PROFILE_TIERS.common);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const user = await UserStore.getCurrentUser();
+      if (mounted && user) setProfileTier(getProfileTier({ ...user, has_blue_tick: UserStore.hasBlueTick(user) }));
+    })();
+    return () => { mounted = false; };
+  }, [activeItem, visible]);
 
   useEffect(() => {
     if (Platform.OS === 'web' && document?.activeElement?.blur) {
@@ -44,7 +58,6 @@ export default function Sidebar({ visible, onClose, onItemPress, activeItem = 'D
     }
     onClose();
   };
-
   const handlePress = (label) => {
     if (onItemPress) onItemPress(label);
 
@@ -53,13 +66,22 @@ export default function Sidebar({ visible, onClose, onItemPress, activeItem = 'D
       return;
     }
 
+    if (label === 'Payment History') {
+      navigation.navigate('PaymentHistory');
+      return;
+    }
+
     navigation.navigate(label);
   };
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <View style={styles.overlay}>
-        <View style={styles.drawer}>
+           <View style={styles.overlay}>
+                     <ImageBackground
+          source={activeItem === 'Profile' && profileTier ? profileTier.bgImage : null}
+          style={styles.drawer}
+          imageStyle={{ resizeMode: 'cover' }}
+        >
 
           {/* Header */}
           <View style={styles.drawerHeader}>
@@ -129,7 +151,7 @@ export default function Sidebar({ visible, onClose, onItemPress, activeItem = 'D
             </View>
 
           </ScrollView>
-        </View>
+        </ImageBackground>
 
         <Pressable style={styles.backdrop} onPress={handleClose} />
       </View>

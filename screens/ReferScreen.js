@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
-  ScrollView, Share, Linking, Clipboard, Platform,
+  ScrollView, Share, Linking, Clipboard, Platform, ImageBackground,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { UserStore } from '../store/UserStore';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
+import ModuleWebHeader from '../components/Modulewebheader';
 
 const REFER_LINK = 'https://play.google.com/store/apps/details?id=com.yourcompany.rtiapp';
 const APP_NAME = 'RTI App';
@@ -38,14 +39,18 @@ const PLATFORMS = [
 ];
 
 export default function ReferScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const [copied, setCopied] = useState(false);
   const [summary, setSummary] = useState(null);
-  const [loading, setLoading] = useState(true);
+    const [loading, setLoading] = useState(true);
+  const [eligible, setEligible] = useState(false);
 
   useEffect(() => {
     let mounted = true;
 
     const load = async () => {
+      const cu = await UserStore.getCurrentUser();
+      if (mounted) setEligible(Boolean(cu?.is_subscribed));
       const localSummary = await UserStore.getReferralSummary();
       if (mounted) setSummary(localSummary);
 
@@ -104,8 +109,47 @@ useEffect(() => {
   const nextRank = summary?.next_rank;
   const validCount = Number(summary?.referral_count || 0);
   const nextNeeded = nextRank ? Math.max(0, nextRank.min - validCount) : 0;
+  // ✅ Subscription nahi li to referral screen locked rahegi
+  if (!loading && !eligible) {
+    return (
+           <SafeAreaView style={{ flex: 1 }} edges={['bottom']}>
+        <View style={styles.root}>
+          <ModuleWebHeader title="Refer & Earn" navigation={navigation} />
+          {Platform.OS !== 'web' && (
+            <ImageBackground
+              source={require('../assets/images/profile-red.png')}
+              resizeMode="cover"
+              style={[styles.header, { paddingTop: insets.top + 8 }]}
+            >
+              <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>
+                <Ionicons name="chevron-back" size={22} color="#ffffff" />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Refer & Earn</Text>
+              <View style={{ width: 36 }} />
+            </ImageBackground>
+          )}
+          <View style={[styles.content, Platform.OS === 'web' && styles.webContent]}>
+            <View style={styles.banner}>
+              <Text style={styles.bannerTitle}>Referral Locked</Text>
+              <Text style={styles.bannerSub}>
+                Referral code sirf un members ko milta hai jinhone role / premium subscription purchase ki hai. Subscription lene ke baad aapka referral code generate ho jayega.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={{ backgroundColor: '#1d4ed8', borderRadius: 12, paddingVertical: 14, alignItems: 'center' }}
+              onPress={() => navigation.navigate('Subscription Plans')}
+              activeOpacity={0.85}
+            >
+              <Text style={{ color: '#ffffff', fontWeight: '800', fontSize: 14 }}>Take Subscription</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const handleCopy = (value = personalLink) => {
+
     Clipboard.setString(value);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
@@ -130,22 +174,29 @@ useEffect(() => {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+      <SafeAreaView style={{ flex: 1 }} edges={['bottom']}>
     <View style={styles.root}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={22} color="#0f172a" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Refer & Earn</Text>
-        <View style={{ width: 36 }} />
-      </View>
+      <ModuleWebHeader title="Refer & Earn" navigation={navigation} />
+      {Platform.OS !== 'web' && (
+        <ImageBackground
+          source={require('../assets/images/profile-red.png')}
+          resizeMode="cover"
+          style={[styles.header, { paddingTop: insets.top + 8 }]}
+        >
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>
+            <Ionicons name="chevron-back" size={22} color="#ffffff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Refer & Earn</Text>
+          <View style={{ width: 36 }} />
+        </ImageBackground>
+      )}
 
       <ScrollView contentContainerStyle={[styles.content, Platform.OS === 'web' && styles.webContent]} showsVerticalScrollIndicator={false}>
         <View style={styles.banner}>
           <Text style={styles.bannerEmoji}>RTI</Text>
           <Text style={styles.bannerTitle}>Referral Bonus</Text>
-          <Text style={styles.bannerSub}>
-            The referral will be considered valid only when the user completes signup, verifies their mobile number, and successfully purchases a subscription.
+                  <Text style={styles.bannerSub}>
+            Referral benefits may continue for the eligible referral relationship during the applicable subscription/renewal period, subject to the referrer's continued eligibility, active required plan/status, qualifying purchases/renewals, applicable commission rules, platform policies and applicable law.
           </Text>
         </View>
 
@@ -238,16 +289,15 @@ useEffect(() => {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#f8fafc' },
-  header: {
+   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 16, paddingTop: 52, paddingBottom: 14,
-    backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: '#e2e8f0',
+    paddingHorizontal: 16, paddingBottom: 16,
   },
   backBtn: {
-    width: 36, height: 36, borderRadius: 12,
-    backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center',
+    width: 36, height: 36,
+    alignItems: 'center', justifyContent: 'center',
   },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: '#0f172a' },
+  headerTitle: { fontSize: 17, fontWeight: '800', color: '#ffffff' },
   content: { padding: 16, paddingBottom: 40 },
 webContent: {
   maxWidth: 720,

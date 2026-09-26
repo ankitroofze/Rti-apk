@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, ImageBackground, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 const SOCIAL_ITEMS = [
@@ -17,12 +17,13 @@ const DEMO_PRODUCTS = [
   { id: 'demo-3', title: 'Noise ColorFit Pro 5', subtitle: 'Smart Watch', price: '1,999', image: 'https://picsum.photos/seed/noisecf5/160/160' },
 ];
 
-function SectionCard({ title, icon, children }) {
+function SectionCard({ title, icon, children, action }) {
   return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
         <Ionicons name={icon} size={16} color="#e11d48" />
         <Text style={styles.cardTitle}>{title}</Text>
+        {action}
       </View>
       {children}
     </View>
@@ -64,7 +65,11 @@ export default function LeftEcomSidebar({ navigation, stories = [], onOpenDetail
       </SectionCard>
 
       {/* ── E-Commerce ── */}
-      <SectionCard title="E-Commerce" icon="cart">
+      <SectionCard
+        title="E-Commerce"
+        icon="cart"
+        action={<TouchableOpacity onPress={() => openScreen('FarmingBuy')}><Text style={styles.viewAll}>View All <Ionicons name="arrow-forward" size={12} /></Text></TouchableOpacity>}
+      >
         {products.map((p) => (
           <View key={p.id} style={styles.productRow}>
             <Image source={{ uri: p.image }} style={styles.productImage} resizeMode="cover" />
@@ -74,18 +79,17 @@ export default function LeftEcomSidebar({ navigation, stories = [], onOpenDetail
               <Text style={styles.productPrice}>₹{p.price}</Text>
               <View style={styles.productActions}>
                 <TouchableOpacity style={styles.viewBtn} activeOpacity={0.85} onPress={() => openScreen('FarmingBuy')}>
-                  <Text style={styles.viewBtnText}>View</Text>
+                  <ImageBackground source={require('../assets/images/profile-red.png')} resizeMode="cover" imageStyle={styles.buttonImage} style={styles.imageButton}><Text style={styles.viewBtnText}>View</Text></ImageBackground>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.callBtn} activeOpacity={0.85} onPress={() => Linking.openURL('tel:')}>
-                  <Ionicons name="call" size={14} color="#fff" />
+                  <ImageBackground source={require('../assets/images/profile-red.png')} resizeMode="cover" imageStyle={styles.buttonImage} style={styles.imageButton}><Ionicons name="call" size={14} color="#fff" /></ImageBackground>
                 </TouchableOpacity>
               </View>
             </View>
           </View>
         ))}
     <TouchableOpacity style={styles.exploreBtn} activeOpacity={0.88} onPress={() => openScreen('FarmingBuy')}>
-          <Ionicons name="storefront-outline" size={16} color="#fff" />
-          <Text style={styles.exploreBtnText}>Explore All Products</Text>
+          <ImageBackground source={require('../assets/images/profile-red.png')} resizeMode="cover" imageStyle={styles.buttonImage} style={[styles.imageButton, styles.exploreButtonImage]}><Ionicons name="storefront-outline" size={16} color="#fff" /><Text style={styles.exploreBtnText}>Explore All Products</Text></ImageBackground>
         </TouchableOpacity>
       </SectionCard>
 
@@ -105,35 +109,36 @@ export default function LeftEcomSidebar({ navigation, stories = [], onOpenDetail
 }
 
 const styles = StyleSheet.create({
-   sidebarShell: { width: '350px', gap: 5 },
-  card: { borderWidth: 1, borderColor: '#dddee0', backgroundColor: '#fff', borderRadius: 6, padding: 24 },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 },
-  cardTitle: { fontSize: 20, fontWeight: '600', color: '#000000' },
+   sidebarShell: { width: '100%', gap: 12 },
+  card: { borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff', borderRadius: 12, padding: 14, shadowColor: '#0f172a', shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  cardTitle: { flex: 1, fontSize: 16, fontWeight: '800', color: '#172033', fontFamily: 'Roboto' },
+  viewAll: { color: '#dc2626', fontSize: 12, fontWeight: '800', fontFamily: 'Roboto' },
 
-  trendRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 8 },
-  trendText: { fontSize: 14.5, color: '#1e293b', fontWeight: '500', flex: 1 },
+  trendRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  trendText: { fontSize: 13, color: '#1e293b', fontWeight: '600', flex: 1, fontFamily: 'Roboto' },
 
-  productRow: { flexDirection: 'row', gap: 10, marginBottom: 14 },
-  productImage: { width: 70, height: 70, borderRadius: 2, backgroundColor: '#aec7e0' },
-  productTitle: { fontSize: 14.5, fontWeight: '400', color: '#0f172a' },
-  productSubtitle: { fontSize: 13, color: '#4b596d', marginTop: 10 },
-  productPrice: { fontSize: 14.5, fontWeight: '500', color: '#0f172a', marginTop: 2 },
-  productActions: { flexDirection: 'row', gap: 14, marginTop: 5 },
+  productRow: { flexDirection: 'row', gap: 10, marginBottom: 10, padding: 8, borderWidth: 1, borderColor: '#fee2e2', borderRadius: 10, backgroundColor: '#fff' },
+  productImage: { width: 84, height: 84, borderRadius: 8, backgroundColor: '#aec7e0' },
+  productTitle: { fontSize: 13, fontWeight: '800', color: '#0f172a', fontFamily: 'Roboto' },
+  productSubtitle: { fontSize: 11, color: '#64748b', marginTop: 3, fontFamily: 'Roboto' },
+  productPrice: { fontSize: 14, fontWeight: '800', color: '#dc2626', marginTop: 4, fontFamily: 'Roboto' },
+  productActions: { flexDirection: 'row', gap: 8, marginTop: 6 },
  viewBtn: {
   flex: 1,
-  backgroundColor: '#f9f9fa',
-  borderRadius: 2,
+  height: 30,
+  borderRadius: 6,
   alignItems: 'center',
   justifyContent: 'center',
-  paddingVertical: 6,
-  borderWidth: 1,
-  borderColor: '#ececec',
 },
-  viewBtnText: { fontSize: 14.5, fontWeight: '700', color: '#0f172a' },
-  callBtn: { width: 30, height: 30, borderRadius: 2, backgroundColor: '#16a34a', alignItems: 'center', justifyContent: 'center' },
+  viewBtnText: { fontSize: 12, fontWeight: '700', color: '#fff', fontFamily: 'Roboto' },
+  callBtn: { width: 30, height: 30, borderRadius: 6, overflow: 'hidden' },
+  imageButton: { flex: 1, width: '100%', height: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  buttonImage: { borderRadius: 6 },
 
-  exploreBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#2563eb', borderRadius: 8, paddingVertical: 11, marginTop: 4 },
-  exploreBtnText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  exploreBtn: { borderRadius: 8, overflow: 'hidden', marginTop: 4, height: 42 },
+  exploreButtonImage: { paddingVertical: 11 },
+  exploreBtnText: { color: '#fff', fontWeight: '700', fontSize: 13, fontFamily: 'Roboto' },
 
   connectSubtitle: { fontSize: 11.5, color: '#64748b', marginBottom: 10 },
   socialRow: { flexDirection: 'row', gap: 10 },

@@ -9,30 +9,49 @@ import {
   StatusBar,
   StyleSheet,
   useWindowDimensions,
+  ImageBackground,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
 import LiveStreamPlayer from '../components/LiveStreamPlayer';
 import { useToast } from '../components/ui/ToastProvider';
 import LiveStreamingStyles from '../styles/LiveStreamingStyles';
 import { UserStore } from '../store/UserStore';
-
+import { requirePremium } from '../utils/profileHelpers';
+import { MODULE_HEADER_HEIGHT_WEB } from '../constants/subscriptionThemes';
+import ModuleWebHeader from '../components/Modulewebheader';
 // ─── Header override — matches AdvertiseScreen's top bar exactly (font, back arrow, spacing) ───
-const HEADER_TOP = Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 10 : 54;
+const HEADER_TOP = Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 2 : 32; // 👈 aur height kam ki
+const F_REG  = Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular';
+const F_BOLD = Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold';
+
 const H = StyleSheet.create({
-  header: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingTop: HEADER_TOP, paddingBottom: 14, paddingHorizontal: 16,
-    backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: '#E6E6E6',
+   header: {
+      width: '100%', alignSelf: 'stretch',
+      overflow: 'hidden',
+      backgroundColor: '#b91c1c',
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 16, paddingBottom: 14,
+    ...(Platform.OS === 'web' ? { height: MODULE_HEADER_HEIGHT_WEB, paddingBottom: 0 } : null),
   },
-  backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, marginLeft: -6 },
-  title:   { flex: 1, fontSize: 15, color: '#353535' },
+  headerImg: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    width: '100%', height: '100%', resizeMode: 'cover',
+  },
+  backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  title: {
+    flex: 1, fontSize: 15, fontWeight: '400', color: '#ffffff',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
+  },
 });
 // Tablet-responsive content wrapper — matches AdvertiseScreen's centered max-width pattern
 const TABLET_CONTENT_WRAP = { maxWidth: 720, width: '100%', alignSelf: 'center' };
 
 export default function LiveStreamingScreen({ navigation }) {
+  const insets = useSafeAreaInsets();
   const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const { width: winWidth } = useWindowDimensions();
   const isTablet = winWidth >= 768;
@@ -123,12 +142,23 @@ export default function LiveStreamingScreen({ navigation }) {
   return (
     <View style={LiveStreamingStyles.root}>
       {/* Top Bar — matches AdvertiseScreen header style */}
-      <View style={H.header}>
-        <TouchableOpacity onPress={() => navigation.navigate('QuickMenu')} style={H.backBtn} activeOpacity={0.6}>
-          <Ionicons name="arrow-back" size={22} color="#000" />
-        </TouchableOpacity>
-        <Text style={[H.title, fontsLoaded && { fontFamily: 'Roboto_700Bold' }]}>Live Streaming</Text>
-      </View>
+     <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+{Platform.OS === 'web' ? (
+  /* ✅ Web header — design ek hi jagah (components/ModuleWebHeader.js) se aata hai */
+  <ModuleWebHeader title="Live Streaming" navigation={navigation} />
+) : (
+<ImageBackground
+  source={require('../assets/images/profile-red.png')}
+  resizeMode="cover"
+  imageStyle={H.headerImg}
+  style={[H.header, { paddingTop: insets.top + 8 }]}
+>
+  <TouchableOpacity onPress={() => navigation.navigate('QuickMenu')} style={H.backBtn} activeOpacity={0.7}>
+    <Ionicons name="chevron-back" size={24} color="#ffffff" />
+  </TouchableOpacity>
+  <Text style={H.title}>Live Streaming</Text>
+</ImageBackground>
+)}
 
       <ScrollView
         style={LiveStreamingStyles.scrollView}
@@ -142,12 +172,23 @@ export default function LiveStreamingScreen({ navigation }) {
           <Text style={[LiveStreamingStyles.heroSubtitle, fontsLoaded && { fontFamily: 'Roboto_400Regular' }]}>
             Watch the active bulletin inside the app and keep a single channel on screen at a time.
           </Text>
-          <TouchableOpacity
-            style={LiveStreamingStyles.startLiveCta}
-            onPress={() => navigation.navigate('Start Live')}
+                  <TouchableOpacity
+                     onPress={async () => {
+              const user = await UserStore.getCurrentUser();
+              if (!requirePremium(user, UserStore.hasActiveSubscription, showToast, navigation, 'Start Live')) return;
+              navigation.navigate('Start Live');
+            }}
+            activeOpacity={0.85}
           >
-            <Feather name="radio" size={16} color="#fff" />
-            <Text style={[LiveStreamingStyles.startLiveCtaText, fontsLoaded && { fontFamily: 'Roboto_700Bold' }]}>Start Live</Text>
+            <LinearGradient
+              colors={['#ef4444', '#b91c1c']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={LiveStreamingStyles.startLiveCta}
+            >
+              <Feather name="radio" size={16} color="#fff" />
+              <Text style={[LiveStreamingStyles.startLiveCtaText, fontsLoaded && { fontFamily: F_BOLD }]}>Start Live</Text>
+            </LinearGradient>
           </TouchableOpacity>
         </View>
 

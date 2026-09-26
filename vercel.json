@@ -2,6 +2,10 @@
   "buildCommand": "npm run build",
   "installCommand": "npm ci",
   "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/api-proxy/:path*", "destination": "https://rtiapi.roofze.in/api/:path*" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
   "headers": [
     {
       "source": "/assets/(.*)",

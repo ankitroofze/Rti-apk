@@ -13,12 +13,15 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
 import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { getSiteCopy } from '../constants/siteCopy';
 import { UserStore } from '../store/UserStore';
+import { LinearGradient } from 'expo-linear-gradient';
+import { getProfileTier, AVATAR_IMAGE } from '../utils/profileHelpers';
 import { isValidImageUrl } from '../utils/storyHelpers';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
 
@@ -36,22 +39,19 @@ const DESKTOP_NAV_ITEMS = [
 
 const MOBILE_NAV_ITEMS = [
   { labelKey: 'home', screen: 'Home', icon: 'home-outline' },
-  { labelKey: 'feed', screen: 'Feed', icon: 'newspaper-outline' },
-  { labelKey: 'liveStreaming', screen: 'Live Streaming', icon: 'radio-outline', isLiveBtn: true },
-  { labelKey: 'advertise', screen: 'Advertise', icon: 'megaphone-outline', isAdvertiseBtn: true },
-  { labelKey: 'Profile', screen: 'Profile', icon: 'person-outline' },
-
-
+  { labelKey: 'feed', screen: 'Feed', icon: 'compass-outline' },
+  { labelKey: 'create', screen: 'QuickMenu', icon: 'add', isCreateBtn: true },
+  { labelKey: 'advertise', screen: 'Advertise', icon: 'megaphone-outline' },
+  { labelKey: 'Settings', screen: 'Settings', icon: 'settings-outline' },
 ];
-
 // Gallery / stories style slider — shown in the mobile top header, next to the logo.
 // "Post News" opens Quick Menu (create), "Live" jumps straight into Live Streaming.
 const GALLERY_SLIDER_ITEMS = [
-  { labelKey: 'create', screen: 'QuickMenu', icon: 'add-circle', color: '#ea580c', isCreate: true },
-  { labelKey: 'liveStreaming', screen: 'Live Streaming', icon: 'radio', color: '#e11d48', isLive: true },
-  { labelKey: 'ePaper', screen: 'e-Paper', icon: 'document-text', color: '#4f46e5' },
-  { labelKey: 'ecome', screen: 'Ecome', icon: 'leaf', color: '#16a34a' },
-  { labelKey: 'certification', screen: 'Certification', icon: 'ribbon', color: '#0891b2' },
+  { labelKey: 'create', screen: 'QuickMenu',   isCreate: true, label: 'Post', image: require('../assets/images/news.png') },
+  { labelKey: 'liveStreaming', screen: 'Live Streaming',   isLive: true, label: 'Live', image: require('../assets/images/live.png') },
+  { labelKey: 'ePaper', screen: 'e-Paper',  label: 'e-paper', image: require('../assets/images/e-paper.png') },
+  { labelKey: 'ecome', screen: 'Ecome',   label: 'Ecom', image: require('../assets/images/ecom.png') },
+  { labelKey: 'certification', screen: 'Certification',   label: 'Certificate', image: require('../assets/images/certifcate.png') },
 ];
 
 const LANGUAGE_OPTIONS = [
@@ -66,16 +66,6 @@ const LANGUAGE_OPTIONS = [
   { code: 'ml', label: 'മലയാളം' },
   { code: 'pa', label: 'ਪੰਜਾਬੀ' },
 ];
-
-// Icon color map per tab (matching image style)
-const TAB_ICON_COLORS = {
-  Home: '#2196F3',
-  Feed: '#4CAF50',
-  QuickMenu: '#ffffff',
-  'Live Streaming': '#ffffff',
-  Advertise: '#FF9800',
-  Profile: '#9C27B0',
-};
 
 // Simple looping pulse (opacity + scale) used to draw attention to "live" elements
 function useBlink() {
@@ -108,7 +98,7 @@ function useIsDesktop() {
 }
 
 // ─── Language Selector ─────────────────────────────────────────────────────
-function NavbarLanguageSelector() {
+function NavbarLanguageSelector({ compact = false }) {
   const { language, changeLanguage } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownPos, setDropdownPos] = useState({ top: 0, right: 0 });
@@ -163,19 +153,19 @@ function NavbarLanguageSelector() {
 
   return (
     <View style={styles.languageSelectorWrap}>
-      <TouchableOpacity
+        <TouchableOpacity
         ref={triggerRef}
-        style={styles.utilityPillButton}
+        style={compact ? styles.notificationBellBtn : styles.utilityPillButton}
         onPress={openDropdown}
         activeOpacity={0.85}
       >
-        <Ionicons name="globe-outline" size={16} color="#0f172a" />
-        <Text style={styles.utilityPillText}>{selectedLanguage.label}</Text>
-        <Ionicons
-          name={isOpen ? 'chevron-up-outline' : 'chevron-down-outline'}
-          size={14}
-          color="#475569"
-        />
+        <Ionicons name="globe-outline" size={compact ? 20 : 16} color="#0f172a" />
+        {!compact && (
+          <>
+            <Text style={styles.utilityPillText}>{selectedLanguage.label}</Text>
+            <Ionicons name={isOpen ? 'chevron-up-outline' : 'chevron-down-outline'} size={14} color="#ef4444" />
+          </>
+        )}
       </TouchableOpacity>
 
       {IS_WEB ? (
@@ -252,6 +242,7 @@ function NotificationBell({ navigation }) {
 }
 
 function ProfileDropdown({ navigation, showNameLabel }) {
+  useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const { language } = useLanguage();
   const { isLoggedIn, logout, refresh } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
@@ -273,7 +264,8 @@ function ProfileDropdown({ navigation, showNameLabel }) {
           const user = await UserStore.getCurrentUser();
           if (!alive) return;
           const uri = String(user?.profile_image || '').trim();
-          const validUri = isValidImageUrl(uri) ? uri : '';
+         const userTier = getProfileTier({ ...user, has_blue_tick: UserStore.hasBlueTick(user) });
+          const validUri = userTier.key !== 'common' && isValidImageUrl(uri) ? uri : '';
           setAvatarUri(prev => {
             if (prev !== validUri) setAvatarError(false);
             return validUri;
@@ -318,12 +310,14 @@ function ProfileDropdown({ navigation, showNameLabel }) {
   if (!isLoggedIn) {
     return (
       <TouchableOpacity
-        style={styles.primaryActionButton}
+        style={styles.primaryActionButtonWrap}
         onPress={() => navigation?.navigate?.('Login')}
         activeOpacity={0.88}
       >
-        <Ionicons name="person-add-outline" size={16} color="#ffffff" />
-        <Text style={styles.primaryActionButtonText}>{copy.common.signIn}</Text>
+        <LinearGradient colors={['#ef4444', '#b91c1c', '#7f1d1d']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.primaryActionButton}>
+          <Ionicons name="person-add-outline" size={16} color="#ffffff" />
+          <Text style={styles.primaryActionButtonText}>{copy.common.signIn}</Text>
+        </LinearGradient>
       </TouchableOpacity>
     );
   }
@@ -335,7 +329,7 @@ function ProfileDropdown({ navigation, showNameLabel }) {
         onPress={() => { setIsOpen(false); navigation?.navigate?.('Profile'); }}
         activeOpacity={0.7}
       >
-        <Ionicons name="person-outline" size={18} color="#475569" />
+        <Ionicons name="person-outline" size={18} color="#ef4444" />
         <Text style={styles.profileDropdownText}>{copy.common.profile}</Text>
       </TouchableOpacity>
 
@@ -360,14 +354,16 @@ function ProfileDropdown({ navigation, showNameLabel }) {
         onPress={openDropdown}
         activeOpacity={0.85}
       >
-        {avatarUri && !avatarError ? (
+{true ? (
           <Image
-            source={{ uri: avatarUri }}
+            source={avatarUri && !avatarError ? { uri: avatarUri } : AVATAR_IMAGE}
             style={styles.profileAvatarImg}
             onError={() => setAvatarError(true)}
           />
         ) : (
-          <Ionicons name="person-circle-outline" size={32} color="#e8732a" />
+          <View style={styles.profileIconFallbackRing}>
+            <Ionicons name="person" size={20} color="#ffffff" />
+          </View>
         )}
         {showNameLabel ? (
           <View style={styles.profileNameLabelWrap}>
@@ -432,6 +428,34 @@ function NavbarBrand({ onPressHome, compact }) {
   );
 }
 
+// ─── Desktop Nav Item — grey icon by default, label turns red on hover ─────
+function DesktopNavItem({ item, isActive, onPress, label }) {
+  const [isHovered, setIsHovered] = useState(false);
+  const hoverProps = IS_WEB
+    ? { onMouseEnter: () => setIsHovered(true), onMouseLeave: () => setIsHovered(false) }
+    : {};
+  const iconColor = isActive ? '#e8732a' : (isHovered ? '#ef4444' : '#94a3b8');
+  return (
+    <TouchableOpacity
+      style={[styles.desktopNavLink, isActive && styles.desktopNavLinkActive]}
+      onPress={onPress}
+      activeOpacity={0.85}
+      {...hoverProps}
+    >
+      <Ionicons name={item.icon} size={16} color={iconColor} />
+      <Text
+        style={[
+          styles.desktopNavLabel,
+          isActive && styles.desktopNavLabelActive,
+          !isActive && isHovered && styles.desktopNavLabelHover,
+        ]}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
 // ─── Small blinking red dot — used to flag "live" / urgent items ──────────
 function LiveDot({ size = 9, style }) {
   const anim = useBlink();
@@ -464,14 +488,18 @@ function GallerySlider({ handleNavigate, handleHomeShortcut }) {
           onPress={() => handleHomeShortcut(item.screen)}
           activeOpacity={0.8}
         >
-          <View style={[styles.galleryIconRing, { borderColor: item.color }]}>
-            <View style={[styles.galleryIconFill, { backgroundColor: item.color + '18' }]}>
-              <Ionicons name={item.icon} size={20} color={item.color} />
+                    <View style={styles.galleryIconRing}>
+            <View style={[styles.galleryIconFill, { backgroundColor: item.image ? '#ffffff' : item.color + '18' }]}>
+              {item.image ? (
+                <Image source={item.image} style={styles.galleryIconImage} resizeMode="cover" />
+              ) : (
+                <Ionicons name={item.icon} size={20} color={item.color} />
+              )}
             </View>
             {item.isLive && <LiveDot style={styles.galleryLiveDot} />}
           </View>
           <Text style={styles.galleryItemLabel} numberOfLines={1}>
-            {item.isCreate ? 'Post' : item.isLive ? 'Live' : item.labelKey}
+            {item.label}
           </Text>
         </TouchableOpacity>
       ))}
@@ -487,19 +515,17 @@ function MobileTopHeader({ navigation, handleNavigate, handleHomeShortcut }) {
     <View style={[styles.mobileTopHeaderShell, { paddingTop: insets.top + 8 }]}>
       <View style={styles.mobileTopHeader}>
         <View style={styles.mobileTopHeaderLeft}>
-          {/* Logo bada — aur uske bagal ka quick-menu icon hata diya gaya,
-              "Post" gallery slider row me already available hai neeche */}
           <NavbarBrand onPressHome={() => handleNavigate('Home')} compact />
+                  <View style={{ marginLeft: 8, flexShrink: 1, minWidth: 0 }}>
+            <Text style={styles.mobileBrandTitle} numberOfLines={1}>
+              RTI <Text style={{ color: '#1d3fae' }}>VOICE</Text>
+            </Text>
+            <Text style={styles.mobileBrandSubtitle} numberOfLines={1}>ALL INDIA RTI NEWS NETWORK</Text>
+          </View>
         </View>
-        <View style={styles.mobileTopHeaderActions}>
-          <NavbarLanguageSelector />
-          <TouchableOpacity
-            style={styles.mobileNewspaperBtn}
-            onPress={() => handleNavigate('NewspaperList')}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="newspaper-outline" size={20} color="#e8732a" />
-          </TouchableOpacity>
+              <View style={styles.mobileTopHeaderActions}>
+          <NavbarLanguageSelector compact />
+          <NotificationBell navigation={navigation} />
           <ProfileDropdown navigation={navigation} />
         </View>
       </View>
@@ -514,14 +540,46 @@ function MobileBottomBar({ activeScreen, handleNavigate }) {
   const { language } = useLanguage();
   const copy = useMemo(() => getSiteCopy(language), [language]);
   const bottomPad = Math.max(insets.bottom, 10);
+  const [currentProfileTier, setCurrentProfileTier] = useState(null);
 
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      const user = await UserStore.getCurrentUser();
+      if (mounted && user) setCurrentProfileTier(getProfileTier({ ...user, has_blue_tick: UserStore.hasBlueTick(user) }));
+    })();
+    return () => { mounted = false; };
+  }, [activeScreen]);
   return (
     <View style={[styles.mobileBottomBar, { paddingBottom: bottomPad }]}>
       {MOBILE_NAV_ITEMS.map((item) => {
         const isActive = activeScreen === item.screen;
-        const iconColor = isActive
-          ? (item.screen === 'QuickMenu' ? '#ffffff' : TAB_ICON_COLORS[item.screen] || '#2196F3')
-          : '#94a3b8';
+        const iconColor = isActive ? '#000000' : '#94a3b8';
+        const iconName = isActive ? item.icon.replace('-outline', '') : item.icon;
+
+           if (item.isCreateBtn) {
+          return (
+            <TouchableOpacity
+              key={item.screen}
+              style={styles.mobileTabButton}
+              onPress={() => handleNavigate(item.screen)}
+              activeOpacity={0.85}
+            >
+              <LinearGradient
+                colors={['#ffffff', '#f3f4f6']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.mobileTabFabWrap}
+              >
+                <Ionicons name="add" size={34} color="#000000" />
+              </LinearGradient>
+
+              <Text style={styles.mobileTabLabel} numberOfLines={1}>
+                {copy.common.create || ''}
+              </Text>
+            </TouchableOpacity>
+          );
+        }
 
         if (item.isLiveBtn) {
           return (
@@ -549,9 +607,9 @@ function MobileBottomBar({ activeScreen, handleNavigate }) {
             onPress={() => handleNavigate(item.screen)}
             activeOpacity={0.8}
           >
-            <View style={[styles.mobileTabIconWrap, isActive && styles.mobileTabIconWrapActive]}>
+            <View style={styles.mobileTabIconWrap}>
               <Ionicons
-                name={item.icon}
+                name={iconName}
                 size={20}
                 color={iconColor}
               />
@@ -574,6 +632,14 @@ export default function AppNavbar({ activeScreen, navigation, hideTopHeader = fa
   const { language } = useLanguage();
   const copy = useMemo(() => getSiteCopy(language), [language]);
   const isDesktop = useIsDesktop();
+  const [isScrolled, setIsScrolled] = useState(false);
+  useEffect(() => {
+    if (!IS_WEB || typeof window === 'undefined') return;
+    const onScroll = () => setIsScrolled(window.scrollY > 4);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   const handleNavigate = (screenName) => {
     blurActiveElement();
@@ -600,8 +666,8 @@ export default function AppNavbar({ activeScreen, navigation, hideTopHeader = fa
   }
 
   // ─── Desktop ───────────────────────────────────────────────────────────
-  return (
-    <View style={styles.desktopNavbarShell}>
+    return (
+    <View style={[styles.desktopNavbarShell, isScrolled && styles.desktopNavbarShellScrolled]}>
       <View style={styles.desktopNavbarInner}>
         <NavbarBrand onPressHome={() => handleNavigate('Home')} />
 
@@ -609,28 +675,23 @@ export default function AppNavbar({ activeScreen, navigation, hideTopHeader = fa
           {DESKTOP_NAV_ITEMS.map((item) => {
             const isActive = activeScreen === item.screen;
             return (
-              <TouchableOpacity
+              <DesktopNavItem
                 key={item.screen}
-                style={[styles.desktopNavLink, isActive && styles.desktopNavLinkActive]}
+                item={item}
+                isActive={isActive}
                 onPress={() => handleNavigate(item.screen)}
-                activeOpacity={0.85}
-              >
-                <Ionicons
-                  name={item.icon}
-                  size={16}
-                  color={isActive ? '#e8732a' : '#475569'}
-                />
-                <Text style={[styles.desktopNavLabel, isActive && styles.desktopNavLabelActive]}>
-                  {copy.common[item.labelKey] || item.labelKey}
-                </Text>
-              </TouchableOpacity>
+                label={copy.common[item.labelKey] || item.labelKey}
+              />
             );
           })}
         </View>
 
-        <View style={styles.desktopActionsRow}>
+        <View style={styles.desktopUtilityRow}>
           <NavbarLanguageSelector />
           <NotificationBell navigation={navigation} />
+        </View>
+
+        <View style={styles.desktopActionsRow}>
           <ProfileDropdown navigation={navigation} showNameLabel />
         </View>
       </View>
@@ -650,11 +711,19 @@ const styles = StyleSheet.create({
         top: 0,
         zIndex: 5000,
         overflow: 'visible',
-        boxShadow: '0 10px 28px rgba(15, 23, 42, 0.08)',
+        boxShadow: 'none',
+        transition: 'box-shadow 0.2s ease',
       },
       default: {
         boxShadow: '0px 2px 4px rgba(0,0,0,0.2)',
       },
+    }),
+  },
+  desktopNavbarShellScrolled: {
+    backgroundColor: '#ffffff',
+    ...Platform.select({
+      web: { boxShadow: '0 6px 20px rgba(15, 23, 42, 0.30)' },
+      default: {},
     }),
   },
   desktopNavbarInner: {
@@ -722,10 +791,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontFamily: 'Roboto',
   },
-  desktopNavLabelActive: {
+   desktopNavLabelActive: {
     color: '#e8732a',
   },
-  desktopActionsRow: {
+  desktopNavLabelHover: {
+    color: '#ef4444',
+  },
+   desktopActionsRow: {
     position: 'relative',
     zIndex: 5003,
     overflow: 'visible',
@@ -734,14 +806,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'flex-end',
     gap: 8,
+    marginLeft: 20,
+  },
+   desktopUtilityRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
+    marginLeft: 12,
   },
 
   // ─── Mobile Top Header ─────────────────────────────────────────────────
   // Shell wraps both the logo/actions row AND the gallery slider row below it.
   mobileTopHeaderShell: {
     backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    borderBottomWidth: 0,
     ...Platform.select({
       web: {
         position: 'sticky',
@@ -765,65 +844,80 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingBottom: 8,
   },
-  mobileTopHeaderLeft: {
+   mobileTopHeaderLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
   },
   // Gallery / stories style slider row
-  gallerySliderWrap: {
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
+   gallerySliderWrap: {
+    borderTopWidth: 0,
   },
   gallerySliderContent: {
     flexDirection: 'row',
-    gap: 16,
+    gap: 18,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
-  galleryItem: {
+    galleryItem: {
     alignItems: 'center',
-    gap: 4,
-    width: 56,
+    gap: 2,
+    width: 68,
   },
-  galleryIconRing: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    borderWidth: 1.5,
+   galleryIconRing: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    borderWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
+    elevation: 0,
+    shadowColor: 'transparent',
+    shadowOpacity: 0,
+    backgroundColor: 'transparent',
   },
   galleryIconFill: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+    elevation: 0,
+    shadowColor: 'transparent',
+    shadowOpacity: 0,
+  },
+   galleryIconImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 32,
   },
   galleryLiveDot: {
     position: 'absolute',
     top: -1,
     right: -1,
   },
-  galleryItemLabel: {
-    fontSize: 10,
+       galleryItemLabel: {
+    fontSize: 12.5,
     fontWeight: '600',
-    color: '#475569',
+    color: '#334155',
     textAlign: 'center',
-    fontFamily: 'Roboto',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
   },
   liveDot: {
     backgroundColor: '#e11d48',
     borderWidth: 1.5,
     borderColor: '#ffffff',
   },
-  mobileTopHeaderActions: {
+   mobileTopHeaderActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flexShrink: 0,
   },
-
   // ─── Web overlay ───────────────────────────────────────────────────────
   webOverlay: {
     position: 'fixed',
@@ -914,6 +1008,7 @@ const styles = StyleSheet.create({
     zIndex: 5003,
   },
   profileIconButton: {
+    width: 40,
     minWidth: 40,
     height: 40,
     borderRadius: 20,
@@ -922,13 +1017,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  profileIconFallbackRing: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#ef4444',
+    borderWidth: 2,
+    borderColor: '#fecaca',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   notificationBellBtn: {
     width: 38,
     height: 38,
     borderRadius: 19,
-    backgroundColor: '#f1f5f9',
+    backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
+    elevation: 0,
+    shadowOpacity: 0,
   },
   notificationBadge: {
     position: 'absolute',
@@ -959,13 +1066,16 @@ const styles = StyleSheet.create({
   profilePremiumLabel: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#e8732a',
+    color: '#2196F3',
   },
   profileAvatarImg: {
     width: 36,
     height: 36,
     borderRadius: 18,
     backgroundColor: '#e2e8f0',
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#ef4444',
   },
   profileDropdownCard: {
     position: 'absolute',
@@ -1013,6 +1123,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#e2e8f0',
     marginVertical: 4,
   },
+  primaryActionButtonWrap: {
+    borderRadius: 999,
+    overflow: 'hidden',
+    flexShrink: 0,
+  },
   primaryActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1020,7 +1135,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 9,
     borderRadius: 999,
-    backgroundColor: '#e8732a',
     ...Platform.select({
       default: {
         elevation: 4,
@@ -1031,11 +1145,33 @@ const styles = StyleSheet.create({
       },
     }),
   },
+     mobileBrandTitle: {
+  fontSize: 23.5,
+  fontWeight: '600',
+  color: '#c40b0b',
+  letterSpacing: 0.3,
+  marginLeft: -21,
+  fontFamily: Platform.OS === 'web'
+    ? "'Roboto', sans-serif"
+    : 'Roboto_500Medium',
+},
+
+mobileBrandSubtitle: {
+  fontSize: 13,
+  fontWeight: '500',
+  color: '#374151',
+  letterSpacing: 0.3,
+  marginTop: 1,
+  marginLeft: -21,
+  fontFamily: Platform.OS === 'web'
+    ? "'Roboto', sans-serif"
+    : 'Roboto_500Medium',
+},
   primaryActionButtonText: {
     color: '#ffffff',
     fontSize: 12,
     fontWeight: '800',
-    fontFamily: 'Roboto',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
   },
   mobileNewspaperBtn: {
     width: 36,
@@ -1067,14 +1203,14 @@ const styles = StyleSheet.create({
         right: 0,
         bottom: 0,
         zIndex: 1100,
-        boxShadow: '0 -8px 32px rgba(15, 23, 42, 0.14)',
+        boxShadow: '0 -6px 20px rgba(5, 5, 5, 0.35)',
       },
       default: {
-        elevation: 20,
-        shadowColor: '#1e293b',
-        shadowOffset: { width: 0, height: -6 },
-        shadowOpacity: 0.12,
-        shadowRadius: 20,
+        elevation: 24,
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.35,
+        shadowRadius: 14,
       },
     }),
   },
@@ -1103,34 +1239,35 @@ const styles = StyleSheet.create({
     backgroundColor: '#EBF5FF',
   },
 
-  mobileTabLabel: {
+    mobileTabLabel: {
     color: '#94a3b8',
     fontSize: 10,
     fontWeight: '600',
     textAlign: 'center',
-    fontFamily: 'Roboto',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
   },
   mobileTabLabelActive: {
-    color: '#e8732a',
+    color: '#000000',
     fontWeight: '700',
   },
 
   // FAB-style button for the center tab (matching image's blue circle)
   mobileTabFabWrap: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+    
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#e8732a',
-    marginTop: -22,
+    backgroundColor: '#686262',
+    marginTop: -24,
     ...Platform.select({
       default: {
-        elevation: 8,
-        shadowColor: '#e8732a',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.45,
-        shadowRadius: 10,
+        elevation: 2,
+        shadowColor: '#030303',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.62,
+        shadowRadius: 6,
       },
     }),
   },

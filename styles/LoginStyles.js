@@ -1,11 +1,11 @@
 import { Platform, StyleSheet } from 'react-native';
 
 const LoginStyles = StyleSheet.create({
-  flex: { flex: 1 },
+  flex: { flex: 1, ...(Platform.OS === 'web' && { minHeight: '100vh' }) },
 
   root: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    ...(Platform.OS === 'web' && { minHeight: '100vh', width: '100%' }),
   },
 
   scrollView: {
@@ -26,24 +26,17 @@ const LoginStyles = StyleSheet.create({
   formContainer: {
     width: '100%',
     maxWidth: 420,
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 28,
+    paddingHorizontal: 8,
     paddingTop: 36,
-    shadowColor: '#000',
-    shadowOffset: { width: 3, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 14,
-    elevation: 6,
     alignItems: 'stretch',
   },
 
-  // Close button — top-left of card
+  // Back button — top-left, plain icon, no background/shadow
   closeButton: {
     position: 'absolute',
     top: 14, left: 14, zIndex: 10,
-    width: 34, height: 34, borderRadius: 17,
-    backgroundColor: '#F5F5F5',
+    width: 34, height: 34,
+    backgroundColor: 'transparent',
     justifyContent: 'center', alignItems: 'center',
   },
 
@@ -56,12 +49,14 @@ const LoginStyles = StyleSheet.create({
 
   // Header
   pageTitle: {
-    fontSize: 28, fontWeight: '800', color: '#111111',
-    textAlign: 'center', marginBottom: 6, fontFamily: 'Roboto',
+    fontSize: 30, fontWeight: Platform.OS === 'web' ? '800' : 'normal', color: '#ffffff',
+    textAlign: 'center', marginBottom: 6,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
   },
   pageSubtitle: {
-    fontSize: 13, color: '#999999',
-    textAlign: 'center', lineHeight: 20, marginBottom: 24, fontFamily: 'Roboto',
+    fontSize: 14, color: '#ffffff',
+    textAlign: 'center', lineHeight: 20, marginBottom: 24,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
   },
 
   // General error box
@@ -76,15 +71,19 @@ const LoginStyles = StyleSheet.create({
 
   // Inputs
   inputGroup:  { marginBottom: 14 },
-  inputLabel:  { fontSize: 13, color: '#555555', marginBottom: 6, fontWeight: '600' },
+  inputLabel:  {
+    fontSize: 13, color: '#ffffff', marginBottom: 6, fontWeight: Platform.OS === 'web' ? '600' : 'normal',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
+  },
   inputWrap: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     backgroundColor: '#F8F8F8', borderWidth: 1.5, borderColor: '#EEEEEE',
-    borderRadius: 16, paddingHorizontal: 16, minHeight: 52,
+    borderRadius: 8, paddingHorizontal: 16, minHeight: 52,
   },
   inputWrapError: { borderColor: '#e8732a', backgroundColor: 'rgba(255,45,120,0.03)' },
   input: {
     flex: 1, fontSize: 14, color: '#111111', paddingVertical: 0,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
     ...(Platform.OS === 'web' && { outlineStyle: 'none' }),
   },
 
@@ -92,19 +91,28 @@ const LoginStyles = StyleSheet.create({
   inlineErrorText: { fontSize: 12, color: '#e8732a', fontWeight: '600', flex: 1 },
 
   forgotBtn:  { alignSelf: 'flex-end', marginBottom: 20, marginTop: 2 },
-  forgotText: { color: '#999999', fontSize: 13, fontWeight: '500' },
+  forgotText: {
+    color: '#ffffff', fontSize: 14, fontWeight: Platform.OS === 'web' ? '600' : 'normal',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
+  },
 
-  // Submit button
+  // Submit button — LinearGradient (red, same shades as the Edit Profile button) lives in submitBtn
+   submitBtnWrap: {
+    borderRadius: 50, overflow: 'hidden', marginBottom: 18,
+    shadowColor: '#7F1D1D', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35, shadowRadius: 12, elevation: 6,
+    borderWidth: 1, borderColor: 'rgba(0,0,0,0.06)', // 👈 NAYA
+  },
   submitBtn: {
-    backgroundColor: '#e8732a', borderRadius: 50,
     minHeight: 52, paddingHorizontal: 18,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 10, marginBottom: 18,
-    shadowColor: '#e8732a', shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.28, shadowRadius: 12, elevation: 6,
+    gap: 10,
   },
   btnDisabled:   { opacity: 0.6 },
-  submitBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 16 },
+   submitBtnText: {
+    color: '#B91C1C', fontWeight: Platform.OS === 'web' ? '700' : 'normal', fontSize: 17,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
+  },
 
   // Divider
   dividerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 10 },
@@ -123,8 +131,14 @@ const LoginStyles = StyleSheet.create({
 
   // Switch to register
   switchBtn:  { marginTop: 20, alignItems: 'center' },
-  switchText: { color: '#999999', fontSize: 13, textAlign: 'center' },
-  switchLink: { color: '#111111', fontWeight: '700' },
+  switchText: {
+    color: '#ffffff', fontSize: 14, textAlign: 'center',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
+  },
+  switchLink: {
+    color: '#ffffff', fontWeight: Platform.OS === 'web' ? '700' : 'normal',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
+  },
 
   // Forgot Password screens ke liye
   forgotFormContainer: {

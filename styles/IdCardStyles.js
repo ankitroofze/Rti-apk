@@ -1,23 +1,30 @@
-import { StyleSheet } from 'react-native';
+import { Platform, StyleSheet } from 'react-native';
+
+const ID_CARD_FONT = Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular';
+const ID_CARD_FONT_BOLD = Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold';
+const ID_CARD_FONT_BLACK = Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_900Black';
 
 const IdCardStyles = StyleSheet.create({
 
   // ── CARD WRAPPER ──
-  idCardPreview: {
-    borderRadius: 16,
-    overflow: 'hidden',
+   idCardShadowWrap: {
     marginBottom: 4,
-    elevation: 6,
     width: '100%',
     maxWidth: 360,
     alignSelf: 'center',
-    backgroundColor: 'rgba(218, 213, 213, 0.76)',
+    borderRadius: 16,
+    backgroundColor: '#ffffff',
+    elevation: 6,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.22,
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
   },
-
+  idCardPreview: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#ffffff',
+  },
   // ── HEADER ──
   idCardHeader: {
     backgroundColor: '#EB8C28',
@@ -26,12 +33,13 @@ const IdCardStyles = StyleSheet.create({
     paddingHorizontal: 12,
     alignItems: 'center',
   },
-  idCardHeaderTitle: {
+      idCardHeaderTitle: {
     fontSize: 26,
-    fontWeight: '800',
+    fontWeight: Platform.OS === 'web' ? '800' : 'normal',
     color: '#fff',
     textAlign: 'center',
     letterSpacing: 0.3,
+    fontFamily: ID_CARD_FONT_BOLD,
   },
   idCardHeaderRow: {
     flexDirection: 'row',
@@ -43,30 +51,33 @@ const IdCardStyles = StyleSheet.create({
     width: 44,
     height: 69,
     resizeMode: 'contain',
+    marginleft: 37,
   },
   idCardHeaderNetwork: {
     fontSize: 28,
-    fontWeight: '900',
+    fontWeight: Platform.OS === 'web' ? '900' : 'normal',
     color: '#1a1a1a',
     lineHeight: 28,
-    fontFamily: 'Poppins-Bold',
+      marginRight: 67,
+    fontFamily: ID_CARD_FONT_BLACK,
   },
-  idCardHeaderSub: {
+    idCardHeaderSub: {
     fontSize: 18,
     color: '#8B2E1A',
-    fontWeight: '700',
+    fontWeight: Platform.OS === 'web' ? '700' : 'normal',
     marginTop: 4,
     textAlign: 'center',
+    fontFamily: ID_CARD_FONT_BOLD,
   },
-  idCardHeaderReg: {
+   idCardHeaderReg: {
     fontSize: 11,
     color: '#1a3a8a',
-    fontWeight: '700',
+    fontWeight: Platform.OS === 'web' ? '700' : 'normal',
     marginTop: 1,
     textAlign: 'center',
     letterSpacing: 0.3,
+    fontFamily: ID_CARD_FONT_BOLD,
   },
-
   // ── PHOTO ROW ──
   idCardPhotoRow: {
     flexDirection: 'row',
@@ -74,18 +85,20 @@ const IdCardStyles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 12,
     paddingVertical: 14,
-    backgroundColor: 'rgba(218, 213, 213, 0.76)',
+backgroundColor: '#ffffff',
   },
-  idCardLogoImg: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    resizeMode: 'cover',
+ 
+       idCardLogoImg: {
+    width: 100,
+    height: 100,
+    borderRadius: 6,
+    resizeMode: 'contain',
+    backgroundColor: '#ffffff',
   },
-  idCardPhotoBox: {
+   idCardPhotoBox: {
     width: 138,
     height: 145,
-    borderWidth: 2.5,
+    borderWidth: 0.5,
     borderColor: '#16a34a',
     borderRadius: 8,
     overflow: 'hidden',
@@ -95,9 +108,9 @@ const IdCardStyles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  idCardQRBox: {
-    width: 64,
-    height: 64,
+              idCardQRBox: {
+    width: 76,
+    height: 76,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -132,36 +145,49 @@ const IdCardStyles = StyleSheet.create({
   idCardDetails: {
     paddingHorizontal: 14,
     paddingVertical: 8,
-    backgroundColor: 'rgba(218, 213, 213, 0.76)',
+    backgroundColor: '#ffffff',
+   
   },
   idCardRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 5,
+    marginBottom: 4,
     gap: 6,
   },
-  idCardKeyBold: {
+     idCardKeyBold: {
     width: 66,
-    fontSize: 13,
-    fontWeight: '900',
-    color: '#cc2200',
+    fontSize: 17,
+    fontWeight: Platform.OS === 'web' ? '900' : 'normal',
+    color: '#15803d',
+    fontFamily: ID_CARD_FONT_BLACK,
   },
   idCardKeyLight: {
     width: 66,
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#374151',
+    fontSize: 17,
+    fontWeight: Platform.OS === 'web' ? '900' : 'normal',
+    color: '#15803d',
+    fontFamily: ID_CARD_FONT_BLACK,
   },
-  idCardVal: {
+  idCardDesignationKey: {
+  width: 68,
+  fontSize: 17,
+  fontWeight: '900',
+  color: '#cc2200',
+  flexShrink: 0,
+},
+     idCardVal: {
     flex: 1,
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#1f2937',
+    fontSize: 17,
+    fontWeight: Platform.OS === 'web' ? '900' : 'normal',
+    color: '#cc2200',
+    fontFamily: ID_CARD_FONT_BLACK,
   },
   idCardValLight: {
     flex: 1,
-    fontSize: 12,
-    color: '#374151',
+    fontSize: 17,
+    fontWeight: Platform.OS === 'web' ? '900' : 'normal',
+    color: '#cc2200',
+    fontFamily: ID_CARD_FONT_BLACK,
   },
   idCardValidUpto: {
     fontSize: 11,
@@ -169,6 +195,39 @@ const IdCardStyles = StyleSheet.create({
     fontWeight: '500',
   },
 
+    // ── IDENTITY BANNER ──
+  identityLabelBar: {
+    backgroundColor: '#15803d',
+    alignItems: 'center',
+    paddingVertical: 2,
+  },
+  identityLabelText: {
+    fontSize: 14,
+    fontWeight: '900',
+    color: '#fff',
+    letterSpacing: 4,
+  },
+  identityGreenBar: {
+    backgroundColor: '#15803d',
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  identityGreenBlock: {
+    width: 45,
+    backgroundColor: '#15803d',
+  },
+  identityImgBox: {
+    flex: 1,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 0,
+    overflow: 'hidden',
+  },
+  identityImg: {
+    width: '100%',
+    height: 66.5,
+  },
   // ── PRESS FOOTER ──
   pressFooterWrapper: {
     overflow: 'hidden',
@@ -195,11 +254,10 @@ const IdCardStyles = StyleSheet.create({
     color: '#374151',
     fontWeight: '500',
   },
-  pressApprovedName: {
-    fontSize: 12,
+    pressApprovedName: {
+    fontSize: 13,
     color: '#cc2200',
     fontWeight: '900',
-    fontStyle: 'italic',
     textAlign: 'center',
     marginTop: 1,
   },
@@ -247,6 +305,43 @@ const IdCardStyles = StyleSheet.create({
   idCardMoValue:    { position: 'absolute', top: '74.5%', left: '24%', right: '8%', fontSize: 9.5, color: '#374151' },
   idCardIdValue:    { position: 'absolute', top: '79%', left: '24%', fontSize: 10, fontWeight: '800', color: '#b91c1c' },
   idCardValidValue: { position: 'absolute', top: '79%', right: '8%', fontSize: 9, fontWeight: '700', color: '#374151' },
+
+  // ── BACK SIDE ──
+  idCardBackPressBar: { backgroundColor: '#dc2626', alignItems: 'center', paddingTop: 10, paddingBottom: 6 },
+  idCardBackPressText: { fontSize: 30, fontWeight: '900', color: '#fff', letterSpacing: 9, fontStyle: 'italic' },
+  idCardBackOrangeStrip: { backgroundColor: '#EB8C28', height: 8, width: '100%' },
+  idCardBackLiveBar: { backgroundColor: '#dc2626', alignItems: 'center', paddingVertical: 8 },
+  idCardBackLivePill: { backgroundColor: '#fff', paddingHorizontal: 16, paddingVertical: 2, borderRadius: 2 },
+  idCardBackLiveText: { fontSize: 22, fontWeight: '900', color: '#dc2626', letterSpacing: 3 },
+
+  idCardBackBrandRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingTop: 12, paddingBottom: 8, backgroundColor: '#fff' },
+  idCardBackLogo: { width: 48, height: 48, borderRadius: 24, borderWidth: 2, borderColor: '#EB8C28' },
+  idCardBackTitleLine1: { fontSize: 14, fontWeight: '900', color: '#111827', fontStyle: 'italic' },
+  idCardBackTitleLine2: { fontSize: 14, fontWeight: '900', color: '#1d4ed8', fontStyle: 'italic' },
+
+  idCardBackRulesTitle: { textAlign: 'center', fontSize: 13, fontWeight: '900', color: '#dc2626', marginBottom: 6, backgroundColor: '#fff' },
+  idCardBackRulesWrap: { paddingHorizontal: 16, backgroundColor: '#fff' },
+  idCardBackRuleRow: { flexDirection: 'row', marginBottom: 5 },
+  idCardBackRuleBullet: { fontSize: 9, fontWeight: '700', color: '#1f2937', width: 14 },
+  idCardBackRuleText: { flex: 1, fontSize: 9, lineHeight: 12, fontWeight: '600', color: '#1f2937' },
+
+  idCardBackWarning: { marginHorizontal: 14, marginBottom: 8, textAlign: 'center', fontSize: 9, fontWeight: '800', color: '#dc2626', backgroundColor: '#fff' },
+  idCardBackCall: { marginHorizontal: 14, marginBottom: 8, textAlign: 'center', fontSize: 9, lineHeight: 12, color: '#1d4ed8', fontWeight: '700', backgroundColor: '#fff' },
+  idCardBackPill: { marginHorizontal: 14, marginBottom: 10, backgroundColor: '#EB8C28', borderRadius: 16, paddingVertical: 5, paddingHorizontal: 8 },
+  idCardBackPillText: { textAlign: 'center', fontSize: 8, fontWeight: '800', color: '#111827' },
+
+  idCardBackAppBox: { marginHorizontal: 12, marginBottom: 10, borderWidth: 1.5, borderColor: '#e5e7eb', borderRadius: 10, padding: 10, backgroundColor: '#fff' },
+  idCardBackAppHead: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginBottom: 6 },
+  idCardBackAppBadge: { backgroundColor: '#111827', color: '#fff', fontSize: 8, fontWeight: '800', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 4 },
+  idCardBackAppName: { fontSize: 12, fontWeight: '900', color: '#EB8C28' },
+  idCardBackFeaturesWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginBottom: 6 },
+  idCardBackFeatureChip: { fontSize: 7, fontWeight: '700', color: '#1f2937', backgroundColor: '#f3f4f6', paddingHorizontal: 5, paddingVertical: 2, borderRadius: 3 },
+  idCardBackDlBtn: { alignSelf: 'flex-start', backgroundColor: '#1d4ed8', color: '#fff', fontSize: 8.5, fontWeight: '800', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 5, overflow: 'hidden' },
+
+  idCardBackSite: { textAlign: 'center', fontSize: 9, fontWeight: '800', color: '#111827', marginHorizontal: 14, marginBottom: 4, backgroundColor: '#fff' },
+  idCardBackProgram: { textAlign: 'center', fontSize: 9, fontWeight: '800', color: '#dc2626', marginHorizontal: 14, marginBottom: 10, backgroundColor: '#fff' },
+  idCardBackFooter: { backgroundColor: '#15803d', paddingHorizontal: 12, paddingVertical: 10 },
+  idCardBackFooterText: { textAlign: 'center', fontSize: 9, fontWeight: '800', color: '#fff', lineHeight: 13 },
 });
 
 export default IdCardStyles;

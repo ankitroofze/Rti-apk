@@ -2,6 +2,7 @@
   "expo": {
     "name": "rti-news",
     "slug": "rti-news",
+    "scheme": "rtinews",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/app-icon-certificate.png",
@@ -17,6 +18,7 @@
       }
     },
     "android": {
+      "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon-certificate.png",
@@ -24,6 +26,15 @@
       },
       "package": "com.roofze.rtinews",
       "permissions": [
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.ACCESS_MEDIA_LOCATION",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
         "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
@@ -41,15 +52,15 @@
       "output": "single"
     },
     "plugins": [
-      [
+          [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon-certificate.png",
-          "imageWidth": 220,
-          "resizeMode": "contain",
+          "image": "./assets/images/splash-screen.png",
+          "resizeMode": "cover",
           "backgroundColor": "#ffffff"
         }
       ],
+      "react-native-nitro-rtmp-publisher",
       [
         "expo-media-library",
         {
@@ -80,14 +91,14 @@
     "runtimeVersion": {
       "policy": "appVersion"
     },
-    "updates": {
-      "url": "https://u.expo.dev/790ebc30-229b-4861-8f93-0838f09ff045"
-    },
+    "owner": "ankitroofzes-team",
     "extra": {
       "eas": {
-        "projectId": "1e155332-fde2-4b4c-8c21-dc1be8c466f4"
+        "projectId": "0c7d31bb-fb96-4cd6-8848-ba39460ed50b"
       }
     },
-    "owner": "ankit306600"
+    "updates": {
+      "url": "https://u.expo.dev/0c7d31bb-fb96-4cd6-8848-ba39460ed50b"
+    }
   }
 }

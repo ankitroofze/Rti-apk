@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Platform, View } from 'react-native';
+import { Platform, View, Image, Text, StyleSheet } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 
@@ -56,16 +56,31 @@ export default function VideoPreview({ uri, style, contentFit = 'cover' }) {
     p.loop = false;
   });
 
-  if (!playableUri) return null;
+   if (!playableUri) return null;
 
   return (
-    <View>
+    <View style={{ position: 'relative' }}>
       <VideoView
         player={player}
         style={style}
         contentFit={contentFit}
         fullscreenOptions={{ enabled: true }}
       />
+      <View pointerEvents="none" style={wm.bar}>
+        <Image source={require('../assets/images/logo.jpg')} style={wm.logo} />
+        <Text style={wm.text}>RTI NEWS</Text>
+      </View>
     </View>
   );
 }
+
+const wm = StyleSheet.create({
+  bar: {
+    position: 'absolute', bottom: 8, left: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 8, paddingVertical: 5,
+    backgroundColor: 'rgba(0,0,0,0.58)', borderRadius: 4,
+  },
+  logo: { width: 18, height: 18, borderRadius: 9 },
+  text: { color: '#ffffff', fontSize: 10, fontWeight: '900', letterSpacing: 0.5 },
+});

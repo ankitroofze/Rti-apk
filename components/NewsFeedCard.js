@@ -2,8 +2,10 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import {
   View, Text, Image, TouchableOpacity, StyleSheet,
-  Platform, Share, TextInput, KeyboardAvoidingView, Alert, Clipboard, ScrollView, Linking
+  Platform, Share, TextInput, KeyboardAvoidingView, Alert, Clipboard, ScrollView, Linking,
+  Modal, TouchableWithoutFeedback,
 } from 'react-native';
+import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
 import ProfileAvatar from './ProfileAvatar';
 import VerifiedBadge from './VerifiedBadge';
 import { Ionicons, Feather } from '@expo/vector-icons';
@@ -18,6 +20,8 @@ import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { useAuth } from '../contexts/AuthContext';
 import { getAdRedirectMeta, openAdRedirect } from '../utils/adRedirect';
 import styles from './NewsFeedCardStyles';
+import { LinearGradient } from 'expo-linear-gradient';
+import { getProfileTier } from '../utils/profileHelpers';
 
 // ─────────────────────────────────────────────
 // Like persistence helpers
@@ -303,13 +307,14 @@ function useCardVisibility(ref, threshold = 0.3) {
 // ─────────────────────────────────────────────
 // Inline Read More Text Component
 // ─────────────────────────────────────────────
-const EXCERPT_LINE_LIMIT = 3;
+const EXCERPT_LINE_LIMIT = 1;
 
-function InlineReadMore({ text, style }) {
+function InlineReadMore({ text, style, onPress }) {
   const [expanded, setExpanded] = useState(false);
   const [isTruncated, setIsTruncated] = useState(false);
   const safeText = String(text || '').trim();
-  const shouldShowToggle = isTruncated || safeText.length > 180;
+  const isAndroid = Platform.OS === 'android';
+  const shouldShowToggle = !isAndroid && (isTruncated || safeText.length > 180);
 
   useEffect(() => {
     setExpanded(false);
@@ -318,19 +323,29 @@ function InlineReadMore({ text, style }) {
 
   if (!safeText) return null;
 
+  const textNode = (
+    <Text
+      style={style}
+      numberOfLines={expanded ? undefined : EXCERPT_LINE_LIMIT}
+      onTextLayout={(e) => {
+        if (!expanded) {
+          setIsTruncated(e.nativeEvent.lines.length > EXCERPT_LINE_LIMIT);
+        }
+      }}
+    >
+      {safeText}
+    </Text>
+  );
+
   return (
     <View style={styles.inlineReadMoreWrap}>
-      <Text
-        style={style}
-        numberOfLines={expanded ? undefined : EXCERPT_LINE_LIMIT}
-        onTextLayout={(e) => {
-          if (!expanded) {
-            setIsTruncated(e.nativeEvent.lines.length > EXCERPT_LINE_LIMIT);
-          }
-        }}
-      >
-        {safeText}
-      </Text>
+      {isAndroid && onPress ? (
+        <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
+          {textNode}
+        </TouchableOpacity>
+      ) : (
+        textNode
+      )}
       {shouldShowToggle ? (
         <TouchableOpacity
           style={styles.inlineReadMoreButton}
@@ -346,7 +361,6 @@ function InlineReadMore({ text, style }) {
     </View>
   );
 }
-
 // ─────────────────────────────────────────────
 // TrendingCard Component
 // ─────────────────────────────────────────────
@@ -423,7 +437,9 @@ export default function NewsFeedCard({
   commonCopy,
   currentUser,
   displayedItems,
+    altShade = false,
 }) {
+  const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const { isLoggedIn } = useAuth();
   const isScreenFocused = useIsFocused();
   const cardRef = useRef(null);
@@ -431,7 +447,8 @@ export default function NewsFeedCard({
   const lastOwnLikeActionAtRef = useRef(0); // ✅ user ke apne like/unlike ka timestamp — stale poll se overwrite rokne ke liye
   const isCardVisible = useCardVisibility(cardRef, 0.3);
 
-  const [currentEmail, setCurrentEmail] = useState('');
+ const [currentEmail, setCurrentEmail] = useState('');
+  const [currentUserId, setCurrentUserId] = useState(null);
   const [isLiked, setIsLiked] = useState(false);
   const [likesCount, setLikesCount] = useState(Number(story.likes || 0));
   const [commentsCount, setCommentsCount] = useState(Number(story.comments || 0));
@@ -448,8 +465,14 @@ export default function NewsFeedCard({
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [isFollowingAuthor, setIsFollowingAuthor] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
+  const followActionInFlightRef = useRef(false);  
   const inputRef = useRef(null);
-  const storyAuthorEmail = String(story.createdBy || story.created_by || story.author_email || '').trim().toLowerCase();
+  const storyAuthorEmail = String(story.author_email || story.createdBy || story.created_by || '').trim().toLowerCase();
+  const storyAuthorId = story.author_id ?? story.authorId ?? null;
+  const isOwnStory = storyAuthorId != null && currentUserId != null
+    ? String(storyAuthorId) === String(currentUserId)
+    : Boolean(storyAuthorEmail && storyAuthorEmail === currentEmail);
+  const hasFollowTarget = Boolean(storyAuthorEmail) || storyAuthorId != null;
   const isAdStory = Boolean(story.isAd);
   const adRedirectMeta = isAdStory ? getAdRedirectMeta(story) : null;
 
@@ -510,16 +533,18 @@ export default function NewsFeedCard({
     setExpandedReplyThreads((prev) => ({ ...prev, [commentId]: !prev[commentId] }));
   }, []);
 
-  useEffect(() => {
+   useEffect(() => {
     let alive = true;
     (async () => {
       try {
         const user = await UserStore.getCurrentUser();
         if (!alive) return;
         setCurrentEmail(String(user?.email || '').trim().toLowerCase());
+        setCurrentUserId(user?.id ?? user?.user_id ?? null);
       } catch {
         if (!alive) return;
         setCurrentEmail('');
+        setCurrentUserId(null);
       }
     })();
     return () => { alive = false; };
@@ -545,17 +570,27 @@ export default function NewsFeedCard({
   useEffect(() => {
     let alive = true;
     (async () => {
-      if (!storyAuthorEmail || !currentEmail || storyAuthorEmail === currentEmail) {
+     if (!hasFollowTarget || !currentEmail || isOwnStory) {
         if (alive) setIsFollowingAuthor(false);
         return;
       }
-      const summary = await UserStore.getFollowSummary?.(storyAuthorEmail);
+            const summary = await UserStore.getFollowSummary?.(storyAuthorEmail, storyAuthorId);
       if (!alive) return;
       setIsFollowingAuthor(Boolean(summary?.isFollowing));
     })();
     return () => { alive = false; };
-  }, [currentEmail, storyAuthorEmail]);
-
+  }, [currentEmail, storyAuthorEmail, storyAuthorId, isOwnStory, hasFollowTarget]);
+  // ✅ FIX: ab is id/email ka follow status app mein kahin bhi (dusre button se)
+  // change ho to yeh button bhi turant sync ho jayega, bina refetch kiye.
+  useEffect(() => {
+    if (!hasFollowTarget) return undefined;
+    const unsubscribe = UserStore.subscribeFollowState?.((payload) => {
+      if (UserStore.matchesFollowTarget?.(payload, storyAuthorEmail, storyAuthorId)) {
+        setIsFollowingAuthor(Boolean(payload.isFollowing));
+      }
+    });
+    return () => { unsubscribe?.(); };
+  }, [storyAuthorEmail, storyAuthorId]);
   useEffect(() => {
     // ✅ same grace-window guard — apne hi like ke turant baad stale count se overwrite na ho
     if (Date.now() - lastOwnLikeActionAtRef.current < 15000) {
@@ -702,9 +737,27 @@ const safeImage = isValidImageUrl(effectiveImageUri)
     }
   }, [canPlayVideo, videoPaused, player]);
 
-  useEffect(() => {
+   useEffect(() => {
     return () => { safePause(player); };
   }, [player]);
+
+  const [videoDurationLabel, setVideoDurationLabel] = useState('');
+  useEffect(() => {
+    if (!canPlayVideo || !player) return;
+    const fmt = (secs) => {
+      const total = Math.floor(secs || 0);
+      const m = Math.floor(total / 60);
+      const s = total % 60;
+      return `${m}:${s < 10 ? '0' : ''}${s}`;
+    };
+    const id = setInterval(() => {
+      if (player?.duration) {
+        setVideoDurationLabel(fmt(player.duration));
+        clearInterval(id);
+      }
+    }, 400);
+    return () => clearInterval(id);
+  }, [canPlayVideo, player]);
 
   const handleVideoPress = () => {
     if (videoPaused) { setVideoPaused(false); setShowVideoPoster(false); }
@@ -744,54 +797,55 @@ const safeImage = isValidImageUrl(effectiveImageUri)
     return false;
   }, [currentEmail, isLoggedIn, showLoginRequired]);
 
-  const handleLike = async () => {
-    if (!requireLogin()) return;
-    if (likeInFlightRef.current) return; // ✅ ek user ek time me sirf ek like/unlike request — rapid taps ignore honge
-    likeInFlightRef.current = true;
+const handleLike = async () => {
+  if (!requireLogin()) return;
+  if (likeInFlightRef.current) return;
+  likeInFlightRef.current = true;
 
-    const prev = isLiked;
-    const newLiked = !prev;
-    setIsLiked(newLiked);
-    setLikesCount((c) => c + (newLiked ? 1 : -1));
-    lastOwnLikeActionAtRef.current = Date.now(); // ✅ 15 sec ke liye stale poll resync ko block karo
+  const prev = isLiked;
+  const newLiked = !prev;
+  setIsLiked(newLiked);
+  setLikesCount((c) => c + (newLiked ? 1 : -1));
+  lastOwnLikeActionAtRef.current = Date.now();
 
-    try {
-      const user = await UserStore.ensureUserId();
-      const userId = user?.id || user?.user_id;
-      if (!userId) throw new Error('No user id');
+  try {
+    const user = await UserStore.ensureUserId();
+    const userId = user?.id || user?.user_id;
+    if (!userId) throw new Error('No user id');
 
-      const result = prev
-        ? await AuthAPI.unlikeNews(story.id)
-        : await AuthAPI.likeNews({
-            userId,
-            newsId: isAdStory ? null : story.id,
-            adsId: isAdStory ? story.id : null,
-          });
+    // ✅ backend ka /likes endpoint khud toggle karta hai (Instagram jaisa) —
+    // like/unlike dono ke liye SAME POST call, alag DELETE nahi.
+    const result = await AuthAPI.likeNews({
+      userId,
+      newsId: isAdStory ? null : story.id,
+      adsId: isAdStory ? story.id : null,
+    });
 
     if (!result?.ok) {
-        setIsLiked(prev);
-        setLikesCount((c) => c + (prev ? 1 : -1));
-        lastOwnLikeActionAtRef.current = 0; // ✅ fail ho gaya, ab poll ko turant sahi state resync karne do
-        if (result?.isAuth) showLoginRequired();
-        return;
-      }
-
-      const finalLiked = prev ? false : result.liked;
-      setIsLiked(finalLiked);
-      await setLikedId(currentEmail, story.id, finalLiked);
-      // ✅ ROOT-FIX: engagement store (jisse story.liked_by/poll banta hai) ko bhi
-      // sync karo — warna feed-card ka apna local flag alag rehta tha aur agla
-      // poll aane par "auto unlike" ho jaata tha, chahe backend me like save ho chuka ho.
-      await UserStore.syncLocalLikeEngagement(story.id, finalLiked);
-    } catch {
       setIsLiked(prev);
       setLikesCount((c) => c + (prev ? 1 : -1));
-      lastOwnLikeActionAtRef.current = 0; // ✅ fail ho gaya, ab poll ko turant sahi state resync karne do
-    } finally {
-      likeInFlightRef.current = false; // ✅ ab agla tap accept hoga
+      lastOwnLikeActionAtRef.current = 0;
+      if (result?.isAuth) showLoginRequired();
+      return;
     }
-  };
 
+    // ✅ backend ka result.liked hi final sach hai — hamara optimistic guess
+    // galat nikla to count ko yahi sahi kar dega.
+    const finalLiked = result.liked;
+    if (finalLiked !== newLiked) {
+      setLikesCount((c) => c + (finalLiked ? 1 : -1));
+    }
+    setIsLiked(finalLiked);
+    await setLikedId(currentEmail, story.id, finalLiked);
+    await UserStore.syncLocalLikeEngagement(story.id, finalLiked);
+  } catch {
+    setIsLiked(prev);
+    setLikesCount((c) => c + (prev ? 1 : -1));
+    lastOwnLikeActionAtRef.current = 0;
+  } finally {
+    likeInFlightRef.current = false;
+  }
+};
   const handleComment = async () => {
     if (!requireLogin()) return;
     setShowComments((prev) => {
@@ -1003,8 +1057,9 @@ const safeImage = isValidImageUrl(effectiveImageUri)
   const handleShare = async () => {
     try {
       const shareMessage = `📰 ${story.title}\n\n${story.excerpt || ''}\n\n🔗 ${story.url || 'https://rtinews.in'}\n\nRTI News App se padhe`;
+      const richShareMessage = `${story.title}\n\n${story.excerpt || story.description || ''}\n\n${effectiveImageUri ? `Image: ${effectiveImageUri}\n\n` : ''}Read full news: ${postLink}\n\nRTI News App${shareMessage ? '' : ''}`;
       const result = await Share.share(
-        { title: story.title, message: shareMessage, url: story.url || 'https://rtinews.in' },
+        { title: story.title, message: richShareMessage, url: postLink },
         { subject: story.title, dialogTitle: 'Share karo' }
       );
       if (result.action === Share.sharedAction) {
@@ -1039,28 +1094,29 @@ const safeImage = isValidImageUrl(effectiveImageUri)
 
   const handleToggleFollowAuthor = async (event) => {
     event?.stopPropagation?.();
-    if (followLoading) return;
+    if (followLoading || followActionInFlightRef.current) return;
     if (!currentEmail) { showActionResult('Login required', 'Please login to follow this user.'); return; }
-    if (!storyAuthorEmail || storyAuthorEmail === currentEmail) return;
+    if (!hasFollowTarget || isOwnStory) return;
 
+    followActionInFlightRef.current = true;
     const nextFollowing = !isFollowingAuthor;
     setFollowLoading(true);
     setIsFollowingAuthor(nextFollowing);
     try {
-      const result = nextFollowing
-        ? await UserStore.followUser(storyAuthorEmail)
-        : await UserStore.unfollowUser(storyAuthorEmail);
+       const result = nextFollowing
+        ? await UserStore.followUser(storyAuthorEmail, storyAuthorId)
+        : await UserStore.unfollowUser(storyAuthorEmail, storyAuthorId);
       if (result?.ok === false) {
         setIsFollowingAuthor(!nextFollowing);
         showActionResult('Follow', result?.message || 'Unable to update follow status.');
         return;
       }
-      const summary = await UserStore.getFollowSummary?.(storyAuthorEmail);
-      setIsFollowingAuthor(Boolean(summary?.isFollowing ?? nextFollowing));
+      setIsFollowingAuthor(Boolean(result?.isFollowing));
     } catch {
       setIsFollowingAuthor(!nextFollowing);
       showActionResult('Follow', 'Unable to update follow status.');
     } finally {
+      followActionInFlightRef.current = false;
       setFollowLoading(false);
     }
   };
@@ -1076,12 +1132,36 @@ const safeImage = isValidImageUrl(effectiveImageUri)
     (storyAuthorEmail && currentUserEmail === storyAuthorEmail && currentUserHasBlueTick)
   );
 
-  const seatLabel = getLocalizedSeatLabel(story.author_seat_name, commonCopy);
+  const [liveAuthorProfile, setLiveAuthorProfile] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!storyAuthorId) { setLiveAuthorProfile(null); return; }
+    UserStore.getPublicProfileById(storyAuthorId).then((profile) => {
+      if (!cancelled) setLiveAuthorProfile(profile || null);
+    });
+    return () => { cancelled = true; };
+  }, [storyAuthorId]);
+
+  const seatLabel = getLocalizedSeatLabel(
+    liveAuthorProfile?.state_seat?.seat_name || story.author_seat_name,
+    commonCopy
+  );
+  const authorTier = getProfileTier({
+    seat_id: liveAuthorProfile?.state_seat?.seat_id || story.author_seat_id || story.author_state_seat?.seat_id,
+    role: liveAuthorProfile?.role || story.author_role,
+    subscription_type: liveAuthorProfile?.subscription_type || story.author_subscription_type,
+    subscription_plan: liveAuthorProfile?.subscription_plan,
+    has_blue_tick: authorHasBlueTick,
+    is_subscribed: liveAuthorProfile
+      ? Boolean(liveAuthorProfile.is_subscribed)
+      : Boolean(story.author_is_subscribed || story.author_is_subscriber || story.author_is_premium),
+  });
   const authorAvatarUri = isValidImageUrl(story.author_profile_image) ? story.author_profile_image : '';
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View ref={cardRef} style={styles.storyCardShell}>
+           <View ref={cardRef} style={[styles.storyCardShell, Platform.OS === 'android' && styles.androidStoryCardShell, altShade && styles.storyCardShellAlt]}>
 
         {/* ── Ad Top Box ── */}
         <View style={styles.adTopBox}>
@@ -1101,7 +1181,7 @@ const safeImage = isValidImageUrl(effectiveImageUri)
 
         {/* ── Author Row with Gaps and Better Buttons ── */}
         <TouchableOpacity style={styles.storyAuthorRow} onPress={() => onOpenAuthorProfile(story)} activeOpacity={0.86}>
-          <ProfileAvatar uri={authorAvatarUri} size={44} style={styles.storyAuthorAvatar} />
+       <ProfileAvatar uri={authorAvatarUri} size={44} style={styles.storyAuthorAvatar} forceDefault={authorTier.key === 'common'} />
           
           <View style={styles.storyAuthorTextWrap}>
             <View style={styles.storyAuthorNameRow}>
@@ -1109,10 +1189,10 @@ const safeImage = isValidImageUrl(effectiveImageUri)
               {authorHasBlueTick ? <VerifiedBadge size={18} iconSize={11} /> : null}
             </View>
             
-            {seatLabel ? (
+                        {(seatLabel || authorTier.key !== 'common') ? (
               <View style={styles.storyReporterPill}>
                 <Ionicons name="star" size={10} color="#f59e0b" style={{ marginRight: 4 }} />
-                <Text style={styles.storyReporterPillText} numberOfLines={1}>{seatLabel}</Text>
+                <Text style={styles.storyReporterPillText} numberOfLines={1}>{seatLabel || authorTier.label}</Text>
               </View>
             ) : null}
             
@@ -1135,10 +1215,10 @@ const safeImage = isValidImageUrl(effectiveImageUri)
           </View>
 
           {/* ── Follow Button ── */}
-          {storyAuthorEmail && storyAuthorEmail !== currentEmail ? (
+       {hasFollowTarget && !isOwnStory ? (
             <TouchableOpacity
               style={[
-                styles.storyFollowBtn,
+                styles.storyFollowBtnWrap,
                 isFollowingAuthor && styles.storyFollowBtnActive,
                 followLoading && styles.storyFollowBtnDisabled,
               ]}
@@ -1146,39 +1226,29 @@ const safeImage = isValidImageUrl(effectiveImageUri)
               activeOpacity={0.84}
               disabled={followLoading}
             >
-              <Ionicons 
-                name={isFollowingAuthor ? 'person' : 'person-add-outline'} 
-                size={14} 
-                color={isFollowingAuthor ? '#f97316' : '#ffffff'} 
-              />
-              <Text style={[
-                styles.storyFollowBtnText,
-                isFollowingAuthor && styles.storyFollowBtnTextActive,
-              ]}>
-                {followLoading ? '...' : isFollowingAuthor ? 'Following' : 'Follow'}
-              </Text>
+              {isFollowingAuthor ? (
+                <View style={styles.storyFollowBtn}>
+                  <Ionicons name="person" size={14} color="#16a34a" />
+                  <Text style={[styles.storyFollowBtnText, styles.storyFollowBtnTextActive]}>
+                    {followLoading ? '...' : 'Following'}
+                  </Text>
+                </View>
+              ) : (
+                <LinearGradient
+                  colors={authorTier.gradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.storyFollowBtn}
+                >
+                  <Ionicons name="person-add-outline" size={14} color="#ffffff" />
+                  <Text style={styles.storyFollowBtnText}>
+                    {followLoading ? '...' : 'Follow'}
+                  </Text>
+                </LinearGradient>
+              )}
             </TouchableOpacity>
           ) : null}
-
-          {/* ── Social Share Buttons (WhatsApp + Facebook with gap) ── */}
-          <View style={styles.storySocialShareRow}>
-            <TouchableOpacity
-              style={[styles.storyShareCircle, { backgroundColor: '#25D366' }]}
-              onPress={(e) => { e.stopPropagation?.(); handleShare(); }}
-              activeOpacity={0.82}
-            >
-              <Ionicons name="logo-whatsapp" size={16} color="#fff" />
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.storyShareCircle, { backgroundColor: '#1877F2' }]}
-              onPress={(e) => { e.stopPropagation?.(); handleShare(); }}
-              activeOpacity={0.82}
-            >
-              <Ionicons name="logo-facebook" size={16} color="#fff" />
-            </TouchableOpacity>
-          </View>
-
+    
           {/* ── More Button ── */}
           <TouchableOpacity
             style={[styles.storyMoreBtnTop, showActionMenu && styles.storyMoreBtnTopActive]}
@@ -1190,17 +1260,7 @@ const safeImage = isValidImageUrl(effectiveImageUri)
           </TouchableOpacity>
         </TouchableOpacity>
 
-        {/* ── Headline + Excerpt ── */}
-        <View style={styles.storyContentWrap}>
-          <TouchableOpacity onPress={() => { if (!handleAdPress()) onOpenDetails(story); }} activeOpacity={0.88}>
-            <Text style={styles.storyHeadlineText}>{story.title}</Text>
-            {story.subtitle ? <Text style={styles.storySubtitleText} numberOfLines={2}>{story.subtitle}</Text> : null}
-          </TouchableOpacity>
-          {story.excerpt ? <InlineReadMore text={story.excerpt} style={styles.storyExcerptText} /> : null}
-          {story.description && story.description !== story.excerpt ? <InlineReadMore text={story.description} style={styles.storyDescriptionText} /> : null}
-        </View>
-
-        {/* ── Hero Image / Video ── */}
+              {/* ── Hero Image / Video (ab headline se upar, FB layout) ── */}
      <TouchableOpacity style={styles.storyHeroImageWrap} onPress={canPlayVideo ? handleVideoPress : (isFileAttachment ? handleFileOpen : handleImagePress)} activeOpacity={0.95}>
           {canPlayVideo ? (
             <>
@@ -1309,7 +1369,7 @@ const safeImage = isValidImageUrl(effectiveImageUri)
                 </TouchableOpacity>
               ) : null}
             </View>
-          ) : isAdStory && story.owner_mobile ? (
+                  ) : isAdStory && story.owner_mobile ? (
             <TouchableOpacity
               style={styles.adCallOnlyStrip}
               onPress={(e) => { e.stopPropagation?.(); Linking.openURL(`tel:${story.owner_mobile}`); }}
@@ -1319,40 +1379,32 @@ const safeImage = isValidImageUrl(effectiveImageUri)
               <Text style={styles.adLeadStripText}>Call Now</Text>
             </TouchableOpacity>
           ) : null}
+
+          {canPlayVideo && videoDurationLabel ? (
+            <View style={styles.videoDurationBadge}>
+              <Text style={styles.videoDurationText}>{videoDurationLabel}</Text>
+            </View>
+          ) : null}
+          <TouchableOpacity
+            style={styles.storyExpandBtn}
+            onPress={(e) => { e.stopPropagation?.(); if (!handleAdPress()) onOpenDetails(story); }}
+            activeOpacity={0.82}
+          >
+            <Ionicons name="expand-outline" size={16} color="#ffffff" />
+          </TouchableOpacity>
         </TouchableOpacity>
 
-        {/* ── Shuru-style Info Row: Likes + Views (left) · Shares + View Post (right) ── */}
-        <View style={styles.storyStatsRow}>
-          <View style={styles.storyStatsLeft}>
-            <View style={styles.storyStatPill}>
-              <Ionicons name={isLiked ? 'heart' : 'heart-outline'} size={14} color={isLiked ? '#ef4444' : '#262626'} />
-              <Text style={styles.storyStatText}>{likesCount}</Text>
-              <Text style={styles.storyStatLabel}>Likes</Text>
-            </View>
-            <View style={styles.storyStatPill}>
-              <Ionicons name="eye-outline" size={14} color="#262626" />
-              <Text style={styles.storyStatText}>{viewsCount}</Text>
-              <Text style={styles.storyStatLabel}>Views</Text>
-            </View>
-          </View>
-          <View style={styles.storyStatsRight}>
-            {sharesCount > 0 ? (
-              <View style={styles.storyStatPill}>
-                <Ionicons name="arrow-redo-outline" size={14} color="#262626" />
-                <Text style={styles.storyStatText}>{sharesCount}</Text>
-                <Text style={styles.storyStatLabel}>Shares</Text>
-              </View>
-            ) : null}
-            <TouchableOpacity
-              style={styles.storyViewPostBtn}
-              onPress={() => { if (!handleAdPress()) onOpenDetails(story); }}
-              activeOpacity={0.82}
-            >
-              <Text style={styles.storyViewPostText}>View Post</Text>
-              <Ionicons name="open-outline" size={13} color="#262626" />
-            </TouchableOpacity>
-          </View>
+        {/* ── Headline + Excerpt (ab media ke niche, FB layout) ── */}
+        <View style={styles.storyContentWrap}>
+          <TouchableOpacity onPress={() => { if (!handleAdPress()) onOpenDetails(story); }} activeOpacity={0.88}>
+            <Text style={styles.storyHeadlineText} numberOfLines={2} ellipsizeMode="tail">{story.title}</Text>
+            {story.subtitle ? <Text style={styles.storySubtitleText} numberOfLines={2}>{story.subtitle}</Text> : null}
+          </TouchableOpacity>
+          {story.excerpt ? <InlineReadMore text={story.excerpt} style={styles.storyExcerptText} onPress={() => { if (!handleAdPress()) onOpenDetails(story); }} /> : null}
+          {story.description && story.description !== story.excerpt ? <InlineReadMore text={story.description} style={styles.storyDescriptionText} onPress={() => { if (!handleAdPress()) onOpenDetails(story); }} /> : null}
         </View>
+
+      
 
         {/* ── Like / Comment / Share — Shuru-style bordered pill buttons ── */}
         <View style={styles.singleActionRow}>
@@ -1361,13 +1413,13 @@ const safeImage = isValidImageUrl(effectiveImageUri)
             onPress={handleLike} 
             activeOpacity={0.8}
           >
-            <Ionicons 
-              name={isLiked ? 'thumbs-up' : 'thumbs-up-outline'} 
+                      <Ionicons 
+              name={isLiked ? 'heart' : 'heart-outline'} 
               size={16} 
               color={isLiked ? '#ef4444' : '#475569'} 
             />
-            <Text style={[styles.singleActionText, isLiked && styles.singleActionTextActive]}>
-              Like
+                      <Text style={[styles.singleActionText, isLiked && styles.singleActionTextActive]}>
+              Like{likesCount > 0 ? ` (${likesCount})` : ''}
             </Text>
           </TouchableOpacity>
 
@@ -1377,7 +1429,7 @@ const safeImage = isValidImageUrl(effectiveImageUri)
             activeOpacity={0.8}
           >
             <Ionicons name="chatbubble-outline" size={16} color="#475569" />
-            <Text style={styles.singleActionText}>Comment</Text>
+            <Text style={styles.singleActionText}>Comment{commentsCount > 0 ? ` (${commentsCount})` : ''}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity 
@@ -1386,37 +1438,46 @@ const safeImage = isValidImageUrl(effectiveImageUri)
             activeOpacity={0.8}
           >
             <Ionicons name="arrow-redo-outline" size={16} color="#475569" />
-            <Text style={styles.singleActionText}>Share</Text>
+            <Text style={styles.singleActionText}>Share{sharesCount > 0 ? ` (${sharesCount})` : ''}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.singleActionBookmark}
+                    <TouchableOpacity
+            style={styles.singleActionItem}
             onPress={() => { if (!handleAdPress()) onOpenDetails(story); }}
             activeOpacity={0.8}
           >
-            <Ionicons name="bookmark-outline" size={17} color="#475569" />
+            <Ionicons name="bookmark-outline" size={16} color="#475569" />
+            <Text style={styles.singleActionText}>Save</Text>
           </TouchableOpacity>
         </View>
 
-        {/* ── More Menu ── */}
-        {showActionMenu ? (
-          <View style={styles.storyMoreMenuWrapper}>
-            <View style={styles.storyMoreMenu}>
-              <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleReport} activeOpacity={0.82}>
-                <Ionicons name="flag-outline" size={18} color="#ef4444" />
-                <Text style={styles.storyMoreMenuText}>Report</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleCopyLink} activeOpacity={0.82}>
-                <Ionicons name="link-outline" size={18} color="#0f172a" />
-                <Text style={styles.storyMoreMenuText}>Copy link</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.storyMoreMenuItem, { borderBottomWidth: 0 }]} onPress={handleMenuShare} activeOpacity={0.82}>
-                <Ionicons name="share-social-outline" size={18} color="#0ea5e9" />
-                <Text style={styles.storyMoreMenuText}>Share</Text>
-              </TouchableOpacity>
+             {/* ── More Menu ── */}
+        <Modal visible={showActionMenu} transparent animationType="fade" statusBarTranslucent onRequestClose={closeActionMenu}>
+          <TouchableWithoutFeedback onPress={closeActionMenu}>
+            <View style={styles.storyMoreMenuBackdrop}>
+              <TouchableWithoutFeedback>
+                <View style={styles.storyMoreMenuSheet}>
+                  <View style={styles.storyMoreMenuHandle} />
+                  <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleReport} activeOpacity={0.82}>
+                    <Ionicons name="flag-outline" size={18} color="#ef4444" />
+                    <Text style={styles.storyMoreMenuText}>Report</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleCopyLink} activeOpacity={0.82}>
+                    <Ionicons name="link-outline" size={18} color="#0f172a" />
+                    <Text style={styles.storyMoreMenuText}>Copy link</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleMenuShare} activeOpacity={0.82}>
+                    <Ionicons name="share-social-outline" size={18} color="#0ea5e9" />
+                    <Text style={styles.storyMoreMenuText}>Share</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.storyMoreMenuItem, { borderBottomWidth: 0, justifyContent: 'center' }]} onPress={closeActionMenu} activeOpacity={0.82}>
+                    <Text style={[styles.storyMoreMenuText, { color: '#64748b' }]}>Cancel</Text>
+                  </TouchableOpacity>
+                </View>
+              </TouchableWithoutFeedback>
             </View>
-          </View>
-        ) : null}
+          </TouchableWithoutFeedback>
+        </Modal>
 
         {/* ── Comment Section ── */}
         {showComments ? (
@@ -1500,7 +1561,7 @@ const safeImage = isValidImageUrl(effectiveImageUri)
       </View>
 
       {/* ── Thin separator between cards ── */}
-      <View style={styles.cardSeparator} />
+      <View style={[styles.cardSeparator, Platform.OS === 'android' && styles.androidCardSeparator]} />
     </KeyboardAvoidingView>
   );
 }

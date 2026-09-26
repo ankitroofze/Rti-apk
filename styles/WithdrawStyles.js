@@ -1,5 +1,6 @@
 // styles/WithdrawStyles.js
 import { Platform, StatusBar, StyleSheet } from 'react-native';
+import { MODULE_HEADER_HEIGHT_WEB } from '../constants/subscriptionThemes';
 
 const SAFE_TOP = Platform.OS === 'android'
   ? (StatusBar.currentHeight || 24) + 4
@@ -39,12 +40,12 @@ const WithdrawStyles = StyleSheet.create({
     fontFamily: FONT_FAMILY,
   },
 
-  heroCard: {
-    backgroundColor: PINK, 
+   heroCard: {
     borderRadius: 6, // ✅ Border radius 6px
     padding: 22,
     marginBottom: 14, 
     marginTop: 14,
+    overflow: 'hidden',
     shadowColor: PINK, shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.28, shadowRadius: 14, elevation: 6,
   },
@@ -356,6 +357,34 @@ const WithdrawStyles = StyleSheet.create({
     paddingVertical: 32,
     paddingHorizontal: 16,
   },
+
+  // ── Red image header — desktop web (same profile-red.png used on mobile) ──
+  webHeader: {
+    width: '100%',
+    alignSelf: 'stretch',
+    // ✅ image ab header ke bahar nahi nikalti
+    overflow: 'hidden',
+    backgroundColor: '#b91c1c',
+    height: MODULE_HEADER_HEIGHT_WEB,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 32,
+    paddingVertical: 0,
+  },
+  webHeaderImg: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    width: '100%', height: '100%', resizeMode: 'cover',
+  },
+  webHeaderBackBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingVertical: 7,
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
+    borderRadius: 8,
+  },
+  webHeaderBackBtnText: { fontSize: 13, fontWeight: '600', color: '#ffffff', fontFamily: FONT_FAMILY },
+  webHeaderTitle: { fontSize: 16, fontWeight: '700', color: '#ffffff', fontFamily: FONT_FAMILY },
 
   webBackBtn: {
     width: '100%',

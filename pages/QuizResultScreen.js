@@ -11,6 +11,7 @@ import { Feather } from '@expo/vector-icons';
 import { useToast } from '../components/ui/ToastProvider';
 import { UserStore } from '../store/UserStore';
 import QuizResultStyles from '../styles/QuizResultStyles';
+import { getQuizResultTier } from '../utils/quizResultLogic';
 
 export default function QuizResultScreen({ navigation, route }) {
   const { showToast } = useToast();
@@ -20,7 +21,8 @@ console.log('QUIZ RESULT DATA:', JSON.stringify(result));
   const [downloading, setDownloading] = useState(false);
   const [savedPath, setSavedPath] = useState('');
 
- const isPass = (result?.percentage ?? 0) >= 50;
+  const resultTier = getQuizResultTier(result?.percentage);
+  const isPass = resultTier.passed;
   // Certificate sirf Exam test type ke liye hi valid hai.
   // ✅ FIX: case/whitespace-insensitive compare — backend "Exam"/" exam" jaisa bhi
   // bhej sakta hai, strict '===' pehle certificate ko silently hide kar deta tha.
@@ -101,7 +103,7 @@ console.log('QUIZ RESULT DATA:', JSON.stringify(result));
           <View style={QuizResultStyles.certScoreBox}>
             <Text style={QuizResultStyles.certScoreLabel}>Result</Text>
             <Text style={QuizResultStyles.certScoreValuePass}>
-              {isPass ? 'PASS' : 'FAIL'}
+              {resultTier.result.toUpperCase()}
             </Text>
           </View>
           <View style={QuizResultStyles.certScoreBox}>
@@ -162,14 +164,14 @@ console.log('QUIZ RESULT DATA:', JSON.stringify(result));
 
         {/* Result Badge */}
         <View style={QuizResultStyles.resultCard}>
-          <View style={[QuizResultStyles.resultBadge, isPass ? QuizResultStyles.passBadge : QuizResultStyles.failBadge]}>
+          <View style={[QuizResultStyles.resultBadge, isPass ? QuizResultStyles.passBadge : QuizResultStyles.failBadge, { backgroundColor: resultTier.backgroundColor, borderColor: resultTier.color }]}>
             <Feather
               name={isPass ? 'check-circle' : 'x-circle'}
               size={28}
-              color={isPass ? '#16a34a' : '#F97316'}
+              color={resultTier.color}
             />
-            <Text style={[QuizResultStyles.resultText, isPass ? QuizResultStyles.passText : QuizResultStyles.failText]}>
-              {isPass ? 'Pass' : 'Fail'}
+            <Text style={[QuizResultStyles.resultText, isPass ? QuizResultStyles.passText : QuizResultStyles.failText, { color: resultTier.color }]}>
+              {isPass ? `${resultTier.result} • ${resultTier.badge}` : 'Fail'}
             </Text>
           </View>
 
@@ -179,8 +181,8 @@ console.log('QUIZ RESULT DATA:', JSON.stringify(result));
           </View>
           <View style={QuizResultStyles.infoRow}>
             <Text style={QuizResultStyles.infoLabel}>Status</Text>
-            <Text style={isPass ? QuizResultStyles.infoValuePass : QuizResultStyles.infoValueFail}>
-              {isPass ? 'Passed' : 'Failed'}
+            <Text style={[isPass ? QuizResultStyles.infoValuePass : QuizResultStyles.infoValueFail, { color: resultTier.color }]}>
+              {isPass ? `${resultTier.result} (${resultTier.badge})` : 'Failed'}
             </Text>
           </View>
         </View>

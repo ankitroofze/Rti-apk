@@ -26,8 +26,8 @@ import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaS
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
 import { safePause, safePlay } from '../utils/videoPlayerSafe';
 
-
 const IS_WEB = Platform.OS === 'web';
+
 function stripHtml(value) {
   return String(value || '')
     .replace(/<[^>]*>/g, ' ')
@@ -35,19 +35,18 @@ function stripHtml(value) {
     .trim();
 }
 
-// ✅ FIXED: blob:, data:, idb-media: sab valid hain
 function isValidImageUrl(url) {
   if (!url || typeof url !== 'string') return false;
   const value = url.trim();
   if (!value || value === 'null' || value === 'undefined') return false;
-  if (value.startsWith('idb-media:')) return true;   // IndexedDB media
-  if (value.startsWith('blob:')) return true;        // resolved object URLs
-  if (value.startsWith('data:image')) return true;   // base64 images
+  if (value.startsWith('idb-media:')) return true;
+  if (value.startsWith('blob:')) return true;
+  if (value.startsWith('data:image')) return true;
   if (value.startsWith('file://')) return Platform.OS !== 'web';
   if (value.startsWith('content://')) return Platform.OS !== 'web';
   if (value.startsWith('ph://')) return Platform.OS !== 'web';
   if (value.startsWith('asset://')) return Platform.OS !== 'web';
-  if (value.startsWith('http://localhost')) return false;
+  // if (value.startsWith('http://localhost')) return false;
   if (value.startsWith('https://') || value.startsWith('http://')) return true;
   return false;
 }
@@ -55,11 +54,9 @@ function isValidImageUrl(url) {
 function isPlayableVideoSource(uri) {
   if (typeof uri !== 'string' || !uri.trim()) return false;
   if (/(youtube\.com|youtu\.be)/i.test(uri)) return false;
-
   if (Platform.OS !== 'web') return true;
   if (/^(blob:|data:)/i.test(uri)) return true;
   if (isIdbMediaUri(uri)) return true;
-
   return /^https?:/i.test(uri) && /\.(mp4|m4v|mov|webm|ogv|m3u8)(\?.*)?$/i.test(uri);
 }
 
@@ -76,22 +73,16 @@ function buildLocationLabel(article) {
 
 function normalizeArticle(rawArticle) {
   const article = rawArticle || {};
-
-  // ✅ idb-media: URLs ko bhi valid maano — placeholder mat lagao
   const rawImage =
     (Array.isArray(article.images) ? article.images.find((u) => u && String(u).trim()) : '') ||
     article.image ||
     '';
-
   const safeImage = rawImage && rawImage !== 'null' && rawImage !== 'undefined'
     ? rawImage
     : buildPlaceholderImage(article.id || article.title);
-
-  // ✅ Gallery: idb-media: URIs bhi include karo (resolve baad mein hoga)
   const galleryImages = Array.isArray(article.images)
     ? article.images.filter((u) => u && String(u).trim() && u !== 'null' && u !== 'undefined')
     : [safeImage];
-
   return {
     id: article.id || 'news-details-fallback',
     title: article.title || 'News Details',
@@ -104,7 +95,7 @@ function normalizeArticle(rawArticle) {
     district: article.district || '',
     taluka: article.taluka || '',
     author_name: article.author_name || article.author || 'RTI Desk',
-       author_id: article.author_id || article.userId || null,
+    author_id: article.author_id || article.userId || null,
     author_email: String(article.author_email || article.createdBy || article.created_by || '').trim().toLowerCase(),
     createdBy: String(article.createdBy || article.created_by || article.author_email || '').trim().toLowerCase(),
     author_profile_image:
@@ -143,17 +134,12 @@ function buildArticleParagraphs(article) {
   const excerptText = String(article.excerpt || '').trim();
   const subtitleText = String(article.subtitle || '').trim();
   const sourceText = descriptionText || excerptText || subtitleText;
-
   if (!sourceText) return ['Detailed text is not available for this story yet.'];
-
   const paragraphs = sourceText
     .split(/\n{2,}|\r\n\r\n/)
     .map((paragraph) => paragraph.trim())
     .filter(Boolean);
-
-  // Agar sirf ek paragraph hai toh words se split karo
   if (paragraphs.length > 1) return paragraphs;
-
   const words = sourceText.split(' ');
   if (words.length > 60) {
     const chunks = [];
@@ -162,7 +148,6 @@ function buildArticleParagraphs(article) {
     }
     return chunks;
   }
-
   return paragraphs.length > 0 ? paragraphs : [sourceText];
 }
 
@@ -171,7 +156,6 @@ function normalizeComment(rawComment) {
   const author = String(comment.author || comment.user || 'User').trim() || 'User';
   const authorEmail = String(comment.author_email || comment.user_email || '').trim().toLowerCase();
   const authorAvatar = String(comment.authorAvatar || comment.author_avatar || comment.userAvatar || '').trim();
-
   return {
     id: String(comment.id || ''),
     text: String(comment.text || '').trim(),
@@ -199,42 +183,32 @@ function isCommentOwner(comment, currentUserEmail, currentUserName) {
   const ownerName = String(comment?.author || '').trim().toLowerCase();
   const safeUserEmail = String(currentUserEmail || '').trim().toLowerCase();
   const safeUserName = String(currentUserName || '').trim().toLowerCase();
-
   if (ownerEmail && safeUserEmail) return ownerEmail === safeUserEmail;
   if (!ownerEmail && safeUserName) return ownerName === safeUserName;
   return false;
 }
 
-// ✅ NEW: idb-media: URI ko blob: URL mein resolve karne wala hook
 function useResolvedImageUri(rawUri) {
   const [resolved, setResolved] = useState(null);
-
   useEffect(() => {
     let alive = true;
     let objectUrl = null;
-
     (async () => {
       if (!rawUri) { setResolved(null); return; }
-
-      // Already a usable URL
       if (!isIdbMediaUri(rawUri)) {
         setResolved(rawUri);
         return;
       }
-
-      // Resolve idb-media: → blob:
       const next = await resolveIdbMediaUriToObjectUrl(rawUri);
       if (!alive) { if (next) { try { URL.revokeObjectURL(next); } catch {} } return; }
       objectUrl = next;
       setResolved(next || null);
     })();
-
     return () => {
       alive = false;
       try { if (objectUrl) URL.revokeObjectURL(objectUrl); } catch {}
     };
   }, [rawUri]);
-
   return resolved;
 }
 
@@ -271,7 +245,6 @@ function CommentThreadItem({
       && Array.isArray(comment.liked_by)
       && comment.liked_by.includes(currentUserEmail)
   );
-
   return (
     <View style={[styles.commentItem, isReply && styles.commentReplyItem]}>
       <TouchableOpacity
@@ -288,7 +261,6 @@ function CommentThreadItem({
           )}
         </View>
       </TouchableOpacity>
-
       <View style={styles.commentContent}>
         <View style={styles.commentBubble}>
           <View style={styles.commentHeader}>
@@ -300,7 +272,6 @@ function CommentThreadItem({
               {comment.edited_at ? ' | Edited' : ''}
             </Text>
           </View>
-
           {isEditing ? (
             <View style={styles.commentEditorWrap}>
               <TextInput
@@ -325,7 +296,6 @@ function CommentThreadItem({
             <Text style={styles.commentText}>{comment.text}</Text>
           )}
         </View>
-
         {!isEditing ? (
           <View style={styles.commentActions}>
             <TouchableOpacity onPress={() => onLike(comment.id)} style={styles.commentActionButton} activeOpacity={0.82}>
@@ -338,19 +308,16 @@ function CommentThreadItem({
                 {comment.likes > 0 ? `${comment.likes} Likes` : 'Like'}
               </Text>
             </TouchableOpacity>
-
             <TouchableOpacity onPress={() => onStartReply(comment.id)} style={styles.commentActionButton} activeOpacity={0.82}>
               <Ionicons name="return-up-forward-outline" size={16} color="#64748b" />
               <Text style={styles.commentActionText}>Reply</Text>
             </TouchableOpacity>
-
             {isOwner ? (
               <TouchableOpacity onPress={() => onStartEdit(comment.id, comment.text)} style={styles.commentActionButton} activeOpacity={0.82}>
                 <Ionicons name="create-outline" size={16} color="#64748b" />
                 <Text style={styles.commentActionText}>Edit</Text>
               </TouchableOpacity>
             ) : null}
-
             {isOwner ? (
               <TouchableOpacity onPress={() => onDelete(comment.id)} style={styles.commentActionButton} activeOpacity={0.82}>
                 <Ionicons name="trash-outline" size={16} color="#ef4444" />
@@ -359,7 +326,6 @@ function CommentThreadItem({
             ) : null}
           </View>
         ) : null}
-
         {isReplying ? (
           <View style={styles.replyComposerWrap}>
             <TextInput
@@ -381,7 +347,6 @@ function CommentThreadItem({
             </View>
           </View>
         ) : null}
-
         {replyCount > 0 ? (
           <View style={styles.commentRepliesWrap}>
             <TouchableOpacity
@@ -396,7 +361,6 @@ function CommentThreadItem({
                   : `View ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`}
               </Text>
             </TouchableOpacity>
-
             {areRepliesExpanded ? (
               <View style={styles.commentReplies}>
                 {comment.replies.map((reply) => (
@@ -463,9 +427,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
   const [followLoading, setFollowLoading] = useState(false);
   const [showFullBody, setShowFullBody] = useState(false);
 
-  // ✅ Resolve hero image URI (handles idb-media: → blob:)
   const resolvedHeroImage = useResolvedImageUri(article.image);
-  // ✅ Resolve author profile image
   const resolvedAuthorImage = useResolvedImageUri(authorProfileImageUri || article.author_profile_image);
 
   const currentUserEmail = useMemo(
@@ -491,17 +453,14 @@ export default function NewsDetailsScreen({ route, navigation }) {
 
   useEffect(() => {
     let alive = true;
-
     (async () => {
       const existingImage = String(article.author_profile_image || '').trim();
       if (isValidImageUrl(existingImage)) {
         setAuthorProfileImageUri(existingImage);
         return;
       }
-
       const authorEmail = String(article.author_email || article.createdBy || article.author_id || '').trim().toLowerCase();
       const authorName = String(article.author_name || '').trim().toLowerCase();
-
       try {
         let authorUser = authorEmail ? await UserStore.getUser(authorEmail) : null;
         if (!authorUser && authorName) {
@@ -510,7 +469,6 @@ export default function NewsDetailsScreen({ route, navigation }) {
             String(user?.name || user?.full_name || user?.username || '').trim().toLowerCase() === authorName
           ) || null;
         }
-
         if (!alive) return;
         const nextImage = String(authorUser?.profile_image || authorUser?.avatar || '').trim();
         setAuthorProfileImageUri(isValidImageUrl(nextImage) ? nextImage : '');
@@ -518,7 +476,6 @@ export default function NewsDetailsScreen({ route, navigation }) {
         if (alive) setAuthorProfileImageUri('');
       }
     })();
-
     return () => { alive = false; };
   }, [article.author_email, article.author_id, article.author_name, article.author_profile_image, article.createdBy]);
 
@@ -531,7 +488,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
     setViewCount(fallbackArticle.views);
 
     try {
-     const [user, summary] = await Promise.all([
+      const [user, summary] = await Promise.all([
         UserStore.getCurrentUser(),
         articleId ? UserStore.getNewsFeedSummary({ focusItemId: articleId, feedType: 'all' }) : Promise.resolve(null),
       ]);
@@ -622,14 +579,12 @@ export default function NewsDetailsScreen({ route, navigation }) {
 
   const videoUri = String(article.video || '').trim();
   const [resolvedVideoUri, setResolvedVideoUri] = useState(null);
-  
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [showVideoPoster, setShowVideoPoster] = useState(true);
 
   useEffect(() => {
     let alive = true;
     let objectUrl = null;
-
     (async () => {
       if (Platform.OS !== 'web') { setResolvedVideoUri(null); return; }
       if (!isIdbMediaUri(videoUri)) { setResolvedVideoUri(null); return; }
@@ -638,7 +593,6 @@ export default function NewsDetailsScreen({ route, navigation }) {
       objectUrl = next;
       setResolvedVideoUri(next);
     })();
-
     return () => {
       alive = false;
       try { if (objectUrl) URL.revokeObjectURL(objectUrl); } catch {}
@@ -651,7 +605,6 @@ export default function NewsDetailsScreen({ route, navigation }) {
   }, [resolvedVideoUri, videoUri]);
 
   const canPlayVideo = Boolean(effectiveVideoUri) && isPlayableVideoSource(effectiveVideoUri);
-  
   const player = useVideoPlayer(canPlayVideo ? { uri: effectiveVideoUri } : null, (p) => {
     p.loop = false;
   });
@@ -694,19 +647,19 @@ export default function NewsDetailsScreen({ route, navigation }) {
     return () => { safePause(player); };
   }, [player]);
 
-  const handleNavigateToCommentUserProfile = useCallback((userName, userAvatar, userId) => {
+   const handleNavigateToCommentUserProfile = useCallback((userName, userAvatar, userEmail) => {
     if (!userName) return;
     try {
       navigation?.navigate('UserPublicProfile', {
-        userData: { name: userName, profile_image: userAvatar },
-        userId: userId || userName,
+        email: userEmail || undefined,
+        author: { name: userName, profile_image: userAvatar },
       });
     } catch {}
   }, [navigation]);
-
-  const handleToggleFollowAuthor = useCallback(async () => {
+    const handleToggleFollowAuthor = useCallback(async () => {
     if (followLoading) return;
     const authorEmail = String(article.createdBy || article.author_email || '').trim().toLowerCase();
+    const authorId = article.author_id || article.userId || null;
     if (!currentUserEmail) { Alert.alert('Login required', 'Please login to follow this user.'); return; }
     if (!authorEmail || authorEmail === currentUserEmail) return;
 
@@ -715,8 +668,8 @@ export default function NewsDetailsScreen({ route, navigation }) {
     setIsFollowingAuthor(nextFollowing);
     try {
       const result = nextFollowing
-        ? await UserStore.followUser(authorEmail)
-        : await UserStore.unfollowUser(authorEmail);
+        ? await UserStore.followUser(authorEmail, authorId)
+        : await UserStore.unfollowUser(authorEmail, authorId);
       if (result?.ok === false) {
         setIsFollowingAuthor(!nextFollowing);
         Alert.alert('Follow', result?.message || 'Unable to update follow status.');
@@ -732,17 +685,19 @@ export default function NewsDetailsScreen({ route, navigation }) {
   }, [article.author_email, article.createdBy, currentUserEmail, followLoading, isFollowingAuthor, refreshAuthorFollowState]);
 
   const handleLike = useCallback(async () => {
-    const result = await UserStore.updateNewsFeedItem(article.id, 'like');
+    const result = await UserStore.updateNewsFeedItem(article.id, 'like', { liked: isLiked });
     if (!result?.ok) { Alert.alert('Error', result?.message || 'Could not update like'); return; }
     await loadArticleDetails();
-  }, [article.id, loadArticleDetails]);
+  }, [article.id, isLiked, loadArticleDetails]);
 
   const handleShare = useCallback(async () => {
     try {
+      const articleLink = `https://rtinews.in/news/${encodeURIComponent(article.id || article.title || 'story')}`;
+      const articleImage = article.image || article.images?.[0] || '';
       const result = await Share.share({
         title: article.title,
-        message: `${article.title}\n\n${article.excerpt || ''}\n\nShared from RTI News App`,
-        url: IS_WEB ? window.location.href : undefined,
+        message: `${article.title}\n\n${article.excerpt || article.description || ''}\n\n${articleImage ? `Image: ${articleImage}\n\n` : ''}Read full news: ${articleLink}\n\nRTI News App`,
+        url: articleLink,
       });
       const wasShared = Platform.OS === 'web' || result.action === Share.sharedAction;
       if (wasShared) {
@@ -850,9 +805,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
             ]
           );
         });
-
     if (!confirmed) return;
-
     const result = await UserStore.deleteNewsComment(article.id, commentId);
     if (!result?.ok) { Alert.alert('Error', result?.message || 'Could not delete comment'); return; }
     if (editingCommentId === commentId) { setEditingCommentId(null); setEditingCommentText(''); }
@@ -903,14 +856,12 @@ export default function NewsDetailsScreen({ route, navigation }) {
     setReplyText('');
   }, []);
 
-  // ✅ Determine what source to use for hero image display
   const heroImageSource = useMemo(() => {
     const uri = resolvedHeroImage || article.image;
     if (!uri || uri === 'null' || uri === 'undefined') return null;
     return { uri };
   }, [resolvedHeroImage, article.image]);
 
-  // ✅ Determine author image source
   const authorImageUri = useMemo(() => {
     const uri = resolvedAuthorImage || authorProfileImageUri || article.author_profile_image;
     return uri && isValidImageUrl(uri) ? uri : '';
@@ -940,8 +891,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
                   onPress={() => navigation?.goBack?.()}
                   activeOpacity={0.84}
                 >
-                  <Ionicons name="arrow-back-outline" size={18} color="#0f172a" />
-                  <Text style={styles.backButtonText}>Back</Text>
+                  <Ionicons name="arrow-back-outline" size={25} color="#64748b" />
                 </TouchableOpacity>
 
                 <View style={styles.utilityChipRow}>
@@ -959,10 +909,8 @@ export default function NewsDetailsScreen({ route, navigation }) {
               </View>
 
               <View style={[styles.storyCardShell, isCompactLayout && styles.storyCardShellCompact]}>
-                {/* Author */}
                 <View style={styles.storyAuthorRow}>
                   <View style={styles.storyAuthorIdentity}>
-                    {/* ✅ Uses resolved author image */}
                     <TouchableOpacity
                       style={styles.storyAuthorAvatarButton}
                       onPress={() => setShowAuthorImageModal(true)}
@@ -1009,22 +957,21 @@ export default function NewsDetailsScreen({ route, navigation }) {
 
                 <View style={styles.storyMetaRow}>
                   <View style={styles.storyMetaPill}>
-                    <Ionicons name="calendar-outline" size={15} color="#f97316" />
+                    <Ionicons name="calendar-outline" size={17} color="#94a3b8" />
                     <Text style={styles.storyMetaPillText}>{article.date}</Text>
                   </View>
                   <View style={styles.storyMetaPill}>
-                    <Ionicons name="time-outline" size={15} color="#f97316" />
+                    <Ionicons name="time-outline" size={17} color="#94a3b8" />
                     <Text style={styles.storyMetaPillText}>{article.publishedAgo}</Text>
                   </View>
                   {locationLabel ? (
                     <View style={styles.storyMetaPill}>
-                      <Ionicons name="pin-outline" size={15} color="#f97316" />
+                      <Ionicons name="pin-outline" size={17} color="#94a3b8" />
                       <Text style={styles.storyMetaPillText}>{locationLabel}</Text>
                     </View>
                   ) : null}
                 </View>
 
-                {/* ✅ Hero Image / Video — uses resolved URI */}
                 <View style={[styles.storyHeroImageWrap, isCompactLayout && styles.storyHeroImageWrapCompact]}>
                   {canPlayVideo ? (
                     <TouchableOpacity style={styles.videoContainer} activeOpacity={1} onPress={handleVideoPress}>
@@ -1056,10 +1003,8 @@ export default function NewsDetailsScreen({ route, navigation }) {
                       ) : null}
                     </TouchableOpacity>
                   ) : heroImageSource ? (
-                    // ✅ Resolved URI se image show karo
                     <Image source={heroImageSource} style={styles.storyHeroImage} resizeMode="cover" />
                   ) : (
-                    // Fallback: loading placeholder
                     <View style={styles.imagePlaceholder}>
                       <Ionicons name="image-outline" size={48} color="#94a3b8" />
                       <Text style={styles.imagePlaceholderText}>Loading image...</Text>
@@ -1067,70 +1012,66 @@ export default function NewsDetailsScreen({ route, navigation }) {
                   )}
                 </View>
 
+                {/* ✅ Stats in Single Line - Fixed */}
                 <View style={styles.storyStatsRow}>
                   <View style={styles.storyStatItem}>
-                    <Ionicons name="eye-outline" size={18} color="#0f172a" />
+                    <Ionicons name="eye-outline" size={21} color="#64748b" />
                     <Text style={styles.storyStatText}>{viewCount.toLocaleString()} Views</Text>
                   </View>
-                  
                   <TouchableOpacity style={styles.storyStatItem} onPress={handleLike} activeOpacity={0.7}>
                     <Ionicons
                       name={isLiked ? "heart" : "heart-outline"}
-                      size={18}
-                      color={isLiked ? "#ef4444" : "#0f172a"}
+                      size={21}
+                      color={isLiked ? "#ef4444" : "#64748b"}
                     />
                     <Text style={[styles.storyStatText, isLiked && styles.likedText]}>
                       {likeCount.toLocaleString()} {likeCount === 1 ? 'Like' : 'Likes'}
                     </Text>
                   </TouchableOpacity>
-                  
                   <TouchableOpacity
                     style={styles.storyStatItem}
                     onPress={async () => { setShowCommentsModal(true); await loadArticleDetails(); }}
                     activeOpacity={0.7}
                   >
-                    <Ionicons name="chatbubble-outline" size={18} color="#0f172a" />
+                    <Ionicons name="chatbubble-outline" size={21} color="#64748b" />
                     <Text style={styles.storyStatText}>
                       {commentCount.toLocaleString()} {commentCount === 1 ? 'Comment' : 'Comments'}
                     </Text>
                   </TouchableOpacity>
-                  
                   <TouchableOpacity style={styles.storyStatItem} onPress={handleShare} activeOpacity={0.7}>
-                    <Ionicons name="share-social-outline" size={18} color="#0f172a" />
+                    <Ionicons name="share-social-outline" size={21} color="#64748b" />
                     <Text style={styles.storyStatText}>
                       {shareCount.toLocaleString()} {shareCount === 1 ? 'Share' : 'Shares'}
                     </Text>
                   </TouchableOpacity>
                 </View>
 
+                {/* ✅ Description - Bigger Text */}
                 <View style={styles.articleBodyWrap}>
-  {(articleParagraphs.length > 1 && !showFullBody
-    ? articleParagraphs.slice(0, 1)
-    : articleParagraphs
-  ).map((paragraph, index) => (
-    <Text
-      key={`${paragraph.slice(0, 20)}-${index}`}
-      style={[
-        styles.articleBodyParagraph,
-        index === (articleParagraphs.length > 1 && !showFullBody ? 0 : articleParagraphs.length - 1) && styles.articleBodyParagraphLast,
-      ]}
-    >
-      {paragraph}
-    </Text>
-  ))}
-  {articleParagraphs.length > 1 ? (
-    <TouchableOpacity
-      onPress={() => setShowFullBody(prev => !prev)}
-      activeOpacity={0.8}
-      style={{ marginTop: 8 }}
-    >
-      <Text style={{ color: '#f97316', fontSize: 14, fontWeight: '700' }}>
-        {showFullBody ? 'Show less ▲' : 'Read more ▼'}
-      </Text>
-    </TouchableOpacity>
-  ) : null}
-</View>
-                {/* ✅ Gallery — resolved URIs */}
+                  {articleParagraphs.map((paragraph, index) => (
+                    <Text
+                      key={`${paragraph.slice(0, 20)}-${index}`}
+                      style={[
+                        styles.articleBodyParagraph,
+                        index === articleParagraphs.length - 1 && styles.articleBodyParagraphLast,
+                      ]}
+                    >
+                      {paragraph}
+                    </Text>
+                  ))}
+                  {false ? (
+                    <TouchableOpacity
+                      onPress={() => setShowFullBody(prev => !prev)}
+                      activeOpacity={0.8}
+                      style={{ marginTop: 8 }}
+                    >
+                      <Text style={{ color: '#f97316', fontSize: 14, fontWeight: '700', fontFamily: 'Roboto' }}>
+                        {showFullBody ? 'Show less ▲' : 'Read more ▼'}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+
                 {article.images.length > 1 ? (
                   <View style={styles.storyBodySection}>
                     <Text style={styles.storyBodyTitle}>Gallery</Text>
@@ -1176,7 +1117,6 @@ export default function NewsDetailsScreen({ route, navigation }) {
         <AppNavbar navigation={navigation} activeScreen={null} hideTopHeader={true} />
       ) : null}
 
-      {/* Author Image Preview */}
       <Modal
         visible={showAuthorImageModal}
         animationType="fade"
@@ -1215,7 +1155,6 @@ export default function NewsDetailsScreen({ route, navigation }) {
         </View>
       </Modal>
 
-      {/* Comments Modal */}
       <Modal
         visible={showCommentsModal}
         animationType="slide"
@@ -1293,7 +1232,6 @@ export default function NewsDetailsScreen({ route, navigation }) {
   return IS_WEB ? <WebLayout>{page}</WebLayout> : page;
 }
 
-// ✅ Gallery image component — resolves idb-media: URIs individually
 function GalleryImage({ rawUri }) {
   const resolved = useResolvedImageUri(rawUri);
   if (!resolved) return null;
@@ -1313,32 +1251,51 @@ const styles = StyleSheet.create({
   pageScrollContentWithMobileNav: { paddingBottom: 110 },
   pageBodyShell: { paddingTop: 0, marginTop: -1, backgroundColor: '#ffffff', flexGrow: 1 },
   pageBodyInner: {
-    maxWidth: 1040, width: '100%', alignSelf: 'center',
-    flexDirection: 'column', alignItems: 'stretch', paddingTop: 18,
+    maxWidth: 1040,
+    width: '100%',
+    alignSelf: 'center',
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    paddingTop: 18,
     paddingHorizontal: 16,
   },
   pageBodyInnerCompact: { flexDirection: 'column' },
   storyColumn: { flex: 1, width: '100%', maxWidth: 900, alignSelf: 'center' },
   utilityRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    gap: 12, marginBottom: 18, flexWrap: 'wrap',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginBottom: 18,
+    flexWrap: 'wrap',
   },
   utilityRowCompact: { alignItems: 'stretch' },
   utilityChipRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
   backButton: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 999,
-    backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#dbe3ee',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 34,
+    height: 34,
   },
-  backButtonText: { color: '#0f172a', fontSize: 13, fontWeight: '800' },
+  backButtonText: { color: '#0f172a', fontSize: 13, fontWeight: '800', fontFamily: 'Roboto' },
   utilityChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999,
-    backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fdba74',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fdba74',
   },
-  utilityChipText: { color: '#f97316', fontSize: 11, fontWeight: '800' },
+  utilityChipText: { color: '#f97316', fontSize: 11, fontWeight: '800', fontFamily: 'Roboto' },
   storyCardShell: {
-    backgroundColor: 'transparent', borderWidth: 0, borderColor: 'transparent', borderRadius: 0, padding: 0,
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+    borderColor: 'transparent',
+    borderRadius: 0,
+    padding: 0,
     overflow: 'visible',
     ...Platform.select({ web: { boxShadow: 'none', overflow: 'visible' }, default: { elevation: 0, shadowColor: 'transparent', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0, shadowRadius: 0 } }),
   },
@@ -1349,57 +1306,96 @@ const styles = StyleSheet.create({
   storyAuthorAvatar: { width: 54, height: 54, borderRadius: 27, backgroundColor: '#e2e8f0' },
   storyAuthorTextWrap: { flex: 1 },
   storyAuthorNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
-  storyAuthorName: { color: '#0f172a', fontSize: 22, fontWeight: '900' },
-  storyAuthorRoleText: { color: '#64748b', fontSize: 13, fontWeight: '700', marginTop: 4 },
+  storyAuthorName: { color: '#0f172a', fontSize: 22, fontWeight: '900', fontFamily: 'Roboto' },
+  storyAuthorRoleText: { color: '#64748b', fontSize: 13, fontWeight: '700', marginTop: 4, fontFamily: 'Roboto' },
   followAuthorButton: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    minHeight: 36, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999,
-    backgroundColor: '#f97316', flexShrink: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    minHeight: 36,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#f97316',
+    flexShrink: 0,
   },
   followAuthorButtonActive: { backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fdba74' },
   followAuthorButtonDisabled: { opacity: 0.65 },
-  followAuthorButtonText: { color: '#ffffff', fontSize: 12, fontWeight: '800' },
+  followAuthorButtonText: { color: '#ffffff', fontSize: 12, fontWeight: '800', fontFamily: 'Roboto' },
   followAuthorButtonTextActive: { color: '#f97316' },
   storyHeadlineText: {
-    color: '#0f172a', fontSize: 34, lineHeight: 44, fontWeight: '900',
-    fontFamily: Platform.select({ web: 'Georgia, "Times New Roman", serif', ios: 'Georgia', android: 'serif', default: undefined }),
+    color: '#0f172a',
+    fontSize: 34,
+    lineHeight: 44,
+    fontWeight: '900',
+    fontFamily: 'Roboto',
   },
-  storyHeadlineTextCompact: { fontSize: 24, lineHeight: 32 },
-  storySubtitleText: { color: '#334155', fontSize: 18, lineHeight: 28, marginTop: 12, fontWeight: '700' },
-  storyExcerptText: { color: '#475569', fontSize: 16, lineHeight: 25, marginTop: 12 },
+  storyHeadlineTextCompact: { fontSize: 24, lineHeight: 32, fontFamily: 'Roboto' },
+  storySubtitleText: { color: '#334155', fontSize: 18, lineHeight: 28, marginTop: 12, fontWeight: '700', fontFamily: 'Roboto' },
+  storyExcerptText: { color: '#475569', fontSize: 16, lineHeight: 25, marginTop: 12, fontFamily: 'Roboto' },
   storyMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 16 },
-  storyMetaPill: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fdba74' },
-  storyMetaPillText: { color: '#7c2d12', fontSize: 12, fontWeight: '700' },
+  storyMetaPill: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  storyMetaPillText: { color: '#94a3b8', fontSize: 14, fontWeight: '500', fontFamily: 'Roboto' },
   storyHeroImageWrap: { marginTop: 18, height: 220, borderRadius: 5, overflow: 'hidden', backgroundColor: '#e2e8f0', marginBottom: 16, zIndex: 0, position: 'relative', flexShrink: 0 },
   storyHeroImageWrapCompact: { height: 220 },
   storyHeroImage: { width: '100%', height: '100%' },
-  // ✅ Placeholder when image not yet resolved
   imagePlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f1f5f9' },
-  imagePlaceholderText: { color: '#94a3b8', fontSize: 13, marginTop: 8, fontWeight: '600' },
+  imagePlaceholderText: { color: '#94a3b8', fontSize: 13, marginTop: 8, fontWeight: '600', fontFamily: 'Roboto' },
   videoContainer: { width: '100%', height: '100%', position: 'relative' },
   videoView: { width: '100%', height: '100%' },
   videoPoster: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' },
   playButtonOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(15, 23, 42, 0.3)' },
-  playButtonText: { color: '#ffffff', fontSize: 14, fontWeight: '600', marginTop: 8, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20 },
-  storyStatsRow: { marginTop: 18, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#e2e8f0', rowGap: 10, columnGap: 0 },
-  storyStatItem: { flexDirection: 'row', alignItems: 'center', gap: 6, width: '50%', paddingRight: 8 },
-  storyStatText: { color: '#0f172a', fontSize: 13, fontWeight: '700' },
+  playButtonText: { color: '#ffffff', fontSize: 14, fontWeight: '600', marginTop: 8, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, fontFamily: 'Roboto' },
+  storyStatsRow: {
+    marginTop: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+    rowGap: 10,
+    columnGap: 8,
+  },
+  storyStatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingRight: 8,
+  },
+  storyStatText: { color: '#374151', fontSize: 14.5, fontWeight: '600', fontFamily: 'Roboto' },
   likedText: { color: '#ef4444' },
   articleBodyWrap: { marginTop: 24 },
-  articleBodyParagraph: { color: '#111827', fontSize: 16, lineHeight: 30, marginBottom: 18 },
+  articleBodyParagraph: {
+    color: '#111827',
+    fontSize: 18,
+    lineHeight: 32,
+    marginBottom: 18,
+    fontFamily: 'Roboto',
+  },
   articleBodyParagraphLast: { marginBottom: 0 },
   storyBodySection: { marginTop: 22 },
-  storyBodyTitle: { color: '#0f172a', fontSize: 18, fontWeight: '900', marginBottom: 10 },
-  storyBodyText: { color: '#334155', fontSize: 15, lineHeight: 26 },
+  storyBodyTitle: { color: '#0f172a', fontSize: 18, fontWeight: '900', marginBottom: 10, fontFamily: 'Roboto' },
+  storyBodyText: { color: '#334155', fontSize: 15, lineHeight: 26, fontFamily: 'Roboto' },
   galleryRow: { flexDirection: 'row', gap: 10 },
   galleryImage: { width: 190, height: 130, borderRadius: 16, backgroundColor: '#e2e8f0' },
   attachmentButton: { flexDirection: 'row', alignItems: 'center', gap: 10, alignSelf: 'flex-start', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 999, backgroundColor: '#f97316' },
-  attachmentButtonText: { color: '#ffffff', fontSize: 13, fontWeight: '800' },
+  attachmentButtonText: { color: '#ffffff', fontSize: 13, fontWeight: '800', fontFamily: 'Roboto' },
   authorImageModalBackdrop: { flex: 1, backgroundColor: 'rgba(2, 6, 23, 0.94)', alignItems: 'center', justifyContent: 'center' },
   authorImageModalClose: {
-    position: 'absolute', top: Platform.OS === 'ios' ? 58 : 24, right: 18, zIndex: 2,
-    width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.72)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)',
+    position: 'absolute',
+    top: Platform.OS === 'ios' ? 58 : 24,
+    right: 18,
+    zIndex: 2,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(15, 23, 42, 0.72)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
   },
   authorImageZoomScroll: { width: '100%', height: '100%' },
   authorImageZoomContent: { minHeight: '100%', alignItems: 'center', justifyContent: 'center', padding: 24 },
@@ -1407,45 +1403,45 @@ const styles = StyleSheet.create({
   modalContainer: { flex: 1, backgroundColor: '#ffffff' },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: Platform.OS === 'ios' ? 60 : 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#e2e8f0', backgroundColor: '#ffffff' },
   modalCloseButton: { padding: 8 },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: '#0f172a' },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: '#0f172a', fontFamily: 'Roboto' },
   commentInputContainer: { flexDirection: 'row', padding: 16, borderBottomWidth: 1, borderBottomColor: '#e2e8f0', backgroundColor: '#f8fafc' },
-  commentInput: { flex: 1, backgroundColor: '#ffffff', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, marginRight: 12, fontSize: 14, borderWidth: 1, borderColor: '#e2e8f0', maxHeight: 100 },
+  commentInput: { flex: 1, backgroundColor: '#ffffff', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, marginRight: 12, fontSize: 14, borderWidth: 1, borderColor: '#e2e8f0', maxHeight: 100, fontFamily: 'Roboto' },
   submitCommentButton: { backgroundColor: '#f97316', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6 },
   submitCommentButtonDisabled: { backgroundColor: '#cbd5e1' },
-  submitCommentText: { color: '#ffffff', fontWeight: '600', fontSize: 14 },
+  submitCommentText: { color: '#ffffff', fontWeight: '600', fontSize: 14, fontFamily: 'Roboto' },
   commentsList: { flex: 1 },
   noCommentsContainer: { alignItems: 'center', justifyContent: 'center', paddingTop: 80, paddingHorizontal: 32 },
-  noCommentsText: { fontSize: 18, fontWeight: '600', color: '#0f172a', marginTop: 20 },
-  noCommentsSubtext: { fontSize: 14, color: '#64748b', textAlign: 'center', marginTop: 8 },
+  noCommentsText: { fontSize: 18, fontWeight: '600', color: '#0f172a', marginTop: 20, fontFamily: 'Roboto' },
+  noCommentsSubtext: { fontSize: 14, color: '#64748b', textAlign: 'center', marginTop: 8, fontFamily: 'Roboto' },
   commentItem: { flexDirection: 'row', padding: 16, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', alignItems: 'flex-start' },
   commentReplyItem: { marginLeft: 20, paddingLeft: 0, paddingRight: 0, paddingBottom: 8, borderBottomWidth: 0 },
   commentAvatar: { marginRight: 12 },
   commentAvatarImage: { width: 40, height: 40, borderRadius: 20 },
   commentAvatarPlaceholder: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#f97316', alignItems: 'center', justifyContent: 'center' },
-  commentAvatarText: { color: '#ffffff', fontSize: 16, fontWeight: '600' },
+  commentAvatarText: { color: '#ffffff', fontSize: 16, fontWeight: '600', fontFamily: 'Roboto' },
   commentContent: { flex: 1 },
   commentBubble: { backgroundColor: '#f8fafc', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1, borderColor: '#e2e8f0' },
   commentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6, flexWrap: 'wrap' },
-  commentUserName: { fontSize: 14, fontWeight: '700', color: '#0f172a', cursor: Platform.OS === 'web' ? 'pointer' : 'default' },
-  commentTime: { fontSize: 12, color: '#94a3b8' },
-  commentText: { fontSize: 14, color: '#334155', lineHeight: 20 },
+  commentUserName: { fontSize: 14, fontWeight: '700', color: '#0f172a', cursor: Platform.OS === 'web' ? 'pointer' : 'default', fontFamily: 'Roboto' },
+  commentTime: { fontSize: 12, color: '#94a3b8', fontFamily: 'Roboto' },
+  commentText: { fontSize: 14, color: '#334155', lineHeight: 20, fontFamily: 'Roboto' },
   commentActions: { flexDirection: 'row', gap: 16, flexWrap: 'wrap', marginTop: 8, paddingLeft: 4 },
   commentActionButton: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  commentActionText: { fontSize: 12, color: '#64748b', fontWeight: '600' },
+  commentActionText: { fontSize: 12, color: '#64748b', fontWeight: '600', fontFamily: 'Roboto' },
   commentActionTextLiked: { color: '#ef4444' },
   deleteText: { color: '#ef4444' },
   commentEditorWrap: { gap: 10 },
-  commentEditInput: { minHeight: 82, borderWidth: 1, borderColor: '#dbe3ee', borderRadius: 14, backgroundColor: '#ffffff', paddingHorizontal: 14, paddingVertical: 10, color: '#0f172a', fontSize: 14, textAlignVertical: 'top' },
+  commentEditInput: { minHeight: 82, borderWidth: 1, borderColor: '#dbe3ee', borderRadius: 14, backgroundColor: '#ffffff', paddingHorizontal: 14, paddingVertical: 10, color: '#0f172a', fontSize: 14, textAlignVertical: 'top', fontFamily: 'Roboto' },
   commentInlineActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' },
   commentPrimaryAction: { borderRadius: 999, backgroundColor: '#f97316', paddingHorizontal: 14, paddingVertical: 8 },
-  commentPrimaryActionText: { color: '#ffffff', fontSize: 12, fontWeight: '700' },
+  commentPrimaryActionText: { color: '#ffffff', fontSize: 12, fontWeight: '700', fontFamily: 'Roboto' },
   commentSecondaryAction: { borderRadius: 999, backgroundColor: '#e2e8f0', paddingHorizontal: 14, paddingVertical: 8 },
-  commentSecondaryActionText: { color: '#475569', fontSize: 12, fontWeight: '700' },
+  commentSecondaryActionText: { color: '#475569', fontSize: 12, fontWeight: '700', fontFamily: 'Roboto' },
   replyComposerWrap: { marginTop: 10, paddingLeft: 4, gap: 10 },
-  replyInput: { minHeight: 70, borderWidth: 1, borderColor: '#dbe3ee', borderRadius: 14, backgroundColor: '#ffffff', paddingHorizontal: 14, paddingVertical: 10, color: '#0f172a', fontSize: 14, textAlignVertical: 'top' },
+  replyInput: { minHeight: 70, borderWidth: 1, borderColor: '#dbe3ee', borderRadius: 14, backgroundColor: '#ffffff', paddingHorizontal: 14, paddingVertical: 10, color: '#0f172a', fontSize: 14, textAlignVertical: 'top', fontFamily: 'Roboto' },
   commentRepliesWrap: { marginTop: 10 },
   commentRepliesToggle: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 4, marginBottom: 4 },
   commentRepliesLine: { width: 24, height: 1, backgroundColor: '#cbd5e1' },
-  commentRepliesToggleText: { fontSize: 12, fontWeight: '700', color: '#475569' },
+  commentRepliesToggleText: { fontSize: 12, fontWeight: '700', color: '#475569', fontFamily: 'Roboto' },
   commentReplies: { marginTop: 10, borderLeftWidth: 2, borderLeftColor: '#e2e8f0', paddingLeft: 10 },
 });

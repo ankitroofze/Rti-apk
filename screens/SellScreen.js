@@ -10,9 +10,10 @@ import {
   TextInput,
   Image,
   KeyboardAvoidingView,
-  Modal,
+   Modal,
   ActivityIndicator,
   useWindowDimensions,
+  ImageBackground,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -80,12 +81,11 @@ const getAssetMimeType = (asset = {}) => {
 
 const getPersistentMediaUri = (asset = {}) => {
   const type = String(asset.type || '').toLowerCase();
-  if (type !== 'video' && asset.base64) {
+  if (Platform.OS === 'web' && type !== 'video' && asset.base64) {
     return `data:${getAssetMimeType(asset)};base64,${asset.base64}`;
   }
   return asset.uri || '';
 };
-
 const getMediaItemFromAsset = async (asset = {}) => {
   const rawUri = getPersistentMediaUri(asset);
   const type = String(asset.type || (String(asset.uri || '').toLowerCase().endsWith('.mp4') ? 'video' : 'image')).trim();
@@ -98,10 +98,11 @@ const getMediaItemFromAsset = async (asset = {}) => {
   const uri = Platform.OS === 'web' && storedUri === rawUri && /^data:/i.test(rawUri)
     ? ''
     : storedUri;
-  return {
+ return {
     uri,
     previewUri: Platform.OS === 'web' ? rawUri : '',
     type,
+    mimeType: type === 'video' ? (asset.mimeType || 'video/mp4') : getAssetMimeType(asset),
   };
 };
 
@@ -205,7 +206,7 @@ function useSellForm(navigation) {
       mediaTypes: ImagePicker.MediaTypeOptions.All,
       allowsEditing: false,
       quality: 0.7,
-      base64: Platform.OS !== 'web',
+      base64: Platform.OS === 'web',
       allowsMultipleSelection: true,
     });
     if (result.canceled) return;
@@ -367,8 +368,7 @@ function EcomeSellMobile({ navigation }) {
       style={styles.root}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <View style={{ height: insets.top, backgroundColor: '#fff' }} />
+       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
       {form.showSubscriptionAlert && (
         <View style={styles.alertBox}>
@@ -385,38 +385,25 @@ function EcomeSellMobile({ navigation }) {
         </View>
       )}
 
-      <View style={styles.header}>
+           <ImageBackground
+        source={require('../assets/images/profile-red.png')}
+        resizeMode="cover"
+        style={[styles.header, { paddingTop: insets.top + 8 }]}
+      >
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={22} color="#334155" />
+          <Ionicons name="chevron-back" size={22} color="#ffffff" />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>Sell</Text>
           <Text style={styles.headerSub}>Ecome (buy / sell)</Text>
         </View>
-        <TouchableOpacity style={styles.submitBtn} onPress={form.handleSubmit} activeOpacity={0.85}>
-          <Text style={styles.submitBtnText}>Submit</Text>
-        </TouchableOpacity>
-      </View>
-
+      </ImageBackground>
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.formContainer, { paddingBottom: insets.bottom + 120 }]}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.creditCard}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.creditTitle}>Monthly E-Commerce Subscription</Text>
-            <Text style={styles.creditSub}>{form.credits} credits available · 30 days validity · 1 credit per listing</Text>
-          </View>
-        </View>
-        <View style={styles.planRow}>
-          {form.plans.map((plan) => (
-            <TouchableOpacity key={plan.plan_id} style={styles.planCard} onPress={() => form.handleBuyPlan(plan)} activeOpacity={0.85}>
-              <Text style={styles.planPrice}>₹{plan.price}</Text>
-              <Text style={styles.planCredits}>{plan.plan_name} · {plan.credits} listings</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+    
 
         {/* 1. Category */}
         <Text style={styles.fieldLabel}>1. Category<Text style={styles.required}> *</Text></Text>
@@ -455,12 +442,8 @@ function EcomeSellMobile({ navigation }) {
         {/* 3. Media */}
         <Text style={styles.fieldLabel}>3. Select Photo or Video<Text style={styles.required}> *</Text></Text>
         <Text style={styles.fieldSubLabel}>Add photo or video of the product</Text>
-        <TouchableOpacity style={styles.mediaBtn} onPress={form.openMediaPicker} activeOpacity={0.8}>
-          <Ionicons name="camera-outline" size={30} color={SHURU.primary} />
-          <Text style={styles.mediaBtnText}>Add Photo or Video</Text>
-        </TouchableOpacity>
-        {form.mediaItems.length > 0 && (
-          <View style={styles.mediaPreview}>
+            {form.mediaItems.length > 0 ? (
+          <View style={styles.mediaBtn}>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.mediaThumbRow}>
               {form.mediaItems.map((item, index) => (
                 <View key={`${item.uri}-${index}`} style={styles.mediaThumbWrap}>
@@ -476,9 +459,16 @@ function EcomeSellMobile({ navigation }) {
                   </TouchableOpacity>
                 </View>
               ))}
+              <TouchableOpacity style={styles.mediaAddMoreTile} onPress={form.openMediaPicker} activeOpacity={0.8}>
+                <Ionicons name="add" size={26} color={SHURU.primary} />
+              </TouchableOpacity>
             </ScrollView>
-            <Text style={styles.mediaPreviewText}>{form.mediaItems.length} media item{form.mediaItems.length !== 1 ? 's' : ''} selected</Text>
           </View>
+        ) : (
+          <TouchableOpacity style={styles.mediaBtn} onPress={form.openMediaPicker} activeOpacity={0.8}>
+            <Ionicons name="camera-outline" size={30} color={SHURU.primary} />
+            <Text style={styles.mediaBtnText}>Add Photo or Video</Text>
+          </TouchableOpacity>
         )}
 
         <Text style={styles.fieldLabel}>Description<Text style={styles.required}> *</Text></Text>
@@ -1039,8 +1029,14 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0',
   },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: '#0f172a' },
-  headerSub: { fontSize: 11, color: '#94a3b8', marginTop: 1 },
+  headerTitle: {
+    fontSize: 15, fontWeight: '400', color: '#ffffff',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
+  },
+  headerSub: {
+    fontSize: 11, color: '#ffffff', marginTop: 1,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
+  },
   submitBtn: {
     backgroundColor: SHURU.primary, borderRadius: SHURU.radiusPill,
     paddingHorizontal: 20, paddingVertical: 10,
@@ -1049,8 +1045,14 @@ const styles = StyleSheet.create({
   formContainer: { paddingHorizontal: 18, paddingTop: 22 },
 
   // === Shuru-style field label ===
-  fieldLabel: { fontSize: 14, fontWeight: '600', color: '#353535', marginBottom: 4, marginTop: 20 },
-  fieldSubLabel: { fontSize: 12, fontWeight: '500', color: SHURU.textMuted, marginBottom: 10 },
+  fieldLabel: {
+    fontSize: 16, fontWeight: '600', color: '#353535', marginBottom: 4, marginTop: 20,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
+  },
+  fieldSubLabel: {
+    fontSize: 13, fontWeight: '500', color: SHURU.textMuted, marginBottom: 10,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
+  },
   required: { color: '#ef4444' },
 
   // === Shuru select box (rounded-md + border-primary) ===
@@ -1079,9 +1081,10 @@ const styles = StyleSheet.create({
 
   // === Shuru input box (rounded-md, border-primary, px-3 py-4, text-xs) ===
   inputBox: {
-    borderWidth: SHURU.borderWidth, borderColor: SHURU.primaryBorder, borderRadius: SHURU.radius,
+    borderWidth: SHURU.borderWidth, borderColor: '#cbd5e1', borderRadius: SHURU.radius,
     paddingHorizontal: 12, paddingVertical: 16,
-    fontSize: 12, color: SHURU.textDark, backgroundColor: SHURU.inputBg,
+    fontSize: 13, color: SHURU.textDark, backgroundColor: SHURU.inputBg,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
   },
   cityInput: { marginTop: 10 },
   textArea: { minHeight: 100, textAlignVertical: 'top', paddingTop: 16 },
@@ -1104,8 +1107,14 @@ const styles = StyleSheet.create({
     overflow: 'hidden', backgroundColor: '#e2e8f0',
     position: 'relative', marginRight: 10,
   },
-  mediaThumb: { width: '100%', height: '100%' },
+    mediaThumb: { width: '100%', height: '100%' },
   mediaVideoThumb: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  mediaAddMoreTile: {
+    width: 92, height: 92, borderRadius: SHURU.radius,
+    borderWidth: SHURU.borderWidth, borderColor: SHURU.primaryBorder,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: SHURU.primaryLight,
+  },
   removeMediaBtn: {
     position: 'absolute', top: 8, right: 8,
     width: 24, height: 24, borderRadius: 12,
@@ -1136,5 +1145,9 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
     marginTop: 28, marginBottom: 20,
   },
-  submitBtnFullText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  submitBtnFullText: {
+    color: '#fff', fontSize: 16, fontWeight: '700',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
+  },
+  
 });

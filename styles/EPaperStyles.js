@@ -20,7 +20,7 @@ const C = {
   orangeLight:'#FFE8F0',
   orangeMid:  '#FFB3CC',
   white:      '#FFFFFF',
-  pageBg:     '#F8F8F8',
+  pageBg:     '#F0F0F0',
   surface:    '#F5F5F5',
   textDark:   '#111111',
   textMid:    '#555555',
@@ -32,6 +32,8 @@ const C = {
   red:        '#dc2626',
   redLight:   '#fee2e2',
 };
+
+const FONT_FAMILY = Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular';
 
 const EPaperStyles = StyleSheet.create({
 
@@ -53,20 +55,20 @@ const EPaperStyles = StyleSheet.create({
   },
 
   // ── Back Row ──────────────────────────────────────────────────────────────
-  backRow: {
+    backRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 12,
-    backgroundColor: C.white,
+    backgroundColor: '#dc2626',
     borderBottomWidth: 1,
-    borderBottomColor: C.border,
+    borderBottomColor: '#b91c1c',
   },
   backText: {
-    color: C.orange,
-    fontSize: 14,
+    color: '#ffffff',
+    fontSize: 14, fontFamily: FONT_FAMILY,
     fontWeight: '700',
   },
 
@@ -82,7 +84,7 @@ const EPaperStyles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   statusBadgeText: {
-    fontSize: 10,
+    fontSize: 10, fontFamily: FONT_FAMILY,
     fontWeight: '800',
   },
 
@@ -110,22 +112,22 @@ const EPaperStyles = StyleSheet.create({
     maxWidth: '85%',
   },
   successBoxText: {
-    fontSize: 13,
+    fontSize: 13, fontFamily: FONT_FAMILY,
     fontWeight: '700',
     color: '#15803D',
     flexShrink: 1,
   },
 
   // ── Hero Card ─────────────────────────────────────────────────────────────
-  heroCard: {
-    backgroundColor: C.orange,
-    borderRadius: 24,
+   heroCard: {
+    borderRadius: 12,
     paddingVertical: 24,
     paddingHorizontal: 20,
     marginBottom: 16,
+    overflow: 'hidden',
   },
   heroEyebrow: {
-    fontSize: 11,
+    fontSize: 11, fontFamily: FONT_FAMILY,
     color: C.orangeLight,
     fontWeight: '700',
     textTransform: 'uppercase',
@@ -133,7 +135,7 @@ const EPaperStyles = StyleSheet.create({
     marginBottom: 8,
   },
   heroTitle: {
-    fontSize: 28,
+    fontSize: 28, fontFamily: FONT_FAMILY,
     fontWeight: '900',
     color: C.white,
     marginBottom: 6,
@@ -141,7 +143,7 @@ const EPaperStyles = StyleSheet.create({
     lineHeight: 34,
   },
   heroSubtitle: {
-    fontSize: 13,
+    fontSize: 13, fontFamily: FONT_FAMILY,
     color: 'rgba(255,255,255,0.85)',
     fontWeight: '500',
     lineHeight: 19,
@@ -163,13 +165,13 @@ const EPaperStyles = StyleSheet.create({
   metricSecondary: { borderTopWidth: 3, borderTopColor: C.green },
   metricAccent:    { borderTopWidth: 3, borderTopColor: C.orangeMid },
   metricValue: {
-    fontSize: 24,
+    fontSize: 24, fontFamily: FONT_FAMILY,
     fontWeight: '900',
     color: C.textDark,
     marginBottom: 4,
   },
   metricLabel: {
-    fontSize: 10,
+    fontSize: 10, fontFamily: FONT_FAMILY,
     fontWeight: '700',
     color: C.textMuted,
     textTransform: 'uppercase',
@@ -189,7 +191,7 @@ const EPaperStyles = StyleSheet.create({
     marginBottom: 16,
   },
   addBtnText: {
-    fontSize: 15,
+    fontSize: 15, fontFamily: FONT_FAMILY,
     fontWeight: '800',
     color: C.white,
     letterSpacing: 0.2,
@@ -205,7 +207,7 @@ const EPaperStyles = StyleSheet.create({
     borderColor: C.border,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 16, fontFamily: FONT_FAMILY,
     fontWeight: '800',
     color: C.textDark,
     marginBottom: 14,
@@ -226,16 +228,16 @@ const EPaperStyles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
-  publishDate: { fontSize: 11, color: C.textMuted, fontWeight: '600' },
+  publishDate: { fontSize: 11, fontFamily: FONT_FAMILY, color: C.textMuted, fontWeight: '600' },
   paperTitle: {
-    fontSize: 15,
+    fontSize: 15, fontFamily: FONT_FAMILY,
     fontWeight: '800',
     color: C.textDark,
     marginBottom: 6,
     lineHeight: 22,
   },
   paperDesc: {
-    fontSize: 12,
+    fontSize: 12, fontFamily: FONT_FAMILY,
     color: C.textMid,
     marginBottom: 10,
     lineHeight: 19,
@@ -255,12 +257,12 @@ const EPaperStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.orangeMid,
   },
-  mediaBadgeText: { fontSize: 11, fontWeight: '700', color: C.orange },
+  mediaBadgeText: { fontSize: 11, fontFamily: FONT_FAMILY, fontWeight: '700', color: C.orange },
 
   // ── Stats ─────────────────────────────────────────────────────────────────
   statsRow: { flexDirection: 'row', gap: 14, marginBottom: 10 },
   statItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  statText:  { fontSize: 12, fontWeight: '600', color: C.textMid },
+  statText:  { fontSize: 12, fontFamily: FONT_FAMILY, fontWeight: '600', color: C.textMid },
 
   // ── Action Buttons ────────────────────────────────────────────────────────
   actionRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap' },
@@ -277,7 +279,7 @@ const EPaperStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.orangeMid,
   },
-  actionBtnText: { fontSize: 11, fontWeight: '700', color: C.orange },
+  actionBtnText: { fontSize: 11, fontFamily: FONT_FAMILY, fontWeight: '700', color: C.orange },
 
   actionBtnDanger: {
     flex: 1,
@@ -292,7 +294,7 @@ const EPaperStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e8732a',
   },
-  actionBtnDangerText: { fontSize: 11, fontWeight: '700', color: C.red },
+  actionBtnDangerText: { fontSize: 11, fontFamily: FONT_FAMILY, fontWeight: '700', color: C.red },
 
   adminActionRow: { flexDirection: 'row', gap: 6, marginTop: 8 },
   approveBtn: {
@@ -307,7 +309,7 @@ const EPaperStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: C.greenMid,
   },
-  approveBtnText: { fontSize: 11, fontWeight: '700', color: C.green },
+  approveBtnText: { fontSize: 11, fontFamily: FONT_FAMILY, fontWeight: '700', color: C.green },
 
   rejectBtn: {
     flex: 1,
@@ -321,11 +323,11 @@ const EPaperStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e8732a',
   },
-  rejectBtnText: { fontSize: 11, fontWeight: '700', color: C.red },
+  rejectBtnText: { fontSize: 11, fontFamily: FONT_FAMILY, fontWeight: '700', color: C.red },
 
   // ── States ────────────────────────────────────────────────────────────────
-  loadingText: { fontSize: 13, color: C.textMuted, textAlign: 'center', paddingVertical: 12 },
-  emptyText:   { fontSize: 13, color: C.textMuted, textAlign: 'center', paddingVertical: 16 },
+  loadingText: { fontSize: 13, fontFamily: FONT_FAMILY, color: C.textMuted, textAlign: 'center', paddingVertical: 12 },
+  emptyText:   { fontSize: 13, fontFamily: FONT_FAMILY, color: C.textMuted, textAlign: 'center', paddingVertical: 16 },
 
   // ── Modal SafeArea & Layout ───────────────────────────────────────────────
   modalSafeArea: {
@@ -352,7 +354,7 @@ const EPaperStyles = StyleSheet.create({
   },
   modalCloseBtn: { padding: 6 },
   modalHeaderTitle: {
-    fontSize: 16,
+    fontSize: 16, fontFamily: FONT_FAMILY,
     fontWeight: '800',
     color: C.white,
     flex: 1,
@@ -367,7 +369,7 @@ const EPaperStyles = StyleSheet.create({
     paddingVertical: 8,
   },
   modalSaveBtnText: {
-    fontSize: 13,
+    fontSize: 13, fontFamily: FONT_FAMILY,
     fontWeight: '800',
     color: C.orange,
   },
@@ -381,20 +383,20 @@ const EPaperStyles = StyleSheet.create({
   },
 
   fieldLabel: {
-    fontSize: 13,
+    fontSize: 13, fontFamily: FONT_FAMILY,
     fontWeight: '800',
     color: C.textDark,
     marginBottom: 6,
   },
   fieldLabelSpaced: {
-    fontSize: 13,
+    fontSize: 13, fontFamily: FONT_FAMILY,
     fontWeight: '800',
     color: C.textDark,
     marginTop: 16,
     marginBottom: 4,
   },
   fieldHint: {
-    fontSize: 11,
+    fontSize: 11, fontFamily: FONT_FAMILY,
     color: C.textMuted,
     marginBottom: 8,
   },
@@ -406,7 +408,7 @@ const EPaperStyles = StyleSheet.create({
     borderColor: C.border,
     borderRadius: 12,
     padding: 12,
-    fontSize: 14,
+    fontSize: 14, fontFamily: FONT_FAMILY,
     color: C.textDark,
     backgroundColor: C.white,
     textAlignVertical: 'top',
@@ -418,7 +420,7 @@ const EPaperStyles = StyleSheet.create({
     borderColor: C.border,
     borderRadius: 12,
     padding: 12,
-    fontSize: 14,
+    fontSize: 14, fontFamily: FONT_FAMILY,
     color: C.textDark,
     backgroundColor: C.white,
     textAlignVertical: 'top',
@@ -440,7 +442,7 @@ const EPaperStyles = StyleSheet.create({
   },
   stateSelectorText: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 13, fontFamily: FONT_FAMILY,
     fontWeight: '700',
     color: C.textDark,
   },
@@ -462,7 +464,7 @@ const EPaperStyles = StyleSheet.create({
     paddingVertical: 5,
   },
   stateChipText: {
-    fontSize: 11,
+    fontSize: 11, fontFamily: FONT_FAMILY,
     fontWeight: '800',
     color: C.orange,
   },
@@ -506,7 +508,7 @@ const EPaperStyles = StyleSheet.create({
   richEditorInner: {
     backgroundColor: C.white,
     color: C.textDark,
-    fontSize: 14,
+    fontSize: 14, fontFamily: FONT_FAMILY,
     placeholderColor: C.textMuted,
     contentCSSText: 'font-family: sans-serif; padding: 10px; line-height: 1.6;',
   },
@@ -522,7 +524,7 @@ const EPaperStyles = StyleSheet.create({
     borderColor: C.border,
   },
   mediaShowcaseEyebrow: {
-    fontSize: 11,
+    fontSize: 11, fontFamily: FONT_FAMILY,
     color: C.orange,
     fontWeight: '800',
     textTransform: 'uppercase',
@@ -530,13 +532,13 @@ const EPaperStyles = StyleSheet.create({
     marginBottom: 4,
   },
   mediaShowcaseTitle: {
-    fontSize: 17,
+    fontSize: 17, fontFamily: FONT_FAMILY,
     fontWeight: '800',
     color: C.textDark,
     marginBottom: 6,
   },
   mediaShowcaseSubtitle: {
-    fontSize: 12,
+    fontSize: 12, fontFamily: FONT_FAMILY,
     color: C.textMid,
     lineHeight: 18,
     marginBottom: 14,
@@ -559,7 +561,7 @@ const EPaperStyles = StyleSheet.create({
     borderColor: C.orangeMid,
   },
   mediaInfoPillText: {
-    fontSize: 11,
+    fontSize: 11, fontFamily: FONT_FAMILY,
     fontWeight: '800',
     color: C.orange,
   },
@@ -575,7 +577,7 @@ const EPaperStyles = StyleSheet.create({
     borderColor: C.orangeMid,
   },
   mediaInfoPillAltText: {
-    fontSize: 11,
+    fontSize: 11, fontFamily: FONT_FAMILY,
     fontWeight: '800',
     color: C.orange,
   },
@@ -590,13 +592,13 @@ const EPaperStyles = StyleSheet.create({
     borderColor: C.border,
   },
   mediaSectionCaption: {
-    fontSize: 11,
+    fontSize: 11, fontFamily: FONT_FAMILY,
     color: C.textMuted,
     lineHeight: 16,
     marginBottom: 8,
   },
   mediaSectionTitle: {
-    fontSize: 13,
+    fontSize: 13, fontFamily: FONT_FAMILY,
     fontWeight: '800',
     color: C.textDark,
     marginBottom: 10,
@@ -614,7 +616,7 @@ const EPaperStyles = StyleSheet.create({
     backgroundColor: C.pinkLight,
   },
   mediaPickBtnText: {
-    fontSize: 13,
+    fontSize: 13, fontFamily: FONT_FAMILY,
     fontWeight: '800',
     color: C.orange,
   },
@@ -637,7 +639,7 @@ const EPaperStyles = StyleSheet.create({
     gap: 8,
     marginTop: 10,
   },
-  videoStatusText: { fontSize: 12, color: C.green, fontWeight: '700' },
+  videoStatusText: { fontSize: 12, fontFamily: FONT_FAMILY, color: C.green, fontWeight: '700' },
 
   // ── State Picker Modal ────────────────────────────────────────────────────
   stateModalOverlay: {
@@ -665,7 +667,7 @@ const EPaperStyles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 14,
   },
-  stateModalTitle: { fontSize: 16, fontWeight: '800', color: C.textDark },
+  stateModalTitle: { fontSize: 16, fontFamily: FONT_FAMILY, fontWeight: '800', color: C.textDark },
   stateSearchWrap: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -678,7 +680,7 @@ const EPaperStyles = StyleSheet.create({
     marginBottom: 12,
     backgroundColor: C.surface,
   },
-  stateSearchInput: { flex: 1, fontSize: 13, color: C.textDark, padding: 0 },
+  stateSearchInput: { flex: 1, fontSize: 13, fontFamily: FONT_FAMILY, color: C.textDark, padding: 0 },
   stateItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -690,7 +692,7 @@ const EPaperStyles = StyleSheet.create({
     backgroundColor: C.surface,
   },
   stateItemActive:     { backgroundColor: C.orangeLight },
-  stateItemText:       { fontSize: 13, fontWeight: '700', color: C.textMid },
+  stateItemText:       { fontSize: 13, fontFamily: FONT_FAMILY, fontWeight: '700', color: C.textMid },
   stateItemTextActive: { color: C.orange },
 
   // ── Image Thumbs ──────────────────────────────────────────────────────────
@@ -731,7 +733,7 @@ const EPaperStyles = StyleSheet.create({
   },
   adminNoteText: {
     flex: 1,
-    fontSize: 12,
+    fontSize: 12, fontFamily: FONT_FAMILY,
     color: '#854d0e',
     fontWeight: '600',
     lineHeight: 18,
@@ -752,14 +754,14 @@ const EPaperStyles = StyleSheet.create({
     padding: 16,
   },
   viewTitleText: {
-    fontSize: 20,
+    fontSize: 20, fontFamily: FONT_FAMILY,
     fontWeight: '800',
     color: C.textDark,
     lineHeight: 28,
     marginBottom: 12,
   },
   viewDescriptionText: {
-    fontSize: 14,
+    fontSize: 14, fontFamily: FONT_FAMILY,
     color: C.textMid,
     lineHeight: 22,
   },
@@ -784,7 +786,7 @@ const EPaperStyles = StyleSheet.create({
     borderColor: C.orangeMid,
   },
   videoAttachedText: {
-    fontSize: 13,
+    fontSize: 13, fontFamily: FONT_FAMILY,
     color: C.orange,
     fontWeight: '700',
   },

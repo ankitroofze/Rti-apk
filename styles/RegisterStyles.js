@@ -3,35 +3,27 @@ import { Platform, StyleSheet } from 'react-native';
 const RegisterStyles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    ...(Platform.OS === 'web' && { minHeight: '100vh', width: '100%' }),
   },
 
   scrollView: {
     flex: 1,
   },
 
-  // Centers the card vertically & horizontally, scrollable
-  // formScroll: {
-  //   flexGrow: 1,
-  //   alignItems: 'center',
-  //   justifyContent: 'center',
-  //   paddingHorizontal: 16,
-  //   paddingTop: 52,       // pushed down for status bar on Android/web
-  //   paddingBottom: 32,
-  // },
-
+    // Centers the card vertically & horizontally, scrollable
+  formScroll: {
+    flexGrow: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 52,
+    paddingBottom: 40,
+  },
   formContainer: {
     width: '100%',
-    maxWidth: Platform.OS === 'web' ? 720 : 480,
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 24,
-    paddingTop: 28,
-    shadowColor: '#000',
-    shadowOffset: { width: 3, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 14,
-    elevation: 6,
+    maxWidth: 420,
+    paddingHorizontal: 8,
+    paddingTop: 36,
     alignItems: 'stretch',
   },
 
@@ -43,8 +35,7 @@ const RegisterStyles = StyleSheet.create({
     zIndex: 10,
     width: 32,
     height: 32,
-    borderRadius: 16,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: 'transparent',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -72,25 +63,25 @@ const RegisterStyles = StyleSheet.create({
 
   welcomeBack: {
     fontSize: 10,
-    color: '#e8732a',
+    color: '#ffffff',
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 1.2,
     marginBottom: 4,
-    fontFamily: 'Roboto',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
   },
 
   formTitle: {
     fontSize: 26,
     fontWeight: '800',
-    color: '#111111',
+    color: '#ffffff',
     textAlign: 'center',
-    fontFamily: 'Roboto',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
   },
 
   pageSubtitle: {
     fontSize: 13,
-    color: '#999999',
+    color: '#ffffff',
     textAlign: 'center',
     lineHeight: 18,
     marginTop: 4,
@@ -110,13 +101,20 @@ const RegisterStyles = StyleSheet.create({
 
   inputLabel: {
     fontSize: 13,
-    color: '#333333',
+    color: '#ffffff',
     marginBottom: 6,
     fontWeight: '600',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
   },
 
-  required: { color: '#e8732a', fontWeight: '800' },
-  optional: { color: '#BBBBBB', fontWeight: '500', fontSize: 11 },
+   required: {
+    color: '#e8732a', fontWeight: '800',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
+  },
+  optional: {
+    color: '#BBBBBB', fontWeight: '500', fontSize: 11,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
+  },
 
   inputWrap: {
     flexDirection: 'row',
@@ -125,9 +123,9 @@ const RegisterStyles = StyleSheet.create({
     backgroundColor: '#F8F8F8',
     borderWidth: 1.5,
     borderColor: '#EEEEEE',
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    minHeight: 50,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    minHeight: 52,
   },
 
   input: {
@@ -135,6 +133,7 @@ const RegisterStyles = StyleSheet.create({
     fontSize: 14,
     color: '#111111',
     paddingVertical: 0,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
     ...(Platform.OS === 'web' && { outlineStyle: 'none' }),
   },
 
@@ -148,6 +147,7 @@ const RegisterStyles = StyleSheet.create({
     color: '#e8732a',
     fontSize: 11,
     fontWeight: '600',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
   },
 
   // ─── Password Hints ───────────────────────────────────────────────────────
@@ -174,29 +174,34 @@ const RegisterStyles = StyleSheet.create({
   subDot:     { position: 'absolute', top: 5, right: 5, width: 7, height: 7, borderRadius: 4 },
 
   // ─── Submit Button ────────────────────────────────────────────────────────
-  submitBtn: {
-    backgroundColor: '#e8732a',
+   submitBtnWrap: {
     borderRadius: 50,
+    overflow: 'hidden',
+    marginTop: 6,
+    shadowColor: '#7F1D1D',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+  },
+  submitBtn: {
     minHeight: 52,
     paddingHorizontal: 20,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    marginTop: 6,
-    shadowColor: '#e8732a',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 5,
   },
   submitBtnDisabled: { opacity: 0.45 },
-  submitBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 16 },
+  loginButtonGradient: { minHeight: 52, paddingHorizontal: 20, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 50 },
+  submitBtnText: { color: '#B91C1C', fontWeight: '700', fontSize: 16, fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold' },
 
   // ─── Switch to Login ──────────────────────────────────────────────────────
   switchBtn:  { marginTop: 14, alignItems: 'center' },
-  switchText: { color: '#999999', fontSize: 13, textAlign: 'center' },
-  switchLink: { color: '#111111', fontWeight: '700' },
+  switchText: { color: '#ffffff', fontSize: 13, textAlign: 'center', fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular' },
+  switchLink: { color: '#ffffff', fontWeight: '700', fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold' },
 });
 
 // ─── Toast Styles ─────────────────────────────────────────────────────────────
@@ -228,7 +233,9 @@ export const toastStyles = StyleSheet.create({
 // ─── OTP Modal Styles ─────────────────────────────────────────────────────────
 export const otpStyles = StyleSheet.create({
   overlay: {
-    flex: 1,
+    ...(Platform.OS === 'web' ? { position: 'fixed' } : { position: 'absolute' }),
+    top: 0, left: 0, right: 0, bottom: 0,
+    zIndex: 9999,
     backgroundColor: 'rgba(0,0,0,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -248,14 +255,25 @@ export const otpStyles = StyleSheet.create({
     backgroundColor: '#FFE8F0',
     alignItems: 'center', justifyContent: 'center', marginBottom: 10,
   },
-  title:    { fontSize: 22, fontWeight: '700', color: '#111111', marginBottom: 4 },
-  subtitle: { fontSize: 13, color: '#999999', textAlign: 'center', marginBottom: 3 },
-  sentTo:   { fontSize: 13, color: '#e8732a', fontWeight: '700', marginBottom: 2 },
+   title:    {
+    fontSize: 22, fontWeight: '700', color: '#111111', marginBottom: 4,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
+  },
+  subtitle: {
+    fontSize: 13, color: '#999999', textAlign: 'center', marginBottom: 3,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
+  },
+  sentTo:   {
+    fontSize: 13, color: '#B91C1C', fontWeight: '700', marginBottom: 2,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
+  },
+  devNoteWrap: {
+    borderRadius: 10, marginTop: 10, marginBottom: 20, overflow: 'hidden',
+  },
   devNote:  {
-    fontSize: 11, color: '#e8732a',
-    backgroundColor: 'rgba(255,45,120,0.08)',
-    borderRadius: 10, paddingHorizontal: 12, paddingVertical: 5,
-    marginTop: 10, marginBottom: 20, textAlign: 'center',
+    fontSize: 11, color: '#ffffff',
+    paddingHorizontal: 12, paddingVertical: 6, textAlign: 'center',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
   },
   digitRow: { flexDirection: 'row', gap: 10, marginBottom: 22 },
   digitBox: {
@@ -271,13 +289,25 @@ export const otpStyles = StyleSheet.create({
     shadowColor: '#e8732a', shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.25, shadowRadius: 12, elevation: 6,
   },
-  verifyBtnDisabled: { opacity: 0.45 },
-  verifyBtnText: { color: '#ffffff', fontWeight: '700', fontSize: 15 },
+   verifyBtnDisabled: { opacity: 0.45 },
+  verifyBtnText: {
+    color: '#ffffff', fontWeight: '700', fontSize: 15,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
+  },
   resendRow:  { marginBottom: 12 },
-  resendTimer:{ color: '#BBBBBB', fontSize: 13, textAlign: 'center' },
-  resendLink: { color: '#e8732a', fontSize: 13, fontWeight: '700', textDecorationLine: 'underline', textAlign: 'center' },
+  resendTimer:{
+    color: '#BBBBBB', fontSize: 13, textAlign: 'center',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
+  },
+  resendLink: {
+    color: '#B91C1C', fontSize: 13, fontWeight: '700', textDecorationLine: 'underline', textAlign: 'center',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
+  },
   closeBtn:   { paddingVertical: 8 },
-  closeBtnText:{ color: '#BBBBBB', fontSize: 13, fontWeight: '600' },
+  closeBtnText:{
+    color: '#BBBBBB', fontSize: 13, fontWeight: '600',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
+  },
 });
 
 // ─── Dropdown Modal Styles ────────────────────────────────────────────────────
@@ -308,6 +338,24 @@ export const dropStyles = StyleSheet.create({
 
 // ─── Local Styles ─────────────────────────────────────────────────────────────
 export const localStyles = StyleSheet.create({
+  avatarWrap: { alignItems: 'center', marginBottom: 18 },
+  avatarContainer: { position: 'relative', width: 84, height: 84 },
+  avatarImage: {
+    width: 84, height: 84, borderRadius: 42,
+    backgroundColor: '#F8F8F8', borderWidth: 2, borderColor: '#EEEEEE',
+  },
+  avatarPlaceholder: {
+    width: 84, height: 84, borderRadius: 42,
+    backgroundColor: '#F8F8F8', borderWidth: 2, borderColor: '#EEEEEE',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  avatarEditBadge: {
+    position: 'absolute', bottom: 0, right: 0,
+    width: 26, height: 26, borderRadius: 13,
+    backgroundColor: '#e8732a', borderWidth: 2, borderColor: '#ffffff',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  avatarHint: { marginTop: 6, fontSize: 11, color: '#999999', fontWeight: '600' },
   inputWrapVerified: { borderColor: 'rgba(46,139,87,0.5)' },
   verifiedBadge:     { color: '#2e8b57', fontSize: 11, fontWeight: '700' },
   sendOtpBtn: {
@@ -318,7 +366,10 @@ export const localStyles = StyleSheet.create({
   },
   sendOtpBtnText:  { color: '#ffffff', fontSize: 11, fontWeight: '800' },
   otpHint:         { marginTop: 4, fontSize: 10, color: '#e8732a', fontWeight: '600' },
-  verifyHintBottom:{ textAlign: 'center', marginTop: 6, fontSize: 10, color: '#e8732a', fontWeight: '600' },
+  verifyHintBottom:{
+    textAlign: 'center', marginTop: 6, fontSize: 10, color: '#e8732a', fontWeight: '600',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
+  },
   termsRow: {
     flexDirection: 'row', alignItems: 'center',
     gap: 8, marginTop: 2, marginBottom: 8, paddingHorizontal: 2,
@@ -330,8 +381,15 @@ export const localStyles = StyleSheet.create({
   },
   checkboxChecked: { backgroundColor: '#e8732a', borderColor: '#e8732a' },
   checkboxError:   { borderColor: '#e8732a' },
-  termsText: { flex: 1, fontSize: 12, color: '#999999', lineHeight: 17 },
-  termsLink: { color: '#e8732a', fontWeight: '700', textDecorationLine: 'underline' },
+   termsText: {
+    flex: 1, fontSize: 12, color: '#999999', lineHeight: 17,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
+  },
+  termsLink: {
+    color: '#e8732a', fontWeight: '700', textDecorationLine: 'underline',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
+  },
 });
 
 export default RegisterStyles;
+

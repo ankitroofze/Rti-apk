@@ -1,13 +1,17 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Keyboard, KeyboardAvoidingView, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ActivityIndicator, ImageBackground, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StatusBar, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
 import { useAuth } from '../contexts/AuthContext';
 import { AuthAPI } from './ClientAPI/AuthApi';
 import { UserStore } from '../store/UserStore';
 import styles from '../styles/LoginStyles';
 
 export default function LoginScreen({ navigation, route }) {
+  useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
+  const insets = useSafeAreaInsets();
   const { login } = useAuth();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
@@ -84,23 +88,28 @@ export default function LoginScreen({ navigation, route }) {
   };
 
   return (
-    <SafeAreaView style={styles.flex} edges={['top']}>
+    <SafeAreaView style={styles.flex} edges={[]}>
+    <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
     <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <View style={styles.root}>
-        <ScrollView ref={scrollRef} style={styles.scrollView} contentContainerStyle={styles.formScroll} keyboardShouldPersistTaps="handled" keyboardDismissMode="none" showsVerticalScrollIndicator={false}>
+      <ImageBackground source={require('../assets/images/profile-red.png')} resizeMode="cover" style={styles.root}>
+        <ScrollView ref={scrollRef} style={styles.scrollView} contentContainerStyle={[styles.formScroll, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 40 }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="none" showsVerticalScrollIndicator={false}>
           <View style={styles.formContainer}>
-            <TouchableOpacity style={styles.closeButton} onPress={() => navigation.navigate('Home')}><Ionicons name="close-outline" size={22} color="#888" /></TouchableOpacity>
+            <TouchableOpacity style={styles.closeButton} onPress={() => navigation.navigate('Home')}><Ionicons name="arrow-back" size={22} color="#fff" /></TouchableOpacity>
             <Text style={styles.pageTitle}>Sign In</Text>
             <Text style={styles.pageSubtitle}>Please enter your credentials to continue</Text>
             {errors.general ? <View style={styles.generalErrorBox}><Ionicons name="alert-circle-outline" size={16} color="#e8732a" /><Text style={styles.generalErrorText}>{errors.general}</Text></View> : null}
-            <View style={styles.inputGroup}><Text style={styles.inputLabel}>Email / Mobile</Text><View style={[styles.inputWrap, errors.email && styles.inputWrapError]}><Ionicons name="mail-outline" size={18} color="#888" /><TextInput style={styles.input} value={identifier} onFocus={revealActiveField} onChangeText={(value) => { setIdentifier(value); setErrors((prev) => ({ ...prev, email: '', general: '' })); }} placeholder="you@example.com or 10-digit mobile" autoCapitalize="none" autoCorrect={false} /></View>{errors.email ? <Text style={styles.inlineErrorText}>{errors.email}</Text> : null}</View>
-            <View style={styles.inputGroup}><Text style={styles.inputLabel}>Password</Text><View style={[styles.inputWrap, errors.password && styles.inputWrapError]}><Ionicons name="lock-closed-outline" size={18} color="#888" /><TextInput style={styles.input} value={password} onFocus={revealActiveField} onChangeText={(value) => { setPassword(value); setErrors((prev) => ({ ...prev, password: '', general: '' })); }} placeholder="Enter your password" secureTextEntry={!showPassword} /><TouchableOpacity onPress={() => setShowPassword((value) => !value)}><Ionicons name={showPassword ? 'eye-outline' : 'eye-off-outline'} size={20} color="#888" /></TouchableOpacity></View>{errors.password ? <Text style={styles.inlineErrorText}>{errors.password}</Text> : null}</View>
+            <View style={styles.inputGroup}><Text style={styles.inputLabel}>Email / Mobile</Text><View style={[styles.inputWrap, errors.email && styles.inputWrapError]}><Ionicons name="mail-outline" size={18} color="#888" /><TextInput style={styles.input} value={identifier} onFocus={revealActiveField} onChangeText={(value) => { setIdentifier(value); setErrors((prev) => ({ ...prev, email: '', general: '' })); }} placeholder="you@example.com or 10-digit mobile" placeholderTextColor="#9ca3af" autoCapitalize="none" autoCorrect={false} /></View>{errors.email ? <Text style={styles.inlineErrorText}>{errors.email}</Text> : null}</View>
+            <View style={styles.inputGroup}><Text style={styles.inputLabel}>Password</Text><View style={[styles.inputWrap, errors.password && styles.inputWrapError]}><Ionicons name="lock-closed-outline" size={18} color="#888" /><TextInput style={styles.input} value={password} onFocus={revealActiveField} onChangeText={(value) => { setPassword(value); setErrors((prev) => ({ ...prev, password: '', general: '' })); }} placeholder="Enter your password" placeholderTextColor="#9ca3af" secureTextEntry={!showPassword} /><TouchableOpacity onPress={() => setShowPassword((value) => !value)}><Ionicons name={showPassword ? 'eye-outline' : 'eye-off-outline'} size={20} color="#888" /></TouchableOpacity></View>{errors.password ? <Text style={styles.inlineErrorText}>{errors.password}</Text> : null}</View>
             <TouchableOpacity style={styles.forgotBtn} onPress={() => navigation.navigate('ForgotPassword')}><Text style={styles.forgotText}>Forgot password?</Text></TouchableOpacity>
-            <TouchableOpacity style={[styles.submitBtn, submitting && styles.btnDisabled]} disabled={submitting} onPress={handleLogin}>{submitting ? <ActivityIndicator color="#fff" /> : <><Text style={styles.submitBtnText}>Sign In</Text><Ionicons name="arrow-forward" size={18} color="#fff" /></>}</TouchableOpacity>
+         <TouchableOpacity style={[styles.submitBtnWrap, submitting && styles.btnDisabled]} disabled={submitting} onPress={handleLogin}>
+  <LinearGradient colors={['#ffffff', '#f8fafc', '#f1f5f9']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.submitBtn}>
+    {submitting ? <ActivityIndicator color="#B91C1C" /> : <><Text style={styles.submitBtnText}>Sign In</Text><Ionicons name="arrow-forward" size={18} color="#B91C1C" /></>}
+  </LinearGradient>
+</TouchableOpacity>
             <TouchableOpacity style={styles.switchBtn} onPress={() => navigation.navigate('Register')}><Text style={styles.switchText}>{"Don't have an account? "}<Text style={styles.switchLink}>Sign Up</Text></Text></TouchableOpacity>
           </View>
         </ScrollView>
-      </View>
+      </ImageBackground>
     </KeyboardAvoidingView>
     </SafeAreaView>
   );

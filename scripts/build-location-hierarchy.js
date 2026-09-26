@@ -73,8 +73,9 @@ const root = process.cwd();
 const stateCsv = path.join(root, 'data', 'lgd', '1-state.csv');
 const districtCsv = path.join(root, 'data', 'lgd', '2-district.csv');
 const subdistrictCsv = path.join(root, 'data', 'lgd', '3-subdistrict.csv');
+const villageCsv = path.join(root, 'data', 'lgd', 'village-directory.csv');
 
-if (!fs.existsSync(stateCsv) || !fs.existsSync(districtCsv) || !fs.existsSync(subdistrictCsv)) {
+if (!fs.existsSync(stateCsv) || !fs.existsSync(districtCsv) || !fs.existsSync(subdistrictCsv) || !fs.existsSync(villageCsv)) {
   console.error('Missing LGD CSV files under data/lgd/.');
   process.exit(1);
 }
@@ -82,6 +83,7 @@ if (!fs.existsSync(stateCsv) || !fs.existsSync(districtCsv) || !fs.existsSync(su
 const statesData = readCsvRows(stateCsv);
 const districtsData = readCsvRows(districtCsv);
 const subdistrictsData = readCsvRows(subdistrictCsv);
+const villagesData = readCsvRows(villageCsv);
 
 const canonicalStateByKey = {};
 const stateDisplayNames = [];
@@ -115,6 +117,7 @@ for (const state of Object.keys(districtsByState)) {
 }
 
 const talukasByStateDistrict = {};
+const subByCode = {};
 for (const row of subdistrictsData.rows) {
   const stateNameRaw = normalizeStateName(row[2] || '');
   const districtNameRaw = String(row[4] || '').trim();
@@ -125,6 +128,7 @@ for (const row of subdistrictsData.rows) {
   const state = canonicalStateByKey[stateKey] || toTitleCase(stateNameRaw);
   const district = toTitleCase(districtNameRaw);
   const taluka = toTitleCase(subNameRaw);
+  subByCode[String(row[5] || '').trim()] = { state, district, taluka };
 
   if (!talukasByStateDistrict[state]) talukasByStateDistrict[state] = {};
   if (!talukasByStateDistrict[state][district]) talukasByStateDistrict[state][district] = [];
@@ -136,6 +140,56 @@ for (const state of Object.keys(talukasByStateDistrict)) {
   }
 }
 
+const villagesByStateDistrictTaluka = {};
+let villageMatched = 0;
+let villageFallback = 0;
+for (const row of villagesData.rows) {
+  const subCode = String(row[6] || '').trim();
+  const villageNameRaw = String(row[10] || '').trim();
+  if (!villageNameRaw) continue;
+
+  let state;
+  let district;
+  let taluka;
+  const hit = subByCode[subCode];
+  if (hit) {
+    ({ state, district, taluka } = hit);
+    villageMatched++;
+  } else {
+    const stateNameRaw = normalizeStateName(row[1] || '');
+    const districtNameRaw = String(row[4] || '').trim();
+    const talukaNameRaw = String(row[7] || '').trim();
+    if (!stateNameRaw || !districtNameRaw || !talukaNameRaw) continue;
+    state = canonicalStateByKey[normalizeKey(stateNameRaw)] || toTitleCase(stateNameRaw);
+    district = toTitleCase(districtNameRaw);
+    taluka = toTitleCase(talukaNameRaw);
+    villageFallback++;
+    // make sure the taluka also shows up in the taluka dropdown
+    if (!talukasByStateDistrict[state]) talukasByStateDistrict[state] = {};
+    if (!talukasByStateDistrict[state][district]) talukasByStateDistrict[state][district] = [];
+    if (!talukasByStateDistrict[state][district].includes(taluka)) talukasByStateDistrict[state][district].push(taluka);
+  }
+  const village = toTitleCase(villageNameRaw);
+
+  if (!villagesByStateDistrictTaluka[state]) villagesByStateDistrictTaluka[state] = {};
+  if (!villagesByStateDistrictTaluka[state][district]) villagesByStateDistrictTaluka[state][district] = {};
+  if (!villagesByStateDistrictTaluka[state][district][taluka]) villagesByStateDistrictTaluka[state][district][taluka] = [];
+  villagesByStateDistrictTaluka[state][district][taluka].push(village);
+}
+console.log('Villages matched by code:', villageMatched, 'fallback by name:', villageFallback);
+// re-sort talukas (fallback may have appended)
+for (const state of Object.keys(talukasByStateDistrict)) {
+  for (const district of Object.keys(talukasByStateDistrict[state])) {
+    talukasByStateDistrict[state][district] = uniqSorted(talukasByStateDistrict[state][district]);
+  }
+}
+for (const state of Object.keys(villagesByStateDistrictTaluka)) {
+  for (const district of Object.keys(villagesByStateDistrictTaluka[state])) {
+    for (const taluka of Object.keys(villagesByStateDistrictTaluka[state][district])) {
+      villagesByStateDistrictTaluka[state][district][taluka] = uniqSorted(villagesByStateDistrictTaluka[state][district][taluka]);
+    }
+  }
+}
 // Add alias keys for legacy UI state names
 const stateAliases = {
   'Andaman & Nicobar': 'Andaman And Nicobar Islands',
@@ -147,9 +201,9 @@ const out = {
   states,
   districtsByState,
   talukasByStateDistrict,
+  villagesByStateDistrictTaluka,
   stateAliases,
 };
-
 const outPath = path.join(root, 'data', 'location', 'india-location.json');
 fs.writeFileSync(outPath, JSON.stringify(out));
 console.log('Wrote', outPath);

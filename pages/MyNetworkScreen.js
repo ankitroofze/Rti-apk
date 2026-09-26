@@ -1,40 +1,53 @@
 import React, { useCallback, useState, useMemo } from 'react';
-import {
-  ScrollView, Text, View, TouchableOpacity, TextInput, Platform, useWindowDimensions, StatusBar, StyleSheet,
-} from 'react-native';
+import { ScrollView, Text, View, TouchableOpacity, TextInput, Platform, useWindowDimensions, StatusBar, StyleSheet, ImageBackground } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { useFonts, Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold, Poppins_700Bold } from '@expo-google-fonts/poppins';
+import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold } from '@expo-google-fonts/roboto';
 import Sidebar from '../components/Sidebar';
 import PremiumBadge from '../components/PremiumBadge';
 import MyNetworkStyles from '../styles/MyNetworkStyles';
 import { UserStore } from '../store/UserStore';
-
+import { MODULE_HEADER_HEIGHT_WEB, HEADER_BG_IMAGE } from '../constants/subscriptionThemes';
+import ModuleWebHeader from '../components/Modulewebheader';
+import ModuleMobileHeader from '../components/ModuleMobileHeader';
 const PAGE_SIZE = 10;
 
 // ─── Header override — matches AdvertiseScreen's top bar exactly (font, back arrow, spacing) ───
 const HEADER_TOP = Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 10 : 54;
 const H = StyleSheet.create({
-  header: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingTop: HEADER_TOP, paddingBottom: 14, paddingHorizontal: 16,
-    backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: '#E6E6E6',
+    header: {
+    width: '100%', alignSelf: 'stretch',
+    // ✅ image ko header ke bahar nikalne se rokta hai
+    overflow: 'hidden',
+    backgroundColor: '#b91c1c',
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 16, paddingBottom: 14,
+    ...(Platform.OS === 'web' ? { height: MODULE_HEADER_HEIGHT_WEB, paddingBottom: 0 } : null),
   },
-  backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 3, marginLeft: -6, borderWidth: 1, borderColor: '#E0E0E0' },
-  title:   { flex: 1, fontSize: 15, color: '#353535', fontFamily: 'Roboto, sans-serif' },
+  // ✅ Subscription screen ke headerImageInner jaisa — image poora header cover kare
+  headerImg: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    width: '100%', height: '100%', resizeMode: 'cover',
+  },
+  backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  title: {
+    flex: 1, fontSize: 15, fontWeight: '400', color: '#ffffff',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
+  },
 });
 // Tablet-responsive content wrapper — matches AdvertiseScreen's centered max-width pattern
 const TABLET_CONTENT_WRAP = { maxWidth: 720, width: '100%', alignSelf: 'center' };
 
 // ─── Amber/Orange design tokens ────────────────────────────────────
 const O = {
-  50:  '#FFF4EC',
-  100: '#FFE2CE',
-  200: '#F8C29B',
-  400: '#e8732a',
-  600: '#C95C18',
-  800: '#7A360E',
-  900: '#4A2108',
+  50:  '#FEF2F2',
+  100: '#FECACA',
+  200: '#FCA5A5',
+  400: '#DC2626',
+  600: '#B91C1C',
+  800: '#7F1D1D',
+  900: '#450A0A',
 };
 
 // ─── Web inline styles ────────────────────────────────────────────────────────
@@ -48,37 +61,43 @@ const w = {
     fontFamily: 'Roboto, sans-serif',
   },
 
-  // ── Top bar ──────────────────────────────────────────────────────────────
+  // ── Top bar (red image header — desktop web) ───────────────────────────────
   topBar: {
+    width: '100%',
+    alignSelf: 'stretch',
+    overflow: 'hidden',
+    backgroundColor: '#b91c1c',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 32,
-    paddingVertical: 14,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    paddingVertical: 0,
+    height: MODULE_HEADER_HEIGHT_WEB,
+  },
+  topBarImg: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    width: '100%', height: '100%', resizeMode: 'cover',
   },
   topLeft:     { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  bcStep:      { fontSize: 13, color: '#888888', fontFamily: 'Roboto, sans-serif' },
-  bcSep:       { fontSize: 15, color: '#CCCCCC', marginHorizontal: 4 },
-  bcCur:       { fontSize: 13, fontWeight: '600', color: '#111111', fontFamily: 'Roboto, sans-serif' },
+  bcStep:      { fontSize: 13, color: 'rgba(255,255,255,0.85)', fontFamily: 'Roboto, sans-serif' },
+  bcSep:       { fontSize: 15, color: 'rgba(255,255,255,0.55)', marginHorizontal: 4 },
+  bcCur:       { fontSize: 13, fontWeight: '600', color: '#ffffff', fontFamily: 'Roboto, sans-serif' },
   backBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 16, paddingVertical: 8,
-    backgroundColor: '#ffffff',
-    borderWidth: 1, borderColor: '#E0E0E0',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)',
     borderRadius: 3,
   },
-  backBtnText: { fontSize: 13, fontWeight: '600', color: '#111111', fontFamily: 'Roboto, sans-serif' },
+  backBtnText: { fontSize: 13, fontWeight: '600', color: '#ffffff', fontFamily: 'Roboto, sans-serif' },
 
   // ── Scroll / page ─────────────────────────────────────────────────────────
   scroll:        { flex: 1 },
   scrollContent: { paddingHorizontal: 32, paddingTop: 28, paddingBottom: 60, alignItems: 'center' },
   innerWrap:     { width: '100%', maxWidth: 1100, alignSelf: 'center' },
 
-  pageTitle: { fontSize: 24, fontWeight: '800', color: '#111111', marginBottom: 4, fontFamily: 'Roboto, sans-serif' },
-  pageSub:   { fontSize: 14, color: '#888888', marginBottom: 26, fontFamily: 'Roboto, sans-serif' },
+  pageTitle: { fontSize: 24, fontWeight: '800', color: '#111111', marginBottom: 4, fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold' },
+  pageSub:   { fontSize: 14, color: '#888888', marginBottom: 26, fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular' },
 
   // ── Metric cards ──────────────────────────────────────────────────────────
   metricsRow: { flexDirection: 'row', gap: 14, marginBottom: 24 },
@@ -89,8 +108,8 @@ const w = {
     overflow: 'hidden',
   },
   mcBar:    { position: 'absolute', top: 0, left: 0, right: 0, height: 3, backgroundColor: '#E0E0E0' },
-  mcBarHot: { position: 'absolute', top: 0, left: 0, right: 0, height: 3, backgroundColor: '#e8732a' },
-  mcTop:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 },
+  mcBarHot: { position: 'absolute', top: 0, left: 0, right: 0, height: 3, backgroundColor: '#DC2626' },
+  mcTop:    { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 },
   mcIcon:   {
     width: 38, height: 38, borderRadius: 3,
     backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#E0E0E0',
@@ -104,6 +123,31 @@ const w = {
   },
   mcVal: { fontSize: 28, fontWeight: '800', color: '#111111', marginBottom: 3, fontFamily: 'Roboto, sans-serif' },
   mcLbl: { fontSize: 12, color: '#888888', fontWeight: '500', fontFamily: 'Roboto, sans-serif' },
+
+  // ── "Water flow" wave decoration (soft layered blobs, bottom-right of card) ──
+  waveBlobBig: {
+    position: 'absolute', bottom: -46, right: -34,
+    width: 150, height: 150, borderRadius: 75,
+  },
+  waveBlobSmall: {
+    position: 'absolute', bottom: -66, right: -54,
+    width: 180, height: 180, borderRadius: 90,
+  },
+  mcIconRound: {
+    width: 36, height: 36, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  mcTitle: {
+    flex: 1, fontSize: 14, fontWeight: '800', color: '#111111',
+    fontFamily: 'Roboto, sans-serif',
+  },
+  mcPill: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    borderWidth: 1, borderRadius: 999,
+    paddingHorizontal: 10, paddingVertical: 4,
+  },
+  mcDot: { width: 6, height: 6, borderRadius: 3 },
+  mcPillTxt: { fontSize: 11, fontWeight: '700', fontFamily: 'Roboto, sans-serif' },
 
   // ── Table card ────────────────────────────────────────────────────────────
   tableCard: {
@@ -150,7 +194,7 @@ const w = {
     alignItems: 'center', backgroundColor: '#ffffff',
   },
   trowAlt: { backgroundColor: '#FDFCFB' },
-  trowCur: { backgroundColor: '#FFF4EC', borderLeftWidth: 3, borderLeftColor: '#e8732a', paddingLeft: 17 },
+  trowCur: { backgroundColor: '#FEF2F2', borderLeftWidth: 3, borderLeftColor: '#DC2626', paddingLeft: 17 },
 
   av: {
     width: 34, height: 34, borderRadius: 3,
@@ -168,9 +212,9 @@ const w = {
     paddingHorizontal: 10, paddingVertical: 3, borderRadius: 3,
     backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#E0E0E0',
   },
-  lbadgeHi:    { backgroundColor: '#FFF4EC', borderColor: '#e8732a' },
+  lbadgeHi:    { backgroundColor: '#FEF2F2', borderColor: '#DC2626' },
   lbadgeTxt:   { fontSize: 12, fontWeight: '700', color: '#666666', fontFamily: 'Roboto, sans-serif' },
-  lbadgeTxtHi: { color: '#e8732a' },
+  lbadgeTxtHi: { color: '#DC2626' },
 
   commTxt: { fontSize: 13, fontWeight: '800', color: '#111111', fontFamily: 'Roboto, sans-serif' },
   eyeBtn:  {
@@ -200,7 +244,7 @@ const w = {
     backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#E0E0E0',
     alignItems: 'center', justifyContent: 'center', paddingHorizontal: 8,
   },
-  pbOn:    { backgroundColor: '#e8732a', borderColor: '#e8732a' },
+  pbOn:    { backgroundColor: '#DC2626', borderColor: '#DC2626' },
   pbOff:   { opacity: 0.3 },
   pbTxt:   { fontSize: 13, fontWeight: '700', color: '#555555', fontFamily: 'Roboto, sans-serif' },
   pbTxtOn: { color: '#ffffff' },
@@ -219,7 +263,8 @@ function getInitials(name = '') {
 }
 
 export default function MyNetworkScreen({ navigation }) {
-  const [fontsLoaded] = useFonts({ Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold, Poppins_700Bold });
+  const insets = useSafeAreaInsets();
+  const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold });
   const [sidebarVisible, setSidebarVisible] = useState(false);
   const [networkData, setNetworkData]       = useState(null);
   const [loading, setLoading]               = useState(true);
@@ -431,24 +476,9 @@ export default function MyNetworkScreen({ navigation }) {
     return (
       <View style={w.root}>
 
-        {/* ── Top Bar ── */}
-        <View style={w.topBar}>
-          <View style={w.topLeft}>
-            <Feather name="home" size={14} color="#888888" />
-            <Text style={w.bcSep}>›</Text>
-            <Text style={w.bcStep}>Dashboard</Text>
-            <Text style={w.bcSep}>›</Text>
-            <Text style={w.bcCur}>My Network</Text>
-          </View>
-          <TouchableOpacity
-            style={w.backBtn}
-            onPress={() => navigation.navigate('QuickMenu')}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="arrow-back" size={13} color="#111111" />
-            <Text style={w.backBtnText}>Back to menu</Text>
-          </TouchableOpacity>
-        </View>
+        {/* ── Top Bar — red image header, subscription screen jaisa ── */}
+        {/* ✅ Web header — design ek hi jagah (components/ModuleWebHeader.js) se aata hai */}
+        <ModuleWebHeader title="My Network" navigation={navigation} />
 
         {/* ── Scrollable Content ── */}
         <ScrollView
@@ -458,48 +488,70 @@ export default function MyNetworkScreen({ navigation }) {
         >
           <View style={w.innerWrap}>
           {/* Page heading */}
-          <Text style={w.pageTitle}>My Network</Text>
-          <Text style={w.pageSub}>
-            Track your referred members and monitor commission activity across all levels.
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 24 }}>
+            <View style={{ width: 52, height: 52, borderRadius: 14, backgroundColor: '#FEE2E2', alignItems: 'center', justifyContent: 'center' }}>
+              <Feather name="users" size={24} color="#9D0410" />
+            </View>
+            <View>
+              <Text style={[w.pageTitle, { marginBottom: 3 }]}>My Network</Text>
+              <Text style={w.pageSub}>
+                Track your referred members and monitor commission activity across all levels.
+              </Text>
+            </View>
+          </View>
 
           {/* ── Metric cards ── */}
           <View style={w.metricsRow}>
 
-            {/* Total members — hot bar */}
+            {/* Total members — red wave card */}
             <View style={w.mc}>
-              <View style={w.mcBarHot} />
+              <View style={[w.waveBlobBig, { backgroundColor: 'rgba(220,38,38,0.07)' }]} />
+              <View style={[w.waveBlobSmall, { backgroundColor: 'rgba(220,38,38,0.10)' }]} />
               <View style={w.mcTop}>
-                <View style={w.mcIcon}>
-                  <Feather name="users" size={17} color="#111111" />
+                <View style={[w.mcIconRound, { backgroundColor: '#FEE2E2' }]}>
+                  <Feather name="users" size={17} color="#DC2626" />
                 </View>
-                <Text style={w.mcBadge}>All time</Text>
+                <Text style={w.mcTitle}>Total Members</Text>
+                <View style={[w.mcPill, { backgroundColor: '#DCFCE7', borderColor: '#BBF7D0' }]}>
+                  <View style={[w.mcDot, { backgroundColor: '#16A34A' }]} />
+                  <Text style={[w.mcPillTxt, { color: '#15803D' }]}>Active</Text>
+                </View>
               </View>
               <Text style={w.mcVal}>{networkData?.totalMembers ?? 0}</Text>
               <Text style={w.mcLbl}>Total members</Text>
             </View>
 
-            {/* Linked members */}
+            {/* Linked members — blue wave card */}
             <View style={w.mc}>
-              <View style={w.mcBar} />
+              <View style={[w.waveBlobBig, { backgroundColor: 'rgba(59,130,246,0.07)' }]} />
+              <View style={[w.waveBlobSmall, { backgroundColor: 'rgba(59,130,246,0.10)' }]} />
               <View style={w.mcTop}>
-                <View style={w.mcIcon}>
-                  <Feather name="link" size={17} color="#111111" />
+                <View style={[w.mcIconRound, { backgroundColor: '#DBEAFE' }]}>
+                  <Feather name="link" size={17} color="#2563EB" />
                 </View>
-                <Text style={w.mcBadge}>Active</Text>
+                <Text style={w.mcTitle}>Linked Members</Text>
+                <View style={[w.mcPill, { backgroundColor: '#DCFCE7', borderColor: '#BBF7D0' }]}>
+                  <View style={[w.mcDot, { backgroundColor: '#16A34A' }]} />
+                  <Text style={[w.mcPillTxt, { color: '#15803D' }]}>Active</Text>
+                </View>
               </View>
               <Text style={w.mcVal}>{networkData?.linkedMembers ?? 0}</Text>
               <Text style={w.mcLbl}>Linked members</Text>
             </View>
 
-            {/* Total commission */}
+            {/* Total commission — purple wave card */}
             <View style={w.mc}>
-              <View style={w.mcBar} />
+              <View style={[w.waveBlobBig, { backgroundColor: 'rgba(139,92,246,0.07)' }]} />
+              <View style={[w.waveBlobSmall, { backgroundColor: 'rgba(139,92,246,0.10)' }]} />
               <View style={w.mcTop}>
-                <View style={w.mcIcon}>
-                  <Feather name="trending-up" size={17} color="#111111" />
+                <View style={[w.mcIconRound, { backgroundColor: '#EDE9FE' }]}>
+                  <Feather name="trending-up" size={17} color="#7C3AED" />
                 </View>
-                <Text style={w.mcBadge}>Earned</Text>
+                <Text style={w.mcTitle}>Total Commission</Text>
+                <View style={[w.mcPill, { backgroundColor: '#EDE9FE', borderColor: '#DDD6FE' }]}>
+                  <View style={[w.mcDot, { backgroundColor: '#7C3AED' }]} />
+                  <Text style={[w.mcPillTxt, { color: '#6D28D9' }]}>Earned</Text>
+                </View>
               </View>
               <Text style={w.mcVal}>
                 ₹{(allRows.reduce((s, r) => s + (r.commission || 0), 0)).toLocaleString()}
@@ -511,9 +563,14 @@ export default function MyNetworkScreen({ navigation }) {
           {/* ── Member Records Table ── */}
           <View style={w.tableCard}>
             <View style={w.tcHead}>
-              <View>
-                <Text style={w.tcTitle}>Member records</Text>
-                <Text style={w.tcSub}>All referred members across levels</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={{ width: 34, height: 34, borderRadius: 9, backgroundColor: '#FEE2E2', alignItems: 'center', justifyContent: 'center' }}>
+                  <Feather name="users" size={15} color="#9D0410" />
+                </View>
+                <View>
+                  <Text style={w.tcTitle}>Member Records</Text>
+                  <Text style={w.tcSub}>All referred members across levels</Text>
+                </View>
               </View>
             </View>
             {webTableContent()}
@@ -530,7 +587,7 @@ export default function MyNetworkScreen({ navigation }) {
   // MOBILE LAYOUT — bilkul same, koi change nahi
   // ══════════════════════════════════════════════════════════════════════════
 
-  const PINK = '#e8732a';
+  const PINK = '#DC2626';
 
   const mobileTableContent = () => {
     const colUser       = MyNetworkStyles.colUser;
@@ -641,7 +698,7 @@ export default function MyNetworkScreen({ navigation }) {
                 style={[MyNetworkStyles.pageBtn, safePage === 1 && MyNetworkStyles.pageBtnDisabled]}
                 onPress={() => goToPage(safePage - 1)} disabled={safePage === 1}
               >
-                <Feather name="chevron-left" size={16} color={safePage === 1 ? '#F8C29B' : PINK} />
+                <Feather name="chevron-left" size={16} color={safePage === 1 ? '#FCA5A5' : PINK} />
               </TouchableOpacity>
               {pageNumbers.map((page) => (
                 <TouchableOpacity
@@ -658,7 +715,7 @@ export default function MyNetworkScreen({ navigation }) {
                 style={[MyNetworkStyles.pageBtn, safePage === totalPages && MyNetworkStyles.pageBtnDisabled]}
                 onPress={() => goToPage(safePage + 1)} disabled={safePage === totalPages}
               >
-                <Feather name="chevron-right" size={16} color={safePage === totalPages ? '#F8C29B' : PINK} />
+                <Feather name="chevron-right" size={16} color={safePage === totalPages ? '#FCA5A5' : PINK} />
               </TouchableOpacity>
             </View>
             <Text style={MyNetworkStyles.pageInfo}>Page {safePage} of {totalPages}</Text>
@@ -674,14 +731,12 @@ export default function MyNetworkScreen({ navigation }) {
 
   return (
     <View style={MyNetworkStyles.root}>
-      {/* Top Bar — matches AdvertiseScreen header style */}
-      <View style={H.header}>
-        <TouchableOpacity onPress={() => navigation.navigate('QuickMenu')} style={H.backBtn} activeOpacity={0.6}>
-          <Ionicons name="arrow-back" size={22} color="#000" />
-        </TouchableOpacity>
-        <Text style={[H.title, fontsLoaded && { fontFamily: 'Roboto, sans-serif' }]}>My Network</Text>
-      </View>
-
+       {/* Top Bar — ek hi common header (components/ModuleMobileHeader.js) */}
+      <ModuleMobileHeader
+        title="My Network"
+        navigation={navigation}
+        onBack={() => navigation.navigate('QuickMenu')}
+      />
       <ScrollView
         style={MyNetworkStyles.scrollView}
         contentContainerStyle={[MyNetworkStyles.scrollContent, isTablet && TABLET_CONTENT_WRAP]}

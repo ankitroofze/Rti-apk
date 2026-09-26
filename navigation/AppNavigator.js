@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Platform } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { BackHandler, Platform } from 'react-native';
+import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
+import PaymentHistoryScreen from '../pages/Paymenthistoryscreen';
 import HomeScreen from '../screens/HomeScreen';
 import AboutScreen from '../screens/AboutScreen';
 import ContactScreen from '../screens/ContactScreen';
@@ -17,7 +16,6 @@ import StateSelectScreen from '../auth/StateSelectScreen';
 import DistrictSelectScreen from '../auth/DistrictSelectScreen';
 import TalukaSelectScreen from '../auth/TalukaSelectScreen';
 import ForgotPasswordScreen from '../auth/ForgotPasswordScreen';
-import OtpScreen from '../auth/OtpScreen';
 import ResetPasswordScreen from '../auth/ResetPasswordScreen';
 // import DashboardScreen from '../pages/DashboardScreen';
 import ProfileScreen from '../pages/ProfileScreen';
@@ -25,6 +23,7 @@ import MyNetworkScreen from '../pages/MyNetworkScreen';
 import WalletScreen from '../pages/WalletScreen';
 import WithdrawScreen from '../pages/WithdrawScreen';
 import SubscriptionPlansScreen from '../pages/SubscriptionPlansScreen';
+import SubscriptionPlanDetailsScreen from '../pages/SubscriptionPlanDetailsScreen';
 import NewsFeedScreen from '../pages/NewsFeedScreen';
 import AddNewsScreen from '../pages/Addnewsscreen';
 import EPaperScreen from '../pages/EPaperScreen';
@@ -34,6 +33,7 @@ import CertificationScreen from '../pages/CertificationScreen';
 import MyAttemptsScreen from '../pages/MyAttemptsScreen';
 import NotificationsScreen from '../pages/NotificationsScreen';
 import SettingsScreen from '../pages/SettingsScreen';
+import BlockedUsersScreen from '../pages/BlockedUsersScreen';
 import MyAdSubscriptionScreen from '../pages/MyAdSubscriptionScreen';
 import MyEcomSubscriptionScreen from '../pages/MyEcomSubscriptionScreen';
 import MyQuizSubscriptionScreen from '../pages/MyQuizSubscriptionScreen';
@@ -45,6 +45,7 @@ import AttemptQuizScreen from '../pages/AttemptQuizScreen';
 import QuizResultScreen from '../pages/QuizResultScreen';
 import CertificatePreviewScreen from '../pages/CertificatePreviewScreen';
 import UserPublicProfileScreen from '../pages/UserPublicProfileScreen';
+import VerifyMemberScreen from '../pages/VerifyMemberScreen';
 import QuickMenuScreen from '../screens/QuickMenuScreen';
 import ReferScreen from '../screens/ReferScreen';
 import ChangeLocationScreen from '../screens/ChangeLocationScreen';
@@ -66,42 +67,13 @@ import NewspaperList from '../screens/NewspaperList';
 import PreviewScreen from '../pages/PreviewScreen';
 import QuizSubscriptionScreen from '../screens/QuizSubscriptionScreen';
 import EcomSubscriptionScreen from '../screens/EcomSubscriptionScreen';
+import LegalPolicyScreen from '../pages/LegalPolicyScreen';
+
 const Stack = createNativeStackNavigator();
 const NAVIGATION_STATE_KEY = 'rti-news-navigation-state';
-
-async function readPersistedNavigationState() {
-  try {
-    if (Platform.OS === 'web') {
-      if (typeof window === 'undefined' || !window.localStorage) return null;
-      const raw = window.localStorage.getItem(NAVIGATION_STATE_KEY);
-      return raw ? JSON.parse(raw) : null;
-    }
-
-    const raw = await AsyncStorage.getItem(NAVIGATION_STATE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-async function persistNavigationState(state) {
-  try {
-    const serialized = JSON.stringify(state);
-
-    if (Platform.OS === 'web') {
-      if (typeof window === 'undefined' || !window.localStorage) return;
-      window.localStorage.setItem(NAVIGATION_STATE_KEY, serialized);
-      return;
-    }
-
-    await AsyncStorage.setItem(NAVIGATION_STATE_KEY, serialized);
-  } catch {
-    // Ignore persistence failures so navigation keeps working.
-  }
-}
+const navigationRef = createNavigationContainerRef();
 
 export default function AppNavigator() {
-  const [initialState, setInitialState] = useState();
   const [isNavStateReady, setIsNavStateReady] = useState(false);
 
   const stackScreens = [
@@ -118,7 +90,6 @@ export default function AppNavigator() {
     { name: 'DistrictSelect', component: DistrictSelectScreen },
     { name: 'TalukaSelect', component: TalukaSelectScreen },
     { name: 'ForgotPassword', component: ForgotPasswordScreen },
-    { name: 'Otp', component: OtpScreen },
     { name: 'ResetPassword', component: ResetPasswordScreen },
     // { name: 'Dashboard', component: DashboardScreen },
     { name: 'Profile', component: ProfileScreen },
@@ -126,16 +97,19 @@ export default function AppNavigator() {
     { name: 'Wallet', component: WalletScreen },
     { name: 'Withdraw', component: WithdrawScreen },
     { name: 'Subscription Plans', component: SubscriptionPlansScreen },
+    { name: 'SubscriptionPlanDetails', component: SubscriptionPlanDetailsScreen },
     { name: 'News Feed', component: NewsFeedScreen },
     { name: 'Add News', component: AddNewsScreen },
     { name: 'e-Paper', component: EPaperScreen },
     { name: 'Live Streaming', component: LiveStreamingScreen },
     { name: 'Start Live', component: LiveBroadcastScreen },
     { name: 'Certification', component: CertificationScreen },
-   { name: 'MyAttempts', component: MyAttemptsScreen },
+    { name: 'MyAttempts', component: MyAttemptsScreen },
     { name: 'My Subscriptions', component: MySubscriptionsScreen },
     { name: 'Notifications', component: NotificationsScreen },
     { name: 'Settings', component: SettingsScreen },
+    { name: 'PaymentHistory', component: PaymentHistoryScreen },
+    { name: 'BlockedUsersScreen', component: BlockedUsersScreen },
     { name: 'My Ads Subscription', component: MyAdSubscriptionScreen },
     { name: 'My Ecom Subscription', component: MyEcomSubscriptionScreen },
     { name: 'My Quiz Subscription', component: MyQuizSubscriptionScreen },
@@ -143,6 +117,7 @@ export default function AppNavigator() {
     { name: 'EditMember', component: EditMemberScreen },
     { name: 'UserProfile', component: UserPublicProfileScreen },
     { name: 'UserPublicProfile', component: UserPublicProfileScreen },
+    { name: 'VerifyMember', component: VerifyMemberScreen },
     { name: 'Payment', component: PaymentScreen },
     { name: 'AttemptQuiz', component: AttemptQuizScreen },
     { name: 'QuizResult', component: QuizResultScreen },
@@ -168,23 +143,32 @@ export default function AppNavigator() {
     { name: 'Preview', component: PreviewScreen },
     { name: 'QuizSubscription', component: QuizSubscriptionScreen },
     { name: 'EcomSubscription', component: EcomSubscriptionScreen },
+    { name: 'LegalPolicy', component: LegalPolicyScreen },
   ];
 
   useEffect(() => {
-    let alive = true;
+    // Navigation state ab kahin save nahi hoti (route params me email/otp jaisa data
+    // hota tha). Jin browsers me purani state pehle se save hai unse ek baar hata do.
+    // Kuch hafton baad ye cleanup hataya ja sakta hai.
+    try {
+      if (Platform.OS === 'web') window.localStorage.removeItem(NAVIGATION_STATE_KEY);
+    } catch {}
+    setIsNavStateReady(true);
+  }, []);
 
-    (async () => {
-      const savedState = await readPersistedNavigationState();
-      if (!alive) return;
-      if (savedState) {
-        setInitialState(savedState);
+  // Android hardware back now always returns to the previous screen when the
+  // stack has one. At the root we return false so Android handles its normal
+  // app-exit behavior.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return undefined;
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (navigationRef.isReady() && navigationRef.canGoBack()) {
+        navigationRef.goBack();
+        return true;
       }
-      setIsNavStateReady(true);
-    })();
-
-    return () => {
-      alive = false;
-    };
+      return false;
+    });
+    return () => subscription.remove();
   }, []);
 
   if (!isNavStateReady) {
@@ -192,7 +176,7 @@ export default function AppNavigator() {
   }
 
   return (
-    <NavigationContainer initialState={initialState} onStateChange={persistNavigationState}>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator initialRouteName="Home" screenOptions={{ headerShown: false }}>
         {stackScreens.map(({ name, component }) => (
           <Stack.Screen key={name} name={name} component={component} />

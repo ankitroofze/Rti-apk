@@ -2,10 +2,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Image,
+  ImageBackground,
   KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -13,21 +15,45 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { CommonActions } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
+import { MODULE_HEADER_HEIGHT_WEB } from '../constants/subscriptionThemes';
+import ModuleWebHeader from '../components/Modulewebheader';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
-import { RichEditor, RichToolbar, actions } from 'react-native-pell-rich-editor';
+let RichEditor = null;
+let RichToolbar = null;
+let actions = null;
+if (Platform.OS !== 'web') {
+  // ✅ FIX: 'react-native-pell-rich-editor' web pe WebView use karta hai jo
+  // support nahi karta — static import hone ki wajah se ye page load hote hi
+  // crash/hang kar deta tha. Ab sirf native (Android/iOS) pe hi load hoga.
+  const richEditorLib = require('react-native-pell-rich-editor');
+  RichEditor = richEditorLib.RichEditor;
+  RichToolbar = richEditorLib.RichToolbar;
+  actions = richEditorLib.actions;
+}
 import VideoPreview from '../components/VideoPreview';
+import WebRichEditor from '../components/WebRichEditor';
 import { useToast } from '../components/ui/ToastProvider';
 import { UserStore } from '../store/UserStore';
 import { storeWebUriToIdbMedia } from '../utils/webMediaStore';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
+
+
+// ✅ FIX: sirf real server URL (http/https) ko hi "valid" maano.
+// blob:, file://, content://, data: jaise local-only URIs kisi doosre
+// device/browser par kaam nahi karte — isliye unhe news record me save
+// nahi karna chahiye, warna sirf poster ko hi image dikhti hai, baaki
+// sabko broken/blank image dikhta hai.
+const isRemoteImageUrl = (uri) =>
+  typeof uri === 'string' && /^https?:\/\//i.test(uri.trim());
 
 const INDIA_STATES = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
@@ -40,7 +66,16 @@ const INDIA_STATES = [
 ];
 
 const REPORT_TYPES = [
-  'All',
+  // Home header categories. "All" is only a feed filter, never a post type.
+  'Latest News',
+  'India',
+  'Politics',
+  'Business',
+  'Sports',
+  'Technology',
+  'Entertainment',
+  'Health',
+  'Education',
   'Breaking News',
   'Investigation',
   'Opinion',
@@ -48,11 +83,6 @@ const REPORT_TYPES = [
   'Local News',
   'National',
   'International',
-  'Sports',
-  'Business',
-  'Technology',
-  'Health',
-  'Politics',
 ];
 
 const ROLE_TYPES = [
@@ -105,6 +135,8 @@ async function persistToUploadsDir({ uri, subdir, fallbackExt }) {
 const C = {
   primary:      '#ea580c',
   primaryDark:  '#C8700F',
+  gradientRed:  ['#450A0A', '#B91C1C', '#7F1D1D'],
+  fieldBorder:  '#D1D5DB',
   uploadBg:     '#FDF1F1',
   dashedBorder: '#DDDDDD',
   neutral400:   '#A3A3A3',
@@ -282,7 +314,8 @@ export default function AddNewsScreen({ navigation, route }) {
   const { width: windowWidth } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
   const isMobileWeb = isWeb && windowWidth <= 760;
-  const isWebCompact = isWeb && windowWidth <= 640;
+   const isWebCompact = isWeb && windowWidth <= 640;
+  const insets = useSafeAreaInsets();
 
   const decodeHtmlEntities = (value) => String(value || '')
     .replace(/&nbsp;/gi, ' ')
@@ -365,13 +398,7 @@ const admin = user.role === 'admin';
       const syncedUser = admin ? user : (await UserStore.syncSubscriptionFromBackend()) || user;
       const hasSubscription = UserStore.hasActiveSubscription(syncedUser);
 
-      // ✅ Post News pe click karte hi gate — subscription nahi hai to seedha Subscription Plans pe bhej do.
-      if (!admin && !hasSubscription) {
-        navigation.replace('Subscription Plans', { returnTo: 'Add News' });
-        return;
-      }
-
-      setUserName(user.name || 'User');
+        setUserName(user.name || 'User');
       setIsAdmin(admin);
       setIsSubscribedUser(hasSubscription);
       setLocationState(user.state || '');
@@ -701,18 +728,7 @@ const admin = user.role === 'admin';
       return;
     }
 
-    if (user.role !== 'admin' && !UserStore.hasActiveSubscription(user)) {
-      const draft = {
-        title, subtitle, descriptionText, reportType, roleType, mediaType, images, video, videoThumb,
-        attachment, selectedState, titleHtml: titleHtmlRef.current, subtitleHtml: subtitleHtmlRef.current,
-        descriptionHtml: descriptionHtmlRef.current, videoOriginalUri: videoOriginalUriRef.current,
-      };
-      await AsyncStorage.setItem(`${NEWS_DRAFT_PREFIX}${String(user.email || '').toLowerCase()}`, JSON.stringify(draft));
-      setSaving(false);
-      showToast('Subscription purchase karke aap isi filled form par wapas aa jayenge.', 'info');
-      navigation.navigate('Subscription Plans', { returnTo: 'Add News' });
-      return;
-    }
+
 
     // ── Map mediaType string to backend's numeric code ──
     const mediaTypeMap = { None: 0, Image: 1, Video: 2, File: 3 };
@@ -783,22 +799,40 @@ if (!backendNewsId) {
 }
 
 
+ 
+ 
+    // ✅ FIX: backend already uploaded the media and returned a real, shareable URL.
+    // Use that instead of a browser/device-local reference (idb-media:/file://)
+    // which only works on the device that created the post.
+    const backendNewsRecord = apiResult?.news || apiResult?.data?.news || apiResult?.data || {};
+    console.log('[AddNews] backendNewsRecord (check field name here):', backendNewsRecord);
+
+    const backendMediaUrl = String(
+      backendNewsRecord.media_url || backendNewsRecord.media || backendNewsRecord.image_url ||
+      backendNewsRecord.image || backendNewsRecord.file_url || backendNewsRecord.path || ''
+    ).trim();
+
     const savedImages = mediaType === 'Image'
       ? await Promise.all(
-        (Array.isArray(images) ? images : []).map((uri) => (
-          Platform.OS === 'web'
-            ? storeWebUriToIdbMedia(uri, { prefix: 'image', mimeType: 'image/jpeg' })
-            : persistToUploadsDir({ uri, subdir: 'images', fallbackExt: 'jpg' })
+        (Array.isArray(images) ? images : []).map((uri, idx) => (
+          // Sirf pehli image hi backend ko bheji gayi thi (mediaUriToSend = images[0]),
+          // isliye sirf usi ke liye real server URL milega. Baaki images abhi bhi
+          // local-only rahengi jab tak backend multi-image upload support na kare.
+          idx === 0 && backendMediaUrl
+            ? backendMediaUrl
+            : (Platform.OS === 'web'
+                ? storeWebUriToIdbMedia(uri, { prefix: 'image', mimeType: 'image/jpeg' })
+                : persistToUploadsDir({ uri, subdir: 'images', fallbackExt: 'jpg' }))
         ))
       )
       : [];
 
     const savedVideo = mediaType === 'Video' && video
-      ? (
+      ? (backendMediaUrl || (
         Platform.OS === 'web'
           ? await storeWebUriToIdbMedia(video, { prefix: 'video', mimeType: 'video/mp4' })
           : await persistToUploadsDir({ uri: video, subdir: 'videos', fallbackExt: 'mp4' })
-      )
+      ))
       : null;
 
     const savedVideoThumb = mediaType === 'Video' && videoThumb
@@ -835,7 +869,7 @@ if (!backendNewsId) {
       status: user.role === 'admin' ? 'approved' : 'pending',
       createdBy: user.email,
       author_name: user.name || 'User',
-      author_profile_image: user.profile_image || '',
+            author_profile_image: isRemoteImageUrl(user.profile_image) ? user.profile_image : '',
       author_has_blue_tick: UserStore.hasBlueTick(user),
       author_is_premium: UserStore.hasPremiumAccess(user),
       author_is_subscriber: UserStore.hasActiveSubscription(user),
@@ -910,25 +944,29 @@ if (!backendNewsId) {
     <View style={T.chipsRow}>
       {MEDIA_TYPES.map((type) => {
         const sel = mediaType === type;
+        const iconName = type === 'Image' ? 'image' : type === 'Video' ? 'video' : type === 'File' ? 'paperclip' : 'slash';
         return (
           <TouchableOpacity
             key={type}
-            style={[T.chip, sel && T.chipOn]}
             onPress={() => { setMediaType(type); setImages([]); setVideo(null); setAttachment(null); }}
             activeOpacity={0.85}
           >
-            <Feather
-              name={type === 'Image' ? 'image' : type === 'Video' ? 'video' : type === 'File' ? 'paperclip' : 'slash'}
-              size={13}
-              color={sel ? C.white : C.textSub}
-            />
-            <Text style={[T.chipText, sel && T.chipTextOn]}>{type}</Text>
+            {sel ? (
+              <LinearGradient colors={C.gradientRed} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={T.chip}>
+                <Feather name={iconName} size={13} color={C.white} />
+                <Text style={[T.chipText, T.chipTextOn]}>{type}</Text>
+              </LinearGradient>
+            ) : (
+              <View style={T.chip}>
+                <Feather name={iconName} size={13} color={C.textSub} />
+                <Text style={T.chipText}>{type}</Text>
+              </View>
+            )}
           </TouchableOpacity>
         );
       })}
     </View>
   );
-
   const imageUploadBlock = mediaType === 'Image' ? (
     <View style={T.mediaBlock}>
       <Text style={T.subLabel}>Upload one or more images (max 5, 10MB each).</Text>
@@ -1014,9 +1052,9 @@ if (!backendNewsId) {
           <Text style={T.lockTitle}>Location (Premium)</Text>
           <Text style={T.lockSubtitle}>This is locked to your premium area.</Text>
         </View>
-        <View style={T.lockBadge}>
+          <LinearGradient colors={C.gradientRed} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={T.lockBadge}>
           <Text style={T.lockBadgeText}>LOCKED</Text>
-        </View>
+        </LinearGradient>
       </View>
       <Text style={T.lockText}>
         {locationState || 'State not set'}
@@ -1038,14 +1076,12 @@ if (!backendNewsId) {
   if (isWeb) {
     return (
       <View style={ws.root}>
-        <View style={[ws.topBar, isWebCompact && ws.topBarCompact]}>
-          <TouchableOpacity style={ws.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
-            <Ionicons name="arrow-back" size={16} color={C.primaryDark} />
-          </TouchableOpacity>
-          <Text style={[ws.topBarTitle, isWebCompact && ws.topBarTitleCompact]}>
-            {isEditMode ? 'Edit news article' : 'Add news article'}
-          </Text>
-        </View>
+                {/* ✅ Web header — design ek hi jagah (components/ModuleWebHeader.js) se aata hai */}
+                <ModuleWebHeader
+                  title={isEditMode ? 'Edit news article' : 'Add news article'}
+                  navigation={navigation}
+                  onBack={() => navigation.goBack()}
+                />
 
         <ScrollView style={ws.scroll} contentContainerStyle={ws.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="always">
           <View style={ws.innerWrap}>
@@ -1096,8 +1132,8 @@ if (!backendNewsId) {
             {/* 4. Report Type */}
             <View style={ws.section}>
               <SectionLabel number="4" title="Select Report Type" />
-              <TouchableOpacity style={ws.select} onPress={() => setReportPickerVisible(true)}>
-                <Feather name="tag" size={14} color={C.primary} />
+                          <TouchableOpacity style={ws.select} onPress={() => setReportPickerVisible(true)}>
+                <Feather name="tag" size={14} color={C.textSub} />
                 <Text style={[ws.selectText, !reportType && ws.selectPlaceholder]}>
                   {reportType || 'Select report type...'}
                 </Text>
@@ -1136,14 +1172,16 @@ if (!backendNewsId) {
               <TouchableOpacity style={ws.cancelBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
                 <Text style={ws.cancelBtnText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[ws.submitBtn, saving && { opacity: 0.7 }]}
+                          <TouchableOpacity
+                style={[ws.submitBtnWrap, saving && { opacity: 0.7 }]}
                 onPress={handleSubmit}
                 disabled={saving}
                 activeOpacity={0.85}
               >
-                <Feather name="send" size={15} color="#fff" />
-                <Text style={ws.submitBtnText}>{submitLabel}</Text>
+                <LinearGradient colors={C.gradientRed} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={ws.submitBtn}>
+                  <Feather name="send" size={15} color="#fff" />
+                  <Text style={ws.submitBtnText}>{submitLabel}</Text>
+                </LinearGradient>
               </TouchableOpacity>
             </View>
           </View>
@@ -1184,14 +1222,22 @@ if (!backendNewsId) {
   // MOBILE LAYOUT
   // ─────────────────────────────────────────────────────────────────────────
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+      <View style={{ flex: 1 }}>
     <View style={s.root}>
-      <View style={s.header}>
+      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+          <ImageBackground
+        source={require('../assets/images/profile-red.png')}
+        resizeMode="cover"
+        style={[s.header, { paddingTop: insets.top + 10 }]}
+      >
         <TouchableOpacity onPress={() => navigation.goBack()} style={s.backRow} activeOpacity={0.6}>
-          <Ionicons name="arrow-back" size={22} color={C.textBody} />
+          <Ionicons name="arrow-back" size={22} color="#ffffff" />
         </TouchableOpacity>
-        <Text style={s.headerTitle}>{isEditMode ? 'Edit News' : 'Add News'}</Text>
-      </View>
+        <View>
+          <Text style={s.headerTitle}>{isEditMode ? 'Edit News' : 'Add News'}</Text>
+          <Text style={s.headerSubtitle}>Share your report with everyone</Text>
+        </View>
+      </ImageBackground>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ScrollView
@@ -1211,25 +1257,27 @@ if (!backendNewsId) {
                 </TouchableOpacity>
               ) : null}
             </View>
-            {editorReady ? (
-              <>
-                <RichToolbar
-                  editor={titleEditorRef}
-                  actions={[actions.setBold, actions.setItalic, actions.setUnderline, actions.undo, actions.redo]}
-                  style={s.richToolbar}
-                  iconTint={C.textSub}
-                  selectedIconTint={C.primary}
-                />
-                <RichEditor
-                  ref={titleEditorRef}
-                  style={[s.richEditor, titleExpanded && s.richEditorExpanded]}
-                  placeholder="Enter news title..."
-                  initialContentHTML=""
-                  onChange={(html) => { titleHtmlRef.current = html; setTitle(htmlToPlain(html)); }}
-                  editorStyle={s.richEditorInner}
-                  useContainer={false}
-                />
-              </>
+                            {editorReady ? (
+              <View style={s.editorBox}>
+                {Platform.OS === 'web' ? (
+                  <WebRichEditor
+                    ref={titleEditorRef}
+                    style={[s.richEditor, titleExpanded && s.richEditorExpanded]}
+                    placeholder="Enter news title..."
+                    onChange={(html) => { titleHtmlRef.current = html; setTitle(htmlToPlain(html)); }}
+                  />
+                ) : (
+                  <RichEditor
+                    ref={titleEditorRef}
+                    style={[s.richEditor, titleExpanded && s.richEditorExpanded]}
+                    placeholder="Enter news title..."
+                    initialContentHTML=""
+                    onChange={(html) => { titleHtmlRef.current = html; setTitle(htmlToPlain(html)); }}
+                    editorStyle={s.richEditorInner}
+                    useContainer={false}
+                  />
+                )}
+              </View>
             ) : null}
           </View>
 
@@ -1244,25 +1292,27 @@ if (!backendNewsId) {
               ) : null}
             </View>
             <Text style={s.subLabel}>Optional short subtitle.</Text>
-            {editorReady ? (
-              <>
-                <RichToolbar
-                  editor={subtitleEditorRef}
-                  actions={[actions.setBold, actions.setItalic, actions.setUnderline, actions.undo, actions.redo]}
-                  style={s.richToolbar}
-                  iconTint={C.textSub}
-                  selectedIconTint={C.primary}
-                />
-                <RichEditor
-                  ref={subtitleEditorRef}
-                  style={[s.richEditor, subtitleExpanded && s.richEditorExpanded]}
-                  placeholder="Enter subtitle (optional)..."
-                  initialContentHTML=""
-                  onChange={(html) => { subtitleHtmlRef.current = html; setSubtitle(htmlToPlain(html)); }}
-                  editorStyle={s.richEditorInner}
-                  useContainer={false}
-                />
-              </>
+                             {editorReady ? (
+              <View style={s.editorBox}>
+                {Platform.OS === 'web' ? (
+                  <WebRichEditor
+                    ref={subtitleEditorRef}
+                    style={[s.richEditor, subtitleExpanded && s.richEditorExpanded]}
+                    placeholder="Enter subtitle (optional)..."
+                    onChange={(html) => { subtitleHtmlRef.current = html; setSubtitle(htmlToPlain(html)); }}
+                  />
+                ) : (
+                  <RichEditor
+                    ref={subtitleEditorRef}
+                    style={[s.richEditor, subtitleExpanded && s.richEditorExpanded]}
+                    placeholder="Enter subtitle (optional)..."
+                    initialContentHTML=""
+                    onChange={(html) => { subtitleHtmlRef.current = html; setSubtitle(htmlToPlain(html)); }}
+                    editorStyle={s.richEditorInner}
+                    useContainer={false}
+                  />
+                )}
+              </View>
             ) : null}
           </View>
 
@@ -1270,36 +1320,41 @@ if (!backendNewsId) {
           <View style={s.section}>
             <SectionLabel number="3" title="Write Description For News" />
             <Text style={s.subLabel}>Write the full report description.</Text>
-            {editorReady ? (
-              <>
-                <RichToolbar
-                  editor={descriptionEditorRef}
-                  actions={[actions.setBold, actions.setItalic, actions.setUnderline, actions.insertBulletsList, actions.insertOrderedList, actions.undo, actions.redo]}
-                  style={s.richToolbar}
-                  iconTint={C.textSub}
-                  selectedIconTint={C.primary}
-                />
-                <RichEditor
-                  ref={descriptionEditorRef}
-                  style={s.richEditor}
-                  placeholder="Enter description..."
-                  initialContentHTML=""
-                  onChange={(html) => {
-                    descriptionHtmlRef.current = html;
-                    setDescriptionText(decodeHtmlEntities(htmlToPlain(html)));
-                  }}
-                  editorStyle={s.richEditorInner}
-                  useContainer={false}
-                />
-              </>
+                              {editorReady ? (
+              <View style={s.editorBox}>
+                {Platform.OS === 'web' ? (
+                  <WebRichEditor
+                    ref={descriptionEditorRef}
+                    style={[s.richEditor, { minHeight: 140 }]}
+                    placeholder="Enter description..."
+                    onChange={(html) => {
+                      descriptionHtmlRef.current = html;
+                      setDescriptionText(decodeHtmlEntities(htmlToPlain(html)));
+                    }}
+                  />
+                ) : (
+                  <RichEditor
+                    ref={descriptionEditorRef}
+                    style={[s.richEditor, { minHeight: 140 }]}
+                    placeholder="Enter description..."
+                    initialContentHTML=""
+                    onChange={(html) => {
+                      descriptionHtmlRef.current = html;
+                      setDescriptionText(decodeHtmlEntities(htmlToPlain(html)));
+                    }}
+                    editorStyle={s.richEditorInner}
+                    useContainer={false}
+                  />
+                )}
+              </View>
             ) : null}
           </View>
 
           {/* 4. Report Type */}
           <View style={s.section}>
             <SectionLabel number="4" title="Select Report Type" />
-            <TouchableOpacity style={s.select} onPress={() => setReportPickerVisible(true)}>
-              <Feather name="tag" size={16} color={C.primary} />
+                        <TouchableOpacity style={s.select} onPress={() => setReportPickerVisible(true)}>
+              <Feather name="tag" size={16} color={C.textSub} />
               <Text style={[s.selectText, !reportType && s.selectPlaceholder]}>
                 {reportType || 'Select report type...'}
               </Text>
@@ -1307,7 +1362,7 @@ if (!backendNewsId) {
             </TouchableOpacity>
           </View>
 
-          {/* 5. Role Type */}
+          {/* 5. Role Type
           <View style={s.section}>
             <SectionLabel number="5" title="Select Role Type" optional />
             <TouchableOpacity style={s.select} onPress={() => setRolePickerVisible(true)}>
@@ -1317,7 +1372,7 @@ if (!backendNewsId) {
               </Text>
               <Feather name="chevron-down" size={16} color={C.textSub} />
             </TouchableOpacity>
-          </View>
+          </View> */}
 
           {/* 6. Location */}
           <View style={s.section}>
@@ -1334,14 +1389,16 @@ if (!backendNewsId) {
             {fileUploadBlock}
           </View>
 
-          <TouchableOpacity
-            style={[s.submitBtn, saving && { opacity: 0.7 }]}
+                  <TouchableOpacity
+            style={saving && { opacity: 0.7 }}
             onPress={handleSubmit}
             disabled={saving}
             activeOpacity={0.85}
           >
-            <Feather name="send" size={16} color="#fff" />
-            <Text style={s.submitBtnText}>{submitLabel}</Text>
+            <LinearGradient colors={C.gradientRed} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.submitBtn}>
+              <Feather name="send" size={16} color="#fff" />
+              <Text style={s.submitBtnText}>{submitLabel}</Text>
+            </LinearGradient>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -1365,16 +1422,16 @@ if (!backendNewsId) {
         onSelect={setReportType}
         onClose={() => setReportPickerVisible(false)}
       />
-      <ListPickerModal
+      {/* <ListPickerModal
         visible={rolePickerVisible}
         title="Select Role Type"
         options={ROLE_TYPES}
         selected={roleType}
         onSelect={setRoleType}
         onClose={() => setRolePickerVisible(false)}
-      />
+      /> */}
+     </View>
     </View>
-    </SafeAreaView>
   );
 }
 
@@ -1382,9 +1439,9 @@ if (!backendNewsId) {
 const sharedField = {
   subLabel: { fontSize: 11, fontFamily: FONT.medium, color: C.textSub, marginTop: -6, marginBottom: 10 },
 
-  select: {
+   select: {
     flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderWidth: 1, borderColor: C.primary, borderRadius: 8,
+    borderWidth: 1, borderColor: C.fieldBorder, borderRadius: 8,
     backgroundColor: C.white, paddingHorizontal: 12, paddingVertical: 13,
   },
   selectText: { flex: 1, fontSize: 13, fontFamily: FONT.medium, color: C.textBody },
@@ -1402,9 +1459,9 @@ const sharedField = {
 
   mediaBlock: { marginTop: 12 },
 
-  uploadOuter: {
+   uploadOuter: {
     width: '100%', minHeight: 140,
-    backgroundColor: C.uploadBg, borderWidth: 1, borderColor: C.primary,
+    backgroundColor: C.uploadBg, borderWidth: 1, borderColor: C.fieldBorder,
     borderRadius: 8, overflow: 'hidden', padding: 10,
   },
   uploadInnerDashed: {
@@ -1451,17 +1508,17 @@ const sharedField = {
     alignItems: 'center', justifyContent: 'center',
   },
 
-  lockCard: { borderWidth: 1, borderColor: C.primary, borderRadius: 8, backgroundColor: C.uploadBg, padding: 12 },
+  lockCard: { borderWidth: 1, borderColor: C.fieldBorder, borderRadius: 8, backgroundColor: C.white, padding: 12 },
   lockHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   lockTitle: { fontSize: 13, fontFamily: FONT.bold, color: C.textBody },
   lockSubtitle: { fontSize: 11, fontFamily: FONT.medium, color: C.textSub, marginTop: 2 },
-  lockBadge: { backgroundColor: C.primary, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
+   lockBadge: { borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3, overflow: 'hidden' },
   lockBadgeText: { fontSize: 9, fontFamily: FONT.bold, color: '#fff', letterSpacing: 0.5 },
   lockText: { fontSize: 12, fontFamily: FONT.medium, color: C.textBody, marginTop: 10 },
 
-  submitBtn: {
+   submitBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: C.primary, borderRadius: 100, paddingVertical: 14,
+    borderRadius: 100, paddingVertical: 14,
   },
   submitBtnText: { color: '#fff', fontSize: 15, fontFamily: FONT.bold },
 };
@@ -1475,10 +1532,10 @@ const s = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center', gap: 10,
     paddingHorizontal: 16, paddingVertical: 14,
-    backgroundColor: C.white, borderBottomWidth: 1, borderBottomColor: C.headerBorder,
   },
   backRow: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 18, marginLeft: -6 },
-  headerTitle: { flex: 1, fontSize: 15, fontFamily: FONT.bold, color: C.textMain },
+  headerTitle: { flex: 1, fontSize: 15, fontFamily: FONT.bold, color: '#ffffff' },
+  headerSubtitle: { fontSize: 11, color: '#ffffff', marginTop: 1, fontFamily: FONT.regular },
 
   scroll: { flex: 1 },
   scrollContent: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40 },
@@ -1487,8 +1544,10 @@ const s = StyleSheet.create({
   fieldHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   moreToggleText: { fontSize: 12, fontFamily: FONT.bold, color: C.primary },
 
-  richToolbar: { backgroundColor: C.uploadBg, borderWidth: 1, borderColor: C.dashedBorder, borderTopLeftRadius: 8, borderTopRightRadius: 8, height: 42 },
-  richEditor: { minHeight: 60, borderWidth: 1, borderTopWidth: 0, borderColor: C.dashedBorder, borderBottomLeftRadius: 8, borderBottomRightRadius: 8 },
+    editorBox: { borderWidth: 1, borderColor: C.fieldBorder, borderRadius: 8, overflow: 'hidden', backgroundColor: C.white },
+  richToolbar: { backgroundColor: C.white, height: 42, borderBottomWidth: 1, borderBottomColor: C.fieldBorder },
+   editorBox: { borderWidth: 1, borderColor: C.fieldBorder, borderRadius: 8, overflow: 'hidden', backgroundColor: C.white },
+   richEditor: { minHeight: 60, backgroundColor: C.white },
   richEditorExpanded: { minHeight: 140 },
   richEditorInner: { backgroundColor: C.white, color: C.textBody, placeholderColor: C.neutral400, contentCSSText: 'font-size: 13px; font-family: sans-serif; padding: 10px;' },
 });
@@ -1514,19 +1573,22 @@ const ws = StyleSheet.create({
   innerWrap: { width: '100%', maxWidth: 560, alignSelf: 'center', paddingTop: 24, paddingHorizontal: 16 },
 
   section: { marginBottom: 22 },
-
   input: {
-    minHeight: 48, borderWidth: 1, borderColor: C.primary, borderRadius: 8,
+    minHeight: 48, borderWidth: 1, borderColor: C.fieldBorder, borderRadius: 8,
     backgroundColor: C.white, paddingHorizontal: 12, paddingVertical: 14, fontSize: 13, color: C.textBody,
   },
   inputMulti: {
-    minHeight: 140, borderWidth: 1, borderColor: C.primary, borderRadius: 8,
+    minHeight: 140, borderWidth: 1, borderColor: C.fieldBorder, borderRadius: 8,
     backgroundColor: C.white, paddingHorizontal: 12, paddingVertical: 14, fontSize: 13, color: C.textBody,
   },
 
-  footerRow: { flexDirection: 'row', gap: 12, marginTop: 10, marginBottom: 20 },
-  cancelBtn: { flex: 1, borderWidth: 1.5, borderColor: C.primary, borderRadius: 100, paddingVertical: 13, alignItems: 'center' },
+  footerRow: { flexDirection: 'row', alignItems: 'stretch', gap: 12, marginTop: 10, marginBottom: 20 },
+  cancelBtn: { flex: 1, borderWidth: 1.5, borderColor: C.primary, borderRadius: 100, paddingVertical: 13, alignItems: 'center', justifyContent: 'center' },
   cancelBtnText: { color: C.primary, fontFamily: FONT.bold, fontSize: 14 },
+  // ✅ Web par footerRow ke andar is TouchableOpacity ko flex:1 na hone ki wajah se ye
+  // Cancel button jitni width nahi le raha tha (sirf apne content jitna simat gaya tha).
+  // flex:1 ab ISI wrapper par hai — LinearGradient andar-se-andar khud stretch ho jaata hai.
+  submitBtnWrap: { flex: 1 },
   submitBtn: {
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: C.primary, borderRadius: 100, paddingVertical: 13,

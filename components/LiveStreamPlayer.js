@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, View } from 'react-native';
+import { Text, View, Image, StyleSheet } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { WebView } from 'react-native-webview';
 import LiveStreamingStyles from '../styles/LiveStreamingStyles';
@@ -16,6 +16,16 @@ function getYoutubeEmbedUrl(streamUrl) {
     : null;
 }
 
+// Reusable watermark overlay — VideoPreview.js jaisa hi
+function WatermarkOverlay() {
+  return (
+    <View pointerEvents="none" style={wm.bar}>
+      <Image source={require('../assets/images/logo.jpg')} style={wm.logo} />
+      <Text style={wm.text}>RTI NEWS</Text>
+    </View>
+  );
+}
+
 export default function LiveStreamPlayer({ streamUrl, onError, style }) {
   const youtubeEmbedUrl = getYoutubeEmbedUrl(streamUrl);
   const playableStreamUrl = youtubeEmbedUrl ? null : (isLikelyPlayableStream(streamUrl) ? streamUrl : null);
@@ -25,17 +35,20 @@ export default function LiveStreamPlayer({ streamUrl, onError, style }) {
 
   if (youtubeEmbedUrl) {
     return (
-      <WebView
-        source={{
-          uri: youtubeEmbedUrl,
-          headers: { Referer: 'https://rtiapi.roofze.in/' },
-        }}
-        style={[LiveStreamingStyles.videoPlayer, style]}
-        javaScriptEnabled
-        allowsFullscreenVideo
-        mediaPlaybackRequiresUserAction={false}
-        onError={onError}
-      />
+      <View style={{ position: 'relative' }}>
+        <WebView
+          source={{
+            uri: youtubeEmbedUrl,
+            headers: { Referer: 'https://rtiapi.roofze.in/' },
+          }}
+          style={[LiveStreamingStyles.videoPlayer, style]}
+          javaScriptEnabled
+          allowsFullscreenVideo
+          mediaPlaybackRequiresUserAction={false}
+          onError={onError}
+        />
+        <WatermarkOverlay />
+      </View>
     );
   }
 
@@ -51,13 +64,27 @@ export default function LiveStreamPlayer({ streamUrl, onError, style }) {
   }
 
   return (
-    <VideoView
-      player={player}
-      style={[LiveStreamingStyles.videoPlayer, style]}
-      contentFit="contain"
-      nativeControls
-      fullscreenOptions={{ enabled: true }}
-      onMountError={onError}
-    />
+    <View style={{ position: 'relative' }}>
+      <VideoView
+        player={player}
+        style={[LiveStreamingStyles.videoPlayer, style]}
+        contentFit="contain"
+        nativeControls
+        fullscreenOptions={{ enabled: true }}
+        onMountError={onError}
+      />
+      <WatermarkOverlay />
+    </View>
   );
 }
+
+const wm = StyleSheet.create({
+  bar: {
+    position: 'absolute', bottom: 8, left: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 8, paddingVertical: 5,
+    backgroundColor: 'rgba(0,0,0,0.58)', borderRadius: 4,
+  },
+  logo: { width: 18, height: 18, borderRadius: 9 },
+  text: { color: '#ffffff', fontSize: 10, fontWeight: '900', letterSpacing: 0.5 },
+});

@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
+import { LinearGradient } from 'expo-linear-gradient';
 import RtmpBroadcaster from '../components/RtmpBroadcaster';
 import LiveStreamPlayer from '../components/LiveStreamPlayer';
 import { useToast } from '../components/ui/ToastProvider';
@@ -30,9 +31,7 @@ const toIndiaIsoString = (date) => {
 };
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 const isExpoGo = Constants.appOwnership === 'expo';
-const hasNativePublisher =
-  UIManager.getViewManagerConfig?.('RTMPPublisher') ||
-  UIManager.getViewManagerConfig?.('NodeCameraView');
+const hasNativePublisher = Platform.OS === 'android' && !isExpoGo;
 
 // Camera + Microphone runtime permission request (Android 6+ requires this
 // even when the manifest already declares the permissions).

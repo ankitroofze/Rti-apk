@@ -16,10 +16,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 //   • Primary color: the brand orange used for buttons, borders & accents
 //   • Inputs / dropdowns: rounded-md (6px) border-radius with a solid primary border
 const FONT = {
-  regular: 'Poppins-Regular',
-  medium: 'Poppins-Medium',
-  semiBold: 'Poppins-SemiBold',
-  bold: 'Poppins-Bold',
+  regular: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
+  medium: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
+  semiBold: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
+  bold: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
 };
 
 const RADIUS = {
@@ -454,7 +454,7 @@ const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
                         borderRadius: RADIUS.input,
                         padding: '8px 10px',
                         fontSize: 13,
-                        fontFamily: 'Poppins, sans-serif',
+                       fontFamily: "'Roboto', sans-serif",
                         color: '#111111',
                         backgroundColor: C.orangeLight,
                       }}

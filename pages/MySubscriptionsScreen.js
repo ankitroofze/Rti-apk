@@ -1,12 +1,12 @@
 // pages/MySubscriptionsScreen.js
 // "Jo subscription liya hai" (top) + "baki purchase karne wale plans" (niche) — ek jagah.
 import React, { useCallback, useState } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, StatusBar } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, StatusBar, Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { UserStore } from '../store/UserStore';
-
+import ModuleWebHeader from '../components/Modulewebheader';
+import ModuleMobileHeader from '../components/ModuleMobileHeader';
 const PURCHASE_LINKS = [
   { label: 'Role / Membership Plans', screen: 'Subscription Plans', icon: 'award' },
   { label: 'Quiz Subscription Plans', screen: 'My Quiz Subscription', icon: 'check-square' },
@@ -15,7 +15,6 @@ const PURCHASE_LINKS = [
 ];
 
 export default function MySubscriptionsScreen({ navigation }) {
-  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState([]);
 
@@ -41,11 +40,12 @@ export default function MySubscriptionsScreen({ navigation }) {
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor="#F3F4F6" />
-      <View style={{ height: insets.top, backgroundColor: '#fff' }} />
-      <TouchableOpacity style={styles.backRow} onPress={() => navigation.goBack()} activeOpacity={0.75}>
-        <Feather name="arrow-left" size={20} color="#F97316" />
-        <Text style={styles.backText}>Back</Text>
-      </TouchableOpacity>
+      {Platform.OS === 'web' ? (
+        /* ✅ Web header — design ek hi jagah (components/ModuleWebHeader.js) se aata hai */
+        <ModuleWebHeader title="My Subscription" navigation={navigation} onBack={() => navigation.goBack()} />
+      ) : (
+        <ModuleMobileHeader title="My Subscription" navigation={navigation} onBack={() => navigation.goBack()} />
+      )}
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>My Subscriptions</Text>

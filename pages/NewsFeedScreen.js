@@ -1,9 +1,10 @@
 import React, { useCallback, useState, useEffect } from 'react';
 import {
-  Image, KeyboardAvoidingView, Linking, Modal, Platform, ScrollView, Share,
-  Text, TextInput, TouchableOpacity, View, Alert, BackHandler, StyleSheet
+  Image, ImageBackground, KeyboardAvoidingView, Linking, Modal, Platform, ScrollView, Share,
+  StatusBar, Text, TextInput, TouchableOpacity, View, Alert, BackHandler, StyleSheet
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as Sharing from 'expo-sharing';
@@ -18,11 +19,14 @@ import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaS
 import { useLanguage } from '../contexts/LanguageContext';
 import { getAdRedirectMeta, openAdRedirect } from '../utils/adRedirect';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
-
+import { getProfileTier } from '../utils/profileHelpers';
+import { MODULE_HEADER_HEIGHT_WEB } from '../constants/subscriptionThemes';
+import ModuleWebHeader from '../components/Modulewebheader';
+import ModuleMobileHeader from '../components/ModuleMobileHeader';
 // ── Design tokens — matched to the Advertise / Add News screens ────────────────
 const C = {
-  primary:      '#ea580c',
-  primaryDark:  '#C8700F',
+  primary:      '#B91C1C',
+  primaryDark:  '#7F1D1D',
   uploadBg:     '#FDF1F1',
   dashedBorder: '#DDDDDD',
   neutral400:   '#A3A3A3',
@@ -66,7 +70,12 @@ function itemMatchesLanguage(item, selectedLanguage) {
   if (!itemLanguage) return true;
   return itemLanguage === activeLanguage;
 }
-
+function formatNewsDate(dateValue) {
+  if (!dateValue) return '';
+  const d = new Date(dateValue);
+  if (isNaN(d.getTime())) return String(dateValue);
+  return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
 function interleaveSponsoredCards(items = [], ads = []) {
   const sponsoredAds = Array.isArray(ads) ? ads : [];
   if (!sponsoredAds.length) return items.map((item) => ({ ...item, __type: 'news' }));
@@ -167,39 +176,47 @@ function SponsoredAdCard({ ad, navigation }) {
 
 // ─── FilterChip ────────────────────────────────────────────────────
 const FilterChip = ({ label, active, onPress }) => (
-  <TouchableOpacity
-    style={[styles.filterChip, active && styles.filterChipActive]}
-    onPress={onPress}
-    activeOpacity={0.75}
-  >
-    <Text style={[styles.filterChipText, active && styles.filterChipTextActive]}>
-      {label}
-    </Text>
+  <TouchableOpacity onPress={onPress} activeOpacity={0.75}>
+    {active ? (
+      <LinearGradient colors={['#450A0A', '#B91C1C', '#7F1D1D']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.filterChip}>
+        <Text style={styles.filterChipTextActive}>{label}</Text>
+      </LinearGradient>
+    ) : (
+      <View style={styles.filterChip}>
+        <Text style={styles.filterChipText}>{label}</Text>
+      </View>
+    )}
   </TouchableOpacity>
 );
-
 // ─── FilterDropdown ────────────────────────────────────────────────
 const FilterDropdown = ({ label, value, options, onSelect }) => {
   const [open, setOpen] = useState(false);
   const isActive = value && value !== 'All';
+  const content = (
+    <>
+      <Text
+        style={[styles.dropdownBtnText, isActive && styles.dropdownBtnTextActive]}
+        numberOfLines={1}
+      >
+        {value || label}
+      </Text>
+      <Feather
+        name={open ? 'chevron-up' : 'chevron-down'}
+        size={13}
+        color={isActive ? C.white : C.textSub}
+      />
+    </>
+  );
   return (
     <View style={styles.dropdownWrapper}>
-      <TouchableOpacity
-        style={[styles.dropdownBtn, isActive && styles.dropdownBtnActive]}
-        onPress={() => setOpen((p) => !p)}
-        activeOpacity={0.8}
-      >
-        <Text
-          style={[styles.dropdownBtnText, isActive && styles.dropdownBtnTextActive]}
-          numberOfLines={1}
-        >
-          {value || label}
-        </Text>
-        <Feather
-          name={open ? 'chevron-up' : 'chevron-down'}
-          size={13}
-          color={isActive ? C.white : C.primary}
-        />
+      <TouchableOpacity onPress={() => setOpen((p) => !p)} activeOpacity={0.8}>
+        {isActive ? (
+          <LinearGradient colors={['#450A0A', '#B91C1C', '#7F1D1D']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.dropdownBtn}>
+            {content}
+          </LinearGradient>
+        ) : (
+          <View style={styles.dropdownBtn}>{content}</View>
+        )}
       </TouchableOpacity>
       {open ? (
         <View style={styles.dropdownList}>
@@ -213,7 +230,7 @@ const FilterDropdown = ({ label, value, options, onSelect }) => {
                 <Text style={[styles.dropdownItemText, value === opt && styles.dropdownItemTextActive]}>
                   {opt}
                 </Text>
-                {value === opt ? <Feather name="check" size={12} color={C.primary} /> : null}
+                {value === opt ? <Feather name="check" size={12} color={C.textSub} /> : null}
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -534,6 +551,7 @@ export default function NewsFeedScreen({ navigation }) {
   const [adFeedItems, setAdFeedItems] = useState([]);
 
   const moduleName = 'News Feed';
+  const insets = useSafeAreaInsets();
   const stateOptions = ['All', ...INDIAN_STATES];
 
   const isLocationState = (value = '') => INDIAN_STATES.includes(value);
@@ -681,7 +699,9 @@ const syncFeed = useCallback(async (focusItemId = null) => {
   // declared below and changes the hook order on the next render.
 
   const handleShare = async (item) => {
-    const shareText = `${item.title}\nCategory: ${item.category}\nState: ${item.state}\nDate: ${item.date}\n${item.subtitle || item.description}`;
+    const newsLink = `https://rtinews.in/news/${encodeURIComponent(item.id || item.title || 'story')}`;
+    const image = item.image || item.images?.[0] || '';
+    const shareText = `${item.title}\n\n${item.subtitle || item.description || ''}\n\n${image ? `Image: ${image}\n\n` : ''}Read full news: ${newsLink}`;
     const canShareMedia = Platform.OS !== 'web' && (await Sharing.isAvailableAsync());
     const ensureLocalFile = async (uri, fallbackExt = 'bin') => {
       if (!uri) return null;
@@ -701,9 +721,9 @@ const syncFeed = useCallback(async (focusItemId = null) => {
       if (canShareMedia && mediaCandidate) {
         const uri = await ensureLocalFile(mediaCandidate, item.video ? 'mp4' : 'jpg');
         if (uri) { await Sharing.shareAsync(uri, { dialogTitle: item.title || 'Share media' }); }
-        else { await Share.share({ title: item.title, message: shareText }); }
+        else { await Share.share({ title: item.title, message: shareText, url: newsLink }); }
       } else {
-        await Share.share({ title: item.title, message: shareText });
+        await Share.share({ title: item.title, message: shareText, url: newsLink });
       }
     } catch { showToast('Share failed.', 'error'); return; }
     const result = await UserStore.updateNewsFeedItem(item.id, 'share');
@@ -803,7 +823,7 @@ const handleLike = async (item) => {
       showToast('Author profile not available.', 'error');
       return;
     }
-    navigation.navigate('UserProfile', { email: authorEmail, author: fallbackAuthor });
+       navigation.navigate('UserProfile', { userId: item.author_id || undefined, email: authorEmail, author: fallbackAuthor });
   };
 
   const findParentCommentId = useCallback((comments = [], targetCommentId) => {
@@ -1043,21 +1063,33 @@ const handleLike = async (item) => {
     return isAdmin || isOwner;
   };
 
-  return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+   return (
+    <View style={{ flex: 1 }}>
     <View style={styles.root}>
-      {/* Fixed Header */}
-      <View style={[styles.customHeader, Platform.OS === 'web' && styles.customHeaderWeb]}>
-  <View style={Platform.OS === 'web' ? styles.headerInner : { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-        <TouchableOpacity onPress={handleGoBack} style={styles.backButton} activeOpacity={0.7}>
-          <Feather name="arrow-left" size={22} color={C.primary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{moduleName}</Text>
-        <TouchableOpacity onPress={handleAddNews} style={styles.headerAddButton}>
-          <Feather name="plus-circle" size={22} color={C.primary} />
-        </TouchableOpacity>
-      </View>
-</View>
+         {/* Fixed Header — ek hi common header (Android/iOS: ModuleMobileHeader.js, Web: ModuleWebHeader.js) */}
+      {Platform.OS === 'web' ? (
+        <ModuleWebHeader
+          title={moduleName}
+          navigation={navigation}
+          onBack={handleGoBack}
+          rightExtra={
+            <TouchableOpacity onPress={handleAddNews} activeOpacity={0.8}>
+              <Feather name="plus-circle" size={20} color="#ffffff" />
+            </TouchableOpacity>
+          }
+        />
+      ) : (
+        <ModuleMobileHeader
+          title={moduleName}
+          navigation={navigation}
+          onBack={handleGoBack}
+          rightExtra={
+            <TouchableOpacity onPress={handleAddNews} activeOpacity={0.7}>
+              <Feather name="plus-circle" size={22} color="#ffffff" />
+            </TouchableOpacity>
+          }
+        />
+      )}
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
@@ -1067,54 +1099,54 @@ const handleLike = async (item) => {
         {/* 👇 Web par content ko bounded/centered rakhne ke liye wrapper — header ke maxWidth (720) se match */}
         <View style={styles.webContentWrap}>
 
-        {/* Hero Card */}
-        <View style={styles.heroCard}>
+         {/* Hero Card */}
+        <LinearGradient colors={['#450A0A', '#B91C1C', '#7F1D1D']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.heroCard}>
           <Text style={styles.heroEyebrow}>Live News</Text>
           <Text style={styles.heroTitle}>Current News Feed Records</Text>
           <Text style={styles.heroSubtitle}>Manage published updates and create a new article from here.</Text>
-        </View>
+        </LinearGradient>
 
-        {/* Metrics */}
+            {/* Metrics */}
         <View style={styles.metricsRow}>
-  <View style={[styles.metricCard, styles.metricPrimary]}>
-    <View style={styles.metricTopRow}>
-      <View style={styles.metricIconCircle}>
-        <Feather name="file-text" size={16} color={C.primary} />
-      </View>
-      <View style={styles.metricBadge}>
-        <Text style={styles.metricBadgeText}>Total</Text>
-      </View>
-    </View>
-    <Text style={styles.metricValue}>{displayedItems.length}</Text>
-    <Text style={styles.metricLabel}>Articles</Text>
-  </View>
+          <LinearGradient colors={['#450A0A', '#B91C1C', '#7F1D1D']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.metricCard, styles.metricPrimary]}>
+            <View style={styles.metricTopRow}>
+              <View style={styles.metricIconCircle}>
+                <Feather name="file-text" size={16} color={C.white} />
+              </View>
+              <View style={styles.metricBadge}>
+                <Text style={styles.metricBadgeText}>Total</Text>
+              </View>
+            </View>
+            <Text style={styles.metricValue}>{displayedItems.length}</Text>
+            <Text style={styles.metricLabel}>Articles</Text>
+          </LinearGradient>
 
-  <View style={[styles.metricCard, styles.metricSecondary]}>
-    <View style={styles.metricTopRow}>
-      <View style={styles.metricIconCircle}>
-        <Feather name="eye" size={16} color={C.primary} />
-      </View>
-      <View style={styles.metricBadge}>
-        <Text style={styles.metricBadgeText}>Views</Text>
-      </View>
-    </View>
-    <Text style={styles.metricValue}>{displayedItems.reduce((s, i) => s + (Number(i.views) || 0), 0)}</Text>
-    <Text style={styles.metricLabel}>Total Views</Text>
-  </View>
+          <LinearGradient colors={['#450A0A', '#B91C1C', '#7F1D1D']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.metricCard, styles.metricSecondary]}>
+            <View style={styles.metricTopRow}>
+              <View style={styles.metricIconCircle}>
+                <Feather name="eye" size={16} color={C.white} />
+              </View>
+              <View style={styles.metricBadge}>
+                <Text style={styles.metricBadgeText}>Views</Text>
+              </View>
+            </View>
+            <Text style={styles.metricValue}>{displayedItems.reduce((s, i) => s + (Number(i.views) || 0), 0)}</Text>
+            <Text style={styles.metricLabel}>Total Views</Text>
+          </LinearGradient>
 
-  <View style={[styles.metricCard, styles.metricAccent]}>
-    <View style={styles.metricTopRow}>
-      <View style={styles.metricIconCircle}>
-        <Feather name="share-2" size={16} color={C.primary} />
-      </View>
-      <View style={styles.metricBadge}>
-        <Text style={styles.metricBadgeText}>Shares</Text>
-      </View>
-    </View>
-    <Text style={styles.metricValue}>{displayedItems.reduce((s, i) => s + (Number(i.shares) || 0), 0)}</Text>
-    <Text style={styles.metricLabel}>Total Shares</Text>
-  </View>
-</View>
+          <LinearGradient colors={['#450A0A', '#B91C1C', '#7F1D1D']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.metricCard, styles.metricAccent]}>
+            <View style={styles.metricTopRow}>
+              <View style={styles.metricIconCircle}>
+                <Feather name="share-2" size={16} color={C.white} />
+              </View>
+              <View style={styles.metricBadge}>
+                <Text style={styles.metricBadgeText}>Shares</Text>
+              </View>
+            </View>
+            <Text style={styles.metricValue}>{displayedItems.reduce((s, i) => s + (Number(i.shares) || 0), 0)}</Text>
+            <Text style={styles.metricLabel}>Total Shares</Text>
+          </LinearGradient>
+        </View>
 
         {/* Filter Card */}
         <View style={styles.filterCard}>
@@ -1140,7 +1172,7 @@ const handleLike = async (item) => {
               onPress={() => setFilterPanelVisible((p) => !p)}
               activeOpacity={0.8}
             >
-              <Feather name="sliders" size={15} color={filterPanelVisible ? C.white : C.primary} />
+                          <Feather name="sliders" size={15} color={filterPanelVisible ? C.white : '#B91C1C'} />
               {activeFilterCount > 0 && (
                 <View style={styles.filterBadge}>
                   <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
@@ -1237,11 +1269,11 @@ const handleLike = async (item) => {
           ) : null}
         </View>
 
-        {/* News Feed */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>News Feed</Text>
-          <Text style={styles.sectionText}>
-            Latest reports in one dedicated feed section.
+            {/* News Feed */}
+      <View style={{ marginHorizontal: 16, marginBottom: 20, alignItems: 'center' }}>
+  <Text style={[styles.sectionTitle, { textAlign: 'center' }]}>News Feed</Text>
+  <Text style={[styles.sectionText, { textAlign: 'center' }]}>
+    Latest reports in one dedicated feed section.
             {activeFilterCount > 0 ? ` • ${displayedItems.length} result${displayedItems.length !== 1 ? 's' : ''} found` : ''}
           </Text>
 
@@ -1252,27 +1284,45 @@ const handleLike = async (item) => {
               item.__type === 'ad' ? (
                 <SponsoredAdCard key={item.feed_id || item.id} ad={item} navigation={navigation} />
               ) : (
-              <View key={item.id} style={styles.newsCard}>
+                             <View key={item.id} style={styles.newsCard}>
+                <LinearGradient colors={['#450A0A', '#B91C1C', '#7F1D1D']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.categoryBadge}>
+                  <Text style={styles.categoryBadgeText}>{item.category}</Text>
+                </LinearGradient>
+
                 <View style={styles.newsTopRow}>
-                  <View style={styles.categoryBadge}>
-                    <Text style={styles.categoryBadgeText}>{item.category}</Text>
-                  </View>
-                  <Text style={styles.newsDate}>{item.date}</Text>
+                  <Text style={styles.newsDate}>{formatNewsDate(item.date)}</Text>
+                  <TouchableOpacity onPress={() => handleEdit(item)}>
+                    <Feather name="edit-2" size={14} color={C.textSub} />
+                  </TouchableOpacity>
                 </View>
 
                 {(item.state || item.district || item.taluka) ? (
                   <View style={styles.locationTagRow}>
-                    {item.state ? <View style={styles.locationTag}><Feather name="map-pin" size={10} color={C.primary} /><Text style={styles.locationTagText}>{item.state}</Text></View> : null}
-                    {item.district ? <View style={styles.locationTag}><Feather name="home" size={10} color={C.primary} /><Text style={styles.locationTagText}>{item.district}</Text></View> : null}
-                    {item.taluka ? <View style={styles.locationTag}><Feather name="layers" size={10} color={C.primary} /><Text style={styles.locationTagText}>{item.taluka}</Text></View> : null}
+                    {item.state ? (
+                      <LinearGradient colors={['#450A0A', '#B91C1C', '#7F1D1D']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.locationTag}>
+                        <Feather name="map-pin" size={10} color={C.white} />
+                        <Text style={styles.locationTagText}>{item.state}</Text>
+                      </LinearGradient>
+                    ) : null}
+                    {item.district ? (
+                      <LinearGradient colors={['#450A0A', '#B91C1C', '#7F1D1D']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.locationTag}>
+                        <Feather name="home" size={10} color={C.white} />
+                        <Text style={styles.locationTagText}>{item.district}</Text>
+                      </LinearGradient>
+                    ) : null}
+                    {item.taluka ? (
+                      <LinearGradient colors={['#450A0A', '#B91C1C', '#7F1D1D']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.locationTag}>
+                        <Feather name="layers" size={10} color={C.white} />
+                        <Text style={styles.locationTagText}>{item.taluka}</Text>
+                      </LinearGradient>
+                    ) : null}
                   </View>
                 ) : null}
 
                 <View style={styles.authorRow}>
                   <TouchableOpacity style={styles.authorAvatarBtn} onPress={() => openAuthorProfile(item)} activeOpacity={0.8}>
-                    <ProfileAvatar uri={item.author_profile_image} size={24} style={styles.authorAvatar} />
+                    <ProfileAvatar uri={item.author_profile_image} size={34} style={styles.authorAvatar} forceDefault={!(item.author_seat_id || item.author_has_blue_tick || item.has_blue_tick || item.author_is_subscriber || item.author_is_premium)} />
                   </TouchableOpacity>
-                  <Text style={styles.authorLabel}>By</Text>
                   <Text style={styles.authorName}>{item.author_name || 'RTI News'}</Text>
                   {Boolean(
                     item.author_has_blue_tick ||
@@ -1283,12 +1333,31 @@ const handleLike = async (item) => {
                   ) ? (
                     <VerifiedBadge size={18} iconSize={10} style={styles.authorBadge} />
                   ) : null}
-                  {item.author_seat_name ? (
-                    <>
-                      <Text style={styles.authorMetaDot}>•</Text>
-                      <Text style={styles.authorSeat} numberOfLines={1}>{item.author_seat_name}</Text>
-                    </>
-                  ) : null}
+                  {(() => {
+                    const itemTier = getProfileTier({
+                      seat_id: item.author_seat_id,
+                      has_blue_tick: Boolean(
+                        item.author_has_blue_tick ||
+                        (currentUserEmail && String(item.createdBy || item.created_by || '').trim().toLowerCase() === currentUserEmail && currentUserHasBlueTick)
+                      ),
+                      is_subscribed: Boolean(item.author_is_subscriber || item.author_is_premium),
+                    });
+                    const label = item.author_seat_name || (itemTier.key !== 'common' ? itemTier.label : '');
+                    if (!label) return null;
+                    return (
+                      <>
+                        <Text style={styles.authorMetaDot}>•</Text>
+                        <View style={[styles.authorSeatPill, { backgroundColor: `${itemTier.accent}1A`, borderColor: itemTier.accent }]}>
+                          <Text style={[styles.authorSeat, { color: itemTier.accent }]} numberOfLines={1}>{label}</Text>
+                        </View>
+                      </>
+                    );
+                  })()}
+                  {canEditDelete(item) && (
+                    <TouchableOpacity style={styles.authorEditBtn} onPress={() => handleEdit(item)}>
+                      <Feather name="edit-2" size={13} color={C.textSub} />
+                    </TouchableOpacity>
+                  )}
                 </View>
 
                 <Text style={styles.newsTitle}>{item.title}</Text>
@@ -1330,7 +1399,6 @@ const handleLike = async (item) => {
                   );
                 })()}
 
-                {/* Edit and Delete Buttons */}
                 {canEditDelete(item) && (
                   <View style={styles.editDeleteRow}>
                     <TouchableOpacity style={styles.editButton} onPress={() => handleEdit(item)}>
@@ -1344,33 +1412,24 @@ const handleLike = async (item) => {
                   </View>
                 )}
 
-                {/* Images */}
-                {item.images?.length ? (
+                            {item.images?.length ? (
                   <View style={styles.mediaPreviewWrap}>
-                    <Text style={styles.mediaLabel}>Upload Image</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                      {item.images.map((img, idx) => (
-                        <ResolvedImage
-                          key={`${item.id}-img-${idx}`}
-                          uri={img}
-                          style={styles.mediaThumb}
-                          resizeMode="cover"
-                        />
-                      ))}
-                    </ScrollView>
+                    {item.images.length === 1 ? (
+                      <ResolvedImage uri={item.images[0]} style={styles.mediaSingleImage} resizeMode="cover" />
+                    ) : (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                        {item.images.map((img, idx) => (
+                          <ResolvedImage key={`${item.id}-img-${idx}`} uri={img} style={styles.mediaThumb} resizeMode="cover" />
+                        ))}
+                      </ScrollView>
+                    )}
                   </View>
                 ) : null}
-
-                {item.video ? (
+                         {item.video ? (
                   <View style={styles.videoPreviewWrap}>
                     <VideoPreview uri={item.video} style={styles.videoPreview} contentFit="cover" />
                   </View>
-                ) : (
-                  <View style={styles.mediaInfoBox}>
-                    <Text style={styles.mediaLabel}>Upload Video</Text>
-                    <Text style={styles.mediaText}>No video uploaded</Text>
-                  </View>
-                )}
+                ) : null}
 
                 {item.file ? (
                   <View style={styles.fileInfoBox}>
@@ -1386,34 +1445,30 @@ const handleLike = async (item) => {
                   </View>
                 ) : null}
 
-                <View style={styles.mediaInfoBox}>
-                  <Text style={styles.mediaLabel}>Media Summary</Text>
-                  <Text style={styles.mediaText}>{item.media}</Text>
-                </View>
-
+        
                 <View style={styles.actionRow}>
                   {(() => {
                     const liked = newsData.currentUser?.email && Array.isArray(item.liked_by) && item.liked_by.includes(newsData.currentUser.email);
                     return (
                       <TouchableOpacity style={[styles.actionIconButton, liked && styles.actionIconButtonActive]} onPress={() => handleLike(item)}>
-                        <Feather name="heart" size={15} color={liked ? C.white : C.primary} />
+                        <Feather name="heart" size={15} color={liked ? C.white : C.textSub} />
                         <Text style={[styles.actionIconText, liked && styles.actionIconTextActive]}>{item.likes || 0}</Text>
                       </TouchableOpacity>
                     );
                   })()}
                   <TouchableOpacity style={styles.actionIconButton} onPress={() => openComments(item)}>
-                    <Feather name="message-circle" size={15} color={C.primary} />
+                    <Feather name="message-circle" size={15} color={C.textSub} />
                     <Text style={styles.actionIconText}>{item.comments || 0}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.actionIconButton} onPress={() => handleShare(item)}>
-                    <Feather name="share-2" size={15} color={C.primary} />
+                    <Feather name="share-2" size={15} color={C.textSub} />
                     <Text style={styles.actionIconText}>{item.shares}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={[styles.actionIconButton, item.bookmarked && styles.actionIconButtonActive]} onPress={() => handleBookmark(item)}>
-                    <Feather name="bookmark" size={15} color={item.bookmarked ? C.white : C.primary} />
+                    <Feather name="bookmark" size={15} color={item.bookmarked ? C.white : C.textSub} />
                     <Text style={[styles.actionIconText, item.bookmarked && styles.actionIconTextActive]}>Save</Text>
                   </TouchableOpacity>
-                </View>
+                         </View>
               </View>
               )
             ))
@@ -1529,55 +1584,60 @@ const handleLike = async (item) => {
         </View>
         </KeyboardAvoidingView>
       </Modal>
+        </View>
     </View>
-    </SafeAreaView>
   );
 }
 
 // ── Styles — same design system as the Advertise / Add News screens ───────────
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
-
-  customHeader: {
+        customHeader: {
+    width: '100%', alignSelf: 'stretch', overflow: 'hidden',
     flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 16, paddingVertical: 14,
+    paddingHorizontal: 19, paddingVertical: 14,
     backgroundColor: C.white, borderBottomWidth: 1, borderBottomColor: C.headerBorder,
   },
-  customHeaderWeb: { paddingHorizontal: 20 },
+  customHeaderImage: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  customHeaderWeb: { paddingHorizontal: 20, height: MODULE_HEADER_HEIGHT_WEB, paddingVertical: 0 },
   headerInner: { width: '100%', maxWidth: 720, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  backButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: C.uploadBg },
-  headerTitle: { fontSize: 16, fontFamily: FONT.bold, color: C.textMain },
-  headerAddButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: C.uploadBg },
-
-  scrollView: { flex: 1 },
+   backButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' },
+    headerTitle: { fontSize: 22, fontFamily: FONT.bold, color: '#ffffff' },
+   headerAddButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' },
+    scrollView: { flex: 1 },
+  mediaSingleImage: { width: '100%', height: 200, borderRadius: 10, backgroundColor: '#EEF0F3' },
   scrollContent: { paddingBottom: 40, ...(Platform.OS === 'web' ? { alignItems: 'center' } : null) },
 
   // 👇 NEW: web par content ko header jitni hi maxWidth (720) mein center karta hai,
   // taaki poori browser width cover na ho — mobile/native par koi effect nahi.
   webContentWrap: { width: '100%', maxWidth: 720, alignSelf: 'center' },
 
-  heroCard: { margin: 16, marginBottom: 12, padding: 18, borderRadius: 14, backgroundColor: C.white, borderWidth: 1, borderColor: C.primary },
-  heroEyebrow: { fontSize: 11, fontFamily: FONT.bold, color: C.primary, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 },
-  heroTitle: { fontSize: 19, fontFamily: FONT.bold, color: C.textBody, marginBottom: 4 },
-  heroSubtitle: { fontSize: 12, fontFamily: FONT.medium, color: C.textSub, lineHeight: 17 },
+heroCard: { margin: 16, marginBottom: 12, padding: 18, borderRadius: 14, overflow: 'hidden' },
+heroEyebrow: { fontSize: 11, fontFamily: FONT.bold, color: C.white, letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 },
+heroTitle: { fontSize: 19, fontFamily: FONT.bold, color: C.white, marginBottom: 4 },
+heroSubtitle: { fontSize: 12, fontFamily: FONT.medium, color: 'rgba(255,255,255,0.85)', lineHeight: 17 },
 
   metricsRow: { flexDirection: 'row', gap: 10, paddingHorizontal: 16, marginBottom: 12 },
-  metricCard: { flex: 1, backgroundColor: C.white, borderRadius: 12, borderWidth: 1, borderColor: C.border, padding: 12 },
-  metricPrimary: { borderColor: '#fdba74' },
-  metricSecondary: { borderColor: '#bfdbfe' },
-  metricAccent: { borderColor: '#ddd6fe' },
-  metricTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  metricIconCircle: { width: 28, height: 28, borderRadius: 14, backgroundColor: C.uploadBg, alignItems: 'center', justifyContent: 'center' },
-  metricBadge: { backgroundColor: C.uploadBg, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
-  metricBadgeText: { fontSize: 9, fontFamily: FONT.bold, color: C.primary, textTransform: 'uppercase' },
-  metricValue: { fontSize: 20, fontFamily: FONT.black, color: C.textBody },
-  metricLabel: { fontSize: 10, fontFamily: FONT.medium, color: C.textSub, marginTop: 2 },
-
-  filterCard: { marginHorizontal: 16, marginBottom: 12, backgroundColor: C.white, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 12 },
+metricCard: { flex: 1, borderRadius: 12, borderWidth: 1, borderColor: C.border, padding: 12 },
+metricPrimary: { borderColor: C.border },
+metricSecondary: { borderColor: C.border },
+metricAccent: { borderColor: C.border },metricTopRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, ...Platform.select({ web: { justifyContent: 'center', gap: 10 }, default: { justifyContent: 'space-between' } }) },
+metricIconCircle: { width: 28, height: 28, borderRadius: 99, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' },
+metricBadge: { backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 2 },
+metricBadgeText: { fontSize: 11, fontFamily: FONT.bold, color: C.white, textTransform: 'uppercase' },
+metricValue: { fontSize: 24, fontFamily: FONT.black, color: C.white, textAlign: 'center' },
+metricLabel: { fontSize: 12, fontFamily: FONT.medium, color: C.white, marginTop: 2, textAlign: 'center' },
+  filterCard: { marginHorizontal: 16, marginBottom: 12, backgroundColor: C.white, borderRadius: 14, padding: 12 },
   searchRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
-  searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: C.dashedBorder, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: C.white },
+ searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: C.dashedBorder, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: C.white, outlineStyle: 'none' },
   searchInput: { flex: 1, fontSize: 13, fontFamily: FONT.regular, color: C.textBody, padding: 0 },
-  filterToggleBtn: { width: 40, height: 40, borderRadius: 10, borderWidth: 1, borderColor: C.primary, alignItems: 'center', justifyContent: 'center', position: 'relative', backgroundColor: C.white },
+  filterToggleBtn: { width: 40, height: 40, borderRadius: 10, borderWidth: 1, borderColor: '#B91C1C', alignItems: 'center', justifyContent: 'center', position: 'relative', backgroundColor: C.white },
   filterToggleBtnActive: { backgroundColor: C.primary },
   filterBadge: { position: 'absolute', top: -5, right: -5, backgroundColor: C.danger, borderRadius: 9, minWidth: 18, height: 18, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
   filterBadgeText: { fontSize: 9, fontFamily: FONT.bold, color: C.white },
@@ -1604,7 +1664,7 @@ const styles = StyleSheet.create({
   filterChipTextActive: { color: C.white, fontFamily: FONT.bold },
 
   dropdownWrapper: { position: 'relative' },
-  dropdownBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: C.primary, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: C.white },
+   dropdownBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: C.border, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: C.white },
   dropdownBtnActive: { backgroundColor: C.primary },
   dropdownBtnText: { fontSize: 12, fontFamily: FONT.medium, color: C.textBody, flex: 1 },
   dropdownBtnTextActive: { color: C.white, fontFamily: FONT.bold },
@@ -1613,29 +1673,35 @@ const styles = StyleSheet.create({
   dropdownItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10 },
   dropdownItemActive: { backgroundColor: C.uploadBg },
   dropdownItemText: { fontSize: 12, fontFamily: FONT.medium, color: C.textBody },
-  dropdownItemTextActive: { color: C.primary, fontFamily: FONT.bold },
+  dropdownItemTextActive: { color: C.textSub, fontFamily: FONT.bold },
 
   card: { marginHorizontal: 16, marginBottom: 20, backgroundColor: C.white, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 14 },
-  sectionTitle: { fontSize: 15, fontFamily: FONT.bold, color: C.textBody, marginBottom: 2 },
-  sectionText: { fontSize: 12, fontFamily: FONT.medium, color: C.textSub, marginBottom: 12 },
+sectionTitle: { fontSize: 19, fontFamily: FONT.bold, color: C.textBody, marginBottom: 4 },
+sectionText: { fontSize: 13, fontFamily: FONT.medium, color: C.textSub, marginBottom: 12 },
   loadingText: { fontSize: 13, fontFamily: FONT.medium, color: C.textSub, textAlign: 'center', paddingVertical: 20 },
 
-  newsCard: { borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 14, marginBottom: 14, backgroundColor: C.white },
-  newsTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  categoryBadge: { backgroundColor: C.uploadBg, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
-  categoryBadgeText: { fontSize: 10, fontFamily: FONT.bold, color: C.primary, textTransform: 'uppercase' },
-  newsDate: { fontSize: 11, fontFamily: FONT.medium, color: C.textMuted },
-  locationTagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
-  locationTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: C.uploadBg, borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
-  locationTagText: { fontSize: 10, fontFamily: FONT.medium, color: C.primaryDark },
-  authorRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 },
+newsCard: { width: '100%', alignSelf: 'stretch', minWidth: 0, borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 10, marginBottom: 10, backgroundColor: C.white, position: 'relative', overflow: 'hidden' },
+newsTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 6, marginTop: 6 },
+categoryBadge: { position: 'absolute', top: 0, left: 0, borderTopLeftRadius: 12, borderBottomRightRadius: 12, paddingHorizontal: 10, paddingVertical: 4, zIndex: 2 },
+categoryBadgeText: { fontSize: 10, fontFamily: FONT.bold, color: '#fff', textTransform: 'uppercase' },
+newsDate: { flex: 1, textAlign: 'center', fontSize: 12, fontFamily: FONT.bold, color: C.textBody },
+locationTagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
+locationTag: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5, overflow: 'hidden' },
+locationTagText: { fontSize: 11, fontFamily: FONT.medium, color: C.white },
+authorName: { fontSize: 15, fontFamily: FONT.bold, color: C.textBody },
+actionRow: { flexDirection: 'row', gap: 8, marginTop: 4, width: '100%' },
+actionIconButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderWidth: 1, borderColor: C.border, borderRadius: 100, paddingHorizontal: 12, paddingVertical: 7 },
+   authorRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 },
+   authorRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 },
   authorAvatarBtn: {},
-  authorAvatar: { borderRadius: 12 },
+    authorAvatar: { borderRadius: 17 },
   authorLabel: { fontSize: 11, fontFamily: FONT.regular, color: C.textSub },
-  authorName: { fontSize: 12, fontFamily: FONT.bold, color: C.textBody },
-  authorBadge: { marginLeft: 2 },
+   authorName: { fontSize: 15, fontFamily: FONT.bold, color: C.textBody },
+    authorBadge: { marginLeft: 2 },
+  authorEditBtn: { marginLeft: 'auto', width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center', backgroundColor: C.bg },
   authorMetaDot: { fontSize: 11, color: C.textMuted, marginHorizontal: 2 },
-  authorSeat: { fontSize: 11, fontFamily: FONT.medium, color: C.textSub, maxWidth: 140 },
+    authorSeat: { fontSize: 11, fontFamily: FONT.medium, color: C.textSub, maxWidth: 140 },
+  authorSeatPill: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, borderWidth: 1 },
   newsTitle: { fontSize: 15, fontFamily: FONT.bold, color: C.textBody, marginBottom: 4 },
   newsSubtitle: { fontSize: 12, fontFamily: FONT.medium, color: C.textSub, marginBottom: 6 },
   newsDescriptionWrap: { marginBottom: 8 },
@@ -1667,10 +1733,10 @@ const styles = StyleSheet.create({
   fileOpenBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, borderWidth: 1, borderColor: C.primary, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5 },
   fileOpenText: { fontSize: 11, fontFamily: FONT.bold, color: C.primary },
 
-  actionRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
-  actionIconButton: { flexDirection: 'row', alignItems: 'center', gap: 5, borderWidth: 1, borderColor: C.border, borderRadius: 100, paddingHorizontal: 12, paddingVertical: 7 },
+  actionRow: { flexDirection: 'row', gap: 8, marginTop: 4, width: '100%' },
+actionIconButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderWidth: 1, borderColor: C.border, borderRadius: 100, paddingHorizontal: 12, paddingVertical: 7 },
   actionIconButtonActive: { backgroundColor: C.primary, borderColor: C.primary },
-  actionIconText: { fontSize: 11, fontFamily: FONT.bold, color: C.primary },
+    actionIconText: { fontSize: 11, fontFamily: FONT.bold, color: C.textSub },
   actionIconTextActive: { color: C.white },
 
   emptyState: { alignItems: 'center', justifyContent: 'center', paddingVertical: 40, gap: 10 },

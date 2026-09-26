@@ -21,9 +21,10 @@ export default function ProfileAvatar({
   borderWidth = 0,
   borderColor = 'transparent',
   resizeMode = 'cover',
+  forceDefault = false,
   onError,
 }) {
-  const rawUri = normalizeUri(uri);
+ const rawUri = forceDefault ? '' : normalizeUri(uri);
   const [resolvedUri, setResolvedUri] = useState(null);
   const [failed, setFailed] = useState(false);
 
@@ -88,9 +89,13 @@ export default function ProfileAvatar({
     );
   }
 
-  return (
+    return (
     <View style={[baseStyle, style, placeholderStyle]}>
-      <Feather name="user" size={iconSize || Math.max(14, Math.round(size * 0.45))} color={iconColor} />
+      <Image
+       source={require('../assets/images/avatar.png')}
+       style={{ width: '100%', height: '100%' }}
+        resizeMode="cover"
+      />
     </View>
   );
 }

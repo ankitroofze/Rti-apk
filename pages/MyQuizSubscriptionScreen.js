@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { UserStore } from '../store/UserStore';
 import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
-
+import { getCardTheme, getNativeThemeImage } from '../constants/subscriptionThemes';
 export default function MyQuizSubscriptionScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
@@ -60,8 +60,10 @@ export default function MyQuizSubscriptionScreen({ navigation }) {
             }
             purchasedAt={sub?.purchased_at}
             expiresAt={sub?.expires_at}
-            buyButtonLabel="Subscribe to Quiz Plan"
+                  buyButtonLabel="Subscribe to Quiz Plan"
             onBuyPress={() => navigation.navigate('QuizSubscription')}
+            themeImage={getNativeThemeImage(getCardTheme(4))}
+            textColor="#ffffff"
           />
         )}
       </ScrollView>

@@ -9,7 +9,7 @@ export function isValidImageUrl(url) {
   if (!url || typeof url !== 'string') return false;
   const value = url.trim();
   if (!value || value === 'null' || value === 'undefined') return false;
-  if (value.startsWith('http://localhost')) return false;
+  // if (value.startsWith('http://localhost')) return false;
 
   // Web-picked images often come through as blob URLs and should render in-session.
   if (value.startsWith('blob:')) return true;
@@ -49,9 +49,18 @@ export function getLocalizedSeatLabel(seatLabel, commonCopy) {
 }
 
 export function inferMenuTagsFromText(item) {
-  const haystack = [item?.title, item?.category, item?.report_type, item?.description, item?.excerpt]
+  const category = String(item?.report_type || item?.category || '').trim().toLowerCase();
+  const haystack = [item?.title, category, item?.description, item?.excerpt]
     .join(' ').toLowerCase();
   const tags = ['latest'];
+  // The selected report type is saved with the news and is the authoritative
+  // Home category. Text matching below supports old posts only.
+  const categoryTags = {
+    india: 'india', national: 'india', politics: 'politics', business: 'business',
+    sports: 'sports', technology: 'technology', entertainment: 'entertainment',
+    health: 'health', education: 'education',
+  };
+  if (categoryTags[category]) tags.push(categoryTags[category]);
   if (/politic|govern|minister|assembly|parliament|policy/.test(haystack)) tags.push('politics', 'latest_political');
   if (/election|poll|vote|ballot|campaign/.test(haystack)) tags.push('elections', 'politics', 'latest_political');
   if (/viral|trending|share|clip|popular/.test(haystack)) tags.push('viral');
@@ -59,6 +68,16 @@ export function inferMenuTagsFromText(item) {
   if (/horoscope|rashifal|hindi horoscope/.test(haystack)) tags.push('horoscope_hindi', 'astrology');
   if (/english horoscope/.test(haystack)) tags.push('horoscope_english', 'astrology');
   return Array.from(new Set(tags));
+}
+
+function isStoryFromToday(story) {
+  const rawDate = story?.createdAt || story?.created_at || story?.date || story?.publishedAgo;
+  const date = new Date(rawDate || 0);
+  if (!Number.isFinite(date.getTime())) return false;
+  const today = new Date();
+  return date.getFullYear() === today.getFullYear()
+    && date.getMonth() === today.getMonth()
+    && date.getDate() === today.getDate();
 }
 
 export function normalizeStoryItem(item, index = 0) {
@@ -70,13 +89,15 @@ export function normalizeStoryItem(item, index = 0) {
     (isValidImageUrl(item.image) ? item.image : '') ||
     (isValidImageUrl(item.author_profile_image) ? item.author_profile_image : '');
   const storyImage = rawImage || buildPlaceholderImage(item.id || `story-${index}`);
-  return {
+   return {
     id: item.id || `story-${index}`,
+    author_id: item.author_id ?? null,
     createdBy: String(item.createdBy || item.created_by || '').trim().toLowerCase(),
     title,
     excerpt: stripHtml(item.excerpt || item.subtitle || item.description || ''),
     description: stripHtml(item.description || item.subtitle || item.excerpt || ''),
     category: item.category || 'Latest News',
+    report_type: item.report_type || item.category || '',
     language: String(item.language || item.lang || item.news_language || '').trim().toLowerCase(),
     menuTags: Array.isArray(item.menuTags) && item.menuTags.length
       ? Array.from(new Set(['latest', ...item.menuTags]))
@@ -99,6 +120,7 @@ export function normalizeStoryItem(item, index = 0) {
     file: item.file || null,
     mediaType: item.mediaType || (item.video ? 'Video' : 'Image'),
     date: item.date || '05 May 2026',
+    createdAt: item.createdAt || item.created_at || item.date || '',
     publishedAgo: item.publishedAgo || 'Updated recently',
     views: Number(item.views || 0),
     likes: Number(item.likes || 0),
@@ -116,17 +138,19 @@ export function dedupeStories(stories) {
 
 export function storyMatchesMenu(story, menuKey) {
   if (!story) return false;
-  if (!menuKey || menuKey === 'latest') return true;
+  if (!menuKey || menuKey === 'all') return true;
+  // Latest News is deliberately today's posts only, not a synonym for All.
+  if (menuKey === 'latest') return isStoryFromToday(story);
   if (menuKey === 'states') return true;
   return Array.isArray(story.menuTags) && story.menuTags.includes(menuKey);
 }
 
 export function buildHomeStateFromParams(routeParams = {}) {
   const initialView = routeParams.initialView === 'states' ? 'states' : 'feed';
-  const requestedMenuKey = routeParams.initialMenuKey || (initialView === 'states' ? 'states' : 'latest');
-  const selectedMenuKey = SIDEBAR_MENU_ITEMS.some((item) => item.key === requestedMenuKey)
+  const requestedMenuKey = routeParams.initialMenuKey || (initialView === 'states' ? 'states' : 'all');
+  const selectedMenuKey = (requestedMenuKey === 'all' || SIDEBAR_MENU_ITEMS.some((item) => item.key === requestedMenuKey))
     ? requestedMenuKey
-    : initialView === 'states' ? 'states' : 'latest';
+    : initialView === 'states' ? 'states' : 'all';
   return {
     nextViewMode: initialView,
     nextMenuKey: selectedMenuKey,

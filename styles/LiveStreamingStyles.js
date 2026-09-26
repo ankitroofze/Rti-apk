@@ -3,12 +3,13 @@ import { Platform, StatusBar, StyleSheet } from 'react-native';
 const STATUSBAR_HEIGHT =
   Platform.OS === 'android' ? StatusBar.currentHeight ?? 24 : 0;
 
+const fam = (native) => (Platform.OS === 'web' ? "'Roboto', sans-serif" : native);
+
 const LiveStreamingStyles = StyleSheet.create({
   // ── Root ──
   root: {
     flex: 1,
     backgroundColor: '#f8fafc',
-    paddingTop: STATUSBAR_HEIGHT + 20,
   },
   scrollView: {
     flex: 1,
@@ -18,7 +19,7 @@ const LiveStreamingStyles = StyleSheet.create({
     paddingBottom: 110,
     ...(Platform.OS === 'web' && {
       paddingHorizontal: 32,
-      paddingTop: 24,
+      paddingTop: 16, // 👈 aur kam kiya (pehle 24 tha)
       maxWidth: 1200,
       width: '100%',
       alignSelf: 'center',
@@ -29,51 +30,52 @@ const LiveStreamingStyles = StyleSheet.create({
   heroCard: {
     backgroundColor: '#ffffff',
     borderRadius: 8,
-    padding: 20,
-    marginBottom: 14,
+    padding: 16, // 👈 kam kiya (pehle 20 tha)
+    paddingBottom: 14, // 👈 kam kiya
+    marginBottom: 12, // 👈 kam kiya (pehle 14 tha)
     elevation: 3,
     boxShadow: '0px 8px 18px rgba(15, 23, 42, 0.06)',
     ...(Platform.OS === 'web' && {
-      padding: 28,
+      padding: 20, // 👈 kam kiya (pehle 28 tha)
       borderWidth: 1,
       borderColor: '#e2e8f0',
     }),
   },
   heroEyebrow: {
-    fontSize: 12,
+    fontSize: 11, // 👈 kam kiya (pehle 12 tha)
     color: '#FF6600',
     fontWeight: '800',
     textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 4,
+    letterSpacing: 0.8, // 👈 kam kiya (pehle 1 tha)
+    marginBottom: 2, // 👈 kam kiya (pehle 4 tha)
     fontFamily: 'Roboto_700Bold',
   },
   heroTitle: {
-    fontSize: 22,
+    fontSize: 18, // 👈 kam kiya (pehle 22 tha)
     fontWeight: '600',
     color: '#0f172a',
-    marginBottom: 12,
+    marginBottom: 6, // 👈 kam kiya (pehle 12 tha)
     fontFamily: 'Roboto_700Bold',
   },
   heroSubtitle: {
-    fontSize: 13,
-    lineHeight: 20,
+    fontSize: 12, // 👈 kam kiya (pehle 13 tha)
+    lineHeight: 17, // 👈 kam kiya (pehle 20 tha)
     color: '#475569',
-    marginBottom: 14,
+    marginBottom: 10, // 👈 kam kiya (pehle 14 tha)
     fontFamily: 'Roboto_400Regular',
   },
   startLiveCta: {
     alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    gap: 6, // 👈 kam kiya (pehle 8 tha)
+    paddingHorizontal: 12, // 👈 kam kiya (pehle 14 tha)
+    paddingVertical: 8, // 👈 kam kiya (pehle 10 tha)
     borderRadius: 3,
-    backgroundColor: '#FF6600',
+    overflow: 'hidden',
   },
   startLiveCtaText: {
-    fontSize: 13,
+    fontSize: 12, // 👈 kam kiya (pehle 13 tha)
     fontWeight: '800',
     color: '#ffffff',
     fontFamily: 'Roboto_700Bold',
@@ -108,14 +110,14 @@ const LiveStreamingStyles = StyleSheet.create({
   // ── Metrics ──
   metricsRow: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 14,
+    gap: 8, // 👈 kam kiya (pehle 10 tha)
+    marginBottom: 12, // 👈 kam kiya (pehle 14 tha)
   },
   metricCard: {
     flex: 1,
-    borderRadius: 9, // Changed from 5 to 9
-    paddingVertical: 16,
-    paddingHorizontal: 12,
+    borderRadius: 8, // 👈 kam kiya (pehle 9 tha)
+    paddingVertical: 12, // 👈 kam kiya (pehle 16 tha)
+    paddingHorizontal: 8, // 👈 kam kiya (pehle 12 tha)
     alignItems: 'center',
     backgroundColor: '#ffffff',
     borderWidth: 1,
@@ -127,23 +129,23 @@ const LiveStreamingStyles = StyleSheet.create({
   liveMetricTop: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4, // 👈 kam kiya (pehle 6 tha)
   },
   liveDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6, // 👈 kam kiya (pehle 8 tha)
+    height: 6, // 👈 kam kiya (pehle 8 tha)
+    borderRadius: 3,
     backgroundColor: '#FF6600',
   },
   metricValue: {
-    fontSize: 24,
+    fontSize: 20, // 👈 kam kiya (pehle 24 tha)
     fontWeight: '800',
     color: '#0f172a',
-    marginBottom: 4,
+    marginBottom: 2, // 👈 kam kiya (pehle 4 tha)
     fontFamily: 'Roboto_700Bold',
   },
   metricLabel: {
-    fontSize: 11,
+    fontSize: 10, // 👈 kam kiya (pehle 11 tha)
     fontWeight: '700',
     color: '#475569',
     fontFamily: 'Roboto_700Bold',
@@ -153,42 +155,42 @@ const LiveStreamingStyles = StyleSheet.create({
   card: {
     backgroundColor: '#ffffff',
     borderRadius: 8,
-    padding: 16,
-    marginBottom: 14,
+    padding: 14, // 👈 kam kiya (pehle 16 tha)
+    marginBottom: 12, // 👈 kam kiya (pehle 14 tha)
     elevation: 3,
     boxShadow: '0px 6px 16px rgba(15, 23, 42, 0.05)',
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 15, // 👈 kam kiya (pehle 16 tha)
     fontWeight: '600',
     color: '#0f172a',
-    marginBottom: 14,
+    marginBottom: 10, // 👈 kam kiya (pehle 14 tha)
     fontFamily: 'Roboto_700Bold',
   },
   playerHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
+    gap: 8, // 👈 kam kiya (pehle 10 tha)
   },
   playerLivePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    gap: 4, // 👈 kam kiya (pehle 6 tha)
+    paddingHorizontal: 8, // 👈 kam kiya (pehle 10 tha)
+    paddingVertical: 3, // 👈 kam kiya (pehle 5 tha)
     borderRadius: 999,
     backgroundColor: '#ffe4ee',
   },
   playerLivePillText: {
-    fontSize: 11,
+    fontSize: 10, // 👈 kam kiya (pehle 11 tha)
     fontWeight: '800',
     color: '#FF6600',
     fontFamily: 'Roboto_700Bold',
   },
   playerShell: {
     overflow: 'hidden',
-    borderRadius: 8,
+    borderRadius: 6, // 👈 kam kiya (pehle 8 tha)
     backgroundColor: '#020617',
   },
   videoPlayer: {
@@ -199,34 +201,34 @@ const LiveStreamingStyles = StyleSheet.create({
   playerUnavailable: {
     width: '100%',
     aspectRatio: 16 / 9,
-    padding: 18,
+    padding: 14, // 👈 kam kiya (pehle 18 tha)
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#0f172a',
   },
   playerUnavailableTitle: {
-    fontSize: 16,
+    fontSize: 14, // 👈 kam kiya (pehle 16 tha)
     fontWeight: '800',
     color: '#ffffff',
-    marginBottom: 8,
+    marginBottom: 4, // 👈 kam kiya (pehle 8 tha)
     fontFamily: 'Roboto_700Bold',
   },
   playerUnavailableText: {
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 12, // 👈 kam kiya (pehle 13 tha)
+    lineHeight: 17, // 👈 kam kiya (pehle 19 tha)
     textAlign: 'center',
     color: '#cbd5e1',
     fontFamily: 'Roboto_400Regular',
   },
   playerUnavailableMeta: {
-    marginTop: 10,
-    fontSize: 11,
+    marginTop: 6, // 👈 kam kiya (pehle 10 tha)
+    fontSize: 10, // 👈 kam kiya (pehle 11 tha)
     color: '#94a3b8',
     fontFamily: 'Roboto_400Regular',
   },
   playerCaption: {
-    marginTop: 10,
-    fontSize: 13,
+    marginTop: 8, // 👈 kam kiya (pehle 10 tha)
+    fontSize: 12, // 👈 kam kiya (pehle 13 tha)
     color: '#475569',
     fontFamily: 'Roboto_400Regular',
   },
@@ -235,9 +237,9 @@ const LiveStreamingStyles = StyleSheet.create({
   streamCard: {
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: 6, // 👈 kam kiya (pehle 8 tha)
+    padding: 12, // 👈 kam kiya (pehle 16 tha)
+    marginBottom: 10, // 👈 kam kiya (pehle 12 tha)
     backgroundColor: '#fafafa',
   },
   streamCardLive: {
@@ -251,42 +253,42 @@ const LiveStreamingStyles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    gap: 10,
-    marginBottom: 8,
+    gap: 8, // 👈 kam kiya (pehle 10 tha)
+    marginBottom: 4, // 👈 kam kiya (pehle 8 tha)
   },
   streamTitleWrap: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 8,
+    gap: 6, // 👈 kam kiya (pehle 8 tha)
   },
   liveDotInline: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6, // 👈 kam kiya (pehle 8 tha)
+    height: 6, // 👈 kam kiya (pehle 8 tha)
+    borderRadius: 3,
     backgroundColor: '#FF6600',
-    marginTop: 6,
+    marginTop: 4, // 👈 kam kiya (pehle 6 tha)
   },
   streamTitle: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 14, // 👈 kam kiya (pehle 16 tha)
     fontWeight: '800',
     color: '#0f172a',
-    lineHeight: 22,
+    lineHeight: 19, // 👈 kam kiya (pehle 22 tha)
     fontFamily: 'Roboto_700Bold',
   },
 
   // ── Status Badge ──
   statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 8, // 👈 kam kiya (pehle 10 tha)
+    paddingVertical: 3, // 👈 kam kiya (pehle 5 tha)
     borderRadius: 3,
   },
   liveBadge:     { backgroundColor: '#fdf8fa' },
   upcomingBadge: { backgroundColor: '#dbeafe' },
   endedBadge:    { backgroundColor: '#f1f5f9' },
   statusBadgeText: {
-    fontSize: 11,
+    fontSize: 10, // 👈 kam kiya (pehle 11 tha)
     fontWeight: '800',
     textTransform: 'capitalize',
     fontFamily: 'Roboto_700Bold',
@@ -299,12 +301,12 @@ const LiveStreamingStyles = StyleSheet.create({
   linkRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginBottom: 12,
+    gap: 4, // 👈 kam kiya (pehle 6 tha)
+    marginBottom: 8, // 👈 kam kiya (pehle 12 tha)
   },
   linkText: {
     flex: 1,
-    fontSize: 12,
+    fontSize: 11, // 👈 kam kiya (pehle 12 tha)
     color: '#64748b',
     fontFamily: 'Roboto_400Regular',
   },
@@ -312,7 +314,7 @@ const LiveStreamingStyles = StyleSheet.create({
   // ── Action Buttons ──
   actionRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 8, // 👈 kam kiya (pehle 10 tha)
   },
   buttonDisabled: {
     opacity: 0.5,
@@ -322,13 +324,13 @@ const LiveStreamingStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 7,
-    paddingVertical: 11,
+    gap: 5, // 👈 kam kiya (pehle 7 tha)
+    paddingVertical: 8, // 👈 kam kiya (pehle 11 tha)
     borderRadius: 3,
     backgroundColor: '#16a34a',
   },
   playBtnText: {
-    fontSize: 13,
+    fontSize: 12, // 👈 kam kiya (pehle 13 tha)
     fontWeight: '800',
     color: '#ffffff',
     fontFamily: 'Roboto_700Bold',
@@ -338,8 +340,8 @@ const LiveStreamingStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 7,
-    paddingVertical: 11,
+    gap: 5, // 👈 kam kiya (pehle 7 tha)
+    paddingVertical: 8, // 👈 kam kiya (pehle 11 tha)
     borderRadius: 3,
     backgroundColor: '#FF6600',
   },
@@ -347,7 +349,7 @@ const LiveStreamingStyles = StyleSheet.create({
     opacity: 0.6,
   },
   stopBtnText: {
-    fontSize: 13,
+    fontSize: 12, // 👈 kam kiya (pehle 13 tha)
     fontWeight: '800',
     color: '#ffffff',
     fontFamily: 'Roboto_700Bold',
@@ -355,20 +357,20 @@ const LiveStreamingStyles = StyleSheet.create({
 
   // ── States ──
   loadingText: {
-    fontSize: 13,
+    fontSize: 12, // 👈 kam kiya (pehle 13 tha)
     color: '#64748b',
     fontFamily: 'Roboto_400Regular',
   },
   emptyText: {
-    fontSize: 13,
+    fontSize: 12, // 👈 kam kiya (pehle 13 tha)
     color: '#94a3b8',
     textAlign: 'center',
-    paddingVertical: 8,
+    paddingVertical: 6, // 👈 kam kiya (pehle 8 tha)
     fontFamily: 'Roboto_400Regular',
   },
   fieldLabel: {
-    marginBottom: 6,
-    fontSize: 12,
+    marginBottom: 4, // 👈 kam kiya (pehle 6 tha)
+    fontSize: 11, // 👈 kam kiya (pehle 12 tha)
     fontWeight: '700',
     color: '#334155',
     fontFamily: 'Roboto_700Bold',
@@ -376,47 +378,47 @@ const LiveStreamingStyles = StyleSheet.create({
   input: {
     borderWidth: 1,
     borderColor: '#cbd5e1',
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 14,
+    borderRadius: 6, // 👈 kam kiya (pehle 8 tha)
+    paddingHorizontal: 12, // 👈 kam kiya (pehle 14 tha)
+    paddingVertical: 10, // 👈 kam kiya (pehle 12 tha)
+    fontSize: 13, // 👈 kam kiya (pehle 14 tha)
     color: '#0f172a',
     backgroundColor: '#ffffff',
-    marginBottom: 12,
+    marginBottom: 10, // 👈 kam kiya (pehle 12 tha)
     fontFamily: 'Roboto_400Regular',
   },
   infoBox: {
-    borderRadius: 8,
-    padding: 14,
-    marginBottom: 14,
+    borderRadius: 6, // 👈 kam kiya (pehle 8 tha)
+    padding: 10, // 👈 kam kiya (pehle 14 tha)
+    marginBottom: 10, // 👈 kam kiya (pehle 14 tha)
     backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: '#e0e0e0',
   },
   infoTitle: {
-    fontSize: 13,
+    fontSize: 12, // 👈 kam kiya (pehle 13 tha)
     fontWeight: '800',
     color: '#9b0038',
-    marginBottom: 6,
+    marginBottom: 4, // 👈 kam kiya (pehle 6 tha)
     fontFamily: 'Roboto_700Bold',
   },
   infoText: {
-    fontSize: 12,
-    lineHeight: 18,
+    fontSize: 11, // 👈 kam kiya (pehle 12 tha)
+    lineHeight: 16, // 👈 kam kiya (pehle 18 tha)
     color: '#FF6600',
     fontFamily: 'Roboto_400Regular',
   },
   publisherCamera: {
     width: '100%',
     aspectRatio: 9 / 16,
-    borderRadius: 8,
+    borderRadius: 6, // 👈 kam kiya (pehle 8 tha)
     overflow: 'hidden',
     backgroundColor: '#020617',
   },
   publisherFrame: {
     width: '100%',
     aspectRatio: 9 / 16,
-    borderRadius: 8,
+    borderRadius: 6, // 👈 kam kiya (pehle 8 tha)
     overflow: 'hidden',
     backgroundColor: '#020617',
   },
@@ -443,79 +445,79 @@ const LiveStreamingStyles = StyleSheet.create({
   publisherBrandBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    gap: 6, // 👈 kam kiya (pehle 8 tha)
+    paddingHorizontal: 8, // 👈 kam kiya (pehle 10 tha)
+    paddingVertical: 6, // 👈 kam kiya (pehle 8 tha)
     backgroundColor: 'rgba(0, 0, 0, 0.58)',
   },
   publisherLogo: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: 22, // 👈 kam kiya (pehle 26 tha)
+    height: 22, // 👈 kam kiya (pehle 26 tha)
+    borderRadius: 11,
   },
   publisherBrandName: {
     flex: 1,
     color: '#ffffff',
-    fontSize: 13,
+    fontSize: 11, // 👈 kam kiya (pehle 13 tha)
     fontWeight: '900',
-    letterSpacing: 0.8,
+    letterSpacing: 0.6, // 👈 kam kiya (pehle 0.8 tha)
   },
   publisherLiveBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    borderRadius: 4,
-    paddingHorizontal: 7,
-    paddingVertical: 4,
+    gap: 4, // 👈 kam kiya (pehle 5 tha)
+    borderRadius: 3, // 👈 kam kiya (pehle 4 tha)
+    paddingHorizontal: 5, // 👈 kam kiya (pehle 7 tha)
+    paddingVertical: 3, // 👈 kam kiya (pehle 4 tha)
     backgroundColor: '#dc2626',
   },
   publisherLiveDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
+    width: 4, // 👈 kam kiya (pehle 5 tha)
+    height: 4, // 👈 kam kiya (pehle 5 tha)
+    borderRadius: 2,
     backgroundColor: '#ffffff',
   },
   publisherLiveText: {
     color: '#ffffff',
-    fontSize: 10,
+    fontSize: 9, // 👈 kam kiya (pehle 10 tha)
     fontWeight: '800',
   },
   cameraSwitchBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
-    marginTop: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 7,
+    gap: 6, // 👈 kam kiya (pehle 7 tha)
+    marginTop: 10, // 👈 kam kiya (pehle 12 tha)
+    paddingHorizontal: 12, // 👈 kam kiya (pehle 14 tha)
+    paddingVertical: 7, // 👈 kam kiya (pehle 9 tha)
+    borderRadius: 6, // 👈 kam kiya (pehle 7 tha)
     backgroundColor: '#1e293b',
   },
   cameraControls: {
     flexDirection: 'row',
     justifyContent: 'center',
     flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 12,
+    gap: 8, // 👈 kam kiya (pehle 10 tha)
+    marginTop: 10, // 👈 kam kiya (pehle 12 tha)
   },
   cameraMuteBtn: {
     backgroundColor: '#b91c1c',
   },
   cameraSwitchBtnText: {
     color: '#ffffff',
-    fontSize: 13,
+    fontSize: 12, // 👈 kam kiya (pehle 13 tha)
     fontWeight: '700',
   },
   broadcastWatchFrame: {
-    marginTop: 16,
+    marginTop: 12, // 👈 kam kiya (pehle 16 tha)
     overflow: 'hidden',
-    borderRadius: 8,
+    borderRadius: 6, // 👈 kam kiya (pehle 8 tha)
     backgroundColor: '#020617',
   },
   broadcastWatchTitle: {
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    paddingHorizontal: 10, // 👈 kam kiya (pehle 12 tha)
+    paddingVertical: 7, // 👈 kam kiya (pehle 9 tha)
     color: '#ffffff',
-    fontSize: 13,
+    fontSize: 12, // 👈 kam kiya (pehle 13 tha)
     fontWeight: '700',
     backgroundColor: '#1e293b',
   },
@@ -523,21 +525,21 @@ const LiveStreamingStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 11,
+    gap: 6, // 👈 kam kiya (pehle 8 tha)
+    paddingVertical: 9, // 👈 kam kiya (pehle 11 tha)
     backgroundColor: '#dc2626',
   },
   openYoutubeBtnText: {
     color: '#ffffff',
-    fontSize: 13,
+    fontSize: 12, // 👈 kam kiya (pehle 13 tha)
     fontWeight: '700',
   },
   youtubeConnectedBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    padding: 12,
-    borderRadius: 8,
+    gap: 8, // 👈 kam kiya (pehle 10 tha)
+    padding: 10, // 👈 kam kiya (pehle 12 tha)
+    borderRadius: 6, // 👈 kam kiya (pehle 8 tha)
     backgroundColor: '#f0fdf4',
     borderWidth: 1,
     borderColor: '#bbf7d0',
@@ -547,65 +549,66 @@ const LiveStreamingStyles = StyleSheet.create({
   },
   youtubeConnectedTitle: {
     color: '#166534',
-    fontSize: 14,
+    fontSize: 13, // 👈 kam kiya (pehle 14 tha)
     fontWeight: '800',
   },
   youtubeConnectedText: {
     marginTop: 2,
     color: '#15803d',
-    fontSize: 12,
+    fontSize: 11, // 👈 kam kiya (pehle 12 tha)
   },
   publisherFallback: {
     width: '100%',
     aspectRatio: 9 / 16,
-    borderRadius: 8,
-    padding: 18,
+    borderRadius: 6, // 👈 kam kiya (pehle 8 tha)
+    padding: 14, // 👈 kam kiya (pehle 18 tha)
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#0f172a',
   },
   publisherFallbackTitle: {
-    fontSize: 16,
+    fontSize: 14, // 👈 kam kiya (pehle 16 tha)
     fontWeight: '800',
     color: '#ffffff',
-    marginBottom: 8,
+    marginBottom: 4, // 👈 kam kiya (pehle 8 tha)
     fontFamily: 'Roboto_700Bold',
   },
   publisherFallbackMeta: {
-    marginTop: 8,
-    fontSize: 12,
+    marginTop: 4, // 👈 kam kiya (pehle 8 tha)
+    fontSize: 11, // 👈 kam kiya (pehle 12 tha)
     color: '#94a3b8',
     textAlign: 'center',
     fontFamily: 'Roboto_400Regular',
   },
-  // ── Top Bar ──
-  topBar: {
+  // ── Top Bar (Updated - Aur Chhota) ──
+    topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 10 : 54,
-    paddingBottom: 14,
-    paddingHorizontal: 16,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E6E6E6',
+    gap: 4,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 2 : 32,
+    paddingBottom: 4,
+    paddingHorizontal: 10,
+    backgroundColor: '#b91c1c',
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#7f1d1d',
+    minHeight: Platform.OS === 'android' ? 44 : 40,
   },
   backBtn: {
-    width: 36,
-    height: 36,
+    width: 28, // 👈 aur chhota kiya (pehle 32 tha)
+    height: 28, // 👈 aur chhota kiya (pehle 32 tha)
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 18,
-    marginLeft: -6,
+    borderRadius: 14,
+    marginLeft: -2,
   },
-  topBarTitle: {
+   topBarTitle: {
     flex: 1,
-    fontSize: 15,
-    color: '#353535',
+    fontSize: 13,
+    color: '#ffffff',
     fontFamily: 'Roboto_700Bold',
   },
   topBarSpacer: {
-    width: 36,
+    width: 28,
   },
 });
 

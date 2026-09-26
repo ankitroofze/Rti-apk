@@ -1,8 +1,13 @@
 import { Feather } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { Text, TouchableOpacity, View } from 'react-native';
 import ProfileStyles from '../styles/ProfileStyles';
 import { generateMemberId, getRank, getNextRank, hasDocumentSource } from '../utils/profileHelpers';
-
+   import { ROLE_SEAT_COLORS, COMMON_USER_COLOR } from '../constants/profileConstants';
+import ScaledCard from './ScaledCard';
+import AutoIdCardPreview from './IdCardPreview';
+import AutoIdCardBackPreview from './IdCardBackPreview';
+import AutoAppointmentLetterPreview from './AppointmentLetterPreview';
 export function RankBadge({ referralCount }) {
   const rank = getRank(referralCount);
   const next = getNextRank(referralCount);
@@ -23,7 +28,7 @@ export function ReferralCodeCard({ referralCode, onCopy }) {
     <View style={ProfileStyles.referralCard}>
       <View style={ProfileStyles.referralLeft}>
         <Text style={ProfileStyles.referralLabel}>My Referral Code</Text>
-        <Text style={ProfileStyles.referralCode}>{referralCode || 'Generating...'}</Text>
+        <Text style={ProfileStyles.referralCode}>{referralCode || 'Subscribe to unlock'}</Text>
         <Text style={ProfileStyles.referralHint}>Share this code to earn referral bonus</Text>
       </View>
       <TouchableOpacity style={ProfileStyles.copyBtn} onPress={onCopy} disabled={!referralCode}>
@@ -90,71 +95,56 @@ export function RankRow({ referralCount, onPress }) {
   );
 }
 
-// ─── SavedProfileCard — ab "Profile Details" header + Edit chip + View/Download button grid, bilkul image jaisa
-export function SavedProfileCard({ profile, onOpenIdCard, onOpenAppointmentLetter, onDownloadIdCard, onDownloadAppointmentLetter, onEdit }) {
-  const fields = [
-    { icon: 'user', label: 'Name', value: profile.name, accent: '#7d38ff' },
-    { icon: 'mail', label: 'Email', value: profile.email, accent: '#22aaf3' },
-    { icon: 'phone', label: 'Phone', value: profile.mobile_number || profile.contact_number || profile.phone_number, accent: '#1ec9b0' },
-    { icon: 'map-pin', label: 'Location', value: profile.state || profile.village, accent: '#f97316' },
-    { icon: 'file-text', label: 'Bio', value: profile.bio, accent: '#EA580C', fullWidth: true },
-    { icon: 'star', label: 'Subscription', value: profile.subscription_type, accent: '#eab308' },
-    { icon: 'credit-card', label: 'Member ID', value: generateMemberId(profile.email), accent: '#F97316' },
-    { icon: 'gift', label: 'Referral Code', value: profile.referral_code, accent: '#F97316' },
-  ];
+// ─── SavedProfileCard — ab sirf ID Card + Appointment Letter chhote preview cards,
+// har ek ke sath apna Download button, tap karne par full-screen preview khulta hai
+export function SavedProfileCard({ profile, onOpenIdCard, onOpenAppointmentLetter, onDownloadIdCard, onDownloadAppointmentLetter, onEdit, profileTier }) {
+  const canAccessDocuments = true;
 
   return (
-    <View style={ProfileStyles.infoCard}>
-      <View style={ProfileStyles.headerStrip}>
-        <Text style={ProfileStyles.cardTitle}>Profile Details</Text>
-        {onEdit ? (
-          <TouchableOpacity style={ProfileStyles.editChip} onPress={onEdit} activeOpacity={0.8}>
-            <Feather name="edit-2" size={12} color="#111111" />
-            <Text style={ProfileStyles.editChipText}>Edit Profile</Text>
-          </TouchableOpacity>
-        ) : null}
-      </View>
-      <View style={ProfileStyles.divider} />
-      <View style={ProfileStyles.fieldList}>
-        {fields.map((f, i) => (
-          <View
-            key={f.label}
-            style={[ProfileStyles.fieldRow, f.fullWidth && ProfileStyles.fieldRowFull, i !== fields.length - 1 && ProfileStyles.fieldRowBorder]}
-          >
-            <View style={[ProfileStyles.fieldIconWrap, { backgroundColor: f.accent + '18' }]}>
-              <Feather name={f.icon} size={14} color={f.accent} />
+       <View style={ProfileStyles.infoCard}>
+      {canAccessDocuments ? (
+        <View style={{ padding: 14 }}>
+          <View style={{ flexDirection: 'column', alignItems: 'center', gap: 20 }}>
+            {/* ── ID Card (front + back) upar + apna Download button ── */}
+            <View style={{ alignItems: 'center', width: '100%' }}>
+                          <TouchableOpacity onPress={onOpenIdCard} activeOpacity={0.85}>
+                <View style={{ flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+                  <ScaledCard width={220} naturalWidth={360}>
+                    <AutoIdCardPreview profile={profile} />
+                  </ScaledCard>
+                  <ScaledCard width={220} naturalWidth={360}>
+                    <AutoIdCardBackPreview />
+                  </ScaledCard>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ marginTop: 10, width: '80%', borderRadius: 6, overflow: 'hidden' }} onPress={onDownloadIdCard} activeOpacity={0.85}>
+                <LinearGradient colors={profileTier?.gradientDark || ['#374151', '#6B7280', '#374151']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11 }}>
+                  <Feather name="download" size={13} color="#ffffff" />
+                  <Text style={[ProfileStyles.docButtonOutlineText, { color: '#ffffff' }]}>Download ID</Text>
+                </LinearGradient>
+              </TouchableOpacity>
             </View>
-            <View style={ProfileStyles.fieldContent}>
-              <Text style={ProfileStyles.fieldLabel}>{f.label}</Text>
-              <Text style={[ProfileStyles.fieldValue, !f.value && ProfileStyles.fieldValueEmpty]} numberOfLines={f.fullWidth ? 3 : 1}>
-                {f.value || 'Not set'}
-              </Text>
+
+            {/* ── Appointment Letter neeche + apna Download button ── */}
+            <View style={{ alignItems: 'center', width: '100%' }}>
+              <TouchableOpacity onPress={onOpenAppointmentLetter} activeOpacity={0.85}>
+                <ScaledCard width={240} naturalWidth={560}>
+                  <AutoAppointmentLetterPreview profile={profile} />
+                </ScaledCard>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ marginTop: 10, width: '80%', borderRadius: 6, overflow: 'hidden' }} onPress={onDownloadAppointmentLetter} activeOpacity={0.85}>
+                <LinearGradient colors={profileTier?.gradientDark || ['#374151', '#6B7280', '#374151']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11 }}>
+                  <Feather name="download" size={13} color="#ffffff" />
+                  <Text style={[ProfileStyles.docButtonOutlineText, { color: '#ffffff' }]}>Download Letter</Text>
+                </LinearGradient>
+              </TouchableOpacity>
             </View>
           </View>
-        ))}
-      </View>
-      <View style={ProfileStyles.docButtonsWrap}>
-        <View style={ProfileStyles.docButtonsRow}>
-          <TouchableOpacity style={ProfileStyles.docButtonPrimary} onPress={onOpenIdCard} activeOpacity={0.85}>
-            <Feather name="credit-card" size={14} color="#ffffff" />
-            <Text style={ProfileStyles.docButtonPrimaryText}>View ID</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={ProfileStyles.docButtonPrimary} onPress={onOpenAppointmentLetter} activeOpacity={0.85}>
-            <Feather name="file-text" size={14} color="#ffffff" />
-            <Text style={ProfileStyles.docButtonPrimaryText}>View Letter</Text>
-          </TouchableOpacity>
+
+          {/* ── dono ke neeche ek line ── */}
+          <View style={{ height: 1, backgroundColor: '#e2e8f0', marginTop: 16 }} />
         </View>
-        <View style={ProfileStyles.docButtonsRow}>
-          <TouchableOpacity style={ProfileStyles.docButtonOutline} onPress={onDownloadIdCard} activeOpacity={0.85}>
-            <Feather name="download" size={14} color="#111111" />
-            <Text style={ProfileStyles.docButtonOutlineText}>Download ID</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={ProfileStyles.docButtonOutline} onPress={onDownloadAppointmentLetter} activeOpacity={0.85}>
-            <Feather name="download" size={14} color="#111111" />
-            <Text style={ProfileStyles.docButtonOutlineText}>Download Letter</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+      ) : null}
     </View>
   );
 }

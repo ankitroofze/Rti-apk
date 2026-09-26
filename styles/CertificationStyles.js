@@ -1,12 +1,14 @@
 // styles/CertificationStyles.js
 import { StyleSheet, Platform } from 'react-native';
 import { CommonStyles, COLORS, TYPOGRAPHY, BORDER_RADIUS } from './CommonStyles';
-
 const CertificationStyles = StyleSheet.create({
   root: CommonStyles.rootContainer,
   
   backRow: CommonStyles.backRow,
-  backText: CommonStyles.backText,
+  backText: {
+    ...CommonStyles.backText,
+    fontWeight: Platform.OS === 'web' ? CommonStyles.backText.fontWeight : '700',
+  },
 
   scrollView: { 
     flex: 1, 
@@ -22,18 +24,12 @@ const CertificationStyles = StyleSheet.create({
   metricCard: CommonStyles.metricCard,
   metricPrimary: { 
     ...CommonStyles.metricCard, 
-    borderTopWidth: 3, 
-    borderTopColor: COLORS.orange 
   },
   metricSecondary: { 
     ...CommonStyles.metricCard, 
-    borderTopWidth: 3, 
-    borderTopColor: COLORS.green 
   },
   metricAccent: { 
     ...CommonStyles.metricCard, 
-    borderTopWidth: 3, 
-    borderTopColor: COLORS.orangeMid 
   },
   metricValue: CommonStyles.metricValue,
   metricLabel: CommonStyles.metricLabel,

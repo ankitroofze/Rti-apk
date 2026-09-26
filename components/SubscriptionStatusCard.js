@@ -5,7 +5,7 @@
 // karte hain taaki design consistent rahe.
 // ─────────────────────────────────────────────────────────
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, Platform } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 
 const C = {
@@ -19,8 +19,16 @@ const C = {
   green:       '#16a34a',
   greenLight:  '#F0FDF4',
   greenMid:    '#86EFAC',
-  redLight:    '#FEF2F2',
+   redLight:    '#FEF2F2',
   red:         '#DC2626',
+};
+
+// ✅ NEW: SubscriptionPlansStyles wala same Roboto family — taaki card ka font
+// "Choose Your Subscription Plan" heading se match kare
+const FONT = {
+  regular: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
+  medium:  Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
+  bold:    Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
 };
 
 /**
@@ -33,6 +41,8 @@ const C = {
  *  expiresAt        - date string
  *  onBuyPress       - callback for "Buy / Renew" button
  *  buyButtonLabel   - string (default "Subscribe")
+ *  themeImage       - optional image source — jab diya jaata hai, card usi (purchased plan ke) color/image me dikhta hai
+ *  textColor        - optional — themeImage ke saath text ka color (usually white)
  */
 export default function SubscriptionStatusCard({
   isActive,
@@ -43,13 +53,37 @@ export default function SubscriptionStatusCard({
   expiresAt,
   onBuyPress,
   buyButtonLabel = 'Subscribe',
+  themeImage,
+  textColor,
 }) {
-  return (
-    <View style={styles.card}>
+  // ✅ jab active plan ka theme mila ho, tabhi color/image apply hoga — warna purana plain white card
+    const isThemed = Boolean(isActive && themeImage) && Platform.OS !== 'android';
+  const dynamicText = isThemed ? (textColor || '#ffffff') : C.textDark;
+  const dynamicMuted = isThemed ? 'rgba(255,255,255,0.8)' : C.textMuted;
+
+         return (
+    <View style={[styles.card, isThemed && styles.cardThemed]}>
+      {isThemed ? (
+                      <Image
+          source={themeImage}
+          resizeMode="cover"
+          style={[
+            StyleSheet.absoluteFillObject,
+            { width: '100%', height: '100%' },
+          ]}
+        />
+      ) : null}
       <View style={styles.headerRow}>
-        <View style={[styles.badge, isActive ? styles.badgeActive : styles.badgeInactive]}>
-          <Feather name={isActive ? 'check-circle' : 'x-circle'} size={13} color={isActive ? C.green : C.red} />
-          <Text style={[styles.badgeText, { color: isActive ? C.green : C.red }]}>
+        <View style={[
+          styles.badge,
+          isActive ? (isThemed ? styles.badgeActiveThemed : styles.badgeActive) : styles.badgeInactive,
+        ]}>
+          <Feather
+            name={isActive ? 'check-circle' : 'x-circle'}
+            size={13}
+            color={isActive ? (isThemed ? '#ffffff' : C.green) : C.red}
+          />
+          <Text style={[styles.badgeText, { color: isActive ? (isThemed ? '#ffffff' : C.green) : C.red }]}>
             {isActive ? 'Active' : 'No active subscription'}
           </Text>
         </View>
@@ -57,23 +91,23 @@ export default function SubscriptionStatusCard({
 
       {isActive ? (
         <>
-          <Text style={styles.planName}>{planName || 'Subscription Plan'}</Text>
+          <Text style={[styles.planName, { color: dynamicText }]}>{planName || 'Subscription Plan'}</Text>
           {price !== undefined && price !== null ? (
-            <Text style={styles.price}>₹{price}</Text>
+            <Text style={[styles.price, { color: dynamicMuted }]}>₹{price}</Text>
           ) : null}
-          {countLabel ? <Text style={styles.countLabel}>{countLabel}</Text> : null}
+          {countLabel ? <Text style={[styles.countLabel, isThemed && { color: '#ffffff' }]}>{countLabel}</Text> : null}
 
           <View style={styles.metaRow}>
             {purchasedAt ? (
               <View style={styles.metaItem}>
-                <Text style={styles.metaLabel}>Purchased</Text>
-                <Text style={styles.metaValue}>{purchasedAt}</Text>
+                <Text style={[styles.metaLabel, { color: dynamicMuted }]}>Purchased</Text>
+                <Text style={[styles.metaValue, { color: dynamicText }]}>{purchasedAt}</Text>
               </View>
             ) : null}
             {expiresAt ? (
               <View style={styles.metaItem}>
-                <Text style={styles.metaLabel}>Expires</Text>
-                <Text style={styles.metaValue}>{expiresAt}</Text>
+                <Text style={[styles.metaLabel, { color: dynamicMuted }]}>Expires</Text>
+                <Text style={[styles.metaValue, { color: dynamicText }]}>{expiresAt}</Text>
               </View>
             ) : null}
           </View>
@@ -90,19 +124,24 @@ export default function SubscriptionStatusCard({
           <Text style={styles.buyBtnText}>{isActive ? 'Renew / Change Plan' : buyButtonLabel}</Text>
         </TouchableOpacity>
       ) : null}
-    </View>
+      </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
+ card: {
     width: '100%',
-    maxWidth: 560,
+    maxWidth: 480,
     backgroundColor: C.white,
-    borderRadius: 16,
-    padding: 18,
+    borderRadius: 14,
+    padding: 14,
     borderWidth: 1,
     borderColor: C.border,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  cardThemed: {
+    borderWidth: 0,
   },
   headerRow: { flexDirection: 'row', marginBottom: 12 },
   badge: {
@@ -110,29 +149,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 1,
     borderRadius: 999,
   },
   badgeActive: { backgroundColor: C.greenLight, borderWidth: 1, borderColor: C.greenMid },
+  badgeActiveThemed: { backgroundColor: 'rgba(255,255,255,0.22)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)' },
   badgeInactive: { backgroundColor: C.redLight, borderWidth: 1, borderColor: '#FCA5A5' },
-  badgeText: { fontSize: 12, fontWeight: '700' },
+  badgeText: { fontSize: 12, fontWeight: '700', fontFamily: FONT.medium },
 
-  planName: { fontSize: 18, fontWeight: '700', color: C.textDark, marginBottom: 2 },
-  price: { fontSize: 14, color: C.textMid, marginBottom: 6 },
-  countLabel: { fontSize: 13, color: C.green, fontWeight: '600', marginBottom: 10 },
+  planName: { fontSize: 20, fontWeight: '600', color: C.textDark, marginBottom: 2, fontFamily: FONT.medium },
+  price: { fontSize: 14, color: C.textMid, marginBottom: 6, fontFamily: FONT.regular },
+  countLabel: { fontSize: 13, color: C.green, fontWeight: '600', marginBottom: 10, fontFamily: FONT.medium },
 
   metaRow: { flexDirection: 'row', gap: 24, marginTop: 4 },
   metaItem: {},
-  metaLabel: { fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
-  metaValue: { fontSize: 13, color: C.textDark, fontWeight: '600', marginTop: 2 },
+  metaLabel: { fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, fontFamily: FONT.regular },
+  metaValue: { fontSize: 13, color: C.textDark, fontWeight: '600', marginTop: 2, fontFamily: FONT.medium },
 
-  emptyText: { fontSize: 13, color: C.textMuted, lineHeight: 19, marginBottom: 4 },
+  emptyText: { fontSize: 13, color: C.textMuted, lineHeight: 19, marginBottom: 4, fontFamily: FONT.regular },
 
   buyBtn: {
-    marginTop: 16,
+    marginTop: 12,
     backgroundColor: C.orange,
-    borderRadius: 12,
-    paddingVertical: 13,
+    borderRadius: 10,
+    paddingVertical: 11,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

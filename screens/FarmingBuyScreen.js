@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -22,6 +22,56 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { UserStore } from '../store/UserStore';
 import { useToast } from '../components/ui/ToastProvider';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
+import ModuleWebHeader from '../components/Modulewebheader';
+import Sidebar from '../components/Sidebar';
+
+// Hero / banner — full banner image, drop your file at assets/images/ecom-buy-h.jpeg
+const ECOM_HERO_IMAGE = require('../assets/images/ecom-buy-h.jpeg');
+
+const BRAND = {
+  primary: '#dc2626',
+  primaryDark: '#b91c1c',
+  primaryLight: '#fef2f2',
+  primaryBorder: '#fecaca',
+  ink: '#0f172a',
+  sub: '#64748b',
+  faint: '#94a3b8',
+  line: '#e2e8f0',
+  blue: '#2563eb',
+};
+
+const CATEGORY_ICONS = {
+  All: 'grid-outline',
+  Electronics: 'hardware-chip-outline',
+  Vehicles: 'car-sport-outline',
+  'Mobiles & Tablets': 'phone-portrait-outline',
+  Fashion: 'shirt-outline',
+  'Home & Living': 'home-outline',
+  'Books & Stationery': 'book-outline',
+  Photography: 'camera-outline',
+  Others: 'ellipsis-horizontal-outline',
+};
+
+const FALLBACK_CATEGORIES = [
+  'Electronics',
+  'Vehicles',
+  'Mobiles & Tablets',
+  'Fashion',
+  'Home & Living',
+  'Books & Stationery',
+  'Others',
+];
+
+const SORT_OPTIONS = [
+  { id: 'newest', label: 'Newest First' },
+  { id: 'price_low', label: 'Price: Low to High' },
+  { id: 'price_high', label: 'Price: High to Low' },
+];
+
+const priceValue = (v) => {
+  const n = parseFloat(String(v || '').replace(/[^0-9.]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+};
 
 const notify = (title, message) => {
   if (Platform.OS === 'web') {
@@ -33,7 +83,7 @@ const notify = (title, message) => {
 
 const money = (value) => {
   const text = String(value || '').trim();
-  return text ? `Rs. ${text}` : 'Price on request';
+  return text ? `₹ ${text}` : 'Price on request';
 };
 
 const normalizeIndianMobileNumber = (value = '') => {
@@ -299,14 +349,14 @@ const EnquiryFormModal = ({ product, onClose, onSaved }) => {
           </View>
           <ScrollView contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
             <View style={styles.productInfoBox}>
-  <View style={{width:36,height:36,borderRadius:10,backgroundColor:'#fff',alignItems:'center',justifyContent:'center',borderWidth:1,borderColor:'#fed7aa'}}>
-    <Ionicons name="cube-outline" size={18} color="#ea580c" />
-  </View>
-  <View style={{flex:1}}>
-    <Text style={styles.productInfoLabel}>Product</Text>
-    <Text style={styles.productInfoValue}>{product.title}</Text>
-  </View>
-</View>
+              <View style={{width:36,height:36,borderRadius:10,backgroundColor:'#fff',alignItems:'center',justifyContent:'center',borderWidth:1,borderColor:'#fed7aa'}}>
+                <Ionicons name="cube-outline" size={18} color="#ea580c" />
+              </View>
+              <View style={{flex:1}}>
+                <Text style={styles.productInfoLabel}>Product</Text>
+                <Text style={styles.productInfoValue}>{product.title}</Text>
+              </View>
+            </View>
             <Text style={styles.formLabel}>First Name</Text>
             <View style={styles.inputWrap}>
               <Ionicons name="person-outline" size={16} color="#94a3b8" />
@@ -352,11 +402,27 @@ const EnquiryFormModal = ({ product, onClose, onSaved }) => {
 export default function FarmingBuyScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const isWeb = Platform.OS === 'web';
+    const isWideWeb = isWeb && width >= 900;
+  const [sidebarVisible, setSidebarVisible] = useState(false);
+
   const [loading, setLoading] = useState(true);
   const [listings, setListings] = useState([]);
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [wishlist, setWishlist] = useState({});
+  const toggleWishlist = (item) => {
+    setWishlist((prev) => ({ ...prev, [item.id]: !prev[item.id] }));
+  };
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [enquiryProduct, setEnquiryProduct] = useState(null);
+  const [showSortDropdown, setShowSortDropdown] = useState(false);
+
+  // ── Marketplace UI state (search / category / price / sort) ──
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeCategory, setActiveCategory] = useState('All');
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
+  const [sortBy, setSortBy] = useState('newest');
 
   const loadListings = useCallback(async () => {
     setLoading(true);
@@ -366,6 +432,38 @@ export default function FarmingBuyScreen({ navigation }) {
   }, []);
 
   useFocusEffect(useCallback(() => { loadListings(); }, [loadListings]));
+
+  const categories = useMemo(() => {
+    const fromData = Array.from(
+      new Set(listings.map((l) => (l.sector || '').trim()).filter(Boolean))
+    );
+    const merged = fromData.length ? fromData : FALLBACK_CATEGORIES;
+    return ['All', ...merged];
+  }, [listings]);
+
+  const filteredListings = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    const min = minPrice ? priceValue(minPrice) : null;
+    const max = maxPrice ? priceValue(maxPrice) : null;
+
+    let result = listings.filter((item) => {
+      if (activeCategory !== 'All' && (item.sector || 'Others') !== activeCategory) return false;
+      if (q) {
+        const hay = `${item.title || ''} ${item.description || ''} ${item.city || ''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      const p = priceValue(item.price);
+      if (min !== null && p < min) return false;
+      if (max !== null && p > max) return false;
+      return true;
+    });
+
+    if (sortBy === 'price_low') result = [...result].sort((a, b) => priceValue(a.price) - priceValue(b.price));
+    else if (sortBy === 'price_high') result = [...result].sort((a, b) => priceValue(b.price) - priceValue(a.price));
+    else result = [...result].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+
+    return result;
+  }, [listings, activeCategory, searchQuery, minPrice, maxPrice, sortBy]);
 
   const handleCall = (contact) => {
     const phone = String(contact || '').replace(/\D/g, '');
@@ -389,101 +487,315 @@ export default function FarmingBuyScreen({ navigation }) {
     setEnquiryProduct(product);
   };
 
+  const getSortLabel = () => {
+    const option = SORT_OPTIONS.find(opt => opt.id === sortBy);
+    return option ? option.label : 'Sort By';
+  };
+
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       <View style={{ height: insets.top, backgroundColor: '#fff' }} />
 
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.75}>
-          <Ionicons name="chevron-back" size={22} color="#334155" />
-        </TouchableOpacity>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Buy</Text>
-          <Text style={styles.headerSub}>Browse ecommerce products</Text>
+      <View style={isWideWeb ? styles.pageRow : { flex: 1 }}>
+      <View style={{ flex: 1 }}>
+      {/* ── Top bar: common ModuleWebHeader on web (same as Subscription Plans etc.), custom bar on native ── */}
+      <ModuleWebHeader
+        title="Ecome Marketplace"
+        navigation={navigation}
+        onBack={() => navigation.goBack()}
+        onMenuPress={() => setSidebarVisible(true)}
+        rightExtra={
+          <TouchableOpacity onPress={() => navigation.navigate('Sell')} style={styles.sellBtnHeader} activeOpacity={0.85}>
+            <Ionicons name="add" size={16} color="#fff" />
+            <Text style={styles.sellBtnText}>Sell</Text>
+          </TouchableOpacity>
+        }
+      />
+      {Platform.OS !== 'web' && (
+        <View style={styles.header}>
+          <View style={styles.headerLeft}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.75}>
+              <Ionicons name="chevron-back" size={22} color="#334155" />
+            </TouchableOpacity>
+            <View style={styles.brandRow}>
+              <View style={styles.brandIcon}>
+                <Ionicons name="bag-handle" size={16} color="#fff" />
+              </View>
+              <Text style={styles.headerTitle}>Ecome Marketplace</Text>
+            </View>
+          </View>
+
+          <View style={styles.headerRight}>
+            <TouchableOpacity onPress={() => navigation.navigate('Sell')} style={styles.sellBtn} activeOpacity={0.85}>
+              <Ionicons name="add" size={18} color="#fff" />
+              <Text style={styles.sellBtnText}>Sell</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-        <TouchableOpacity onPress={() => navigation.navigate('Sell')} style={styles.sellBtn} activeOpacity={0.85}>
-          <Ionicons name="add" size={18} color="#fff" />
-          <Text style={styles.sellBtnText}>Sell</Text>
-        </TouchableOpacity>
-      </View>
+      )}
+      {/* Search row — kept on its own line under the header so search functionality isn't lost
+      <View style={styles.searchRow}>
+        <View style={[styles.searchWrap, isWideWeb && styles.searchWrapWide]}>
+          <Ionicons name="search-outline" size={18} color="#94a3b8" />
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search for products, sellers or categories..."
+            placeholderTextColor="#94a3b8"
+            style={[styles.searchInput, isWideWeb && styles.searchInputWide]}
+          />
+        </View>
+      </View> */}
 
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 28 }]}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.hero}>
-          <View style={styles.heroIcon}>
-            <Ionicons name="cart-outline" size={28} color="#d97706" />
-          </View>
+               {/* ── Hero banner — single full-width image only ── */}
+        {Platform.OS === 'web' ? (
+          <Image source={ECOM_HERO_IMAGE} style={styles.heroBannerImage} resizeMode="cover" />
+        ) : null}
+        {/* ── Category chips (Mobile only) ── */}
+        {!isWideWeb && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
+            {categories.map((cat) => {
+              const displayName = cat === 'All' ? 'All' : cat.charAt(0).toUpperCase() + cat.slice(1).toLowerCase();
+              return (
+                <TouchableOpacity
+                  key={cat}
+                  onPress={() => setActiveCategory(cat)}
+                  style={[styles.chip, activeCategory === cat && styles.chipActive]}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name={CATEGORY_ICONS[cat] || 'pricetag-outline'}
+                    size={15}
+                    color={activeCategory === cat ? '#fff' : BRAND.primary}
+                  />
+                  <Text style={[styles.chipText, activeCategory === cat && styles.chipTextActive]}>{displayName}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
+
+        <View style={isWideWeb ? styles.bodyRow : null}>
+          {/* ── Web sidebar: categories + price + sort ── */}
+          {isWideWeb && (
+            <View style={styles.sidebar}>
+              <Text style={styles.sidebarLabel}>Categories</Text>
+              {categories.map((cat) => {
+                const displayName = cat === 'All' ? 'All Categories' : cat.charAt(0).toUpperCase() + cat.slice(1).toLowerCase();
+                return (
+                  <TouchableOpacity
+                    key={cat}
+                    onPress={() => setActiveCategory(cat)}
+                    style={[styles.sidebarItem, activeCategory === cat && styles.sidebarItemActive]}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={[styles.sidebarItemText, activeCategory === cat && styles.sidebarItemTextActive]}>
+                      {displayName}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+
+              <Text style={[styles.sidebarLabel, { marginTop: 22 }]}>Price Range</Text>
+              <View style={styles.priceRow}>
+                <View style={styles.priceInputWrap}>
+                  <Text style={styles.priceRs}>₹</Text>
+                  <TextInput
+                    value={minPrice}
+                    onChangeText={setMinPrice}
+                    placeholder="0"
+                    placeholderTextColor="#94a3b8"
+                    keyboardType="numeric"
+                    style={styles.priceInput}
+                  />
+                </View>
+                <Text style={{ color: BRAND.faint }}>–</Text>
+                <View style={styles.priceInputWrap}>
+                  <Text style={styles.priceRs}>₹</Text>
+                  <TextInput
+                    value={maxPrice}
+                    onChangeText={setMaxPrice}
+                    placeholder="10,00,000"
+                    placeholderTextColor="#94a3b8"
+                    keyboardType="numeric"
+                    style={styles.priceInput}
+                  />
+                </View>
+              </View>
+
+              <Text style={[styles.sidebarLabel, { marginTop: 22 }]}>Sort By</Text>
+              {SORT_OPTIONS.map((opt) => (
+                <TouchableOpacity
+                  key={opt.id}
+                  onPress={() => setSortBy(opt.id)}
+                  style={[styles.sortItem, sortBy === opt.id && styles.sortItemActive]}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name={sortBy === opt.id ? 'radio-button-on' : 'radio-button-off'}
+                    size={16}
+                    color={sortBy === opt.id ? BRAND.primary : '#cbd5e1'}
+                  />
+                  <Text style={styles.sortItemText}>{opt.label}</Text>
+                </TouchableOpacity>
+              ))}
+
+              <TouchableOpacity
+                style={styles.applyBtn}
+                activeOpacity={0.85}
+                onPress={() => { setActiveCategory(activeCategory); }}
+              >
+                <Ionicons name="options-outline" size={16} color="#fff" />
+                <Text style={styles.applyBtnText}>Apply Filters</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* ── Main content: results header + grid ── */}
           <View style={{ flex: 1 }}>
-            <Text style={styles.heroTitle}>Ecome Marketplace</Text>
-            <Text style={styles.heroText}>View products, contact sellers, or send an enquiry.</Text>
+            <View style={styles.resultsBar}>
+              <Text style={styles.resultsText}>
+                {loading ? 'Loading…' : `Showing ${filteredListings.length} of ${listings.length} products`}
+              </Text>
+              {!isWideWeb && (
+                <View style={styles.sortDropdownWrap}>
+                  <TouchableOpacity
+                    style={styles.sortDropdownBtn}
+                    onPress={() => setShowSortDropdown(!showSortDropdown)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.sortDropdownText}>{getSortLabel()}</Text>
+                    <Ionicons name="chevron-down" size={16} color="#64748b" />
+                  </TouchableOpacity>
+                  {showSortDropdown && (
+                    <View style={styles.sortDropdownMenu}>
+                      {SORT_OPTIONS.map((opt) => (
+                        <TouchableOpacity
+                          key={opt.id}
+                          style={[styles.sortDropdownItem, sortBy === opt.id && styles.sortDropdownItemActive]}
+                          onPress={() => {
+                            setSortBy(opt.id);
+                            setShowSortDropdown(false);
+                          }}
+                        >
+                          <Text style={[styles.sortDropdownItemText, sortBy === opt.id && styles.sortDropdownItemTextActive]}>
+                            {opt.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              )}
+              {isWideWeb && (
+                <View style={styles.sortPills}>
+                  {SORT_OPTIONS.map((opt) => (
+                    <TouchableOpacity
+                      key={opt.id}
+                      onPress={() => setSortBy(opt.id)}
+                      style={[styles.sortPill, sortBy === opt.id && styles.sortPillActive]}
+                      activeOpacity={0.85}
+                    >
+                      <Text style={[styles.sortPillText, sortBy === opt.id && styles.sortPillTextActive]}>
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            {loading ? (
+              <View style={styles.stateBox}>
+                <ActivityIndicator color={BRAND.primary} />
+                <Text style={styles.stateText}>Loading products...</Text>
+              </View>
+            ) : filteredListings.length ? (
+              <View style={styles.listingsGrid}>
+                {filteredListings.map((item) => (
+                  <TouchableOpacity
+                    key={`${item.owner_email}-${item.id}`}
+                    style={[styles.card, isWideWeb && styles.cardWeb]}
+                    onPress={() => {
+                      setSelectedImageIndex(0);
+                      setSelectedProduct(item);
+                    }}
+                    activeOpacity={0.88}
+                  >
+                    <View>
+                      <ProductMedia
+                        item={item}
+                        onOpen={(index = 0) => {
+                          setSelectedImageIndex(index);
+                          setSelectedProduct(item);
+                        }}
+                      />
+                      <View style={styles.verifiedRibbon}>
+                        <Text style={styles.verifiedRibbonText}>Verified Seller</Text>
+                      </View>
+                      <TouchableOpacity
+                        style={styles.wishlistBtn}
+                        activeOpacity={0.8}
+                        onPress={(e) => { e.stopPropagation?.(); toggleWishlist?.(item); }}
+                      >
+                        <Ionicons
+                          name={wishlist?.[item.id] ? 'heart' : 'heart-outline'}
+                          size={16}
+                          color={wishlist?.[item.id] ? '#dc2626' : '#64748b'}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                    <View style={styles.cardBody}>
+                      {item.sector ? (
+                        <View style={styles.categoryPill}>
+                          <Text style={styles.categoryPillText}>
+                            {item.sector.charAt(0).toUpperCase() + item.sector.slice(1).toLowerCase()}
+                          </Text>
+                        </View>
+                      ) : null}
+                      <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
+                      <Text style={styles.cardDesc} numberOfLines={2}>{item.description || 'No description added.'}</Text>
+                      <Text style={styles.cardPrice}>{money(item.price)}</Text>
+                      <View style={styles.cardBottomRow}>
+                        <TouchableOpacity
+                          style={styles.callBtn}
+                          onPress={(e) => { e.stopPropagation?.(); handleCall(item.contact); }}
+                          activeOpacity={0.85}
+                        >
+                          <Ionicons name="call-outline" size={14} color={BRAND.primaryDark} />
+                          <Text style={styles.callBtnText}>Call</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.enquireBtn}
+                          onPress={(e) => { e.stopPropagation?.(); openEnquiry(item); }}
+                          activeOpacity={0.85}
+                        >
+                          <Ionicons name="chatbubble-ellipses-outline" size={14} color="#fff" />
+                          <Text style={styles.actionBtnText}>Enquire</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : (
+              <View style={styles.stateBox}>
+                <Ionicons name="basket-outline" size={28} color="#94a3b8" />
+                <Text style={styles.emptyTitle}>No products found</Text>
+                <Text style={styles.stateText}>Try changing your filters, or check back later for new listings.</Text>
+              </View>
+            )}
           </View>
         </View>
-
-        {loading ? (
-          <View style={styles.stateBox}>
-            <ActivityIndicator color="#ea580c" />
-            <Text style={styles.stateText}>Loading products...</Text>
-          </View>
-        ) : listings.length ? (
-          <View style={styles.listingsGrid}>
-            {listings.map((item) => (
-              <TouchableOpacity
-                key={`${item.owner_email}-${item.id}`}
-                style={styles.card}
-                onPress={() => {
-                  setSelectedImageIndex(0);
-                  setSelectedProduct(item);
-                }}
-                activeOpacity={0.88}
-              >
-                <ProductMedia
-                  item={item}
-                  onOpen={(index = 0) => {
-                    setSelectedImageIndex(index);
-                    setSelectedProduct(item);
-                  }}
-                />
-                <View style={styles.cardBody}>
-                  <View style={styles.cardTop}>
-                    <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
-                    <Text style={styles.cardPrice}>{money(item.price)}</Text>
-                  </View>
-                  <Text style={styles.cardMeta}>{item.sector || 'General'} | {item.city || 'Location N/A'}</Text>
-                  <Text style={styles.cardDesc} numberOfLines={2}>{item.description || 'No description added.'}</Text>
-                  <View style={styles.cardBottomRow}>
-                    <TouchableOpacity
-                      style={styles.callBtn}
-                      onPress={(e) => { e.stopPropagation?.(); handleCall(item.contact); }}
-                      activeOpacity={0.85}
-                    >
-                      <Ionicons name="call-outline" size={14} color="#fff" />
-                      <Text style={styles.actionBtnText}>Call</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.enquireBtn}
-                      onPress={(e) => { e.stopPropagation?.(); openEnquiry(item); }}
-                      activeOpacity={0.85}
-                    >
-                      <Ionicons name="chatbubble-ellipses-outline" size={14} color="#fff" />
-                      <Text style={styles.actionBtnText}>Enquire</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        ) : (
-          <View style={styles.stateBox}>
-            <Ionicons name="basket-outline" size={28} color="#94a3b8" />
-            <Text style={styles.emptyTitle}>No products yet</Text>
-            <Text style={styles.stateText}>Subscribed sellers can add products from the Sell page.</Text>
-          </View>
-        )}
       </ScrollView>
+      </View>
+      </View>
 
       <Modal
         visible={Boolean(selectedProduct)}
@@ -519,7 +831,9 @@ export default function FarmingBuyScreen({ navigation }) {
                       {selectedProduct.sector ? (
                         <View style={styles.metaChip}>
                           <Ionicons name="grid-outline" size={12} color="#0369a1" />
-                          <Text style={styles.metaChipText}>{selectedProduct.sector}</Text>
+                          <Text style={styles.metaChipText}>
+                            {selectedProduct.sector.charAt(0).toUpperCase() + selectedProduct.sector.slice(1).toLowerCase()}
+                          </Text>
                         </View>
                       ) : null}
                       {selectedProduct.city ? (
@@ -573,6 +887,12 @@ export default function FarmingBuyScreen({ navigation }) {
         onClose={() => setEnquiryProduct(null)}
         onSaved={loadListings}
       />
+
+      <Sidebar
+        visible={sidebarVisible}
+        onClose={() => setSidebarVisible(false)}
+        activeItem="eCome Marketplace"
+      />
     </View>
   );
 }
@@ -580,38 +900,355 @@ export default function FarmingBuyScreen({ navigation }) {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#f8fafc' },
   header: {
-    flexDirection: 'row', alignItems: 'center', gap: 10,
-    paddingHorizontal: 16, paddingVertical: 12,
-    backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e2e8f0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minWidth: Platform.OS === 'web' ? 'auto' : 'auto',
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 12,
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   backBtn: {
-    width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: '#0f172a' },
-  headerSub: { fontSize: 11, color: '#94a3b8', marginTop: 1 },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  brandIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 9,
+    backgroundColor: BRAND.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: BRAND.ink,
+   fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
+  },
+  searchWrap: {
+    flex: 1,
+    maxWidth: 500,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: BRAND.line,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  searchWrapWide: {
+    maxWidth: 600,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: BRAND.ink,
+    padding: 0,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  searchInputWide: {
+    fontSize: 16,
+  },
   sellBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#16a34a', borderRadius: 10, paddingHorizontal: 13, paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: BRAND.primary,
+    borderRadius: 10,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
   },
-  sellBtnText: { color: '#fff', fontWeight: '800', fontSize: 13 },
+  sellBtnHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  searchRow: {
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    alignItems: Platform.OS === 'web' ? 'center' : 'stretch',
+  },
+  sellBtnText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 13,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  pageRow: { flex: 1, flexDirection: 'row' },
   scroll: { flex: 1 },
   content: {
     padding: 16,
-    maxWidth: 1100,
+    maxWidth: 1380,
     width: '100%',
     alignSelf: 'center',
   },
-  hero: {
-    flexDirection: 'row', gap: 14, padding: 16, borderRadius: 16,
-    borderWidth: 1, borderColor: '#fef3c7', backgroundColor: '#fffbeb', marginBottom: 20,
+  // ── Hero banner — coded design ──
+  heroBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#b91c1c',
+    backgroundImage: 'linear-gradient(90deg, #7f1d1d 0%, #b91c1c 100%)',
+    borderRadius: 16,
+    padding: 22,
   },
-  heroIcon: {
-    width: 50, height: 50, borderRadius: 14, alignItems: 'center',
-    justifyContent: 'center', backgroundColor: '#fef3c7',
+  heroBannerLeft: { flex: 1, paddingRight: 12 },
+  heroBannerLabel: { color: '#fecaca', fontSize: 12, fontWeight: '800', letterSpacing: 1, marginBottom: 6 },
+  heroBannerTitle: { color: '#fff', fontSize: 22, fontWeight: '800', marginBottom: 6 },
+  heroBannerSubtitle: { color: '#fecaca', fontSize: 13, fontWeight: '500' },
+  heroBannerIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  heroTitle: { fontSize: 16, fontWeight: '900', color: '#92400e' },
-  heroText: { fontSize: 12, color: '#b45309', marginTop: 4, lineHeight: 18 },
+  heroStatsRow: {
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: -20,
+    marginBottom: 16,
+    gap: 12,
+    ...Platform.select({
+      web: { boxShadow: '0 8px 24px rgba(15,23,42,0.08)' },
+      default: { elevation: 3 },
+    }),
+  },
+  heroStatsRowWide: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  heroStatItem: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  heroStatTitle: { fontSize: 13, fontWeight: '700', color: '#0f172a' },
+  heroStatSubtitle: { fontSize: 11, color: '#64748b', marginTop: 2 },
+  // ── Category chips ──
+  chipRow: {
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 14,
+    flexDirection: 'row',
+    flexWrap: Platform.OS === 'android' ? 'wrap' : 'nowrap',
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: BRAND.line,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+  },
+  chipActive: { backgroundColor: BRAND.primary, borderColor: BRAND.primary },
+  chipText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#334155',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  chipTextActive: { color: '#fff' },
+
+  // ── Web sidebar + filters ──
+  bodyRow: { flexDirection: 'row', gap: 24, alignItems: 'flex-start' },
+  sidebar: {
+    width: 250,
+    flexShrink: 0,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: BRAND.line,
+    borderRadius: 8,
+    padding: 18,
+  },
+  sidebarLabel: {
+    fontSize: 19,
+    fontWeight: '700',
+    color: BRAND.ink,
+    marginBottom: 10,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  sidebarItem: { paddingVertical: 9, paddingHorizontal: 10, borderRadius: 5 },
+  sidebarItemActive: { backgroundColor: BRAND.primaryLight },
+  sidebarItemText: {
+    fontSize: 14,
+    color: '#475569',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  sidebarItemTextActive: { color: BRAND.primaryDark, fontWeight: '700' },
+  priceRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  priceInputWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: BRAND.line,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 7,
+    backgroundColor: '#f8fafc',
+  },
+  priceRs: {
+    fontSize: 11,
+    color: '#94a3b8',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  priceInput: {
+    flex: 1,
+    fontSize: 12,
+    color: BRAND.ink,
+    padding: 0,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  sortItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7 },
+  sortItemActive: {},
+  sortItemText: {
+    fontSize: 12.5,
+    color: '#475569',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  applyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: BRAND.primary,
+    borderRadius: 5,
+    paddingVertical: 11,
+    marginTop: 22,
+  },
+  applyBtnText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 13,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+
+  // ── Results bar ──
+  resultsBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 14,
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  resultsText: {
+    fontSize: 13,
+    color: '#64748b',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  sortPills: { flexDirection: 'row', gap: 8 },
+  sortPill: {
+    borderWidth: 1,
+    borderColor: BRAND.line,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: '#fff',
+  },
+  sortPillActive: { backgroundColor: BRAND.primaryLight, borderColor: BRAND.primaryBorder },
+  sortPillText: {
+    fontSize: 11.5,
+    color: '#64748b',
+    fontWeight: '600',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  sortPillTextActive: { color: BRAND.primaryDark, fontWeight: '800' },
+
+  // ── Sort Dropdown (Mobile) ──
+  sortDropdownWrap: {
+    position: 'relative',
+    zIndex: 10,
+  },
+  sortDropdownBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderColor: BRAND.line,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#fff',
+  },
+  sortDropdownText: {
+    fontSize: 13,
+    color: '#334155',
+    fontWeight: '600',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  sortDropdownMenu: {
+    position: 'absolute',
+    top: 40,
+    right: 0,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: BRAND.line,
+    borderRadius: 8,
+    padding: 4,
+    minWidth: 180,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sortDropdownItem: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+  },
+  sortDropdownItemActive: {
+    backgroundColor: BRAND.primaryLight,
+  },
+  sortDropdownItemText: {
+    fontSize: 13,
+    color: '#475569',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  sortDropdownItemTextActive: {
+    color: BRAND.primaryDark,
+    fontWeight: '700',
+  },
 
   listingsGrid: {
     flexDirection: 'row',
@@ -621,32 +1258,36 @@ const styles = StyleSheet.create({
 
   card: {
     backgroundColor: '#fff',
-    borderRadius: 16,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     overflow: 'hidden',
-    width: Platform.OS === 'web' ? 'calc(50% - 8px)' : '100%',
+    width: Platform.OS === 'android' ? '100%' : (Platform.OS === 'web' ? 'calc(50% - 8px)' : '100%'),
     ...(Platform.OS !== 'web' ? { marginBottom: 14 } : {}),
+  },
+  cardWeb: {
+    width: 'calc(25% - 12px)',
   },
 
   cardImage: {
-  width: '100%',
-  aspectRatio: 4 / 3,
-  backgroundColor: '#dcfce7',
-},
-cardMediaFallback: {
-  width: '100%',
-  aspectRatio: 4 / 3,
-  alignItems: 'center',
-  justifyContent: 'center',
-  backgroundColor: '#f1f5f9',
-  gap: 8,
-},
+    width: '100%',
+    aspectRatio: 4 / 3,
+    backgroundColor: '#dcfce7',
+  },
+  cardMediaFallback: {
+    width: '100%',
+    aspectRatio: 4 / 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f1f5f9',
+    gap: 8,
+  },
 
   noImageText: {
     fontSize: 13,
     color: '#94a3b8',
     fontWeight: '500',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
   },
 
   photoCountBadge: {
@@ -665,16 +1306,89 @@ cardMediaFallback: {
     color: '#fff',
     fontSize: 12,
     fontWeight: '700',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
   },
 
+  verifiedRibbon: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    backgroundColor: BRAND.primaryDark,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  verifiedRibbonText: {
+    color: '#fff',
+    fontSize: 10.5,
+    fontWeight: '800',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  wishlistBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+heroBannerImage: {
+  width: '100%',
+  	...(Platform.OS === 'web' ? { height: 350 } : {}),
+  aspectRatio: Platform.OS === 'web' ? 5.55 : 1314 / 370,
+  borderRadius: 16,
+  marginBottom: 16,
+},
+  categoryPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: BRAND.primaryLight,
+    borderRadius: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginBottom: 6,
+  },
+  categoryPillText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: BRAND.primaryDark,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
   cardBody: { padding: 12 },
-  cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 },
-  cardTitle: { flex: 1, fontSize: 15, fontWeight: '800', color: '#0f172a', lineHeight: 21 },
-  cardPrice: { fontSize: 14, fontWeight: '900', color: '#ea580c', flexShrink: 0 },
-  cardMeta: { fontSize: 12, color: '#64748b', marginTop: 5 },
-  cardDesc: { fontSize: 13, color: '#475569', lineHeight: 19, marginTop: 6 },
+  cardTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0f172a',
+    lineHeight: 21,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  cardMeta: {
+    fontSize: 11.5,
+    color: '#94a3b8',
+    marginTop: 3,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  cardPrice: {
+    fontSize: 14.5,
+    fontWeight: '900',
+    color: BRAND.primaryDark,
+    marginTop: 5,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  cardDesc: {
+    fontSize: 12.5,
+    color: '#64748b',
+    lineHeight: 18,
+    marginTop: 6,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
 
-  // ✅ FIXED: Buttons smaller, properly spaced from text
   cardBottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -687,10 +1401,16 @@ cardMediaFallback: {
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    backgroundColor: '#0369a1',
-    borderRadius: 10,
+    backgroundColor: BRAND.primaryLight,
+    borderRadius: 5,
     paddingVertical: 8,
     paddingHorizontal: 6,
+  },
+  callBtnText: {
+    color: BRAND.primaryDark,
+    fontWeight: '700',
+    fontSize: 12,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
   },
   enquireBtn: {
     flex: 1,
@@ -698,142 +1418,348 @@ cardMediaFallback: {
     alignItems: 'center',
     justifyContent: 'center',
     gap: 4,
-    backgroundColor: '#16a34a',
-    borderRadius: 10,
+    backgroundColor: BRAND.primaryDark,
+    borderRadius: 5,
     paddingVertical: 8,
     paddingHorizontal: 6,
   },
-  actionBtnText: { color: '#fff', fontWeight: '700', fontSize: 12 },
+  actionBtnText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 12,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
 
   stateBox: {
-    alignItems: 'center', justifyContent: 'center', padding: 28,
-    borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 28,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#fff',
   },
-  stateText: { marginTop: 8, color: '#64748b', textAlign: 'center', lineHeight: 20 },
-  emptyTitle: { fontSize: 16, fontWeight: '900', color: '#0f172a', marginTop: 8 },
+  stateText: {
+    marginTop: 8,
+    color: '#64748b',
+    textAlign: 'center',
+    lineHeight: 20,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#0f172a',
+    marginTop: 8,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
 
   modalBackdrop: {
-    flex: 1, backgroundColor: 'rgba(15,23,42,0.55)',
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.55)',
     justifyContent: Platform.OS === 'web' ? 'center' : 'flex-end',
     alignItems: 'center',
   },
   detailSheet: {
-    width: '100%', maxWidth: 520, maxHeight: '92%',
+    width: '100%',
+    maxWidth: 520,
+    maxHeight: '92%',
     backgroundColor: '#f8fafc',
     borderRadius: Platform.OS === 'web' ? 20 : 0,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     overflow: 'hidden',
   },
   modalCloseBtn: {
-    position: 'absolute', top: 12, right: 14, zIndex: 10,
-    width: 32, height: 32, borderRadius: 16,
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0',
-    alignItems: 'center', justifyContent: 'center',
+    position: 'absolute',
+    top: 12,
+    right: 14,
+    zIndex: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   gallery: { width: '100%', backgroundColor: '#f0fdf4' },
   galleryItem: { width: '100%', aspectRatio: 4 / 3 },
-modalProductImage: { width: '100%', height: '100%', backgroundColor: '#dcfce7' },
-modalProductImageFallback: {
-  width: '100%', height: '100%', backgroundColor: '#f0fdf4',
-  alignItems: 'center', justifyContent: 'center',
-},
+  modalProductImage: { width: '100%', height: '100%', backgroundColor: '#dcfce7' },
+  modalProductImageFallback: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#f0fdf4',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   modalThumbRow: { paddingHorizontal: 12, paddingVertical: 10, gap: 8 },
   modalThumbWrap: {
-    width: 74, height: 58, borderRadius: 10, overflow: 'hidden',
-    backgroundColor: '#dcfce7', borderWidth: 2, borderColor: 'transparent',
+    width: 74,
+    height: 58,
+    borderRadius: 10,
+    overflow: 'hidden',
+    backgroundColor: '#dcfce7',
+    borderWidth: 2,
+    borderColor: 'transparent',
   },
   modalThumbWrapActive: { borderColor: '#ea580c' },
   modalThumbImage: { width: '100%', height: '100%' },
   modalThumbFallback: {
-    flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f0fdf4',
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f0fdf4',
   },
-  videoLabel: { marginTop: 8, fontSize: 12, color: '#16a34a', fontWeight: '700' },
+  videoLabel: {
+    marginTop: 8,
+    fontSize: 12,
+    color: '#16a34a',
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
   imageCounter: {
-    position: 'absolute', right: 12, bottom: 12,
-    backgroundColor: 'rgba(15,23,42,0.75)', borderRadius: 999,
-    paddingHorizontal: 10, paddingVertical: 5,
+    position: 'absolute',
+    right: 12,
+    bottom: 12,
+    backgroundColor: 'rgba(15,23,42,0.75)',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
-  imageCounterText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  imageCounterText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
   modalProductInfo: {
-    backgroundColor: '#fff', padding: 16, marginBottom: 10,
-    borderWidth: 1, borderColor: '#e2e8f0', borderTopWidth: 0,
+    backgroundColor: '#fff',
+    padding: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderTopWidth: 0,
   },
   modalTitlePriceRow: {
-    flexDirection: 'row', alignItems: 'flex-start',
-    justifyContent: 'space-between', gap: 10, marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+    marginTop: 4,
   },
-  modalProductTitle: { flex: 1, fontSize: 20, fontWeight: '900', color: '#0f172a', lineHeight: 26 },
+  modalProductTitle: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: '900',
+    color: '#0f172a',
+    lineHeight: 26,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
   modalPriceBadge: {
-    backgroundColor: '#fff7ed', borderRadius: 10,
-    paddingHorizontal: 12, paddingVertical: 6,
-    borderWidth: 1, borderColor: '#fed7aa',
+    backgroundColor: '#fff7ed',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
   },
-  modalPriceText: { fontSize: 16, fontWeight: '900', color: '#ea580c' },
+  modalPriceText: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#ea580c',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
   modalMetaChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10, marginBottom: 14 },
   metaChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: '#eff6ff', borderRadius: 999,
-    paddingHorizontal: 10, paddingVertical: 5,
-    borderWidth: 1, borderColor: '#bfdbfe',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#eff6ff',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: '#bfdbfe',
   },
-  metaChipText: { fontSize: 12, color: '#0369a1', fontWeight: '600' },
+  metaChipText: {
+    fontSize: 12,
+    color: '#0369a1',
+    fontWeight: '600',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
   modalDescSection: { marginBottom: 14 },
   modalSectionLabel: {
-    fontSize: 12, fontWeight: '800', color: '#94a3b8',
-    textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 6,
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#94a3b8',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 6,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
   },
-  modalDescText: { fontSize: 14, color: '#334155', lineHeight: 21 },
+  modalDescText: {
+    fontSize: 14,
+    color: '#334155',
+    lineHeight: 21,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
   modalInfoGrid: { gap: 8, marginBottom: 16 },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   infoIconWrap: {
-    width: 22, height: 22, borderRadius: 6,
-    backgroundColor: '#f0fdf4', alignItems: 'center', justifyContent: 'center',
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    backgroundColor: '#f0fdf4',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  infoLabel: { fontSize: 13, color: '#94a3b8', fontWeight: '600' },
-  infoValue: { fontSize: 13, color: '#0f172a', fontWeight: '700', flex: 1 },
+  infoLabel: {
+    fontSize: 13,
+    color: '#94a3b8',
+    fontWeight: '600',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  infoValue: {
+    fontSize: 13,
+    color: '#0f172a',
+    fontWeight: '700',
+    flex: 1,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
   modalActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
   modalCallBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, backgroundColor: '#0369a1', borderRadius: 14, paddingVertical: 14,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#0369a1',
+    borderRadius: 14,
+    paddingVertical: 14,
   },
   modalWhatsappBtn: {
-    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, backgroundColor: '#16a34a', borderRadius: 14, paddingVertical: 14,
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#16a34a',
+    borderRadius: 14,
+    paddingVertical: 14,
   },
   modalEnquiryBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    gap: 8, backgroundColor: '#ea580c', borderRadius: 14, paddingVertical: 14, marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#ea580c',
+    borderRadius: 14,
+    paddingVertical: 14,
+    marginTop: 10,
   },
-  modalActionText: { color: '#fff', fontWeight: '900', fontSize: 14 },
+  modalActionText: {
+    color: '#fff',
+    fontWeight: '900',
+    fontSize: 14,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
   sheetHeader: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: 16, paddingTop: 16, paddingBottom: 12, paddingRight: 52,
-    borderBottomWidth: 1, borderBottomColor: '#e2e8f0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 12,
+    paddingRight: 52,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e2e8f0',
   },
-  sheetTitle: { fontSize: 16, fontWeight: '900', color: '#0f172a', flex: 1 },
+  sheetTitle: {
+    fontSize: 16,
+    fontWeight: '900',
+    color: '#0f172a',
+    flex: 1,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
   formContent: { padding: 16, paddingBottom: 32 },
   productInfoBox: {
-    backgroundColor: '#fff7ed', borderRadius: 12, borderWidth: 1,
-    borderColor: '#fed7aa', paddingHorizontal: 14, paddingVertical: 12, marginBottom: 16,
-    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: '#fff7ed',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
-  productInfoLabel: { fontSize: 11, color: '#ea580c', fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 2 },
-productInfoValue: { fontSize: 15, color: '#0f172a', fontWeight: '800' },
-  formLabel: { fontSize: 14, fontWeight: '700', color: '#334155', marginBottom: 8, marginTop: 14 },
+  productInfoLabel: {
+    fontSize: 11,
+    color: '#ea580c',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 2,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  productInfoValue: {
+    fontSize: 15,
+    color: '#0f172a',
+    fontWeight: '800',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  formLabel: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#334155',
+    marginBottom: 8,
+    marginTop: 14,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
   inputWrap: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12,
-    backgroundColor: '#fff', paddingHorizontal: 14, paddingVertical: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    paddingHorizontal: 14,
+    paddingVertical: 2,
   },
-  input: { flex: 1, fontSize: 15, color: '#0f172a', paddingVertical: 12, outlineStyle: 'none' },
+  input: {
+    flex: 1,
+    fontSize: 15,
+    color: '#0f172a',
+    paddingVertical: 12,
+    outlineStyle: 'none',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
   textArea: {
-    minHeight: 90, textAlignVertical: 'top',
-    borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12,
-    backgroundColor: '#fff', paddingHorizontal: 14,
+    minHeight: 90,
+    textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    paddingHorizontal: 14,
   },
   submitEnquiryBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    backgroundColor: '#16a34a', borderRadius: 14, paddingVertical: 16, marginTop: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#16a34a',
+    borderRadius: 14,
+    paddingVertical: 16,
+    marginTop: 20,
   },
-  submitEnquiryText: { color: '#fff', fontSize: 16, fontWeight: '900' },
+  submitEnquiryText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '900',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
 });

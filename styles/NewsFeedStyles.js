@@ -283,6 +283,9 @@ metricLabel: {
   },
   // ─── News Card ────────────────────────────────────────────────────
   newsCard: {
+    width: '100%',
+    alignSelf: 'stretch',
+    minWidth: 0,
     borderWidth: 1,
     borderColor: '#ffe4ef',
     borderRadius: 16,

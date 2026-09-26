@@ -1,6 +1,5 @@
 import { Platform, StatusBar, StyleSheet } from 'react-native';
-import { OrganizeImportsMode } from 'typescript';
-
+import { MODULE_HEADER_HEIGHT_WEB } from '../constants/subscriptionThemes';
 const SAFE_TOP = Platform.OS === 'android'
   ? (StatusBar.currentHeight || 24) + 4
   : 50;
@@ -10,6 +9,13 @@ const orange_LIGHT  = '#FED7AA';
 const orange_BORDER = '#FED7AA';
 const orange_MUTED  = '#FED7AA';
 
+// ✅ NEW: news-feed description ke saath match karne ke liye same Roboto family
+const FONT = {
+  regular: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
+  medium:  Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
+  bold:    Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
+  black:   Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_900Black',
+};
 const SubscriptionPlansStyles = StyleSheet.create({
 
   // ── Root ──
@@ -17,10 +23,14 @@ const SubscriptionPlansStyles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f9fb',
   },
-  scrollContent: {
+    scrollContent: {
     paddingHorizontal: 16,
     paddingBottom: 110,
     paddingTop: 8,
+    // ✅ Web par content ek center column me rahe (card left-stuck na lage)
+      ...(Platform.OS === 'web'
+      ? { width: '100%', maxWidth: 1100, marginHorizontal: 'auto' }
+      : null),
   },
 
   // ── Back Button ──
@@ -35,11 +45,40 @@ const SubscriptionPlansStyles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f0f2f7',
   },
-  backBtnText: {
+   backBtnText: {
     color: orange,
     fontSize: 14,
     fontWeight: '600',
+   fontFamily: FONT.medium,},
+
+  // ── Header (image background — screenshot jaisa) ──
+       headerImageWrap: {
+    width: '100%',
+    alignSelf: 'stretch',
+    overflow: 'hidden',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#b91c1c',
+    // ✅ Web par sidebar ke "NewsHub" brand bar (.qm-brand = 60px) ke barabar
+    // height, taaki dono ki bottom line ek hi level par aaye
+    ...(Platform.OS === 'web'
+      ? { height: MODULE_HEADER_HEIGHT_WEB, paddingTop: 0, paddingBottom: 0, paddingHorizontal: 20 }
+      : { height: SAFE_TOP + 56, paddingTop: SAFE_TOP, paddingBottom: 16, paddingHorizontal: 16 }),
   },
+   headerImageInner: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  headerBackBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, width: 60 },
+  headerBackBtnText: { color: '#ffffff', fontSize: 14, fontWeight: '600', fontFamily: FONT.medium },
+  headerTitle: { color: '#ffffff', fontSize: 18, fontWeight: '600', fontFamily: FONT.medium },
 
   // ── Hero Card ──
   heroCard: {
@@ -67,10 +106,32 @@ const SubscriptionPlansStyles = StyleSheet.create({
     fontWeight: '800',
     color: '#ffffff',
     marginBottom: 4,
+    fontFamily: FONT.bold,
   },
   heroSubtitle: {
     fontSize: 13,
     color: 'rgba(255,255,255,0.8)',
+    fontFamily: FONT.regular,
+  },
+
+  // ── Plain Hero (screenshot jaisa — koi colored box nahi, seedha bold text) ──
+  heroPlain: {
+    marginTop: 14,
+    marginBottom: 18,
+    ...(Platform.OS === 'web' ? { paddingLeft: 290 } : null),
+  },
+  heroTitlePlain: {
+    fontSize: 24,
+    fontFamily: FONT.medium,
+    fontWeight: '600',
+    color: '#dc2626',
+    marginBottom: 6,
+  },
+  heroSubtitlePlain: {
+    fontSize: 14,
+    fontFamily: FONT.regular,
+    color: '#374151',
+    lineHeight: 20,
   },
 
   // ── Owner Row ──
@@ -81,8 +142,8 @@ const SubscriptionPlansStyles = StyleSheet.create({
     marginTop: 14,
   },
   ownerBadge: {
-    width: 40,
-    height: 40,
+    width: 50,
+    height: 50,
     borderRadius: 20,
     backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
@@ -95,12 +156,12 @@ const SubscriptionPlansStyles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     color: '#ffffff',
-  },
+   fontFamily: FONT.bold,},
   ownerEmail: {
     fontSize: 12,
     color: 'rgba(255,255,255,0.75)',
     marginTop: 1,
-  },
+   fontFamily: FONT.regular,},
 
   // ── Active Banner ──
   activeBanner: {
@@ -123,18 +184,18 @@ const SubscriptionPlansStyles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 4,
-  },
+   fontFamily: FONT.bold,},
   activeBannerName: {
     fontSize: 18,
     fontWeight: '800',
     color: '#0f172a',
     marginBottom: 2,
-  },
+   fontFamily: FONT.bold,},
   activeBannerMeta: {
     fontSize: 13,
     color: '#14b87a',
     fontWeight: '700',
-  },
+   fontFamily: FONT.bold,},
   activeBannerIcon: {
     marginLeft: 12,
   },
@@ -153,27 +214,77 @@ const SubscriptionPlansStyles = StyleSheet.create({
     shadowRadius: 10,
     elevation: 2,
   },
-  sectionTitle: {
+   sectionTitle: {
     fontSize: 15,
-    fontWeight: '800',
+    fontWeight: '600',
     color: '#0f172a',
+    marginBottom: 14,
+    fontFamily: FONT.medium,
+  },
+
+    // ── Plans Grid (2-column, screenshot jaisa, koi horizontal scroll nahi) ──
+  plansGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+  },
+  planCardWrap: {
+    width: '48.5%',
     marginBottom: 14,
   },
 
-  // ── Plan Card ──
-  planCard: {
-    backgroundColor: '#fafbfd',
+   // ── Plan Card (2-column grid card) ──
+  // NOTE: borderWidth यहाँ हमेशा fixed (3) रखा गया है — चाहे card select/active
+  // हो या ना हो — सिर्फ borderColor बदलता है। Pehle select hone par borderWidth
+  // 0 se 3 badalta tha, jispe grid ke sabhi cards ka layout re-measure hota
+  // tha aur ImageBackground wale image kabhi-kabhi gayab/blank dikhne lagte
+  // the (agla card click karte hi pehla card gayab ho jaata tha). Fixed
+  // borderWidth rakhne se layout kabhi reflow nahi hota, to yeh bug fix ho
+  // jaata hai.
+    planCard: {
+    height: 258,
     borderRadius: 18,
     padding: 16,
-    marginBottom: 12,
-    borderWidth: 1.5,
-    borderColor: '#eef0f5',
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+    borderWidth: 3,
+    borderColor: 'transparent',
   },
-  planCardActive: {
-    borderWidth: 2,
-    borderColor: orange,
-    backgroundColor: orange_LIGHT,
+    planCardImage: {
+      borderRadius: 18, position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+      ...(Platform.OS === 'web' ? { width: '100%', height: '100%' } : null),
+    },
+  planCardSelected: { borderColor: '#ffffff' },
+  planCardActive: { opacity: 1, borderColor: '#16a34a' },
+
+  // ── Horizontal Carousel + Side Arrows ──
+  carouselRow: { flexDirection: 'row', alignItems: 'center' },
+  carouselScroll: { flexGrow: 0 },
+  carouselArrow: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: '#ffffff', alignItems: 'center', justifyContent: 'center',
+    marginHorizontal: 6, borderWidth: 1, borderColor: orange_BORDER,
+    elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1, shadowRadius: 3,
   },
+  carouselArrowDisabled: { opacity: 0.45 },
+
+  // ── "Most Popular" ribbon ──
+  popularBadge: {
+    position: 'absolute', top: 12, right: 12,
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: 'rgba(0,0,0,0.28)', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999,
+  },
+  popularBadgeText: { color: '#ffffff', fontSize: 10, fontWeight: '800', fontFamily: FONT.bold },
+
+  // ── "Select Plan" pill andar card ke ──
+   selectPlanBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
+    backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 999, paddingVertical: 14, paddingHorizontal: 42,
+    marginTop: 8, alignSelf: 'center',
+  },
+  selectPlanBtnActive: { backgroundColor: '#ffffff' },
+  selectPlanBtnText: { color: '#b91c1c', fontSize: 13, fontWeight: '800', fontFamily: FONT.bold },
   planTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -183,23 +294,11 @@ const SubscriptionPlansStyles = StyleSheet.create({
   planTitleWrap: {
     flex: 1,
   },
-  planName: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#0f172a',
-  },
-  planDuration: {
-    fontSize: 12,
-    color: '#94a3b8',
-    marginTop: 2,
-  },
-  planPrice: {
-    fontSize: 26,
-    fontWeight: '900',
-    color: orange,
-    marginBottom: 10,
-  },
-
+   planName: { fontSize: 15, fontWeight: '600', fontFamily: FONT.medium },
+  planDuration: { fontSize: 11, marginTop: 2, marginBottom: 8, fontFamily: FONT.regular },
+  planPriceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 6, marginBottom: 8 },
+  planPrice: { fontSize: 22, fontWeight: '600', fontFamily: FONT.medium },
+  planPriceOriginal: { fontSize: 13, textDecorationLine: 'line-through', fontFamily: FONT.regular },
   // ── Active Pill ──
   activePill: {
     backgroundColor: '#14b87a',
@@ -212,7 +311,7 @@ const SubscriptionPlansStyles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 11,
     fontWeight: '800',
-  },
+   fontFamily: FONT.bold,},
 
   // ── Features ──
   featuresList: {
@@ -233,12 +332,13 @@ const SubscriptionPlansStyles = StyleSheet.create({
     flex: 1,
   },
 
-  // ── Tap hint ──
+    // ── Tap hint ──
   tapHint: {
     marginTop: 8,
-    fontSize: 12,
-    color: orange,
+    fontSize: 11,
+    color: '#16a34a',
     fontWeight: '700',
+    fontFamily: FONT.bold,
   },
 
   // ── Buy Button ──
@@ -256,8 +356,53 @@ const SubscriptionPlansStyles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     color: '#ffffff',
+    fontFamily: FONT.bold,
   },
 
+  // ── Fixed Bottom "Pay" Bar (screenshot ke Pay button jaisa) ──
+  payBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    paddingBottom: 26,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f2f7',
+    elevation: 12,
+    shadowColor: orange,
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
+  payBarLabel: {
+    fontSize: 12,
+    color: '#6B6B6B',
+    marginBottom: 2,
+    fontFamily: FONT.regular,
+  },
+  payBarPrice: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#0f172a',
+    fontFamily: FONT.medium,
+  },
+   payBtn: {
+    minWidth: 140,
+    borderRadius: 100,
+    paddingHorizontal: 30,
+    paddingVertical: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+payBtnImage: { borderRadius: 100, width: '100%', height: '100%', resizeMode: 'cover' },
+  payBtnText: { fontSize: 16, fontWeight: '800', fontFamily: FONT.bold },
   // ── Role Badge ──
   roleBadge: {
     flexDirection: 'row',
@@ -272,7 +417,7 @@ const SubscriptionPlansStyles = StyleSheet.create({
   roleBadgeText: {
     fontSize: 12,
     fontWeight: '700',
-  },
+   fontFamily: FONT.bold,},
 
   // ── Seat Modal ──
   seatBackdrop: {
@@ -324,7 +469,7 @@ const SubscriptionPlansStyles = StyleSheet.create({
     fontWeight: '700',
     color: '#0f172a',
     marginBottom: 4,
-  },
+   fontFamily: FONT.bold,},
   seatStateRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -341,13 +486,13 @@ const SubscriptionPlansStyles = StyleSheet.create({
     fontSize: 12,
     color: '#94a3b8',
     fontWeight: '500',
-  },
+   fontFamily: FONT.medium,},
   seatLoadingText: {
     fontSize: 12,
     color: '#94a3b8',
     fontWeight: '500',
     paddingVertical: 10,
-  },
+   fontFamily: FONT.medium,},
 
   // ── Pending Plan Preview ──
   pendingPlanBox: {
@@ -365,18 +510,18 @@ const SubscriptionPlansStyles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 4,
-  },
+   fontFamily: FONT.bold,},
   pendingPlanName: {
     fontSize: 15,
     fontWeight: '800',
     color: '#0f172a',
     marginBottom: 2,
-  },
+   fontFamily: FONT.bold,},
   pendingPlanMeta: {
     fontSize: 12,
     color: '#94a3b8',
     fontWeight: '600',
-  },
+   fontFamily: FONT.medium,},
 
   // ── Seat Item ──
   seatItem: {
@@ -402,7 +547,7 @@ const SubscriptionPlansStyles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: '#0f172a',
-  },
+   fontFamily: FONT.medium,},
   seatItemNameDisabled: {
     color: '#b0b8cc',
   },
@@ -411,7 +556,7 @@ const SubscriptionPlansStyles = StyleSheet.create({
     fontWeight: '500',
     color: orange,
     marginTop: 3,
-  },
+   fontFamily: FONT.medium,},
   seatItemStatusMuted: {
     color: '#b0b8cc',
   },
@@ -423,27 +568,42 @@ const SubscriptionPlansStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  seatCheckCircleEmpty: {
+   seatCheckCircleEmpty: {
     width: 22,
     height: 22,
     borderRadius: 99,
     borderWidth: 1.5,
     borderColor: '#e2e8f0',
   },
-
+  seatSubmitBtn: {
+    marginTop: 16,
+    marginBottom: 8,
+    backgroundColor: '#ea580c',
+    borderRadius: 14,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  seatSubmitBtnDisabled: {
+    backgroundColor: '#fcd9b8',
+  },
+  seatSubmitBtnText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+   fontFamily: FONT.bold,},
   // ── States ──
   loadingText: {
     fontSize: 13,
     color: '#94a3b8',
     textAlign: 'center',
     paddingVertical: 10,
-  },
+   fontFamily: FONT.regular,},
   emptyText: {
     fontSize: 13,
     color: '#b0b8cc',
     textAlign: 'center',
     paddingVertical: 10,
-  },
+   fontFamily: FONT.regular,},
 });
 
 export default SubscriptionPlansStyles;

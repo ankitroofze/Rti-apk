@@ -10,7 +10,7 @@ import {
   YOUTUBE_STREAM_KEY_PLACEHOLDER,
 } from '../constants/liveStreamingConfig';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
-
+import { getAwardeeFontSize } from '../utils/profileHelpers';
 
 const MEDIA_ORIGIN = 'https://rtiapi.roofze.in';
 function resolveMediaUrl(path) {
@@ -384,12 +384,36 @@ const getEngagementForPostsFallback = async (postIds = [], currentEmail = '', fo
   return { statsByPost, commentsByPost };
 };
 const STATE_SEAT_ROLES = [
-  { id: 'chief_editor_published',     name: 'Chief Editor / Published' },
-  { id: 'executive_editor',           name: 'Executive Editor' },
-  { id: 'deputy_editor_national',     name: 'Deputy Editor (National)' },
-  { id: 'public_relations_officer',   name: 'Public Relations Officer (PRO)' },
-  { id: 'national_bureau_chief',      name: 'National Bureau Chief' },
-  { id: 'pratinidhi',                 name: 'Pratinidhi' },
+  // National Level
+  { id: 'chief_editor_published',         name: 'Chief Editor / Publisher',        level: 'national' },
+  { id: 'executive_editor',               name: 'Executive Editor',                level: 'national' },
+  { id: 'deputy_editor_national',         name: 'Deputy Editor (National)',        level: 'national' },
+  { id: 'public_relations_officer',       name: 'Public Relations Officer (PRO)',  level: 'national' },
+  { id: 'national_bureau_chief',          name: 'National Bureau Chief',           level: 'national' },
+  // State Level
+  { id: 'state_chief_editor',             name: 'State Chief Editor',              level: 'state' },
+  { id: 'state_bureau_chief',             name: 'State Bureau Chief',              level: 'state' },
+  { id: 'state_coordinator',              name: 'State Coordinator',               level: 'state' },
+  { id: 'senior_state_correspondent',     name: 'Senior State Correspondent',      level: 'state' },
+  { id: 'special_state_reporter',         name: 'Special State Reporter',          level: 'state' },
+  // District Level
+  { id: 'district_head',                  name: 'District Head',                   level: 'district' },
+  { id: 'district_bureau_chief',          name: 'District Bureau Chief',           level: 'district' },
+  { id: 'district_correspondent',         name: 'District Correspondent',          level: 'district' },
+  { id: 'senior_district_reporter',       name: 'Senior District Reporter',        level: 'district' },
+  { id: 'district_coordinator',           name: 'District Coordinator',            level: 'district' },
+  // Taluka Level
+  { id: 'taluka_head',                    name: 'Taluka Head',                     level: 'taluka' },
+  { id: 'taluka_correspondent',           name: 'Taluka Correspondent',            level: 'taluka' },
+  { id: 'sub_reporter',                   name: 'Sub-Reporter',                    level: 'taluka' },
+  { id: 'taluka_representative',          name: 'Taluka Representative',           level: 'taluka' },
+  { id: 'regional_reporter',              name: 'Regional Reporter',               level: 'taluka' },
+  // Village Level
+  { id: 'village_correspondent',          name: 'Village Correspondent',           level: 'village' },
+  { id: 'village_representative',         name: 'Village Representative',          level: 'village' },
+  { id: 'village_reporter',               name: 'Village Reporter',                level: 'village' },
+  { id: 'public_communication_associate', name: 'Public Communication Associate',  level: 'village' },
+  { id: 'rural_reporter',                 name: 'Rural Reporter',                  level: 'village' },
 ];
 
 // ✅ NEW: backend jo numeric role_id (1-6) plan ke saath bhejta hai, wo isi se
@@ -400,7 +424,26 @@ const PLAN_ROLE_ID_TO_SEAT_ID = {
   '3': 'deputy_editor_national',
   '4': 'public_relations_officer',
   '5': 'national_bureau_chief',
-  '6': 'pratinidhi',
+  '6': 'state_chief_editor',
+  '7': 'state_bureau_chief',
+  '8': 'state_coordinator',
+  '9': 'senior_state_correspondent',
+  '10': 'special_state_reporter',
+  '11': 'district_head',
+  '12': 'district_bureau_chief',
+  '13': 'district_correspondent',
+  '14': 'senior_district_reporter',
+  '15': 'district_coordinator',
+  '16': 'taluka_head',
+  '17': 'taluka_correspondent',
+  '18': 'sub_reporter',
+  '19': 'taluka_representative',
+  '20': 'regional_reporter',
+  '21': 'village_correspondent',
+  '22': 'village_representative',
+  '23': 'village_reporter',
+  '24': 'public_communication_associate',
+  '25': 'rural_reporter',
 };
 // eslint-disable-next-line import/namespace
 const certificateDirectory = FileSystem['documentDirectory'];
@@ -424,6 +467,18 @@ const ROLE_LABELS = {
 };
 
 const getRoleLabel = (role = 'free') => ROLE_LABELS[role] || 'Free Member';
+
+// 5-level referral commission config — final % rate aap/business team decide kare
+const COMMISSION_LEVELS = [
+  { level: 1, rate: 0.10 },
+  { level: 2, rate: 0.05 },
+  { level: 3, rate: 0.03 },
+  { level: 4, rate: 0.02 },
+  { level: 5, rate: 0.01 },
+];
+
+// Sirf Verified Blue Tick / Approved Representative hi commission earn kar sakta hai
+const isCommissionEligible = (user) => Boolean(hasBlueTick(user) || user.is_approved_representative);
 
 const RANK_TIERS = [
   { rank: 'Director',  min: 500, bonus: 10000 },
@@ -467,7 +522,7 @@ const generateReferralCode = () => {
   return code;
 };
 
-const generateUniqueReferralCode = async (existingUsers = []) => {
+const generateUniqueReferralCode = (existingUsers = []) => {
   const usedCodes = new Set(existingUsers.map((u) => u.my_referral_code).filter(Boolean));
   let code;
   let attempts = 0;
@@ -548,14 +603,32 @@ const normalizeBackendPlan = (raw = {}) => {
     credits:      Number(raw.credits ?? 0),
     state:        raw.state || '',
     district:     raw.district || '',
-    taluka:       raw.taluka || '',
+   taluka:       raw.taluka || '', village:      raw.village || '',
     description:  raw.description || '',
-role_id_raw:  raw.role_id || '',               // ⚠️ multi-value, business logic pending
+role_id_raw:  raw.role_id || '',               // ✅ comma-separated multi-role id, ab handled
     validity_days: Number(raw.days || raw.validity_days || 30),
     features:     Array.isArray(raw.features) ? raw.features : [],
     // ✅ FIX: plan ke naam se hi role decide hoga (premium/pro/basic/free) — jo plan buy karoge wahi role milega
     role:         getRoleFromPlanName(planName),
   };
+};
+
+// ✅ FIX (Issue #1): admin ne jis state/district/taluka ke liye plan banaya
+// hai, wahi plan sirf usi state+district+taluka wale user ko dikhna chahiye.
+// Agar admin ne koi field khaali chhodi hai to us level par restriction nahi maani jayegi.
+const locationFieldMatches = (planValue = '', userValue = '') => {
+  const plan = String(planValue || '').trim().toLowerCase();
+  if (!plan) return true; // admin ne field set nahi ki -> is level pe restriction nahi
+  return plan === String(userValue || '').trim().toLowerCase();
+};
+
+const planMatchesUserLocation = (plan, user) => {
+  if (!plan) return false;
+  return (
+    locationFieldMatches(plan.state, user?.state) &&
+    locationFieldMatches(plan.district, user?.district) &&
+    locationFieldMatches(plan.taluka, user?.taluka)
+  );
 };
 
 /// ✅ NEW: backend /comments/{newsId} response ko app ke comment shape me convert karta hai
@@ -724,18 +797,22 @@ const normalizeWalletTransactions = (transactions = []) => {
 const normalizeWithdrawRequests = (requests = []) => {
   if (!Array.isArray(requests)) return [];
   return requests.map((r, i) => ({
-    id:             r.id             || `withdraw-${i + 1}`,
-    amount:         Number(r.amount  || 0),
-    payment_mode:   r.payment_mode   || 'bank',
-    bank_name:      r.bank_name      || '',
-    account_number: r.account_number || '',
-    ifsc:           r.ifsc           || '',
-    upi_id:         r.upi_id         || '',
-    status:         r.status         || 'pending',
-    date:           r.date           || '2026-03-24',
+    id:                  r.id                  || `withdraw-${i + 1}`,
+    amount:              Number(r.amount       || 0),
+    payment_mode:        r.payment_mode || r.method || 'bank',
+    account_holder_name: r.account_holder_name || '',
+    bank_name:           r.bank_name      || '',
+    account_number:      r.account_number || '',
+    ifsc:                r.ifsc_code || r.ifsc || '',
+    ifsc_code:           r.ifsc_code || r.ifsc || '',
+    upi_id:              r.upi_id         || '',
+    pan_number:          r.pan_number     || '',
+    status:              r.status         || 'pending',
+    payout_reference:    r.payout_reference || null,
+    rejection_reason:    r.rejection_reason || null,
+    date:                r.date || r.created_at || '2026-03-24',
   }));
 };
-
 const normalizeSubscription = (s = {}) => ({
   plan_id:   s.plan_id   || defaultActiveSubscription.plan_id,
   plan_name: s.plan_name || defaultActiveSubscription.plan_name,
@@ -794,8 +871,13 @@ const cleanRichTextToPlain = (value = '') =>
 const normalizeNewsFeed = (items = []) => {
   const src = Array.isArray(items) && items.length ? items : [];
   return src.map((item, i) => ({
-    id:          item.id          || `news-${i + 1}`,
+      id:          item.id          || `news-${i + 1}`,
     createdBy:   String(item.createdBy || item.created_by || '').trim().toLowerCase(),
+    // ✅ FIX: author_id (mapApiNewsToFeedItem se aata hai) pehle yahan drop ho
+    // jaata tha — isliye NewsFeedCard se profile pe navigate karte waqt userId
+    // hamesha null jaata tha aur follow API target id resolve nahi kar paata tha.
+    author_id:   item.author_id ?? item.authorId ?? null,
+    author_email: String(item.author_email || '').trim().toLowerCase(),
     title:       cleanRichTextToPlain(item.title || '') || 'News Update',
     description: cleanRichTextToPlain(item.description || item.subtitle || ''),
     subtitle:    cleanRichTextToPlain(item.subtitle || ''),
@@ -805,6 +887,7 @@ const normalizeNewsFeed = (items = []) => {
       : item.mediaType === 'File' ? (item.file?.name ? `file: ${item.file.name}` : 'file attached')
       : 'no media'),
     category:    item.category || item.state || 'General',
+    report_type: item.report_type || item.category || '',
     language:    String(item.language || item.lang || item.news_language || '').trim().toLowerCase(),
     mediaType:   item.mediaType || 'None',
     state:       item.state || item.category || 'General',
@@ -825,6 +908,7 @@ const normalizeNewsFeed = (items = []) => {
     video:       item.video || null,
     file:        item.file || null,
     date:        item.date        || '2026-03-24',
+    createdAt:   item.createdAt || item.created_at || item.date || '',
     views:       Number(item.views  || 0),
     shares:      Number(item.shares || 0),
     likes:       Number(item.likes  || 0),
@@ -846,16 +930,18 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
   const mediaUrl = apiItem.media_url || apiItem.media || '';
 
   return {
-    id: apiItem.id ?? apiItem._id,
+       id: apiItem.id ?? apiItem._id,
     author_id: author.id ?? apiItem.user_id ?? null,
-    createdBy: apiItem.user_id || apiItem.created_by || author.email || '',
+    createdBy: String(author.email || apiItem.created_by || '').trim().toLowerCase(),
+    author_email: String(author.email || apiItem.created_by || '').trim().toLowerCase(),
     title: apiItem.tittle || apiItem.title || '',
     subtitle: apiItem.sub_tittle || apiItem.subtitle || '',
     description: apiItem.description || '',
     category: apiItem.report_type || apiItem.category || 'General',
+    report_type: apiItem.report_type || apiItem.category || '',
     mediaType,
     media: mediaType === 'Image' ? undefined : mediaUrl,
-    images: mediaType === 'Image' && mediaUrl ? [{ uri: mediaUrl }] : [],
+        images: mediaType === 'Image' && mediaUrl ? [mediaUrl] : [],
     video: mediaType === 'Video' && mediaUrl ? { uri: mediaUrl } : null,
     file: mediaType === 'File' && mediaUrl ? { uri: mediaUrl, name: apiItem.media_name || 'file' } : null,
     author_name: author.name || apiItem.author_name || 'RTI News',
@@ -869,6 +955,7 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
     author_seat_name: String(authorSeat.seat_name || apiItem.author_seat_name || '').trim(),
     author_role_label: author.role_label || apiItem.author_role_label || '',
     date: apiItem.created_at || apiItem.date || '',
+    createdAt: apiItem.created_at || apiItem.date || '',
     views: Number(apiItem.views || 0),
     shares: Number(apiItem.shares || 0),
     likes: Number(apiItem.likes || apiItem.likes_count || 0),
@@ -958,6 +1045,8 @@ const toReelPostFromNewsItem = (item = {}, currentEmail = '') => {
 
   return {
     id: String(item.id || `reel-${Date.now()}`),
+    // ✅ FIX: reel card se profile pe navigate karte waqt bhi userId chahiye
+    author_id: item.author_id ?? item.authorId ?? null,
     user: String(item.author_name || item.createdByName || item.createdBy || 'User'),
     avatar: String(item.author_profile_image || item.authorProfileImage || item.createdByProfileImage || item.profile_image || ''),
     verified: Boolean(item.author_has_blue_tick || item.authorHasBlueTick || false),
@@ -996,6 +1085,7 @@ const normalizeUserNewsItems = (items = []) => {
   return items
     .map((item) => ({
       id: item.id,
+      author_id: item.author_id ?? item.authorId ?? null,
       createdBy: String(item.createdBy || item.created_by || '').trim().toLowerCase(),
       title: cleanRichTextToPlain(item.title || ''),
       description: cleanRichTextToPlain(item.description || item.subtitle || ''),
@@ -1236,6 +1326,43 @@ const normalizeSettings = (s = {}) => ({
 
 const normalizeStateKey = (state = '') => String(state || '').trim().toLowerCase();
 
+// ✅ FIX (Issue #2): seat ab STATE ke bajaye poori TALUKA (state+district+taluka)
+// ke level par lock hogi — Mumbai/Borivali ke liye alag lock, Pune/Kothrud ke liye alag.
+const normalizeTalukaKey = (state = '', district = '', taluka = '') =>
+  [state, district, taluka].map((v) => String(v || '').trim().toLowerCase()).join('|');
+
+const UNLIMITED_SEAT_IDS = [];
+
+// ✅ NEW: admin ne is particular plan ko kis level par banaya hai (state /
+// state+district / state+district+taluka) — usi level par seat lock hogi
+const getPlanSeatScopeKey = (plan, fallbackUser = null) => {
+  const state    = String(plan?.state || fallbackUser?.state || '').trim().toLowerCase();
+  const district = String(plan?.district || '').trim().toLowerCase();
+  const taluka   = String(plan?.taluka || '').trim().toLowerCase();
+  // ✅ NEW: Village-level plans bhi ab apni location par hi lock honge
+  // (pehle village tha hi nahi, isliye village-level seat kabhi kisi
+  // specific village se lock nahi hoti thi)
+  const village  = String(plan?.village || '').trim().toLowerCase();
+
+  if (village)  return `village|${state}|${district}|${taluka}|${village}`;
+  if (taluka)   return `taluka|${state}|${district}|${taluka}`;
+  if (district) return `district|${state}|${district}`;
+  if (state)    return `state|${state}`;
+  return ''; // plan me koi location hi nahi -> lock mat lagao
+};
+
+// ✅ NEW: kisi seat/role ke liye us user ko dikhne wala matching plan dhundta hai,
+// taaki us plan ke apne state/district/taluka se scope decide ho sake
+const findPlanForSeat = (seatId, user) => {
+  const roleIdRaw = Object.keys(PLAN_ROLE_ID_TO_SEAT_ID)
+    .find((key) => PLAN_ROLE_ID_TO_SEAT_ID[key] === seatId);
+  if (!roleIdRaw) return null;
+  return cachedBackendPlans.find((p) => {
+    const planRoleIds = String(p.role_id_raw || '').split(',').map((id) => id.trim());
+    return planRoleIds.includes(roleIdRaw) && planMatchesUserLocation(p, user);
+  }) || null;
+};
+
 const getStateSeatRole = (seatRoleId = '') =>
   STATE_SEAT_ROLES.find((r) => r.id === seatRoleId) || null;
 
@@ -1247,6 +1374,9 @@ const normalizeStateSeat = (seat = null) => {
   const role = getStateSeatRole(seat_id);
   return {
     state,
+    district: String(seat.district || '').trim(),
+    taluka: String(seat.taluka || '').trim(),
+    village: String(seat.village || '').trim(), // ✅ NEW
     seat_id,
     seat_name: String(seat.seat_name || role?.name || '').trim(),
     assigned_at: seat.assigned_at || null,
@@ -1275,6 +1405,7 @@ const normalizePaymentHistory = (items = []) => {
     date:       item.date       || '2026-03-24',
     plan_id:    item.plan_id    || '',
     plan_name:  item.plan_name  || '',
+    module:     item.module     || 'role',
     signature:  item.signature  || '',
     gateway_order_id: item.gateway_order_id || item.razorpay_order_id || '',
   }));
@@ -1285,13 +1416,22 @@ const isPremiumPlan = (plan) => {
   const planName = String(plan?.plan_name || '').toLowerCase();
   return planId === 'plan-premium' || planName.includes('premium');
 };
-
 const hasBlueTick = (user = {}) => {
   if (!user) return false;
   // ✅ Sirf "Premium" plan purchase karne walon ko hi blue tick milega,
   // baaki roles (Chief Editor, Executive Editor, etc.) ko nahi.
   const isPremiumSubscriber = Boolean(user.is_subscribed) && String(user.role || user.subscription_type || '').toLowerCase() === 'premium';
   return Boolean(user.has_blue_tick || user.blue_tick_active || user.is_verified || isPremiumSubscriber);
+};
+
+// ✅ NEW: Seat/Designation walo ko badge nahi, lekin Blue-Tick-jaise features
+// chahiye (spec point 7). Badge dikhane ke liye hamesha hasBlueTick() use karo,
+// feature-access (jahan bhi "blue tick users ko ye milta hai" wala gate ho)
+// ke liye ye wala use karo.
+const hasBlueTickFeatures = (user = {}) => {
+  if (!user) return false;
+  const hasActiveSeat = Boolean(user.state_seat?.seat_id) && Boolean(user.is_subscribed);
+  return Boolean(hasBlueTick(user) || hasActiveSeat);
 };
 const hasPremiumAccess = (user = {}) => {
   if (!user) return false;
@@ -1300,12 +1440,16 @@ const hasPremiumAccess = (user = {}) => {
 
 const hasActiveSubscription = (user = {}) => {
   if (!user) return false;
+  const expiresAt = user.subscription_plan?.expires_at;
+  if (expiresAt) {
+    const expiresTime = new Date(`${expiresAt}T23:59:59`).getTime();
+    if (!Number.isNaN(expiresTime) && Date.now() > expiresTime) return false;
+  }
   if (user.is_subscribed !== undefined) return Boolean(user.is_subscribed);
   const history = Array.isArray(user.payment_history) ? user.payment_history : [];
   if (history.some((h) => String(h.status || '').toLowerCase() === 'success')) return true;
   return false;
 };
-
 // Quiz subscription ab sirf expiry-date se nahi, balki bache hue "quiz count" se bhi
 // gate hoti hai — jaise hi remaining count 0 ho jaata hai, expiry valid hone ke bawajood
 // user ko dobara subscription lena padta hai. `quiz_subscription_remaining_count` undefined
@@ -1432,7 +1576,7 @@ const normalizeUser = (user = {}) => {
     pending_profile_image_url: user.pending_profile_image_url ?? null,
     id_card:             user.id_card             || '',
     appointment_letter:  user.appointment_letter  || '',
-    my_referral_code:    user.my_referral_code    || '',
+    my_referral_code:    isSubscribed ? (user.my_referral_code || '') : '',
     referred_by:         user.referred_by         || '',
     referral_code_used:  user.referral_code_used  || '',
     referral_count:      referralCount,
@@ -1496,106 +1640,75 @@ const getLevelFromCurrentUser = (user, currentUser, usersByEmail) => {
   return user.referred_by ? 'Linked' : 'Direct';
 };
 
-const qualifyReferralForSubscribedUser = async (subscribedEmail) => {
-  const normalizedEmail = String(subscribedEmail || '').trim().toLowerCase();
-  if (!normalizedEmail) return { ok: false, credited: false };
+const recordQualifyingTransaction = async ({ buyerEmail, amount, packageType = 'subscription', transactionId, isRenewal = false }) => {
+  const normalizedEmail = String(buyerEmail || '').trim().toLowerCase();
+  if (!normalizedEmail || !amount) return { ok: false, credited: false };
 
   const users = await getUsersFromStorage();
-  const subscribedUser = users.find((u) => String(u.email || '').trim().toLowerCase() === normalizedEmail);
-  if (!subscribedUser?.referred_by || subscribedUser.referral_qualified) {
-    return { ok: true, credited: false };
-  }
-
-  const parentEmail = String(subscribedUser.referred_by || '').trim().toLowerCase();
-  const parentUser = users.find((u) => String(u.email || '').trim().toLowerCase() === parentEmail);
-  if (!parentUser) return { ok: true, credited: false };
+  const usersByEmail = new Map(users.map((u) => [String(u.email || '').trim().toLowerCase(), u]));
+  const buyer = usersByEmail.get(normalizedEmail);
+  if (!buyer) return { ok: true, credited: false };
 
   const today = new Date().toISOString().slice(0, 10);
-  const existingQualifiedReferrals = users
-    .filter((u) => String(u.referred_by || '').trim().toLowerCase() === parentEmail)
-    .filter((u) => String(u.email || '').trim().toLowerCase() !== normalizedEmail)
-    .filter((u) => Boolean(u.referral_qualified || u.is_subscribed))
-    .map((u) => ({
-      email: String(u.email || '').trim().toLowerCase(),
-      name: u.name || u.email || 'Referral',
-      qualified_at: u.referral_qualified_at || today,
-    }));
-  const storedValidReferrals = Array.isArray(parentUser.valid_referrals) ? parentUser.valid_referrals : [];
-  const validByEmail = new Map();
-  [...storedValidReferrals, ...existingQualifiedReferrals].forEach((item) => {
-    const email = String(item.email || '').trim().toLowerCase();
-    if (email) validByEmail.set(email, { ...item, email });
-  });
-  const validReferrals = [...validByEmail.values()];
-  const previousCount = validReferrals.length;
-  const alreadyLinked = validReferrals.some((item) => String(item.email || '').trim().toLowerCase() === normalizedEmail);
-  const nextValidReferrals = alreadyLinked
-    ? validReferrals
-    : [
-      ...validReferrals,
-      {
-        email: normalizedEmail,
-        name: subscribedUser.name || normalizedEmail,
-        qualified_at: today,
-      },
-    ];
-  const newCount = nextValidReferrals.length;
-  const previousTier = getReferralTier(previousCount);
-  const newTier = getReferralTier(newCount);
-  const crossedMilestone = newTier.min > previousTier.min && Number(newTier.bonus || 0) > 0;
-  const milestones = Array.isArray(parentUser.referral_bonus_milestones) ? parentUser.referral_bonus_milestones : [];
-  const milestoneKey = `${newTier.rank}:${newTier.min}`;
-  const shouldCreditBonus = crossedMilestone && !milestones.includes(milestoneKey);
-  const bonusAmount = shouldCreditBonus ? Number(newTier.bonus || 0) : 0;
-  const bonusTxn = bonusAmount > 0 ? {
-    id: `txn-referral-${Date.now()}`,
-    amount: bonusAmount,
-    type: 'credit',
-    source: 'referral_bonus',
-    date: today,
-  } : null;
+  const updates = new Map(); // email -> partial update object
+  let cursorEmail = String(buyer.referred_by || '').trim().toLowerCase();
+  let creditedAny = false;
+
+  for (const { level, rate } of COMMISSION_LEVELS) {
+    if (!cursorEmail || !usersByEmail.has(cursorEmail)) break;
+    const ancestor = usersByEmail.get(cursorEmail);
+
+    if (isCommissionEligible(ancestor)) {
+      const commissionAmount = Math.round(Number(amount) * rate * 100) / 100;
+      const ledgerEntry = {
+        id: `ledger-${Date.now()}-L${level}`,
+        referrer_id: ancestor.email,
+        referred_user_id: normalizedEmail,
+        level,
+        package_type: packageType,
+        transaction_id: transactionId || `TXN-${Date.now()}`,
+        purchase_date: today,
+        is_renewal: isRenewal,
+        eligible_amount: amount,
+        commission_rate: rate,
+        commission_amount: commissionAmount,
+        status: 'approved', // Admin verification flow backend me lagega
+      };
+      const walletTxn = {
+        id: `txn-comm-${Date.now()}-L${level}`,
+        amount: commissionAmount,
+        type: 'credit',
+        source: isRenewal ? `referral_commission_renewal_L${level}` : `referral_commission_L${level}`,
+        date: today,
+      };
+      const existing = updates.get(cursorEmail) || {
+        commission_ledger: Array.isArray(ancestor.commission_ledger) ? ancestor.commission_ledger : [],
+        wallet_transactions: normalizeWalletTransactions(ancestor.wallet_transactions),
+        total_commission: Number(ancestor.total_commission || 0),
+      };
+      existing.commission_ledger = [ledgerEntry, ...existing.commission_ledger];
+      existing.wallet_transactions = [walletTxn, ...existing.wallet_transactions];
+      existing.total_commission += commissionAmount;
+      updates.set(cursorEmail, existing);
+      creditedAny = true;
+    }
+    cursorEmail = String(ancestor.referred_by || '').trim().toLowerCase();
+  }
+
+  if (!creditedAny) return { ok: true, credited: false };
 
   const updatedUsers = users.map((user) => {
     const email = String(user.email || '').trim().toLowerCase();
-    if (email === normalizedEmail) {
-      return normalizeUser({
-        ...user,
-        referral_qualified: true,
-        referral_qualified_at: today,
-        referral_bonus_paid: true,
-      });
-    }
-    if (email === parentEmail) {
-      return normalizeUser({
-        ...user,
-        referral_count: newCount,
-        valid_referrals: nextValidReferrals,
-        rank: calculateRank(newCount),
-        referral_bonus_milestones: shouldCreditBonus ? [...milestones, milestoneKey] : milestones,
-        wallet_transactions: bonusTxn
-          ? [bonusTxn, ...normalizeWalletTransactions(user.wallet_transactions)]
-          : normalizeWalletTransactions(user.wallet_transactions),
-        notifications: [
-          {
-            id: `notif-referral-${Date.now()}`,
-            title: bonusAmount > 0 ? `${newTier.rank} Referral Bonus Added` : 'Referral Qualified',
-            message: bonusAmount > 0
-              ? `${subscribedUser.name || normalizedEmail} subscription complete hua. ${newTier.rank} rank par Rs. ${bonusAmount} bonus wallet me add hua.`
-              : `${subscribedUser.name || normalizedEmail} subscription complete hua. Valid referral count ab ${newCount} hai.`,
-            date: today,
-            status: 'Unread',
-          },
-          ...normalizeNotifications(user.notifications),
-        ],
-      });
-    }
-    return user;
+    const upd = updates.get(email);
+    if (!upd) return user;
+    return normalizeUser({ ...user, ...upd });
   });
 
   await AsyncStorage.setItem(USERS_KEY, JSON.stringify(updatedUsers));
-  return { ok: true, credited: shouldCreditBonus, bonus: bonusAmount, rank: newTier.rank, referral_count: newCount };
+  return { ok: true, credited: true };
 };
 
+  
 // ─── Certificate SVG Builder ──────────────────────────────────────────────────
 
 const escapeXml = (value = '') =>
@@ -1608,6 +1721,7 @@ const buildCertificateSvg = ({
   certificateNumber, photoUri, email, village, contactNumber,
 }) => {
   const safePhoto = photoUri && !String(photoUri).startsWith('blob:') ? escapeXml(photoUri) : '';
+  const nameFontSize = getAwardeeFontSize(userName, 44); // ✅ lamba naam chota font, ek line me fit
   const photoMarkup = safePhoto
     ? `<image href="${safePhoto}" x="1088" y="650" width="170" height="210" preserveAspectRatio="xMidYMid slice" clip-path="url(#photoClip)" />`
     : `<rect x="1088" y="650" width="170" height="210" rx="10" fill="#E5E7EB" /><text x="1173" y="760" text-anchor="middle" fill="#6B7280" font-size="24" font-weight="700">PHOTO</text>`;
@@ -1638,14 +1752,14 @@ const buildCertificateSvg = ({
   <rect x="450" y="290" width="500" height="62" rx="6" fill="url(#gold)" stroke="#8b6914" stroke-width="2"/>
   <text x="700" y="331" text-anchor="middle" fill="#4a2800" font-size="28">Certificate <tspan font-style="italic">of</tspan> <tspan font-weight="900">Excellence</tspan></text>
   <text x="700" y="397" text-anchor="middle" fill="#333333" font-size="22">This is to certify that</text>
-  <text x="700" y="452" text-anchor="middle" fill="#cc0000" font-size="44" font-weight="900">${escapeXml(userName)}</text>
+   <text x="700" y="452" text-anchor="middle" fill="#cc0000" font-size="${nameFontSize}" font-weight="900">${escapeXml(userName)}</text>
   <text x="700" y="500" text-anchor="middle" fill="#333333" font-size="20">has successfully passed the examination conducted by</text>
   <text x="700" y="537" text-anchor="middle" fill="#1a1a1a" font-size="24" font-weight="700">${escapeXml(quizTitle)}</text>
   <text x="700" y="575" text-anchor="middle" fill="#333333" font-size="20">with</text>
   <line x1="320" y1="612" x2="1080" y2="612" stroke="#c8a94a" stroke-width="3"/>
   <text x="700" y="652" text-anchor="middle" fill="#1a5c1a" font-size="42" font-weight="900">${escapeXml(resultType)}</text>
   <line x1="320" y1="668" x2="1080" y2="668" stroke="#c8a94a" stroke-width="3"/>
-  <text x="700" y="706" text-anchor="middle" fill="#333333" font-size="18">Subjected to the movement of Right to Information in the organisational social work field since "15th" Years</text>
+    <text x="700" y="686" text-anchor="middle" fill="#333333" font-size="18">Subjected to the movement of Right to Information in the organisational social work field since "15th" Years</text>
   <text x="700" y="746" text-anchor="middle" fill="#8b0000" font-size="26" font-style="italic" font-weight="700">Congratulations on your outstanding achievement!</text>
   <text x="160" y="790" fill="#333333" font-size="70">&#128220;</text>
   <rect x="300" y="770" width="520" height="150" rx="12" fill="#fff9eb" stroke="#ead9ab"/>
@@ -1720,8 +1834,95 @@ const saveCertificateSvg = async (svgMarkup, fileName) => {
   return { ok: true, savedPath: svgPath, isLocalSvg: true };
 };
 
+// ─── Global Follow-State Pub/Sub ───────────────────────────────────────────
+// ✅ Ek hi user_id/email ke follow buttons app mein kai jagah render hote hain
+// (news card, public profile, followers/following list). Follow/unfollow hote
+// hi sabko turant notify karne ke liye ye chhota pub/sub.
+const _followStateListeners = new Set();
+// The follow-list endpoints can briefly return an older snapshot immediately
+// after a mutation. Keep successful mutations in this session so a screen
+// focus/refetch cannot undo a follow the user has just made.
+const _optimisticFollowing = new Map();
+const _followOverrides = new Map();
+
+const _followTargetKey = (email, id) => {
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+  // Following endpoint reliably returns ids but may omit email, so id must be
+  // the canonical key whenever it is available.
+  if (id != null) return `id:${String(id)}`;
+  return normalizedEmail ? `email:${normalizedEmail}` : '';
+};
+
+const _rememberFollowing = (email, id, isFollowing) => {
+  const key = _followTargetKey(email, id);
+  if (!key) return;
+  _followOverrides.set(key, Boolean(isFollowing));
+  if (isFollowing) _optimisticFollowing.set(key, { email: String(email || '').trim().toLowerCase(), id: id ?? null });
+  else {
+    _optimisticFollowing.delete(key);
+    // Remove a legacy email-only entry too if the current action has an id.
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    if (normalizedEmail) _optimisticFollowing.delete(`email:${normalizedEmail}`);
+  }
+};
+
+const _mergeFollowing = (following) => {
+  const merged = new Map();
+  (Array.isArray(following) ? following : []).forEach((user) => {
+    const key = _followTargetKey(user?.email || user?.user_email, user?.id ?? user?.user_id);
+    if (key) merged.set(key, user);
+  });
+  _followOverrides.forEach((isFollowing, key) => {
+    if (!isFollowing) merged.delete(key);
+  });
+  _optimisticFollowing.forEach((user, key) => merged.set(key, user));
+  return [...merged.values()];
+};
+
+const _matchesFollowTarget = (payload, email, id) => {
+  const normEmail = String(email || '').trim().toLowerCase();
+  const payloadEmail = String(payload?.email || '').trim().toLowerCase();
+  if (normEmail && payloadEmail && normEmail === payloadEmail) return true;
+  if (id != null && payload?.id != null && String(id) === String(payload.id)) return true;
+  return false;
+};
+
+const _broadcastFollowChange = (email, id, isFollowing) => {
+  _rememberFollowing(email, id, isFollowing);
+  const payload = { email: String(email || '').trim().toLowerCase(), id: id ?? null, isFollowing };
+  _followStateListeners.forEach((cb) => {
+    try { cb(payload); } catch { /* listener error ignore */ }
+  });
+};
+
+// Backend follower/following list items sirf { id, firstname, lastname, profile_image, bio }
+// bhejte hain — koi top-level "name" ya "email" field nahi hoti. UI ko ek consistent
+// "name" chahiye hota hai, isliye yahin normalize kar do taaki Followers/Following
+// modal aur app mein kahin bhi yeh list use ho, sahi naam/image dikhe.
+const _normalizeFollowListItem = (raw) => {
+  const u = raw || {};
+  const fullName = [u.firstname, u.lastname].filter((p) => p && String(p).trim()).join(' ').trim();
+  return {
+    ...u,
+    id: u.id ?? u.user_id ?? null,
+    name: fullName || u.name || u.username || 'User',
+    email: String(u.email || u.user_email || '').trim().toLowerCase(),
+    profile_image: u.profile_image || u.profile_image_url || '',
+  };
+};
+
 // ─── User Store ───────────────────────────────────────────────────────────────
 export const UserStore = {
+
+  // ✅ Kisi bhi follow/unfollow ka live update sunne ke liye subscribe karo.
+  // callback(payload) milega jahan payload = { email, id, isFollowing }.
+  // Match karne ke liye UserStore.matchesFollowTarget(payload, myEmail, myId) use karo.
+  // Return hua function unsubscribe karta hai.
+  subscribeFollowState: (callback) => {
+    _followStateListeners.add(callback);
+    return () => _followStateListeners.delete(callback);
+  },
+  matchesFollowTarget: (payload, email, id) => _matchesFollowTarget(payload, email, id),
 
   // ✅ NEW: kisi bhi user ka public profile uske numeric id se laata hai
   // (GET /profile/{id}). posts[] ko mapApiNewsToFeedItem se normalize karta hai
@@ -1732,9 +1933,10 @@ export const UserStore = {
       if (!id) return null;
       const res = await AuthAPI.getPublicProfileById(id);
       if (!res?.ok) return null;
-      const profile = res.profile || {};
+            const profile = res.profile || {};
       return {
         ...profile,
+        id: profile.id ?? profile.user_id ?? null,
         avatar: profile.avatar || profile.profile_image || null,
         seat_name: String(profile.state_seat?.seat_name || '').trim(),
         posts: Array.isArray(profile.posts) ? profile.posts.map(mapApiNewsToFeedItem) : [],
@@ -1919,6 +2121,18 @@ verifyQuizPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_sig
       status: 'Unread',
     };
 
+        const quizPayment = {
+      order_id:   `ORD_QUIZ_${Date.now()}`,
+      payment_id: razorpay_payment_id || `PAY_QUIZ_${Date.now()}`,
+      amount:     Number(plan?.price || 0),
+      status:     'success',
+      date:       today,
+      plan_id:    plan?.id,
+      plan_name:  plan?.label,
+      module:     'quiz',
+      signature:  razorpay_signature || '',
+    };
+
     const updatedUser = await UserStore.updateUser(user.email, {
       quiz_subscription_expiry: expiryDate.toISOString(),
       quiz_subscription_plan: {
@@ -1933,9 +2147,16 @@ verifyQuizPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_sig
       quiz_subscription_total_count: quizCount,
       quiz_subscription_remaining_count: quizCount,
       notifications: [notification, ...normalizeNotifications(user.notifications)],
+      payment_history: [...normalizePaymentHistory(user.payment_history), quizPayment],
     });
-
-    if (!updatedUser) return { ok: false, message: 'Subscription save nahi ho paya.' };
+       if (!updatedUser) return { ok: false, message: 'Subscription save nahi ho paya.' };
+    await recordQualifyingTransaction({
+      buyerEmail: user.email,
+      amount: Number(plan?.price || 0),
+      packageType: 'quiz',
+      transactionId: razorpay_payment_id || `TXN-${Date.now()}`,
+      isRenewal: Boolean(user.quiz_subscription_expiry),
+    });
     return { ok: true, user: updatedUser };
   } catch (err) {
     console.error('[UserStore.verifyQuizPayment] Error:', err);
@@ -1964,15 +2185,29 @@ consumeQuizAttempt: async () => {
     return { ok: false, message: 'Unable to update quiz count.' };
   }
 },
-  hasBlueTick: (user) => hasBlueTick(user),
+     hasBlueTick: (user) => hasBlueTick(user),
+   hasBlueTickFeatures: (user) => hasBlueTickFeatures(user),
   isPremiumPlan: (plan) => isPremiumPlan(plan),
   getRoleFromPlanId,
   getRoleLabel,
+    getSeatIdsForRoleId: (roleIdRaw) =>
+    String(roleIdRaw || '')
+      .split(',')
+      .map((id) => id.trim())
+      .filter(Boolean)
+      .map((id) => PLAN_ROLE_ID_TO_SEAT_ID[id])
+      .filter(Boolean),
+  getSeatIdForRoleId: (roleIdRaw) => UserStore.getSeatIdsForRoleId(roleIdRaw)[0] || '',
+  getSeatRoleNameForPlanRoleId: (roleIdRaw) =>
+    UserStore.getSeatIdsForRoleId(roleIdRaw)
+      .map((seatId) => getStateSeatRole(seatId)?.name)
+      .filter(Boolean)
+      .join(', '),
   getReferralTier,
   getNextReferralTier,
   getReferralTiers: () => [...RANK_TIERS].reverse().filter((tier) => tier.rank !== 'Member'),
 
-  saveUser: async ({
+        saveUser: async ({
     name,
     mobile,
     email,
@@ -1982,6 +2217,8 @@ consumeQuizAttempt: async () => {
     taluka            = '',
     subscription_type = 'free',
     referral_code_used = null,
+    profile_image     = '',
+    bio               = '',
   }) => {
     try {
       // ✅ FIX: Register karte waqt email lowercase karo
@@ -2007,7 +2244,7 @@ consumeQuizAttempt: async () => {
         return { ok: false, message: 'This mobile number is already registered!' };
       }
 
-      const my_referral_code = await generateUniqueReferralCode(users);
+      const my_referral_code = '';
 
       let referred_by = '';
       if (referral_code_used) {
@@ -2020,7 +2257,7 @@ consumeQuizAttempt: async () => {
         referred_by = parentUser.email;
       }
 
-      const newUser = normalizeUser({
+          const newUser = normalizeUser({
         name,
         mobile: normalizedMobile,
         email: normalizedEmail, // ✅ lowercase email save karo
@@ -2028,6 +2265,8 @@ consumeQuizAttempt: async () => {
         state,
         district,
         taluka,
+        profile_image,
+        bio,
         location_complete: false,
         subscription_type,
         role: 'free',
@@ -2101,13 +2340,19 @@ consumeQuizAttempt: async () => {
       return { ok: false, message: 'Local sync failed.' };
     }
   },
-  updateUser: async (email, updates) => {
+   updateUser: async (email, updates) => {
 
     try {
       const data  = await AsyncStorage.getItem(USERS_KEY);
       const users = data ? JSON.parse(data) : [];
       // ✅ FIX: update bhi lowercase email se match karo
       const normalizedEmail = email ? email.trim().toLowerCase() : '';
+      // ✅ FIX: agar updates.email naya email de raha hai, wahi final email banega
+      // (pehle yaha hamesha purana normalizedEmail hi force ho jaata tha, isliye
+      // email change kabhi save hi nahi hota tha)
+      const finalEmail = updates.email
+        ? String(updates.email).trim().toLowerCase()
+        : normalizedEmail;
       let updatedUser = null;
 
       const updatedUsers = users.map((user) => {
@@ -2120,8 +2365,9 @@ consumeQuizAttempt: async () => {
         updatedUser = normalizeUser({
           ...user,
           ...updates,
-          email: normalizedEmail, // ✅ email lowercase rakho
+          email: finalEmail, // ✅ naya email (agar diya gaya ho) ab save hoga
           referral_count: mergedReferralCount,
+          my_referral_code: updates.my_referral_code || user.my_referral_code || generateUniqueReferralCode(users),
           rank: calculateRank(mergedReferralCount),
           wallet_transactions: normalizeWalletTransactions(updates.wallet_transactions !== undefined ? updates.wallet_transactions : user.wallet_transactions),
           withdraw_requests:   normalizeWithdrawRequests(updates.withdraw_requests !== undefined ? updates.withdraw_requests : user.withdraw_requests),
@@ -2134,10 +2380,20 @@ consumeQuizAttempt: async () => {
 
       if (!updatedUser) return null;
       await AsyncStorage.setItem(USERS_KEY, JSON.stringify(updatedUsers));
+
+      // ✅ FIX: email change hua toh session pointer (CURRENT_USER_KEY) bhi update karo,
+      // warna agli baar getCurrentUser() purane email se dhoondega aur user record
+      // "not found" ho jayega (login/profile silently reset ho sakta hai)
+      if (finalEmail !== normalizedEmail) {
+        const currentSessionEmail = await AsyncStorage.getItem(CURRENT_USER_KEY);
+        if (currentSessionEmail && currentSessionEmail.trim().toLowerCase() === normalizedEmail) {
+          await AsyncStorage.setItem(CURRENT_USER_KEY, finalEmail);
+        }
+      }
+
       return updatedUser;
     } catch { return null; }
   },
-
   activateBlueTickForCurrentUser: async () => {
     try {
       const currentUser = await UserStore.getCurrentUser();
@@ -2176,8 +2432,8 @@ consumeQuizAttempt: async () => {
     }
   },
 
-  completeLocationSetup: async (email, state, district = '', taluka = '') => {
-    return await UserStore.updateUser(email, { state, district, taluka, location_complete: true });
+   completeLocationSetup: async (email, state, district = '', taluka = '', village = '') => {
+    return await UserStore.updateUser(email, { state, district, taluka, village, location_complete: true });
   },
 
 // ✅ FIX: setCurrentUser mein lowercase save karo
@@ -2195,44 +2451,10 @@ consumeQuizAttempt: async () => {
     } catch { return false; }
   },
 
-  // ✅ NEW: guest (bina login) likes ko login ke baad real user account/backend me migrate karta hai
-  syncGuestLikesToUser: async (email) => {
-    try {
-      const normalizedEmail = String(email || '').trim().toLowerCase();
-      if (!normalizedEmail) return;
-      const guestState = await readGuestLikes();
-      const postIds = Object.keys(guestState).filter((id) => guestState[id]);
-      if (!postIds.length) return;
-
-      const ensuredUser = await UserStore.ensureUserId();
-
-      for (const postId of postIds) {
-        try {
-          if (ensuredUser?.id) {
-            await AuthAPI.likeNews({ userId: ensuredUser.id, newsId: postId });
-          }
-          if (Platform.OS === 'web') {
-            const state = await readEngagementFallback();
-            state.likesByPost[postId] = state.likesByPost[postId] || {};
-            state.likesByPost[postId][normalizedEmail] = true;
-            await writeEngagementFallback(state);
-          } else {
-            const db = await getEngagementDb();
-            if (db) {
-              await db.runAsync(
-                'INSERT OR IGNORE INTO post_likes (post_id, user_email, created_at) VALUES (?, ?, ?)',
-                postId,
-                normalizedEmail,
-                new Date().toISOString()
-              );
-            }
-          }
-        } catch { /* ek post fail ho to baaki continue rahe */ }
-      }
-
-      await writeGuestLikes({});
-    } catch { /* noop */ }
-  },
+  // ✅ FIX: guest (bina-login) local likes ab exist hi nahi karte — likes
+  // purely API-based hain aur login ke bina like possible nahi. Ye function
+  // ab sirf backward-compatibility ke liye no-op hai.
+  syncGuestLikesToUser: async () => {},
 
   // UserStore ke andar, getCurrentUser ke paas add karo
 // ensureUserId: async () => {
@@ -2260,7 +2482,7 @@ consumeQuizAttempt: async () => {
       const users = await getUsersFromStorage();
       let found = users.find((u) => u.email === normalizedEmail) || null;
 
-      // ✅ FIX: agar local record missing hai (purana broken login), auto-repair karo
+         // ✅ FIX: agar local record missing hai (purana broken login), auto-repair karo
     if (!found) {
         const profileRes = await AuthAPI.getProfile();
         if (profileRes.ok && profileRes.user) {
@@ -2272,7 +2494,30 @@ consumeQuizAttempt: async () => {
             state: apiUser.state || '',
               id: apiUser.id,
           });
-          if (syncResult.ok) found = syncResult.user;
+      if (syncResult.ok) {
+  found = await UserStore.syncSubscriptionFromBackend(syncResult.user);
+}
+        }
+      }
+
+      // ✅ AUTO-EXPIRE: 30 din (ya jo bhi validity) nikal chuki ho to user ko
+      // turant "common user" bana do — role/subscription sab reset ho jayega,
+      // taaki premium wali koi bhi cheez ab lock ho jaaye aur common user ki
+      // functionality apply ho jaaye.
+      if (found && found.is_subscribed) {
+        const expiresAt = found.subscription_plan?.expires_at;
+        if (expiresAt) {
+          const expiresTime = new Date(`${expiresAt}T23:59:59`).getTime();
+          if (!Number.isNaN(expiresTime) && Date.now() > expiresTime) {
+            found = await UserStore.updateUser(found.email, {
+              is_subscribed: false,
+              role: 'free',
+              role_label: getRoleLabel('free'),
+              subscription_type: 'free',
+              subscription_plan: null,
+              state_seat: null,
+            }) || found;
+          }
         }
       }
 
@@ -2328,12 +2573,14 @@ consumeQuizAttempt: async () => {
 
   setPendingRegistration: async (data = {}) => {
     try {
-      const payload = {
+             const payload = {
         name: String(data.name || '').trim(),
         mobile: normalizeIndianMobileNumber(data.mobile || ''),
         email: String(data.email || '').trim().toLowerCase(),
         password: String(data.password || ''),
         referral_code_used: data.referral_code_used ? String(data.referral_code_used).trim() : '',
+        profile_image: String(data.profile_image || ''),
+        bio: String(data.bio || '').trim(),
         created_at: new Date().toISOString(),
       };
       if (!payload.email) return false;
@@ -2413,11 +2660,17 @@ consumeQuizAttempt: async () => {
       // ✅ FIX: sirf apna account aur wahi users dikhao jinhone tumhara referral
       // use kiya hai (referred_by === currentUser.email) — baaki sabhi app-wide
       // users pehle yahan bina filter ke aa jaate the.
+           const downlineEmails = new Set([String(currentUser.email || '').trim().toLowerCase()]);
+      for (let i = 0; i < 5; i++) {
+        users.forEach((u) => {
+          const parent = String(u.referred_by || '').trim().toLowerCase();
+          if (parent && downlineEmails.has(parent)) {
+            downlineEmails.add(String(u.email || '').trim().toLowerCase());
+          }
+        });
+      }
       const rows = users
-        .filter((user) => (
-          user.email === currentUser.email
-          || String(user.referred_by || '').trim().toLowerCase() === String(currentUser.email || '').trim().toLowerCase()
-        ))
+        .filter((user) => downlineEmails.has(String(user.email || '').trim().toLowerCase()))
         .map((user) => ({
           user_id:       user.email,
           name:          user.name || 'Unnamed User',
@@ -2432,7 +2685,7 @@ consumeQuizAttempt: async () => {
           referred_by:   user.referred_by || 'Direct Signup',
           level:         getLevelFromCurrentUser(user, currentUser, usersByEmail),
           join_date:     user.join_date || '2026-03-24',
-          commission:    user.commission || 0,
+               commission:    Number(user.total_commission || 0),
           isCurrentUser: user.email === currentUser.email,
         }))
         .sort((a, b) => {
@@ -2449,15 +2702,22 @@ consumeQuizAttempt: async () => {
       };
     } catch { return null; }
   },
-
   getWalletSummary: async () => {
     try {
-      const user = await UserStore.getCurrentUser();
-      if (!user) return null;
-      const transactions = normalizeWalletTransactions(user.wallet_transactions);
-      const total_credit = transactions.filter((t) => t.type === 'credit').reduce((s, t) => s + t.amount, 0);
-      const total_debit  = transactions.filter((t) => t.type === 'debit').reduce((s, t) => s + t.amount, 0);
-      return { total_balance: total_credit - total_debit, total_credit, total_debit, transactions };
+      const [walletRes, txnRes] = await Promise.all([
+        AuthAPI.getWalletApi(),
+        AuthAPI.getWalletTransactionsApi({ perPage: 50 }),
+      ]);
+      if (!walletRes.ok || !walletRes.wallet) return null;
+      const w = walletRes.wallet;
+      const transactions = normalizeWalletTransactions(txnRes.ok ? txnRes.transactions : []);
+      return {
+        total_balance: w.withdrawable_balance || 0,
+        total_credit:  w.total_earned || 0,
+        total_debit:   Math.max((w.total_earned || 0) - (w.withdrawable_balance || 0) - (w.pending_commission || 0), 0),
+        transactions,
+        wallet: w,
+      };
     } catch { return null; }
   },
 
@@ -2465,37 +2725,39 @@ consumeQuizAttempt: async () => {
     try {
       const user = await UserStore.getCurrentUser();
       if (!user) return null;
-      const walletSummary = await UserStore.getWalletSummary();
-      const requests = normalizeWithdrawRequests(user.withdraw_requests).sort((a, b) => new Date(b.date) - new Date(a.date));
-      return { currentUser: user, available_balance: walletSummary?.total_balance || 0, requests };
+      const [walletRes, withdrawalsRes] = await Promise.all([
+        AuthAPI.getWalletApi(),
+        AuthAPI.getWalletWithdrawalsApi({ perPage: 100 }),
+      ]);
+      if (!walletRes.ok || !walletRes.wallet) return null;
+      const wallet = walletRes.wallet;
+      const requests = normalizeWithdrawRequests(withdrawalsRes.ok ? withdrawalsRes.requests : [])
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+      return { currentUser: user, wallet, available_balance: wallet.withdrawable_balance || 0, requests };
     } catch { return null; }
   },
 
-  createWithdrawRequest: async ({ amount, payment_mode, bank_name, account_number, ifsc, upi_id }) => {
+  createWithdrawRequest: async (payload) => {
     try {
-      const user = await UserStore.getCurrentUser();
-      if (!user) return { ok: false, message: 'Please login again.' };
-      const walletSummary = await UserStore.getWalletSummary();
-      const numericAmount = Number(amount || 0);
-      if (!numericAmount || numericAmount <= 0) return { ok: false, message: 'Enter a valid withdrawal amount.' };
-      if (numericAmount > (walletSummary?.total_balance || 0)) return { ok: false, message: 'Insufficient wallet balance.' };
-      const today = new Date().toISOString().slice(0, 10);
-      const newRequest = { id: `withdraw-${Date.now()}`, amount: numericAmount, payment_mode: payment_mode || 'bank', bank_name: bank_name || '', account_number: account_number || '', ifsc: ifsc || '', upi_id: upi_id || '', status: 'pending', date: today };
-      const newTxn = { id: `txn-${Date.now()}`, amount: numericAmount, type: 'debit', source: 'withdrawal', date: today };
-      const updatedUser = await UserStore.updateUser(user.email, {
-        withdraw_requests:   [...normalizeWithdrawRequests(user.withdraw_requests), newRequest],
-        wallet_transactions: [newTxn, ...normalizeWalletTransactions(user.wallet_transactions)],
-      });
-      if (!updatedUser) return { ok: false, message: 'Unable to save withdrawal request.' };
-      return { ok: true, request: newRequest };
+      const res = await AuthAPI.createWithdrawalApi(payload);
+      if (!res.ok) return { ok: false, message: res.message, errors: res.errors };
+      return { ok: true, request: res.withdrawal, wallet: res.wallet };
     } catch { return { ok: false, message: 'Unable to create withdrawal request.' }; }
+  },
+
+  cancelWithdrawRequest: async (id) => {
+    try {
+      const res = await AuthAPI.cancelWithdrawalApi(id);
+      if (!res.ok) return { ok: false, message: res.message };
+      return { ok: true, wallet: res.wallet };
+    } catch { return { ok: false, message: 'Unable to cancel withdrawal request.' }; }
   },
 
 // ✅ FIX: Backend se subscription ki real truth fetch karke local storage sync karo
   // Isse "buy karne ke baad bhi subscribe maang raha hai" wala mismatch bug fix hoga
- syncSubscriptionFromBackend: async () => {
+  syncSubscriptionFromBackend: async (existingUser) => {
     try {
-      const user = await UserStore.getCurrentUser();
+      const user = existingUser || await UserStore.getCurrentUser();
       if (!user) return null;
 
       const res = await AuthAPI.getMyRoleSubscriptions();
@@ -2505,10 +2767,25 @@ consumeQuizAttempt: async () => {
         ? res.subscriptions
         : (res.subscriptions ? [res.subscriptions] : []);
 
-      const activeSub = subs.find(
+           const activeSub = subs.find(
         (s) => Number(s.payment_status) === 1 || String(s.status || '').toLowerCase() === 'active'
       );
-      if (!activeSub) return user;
+      if (!activeSub) {
+        // ✅ AUTO-EXPIRE: backend confirm karta hai ki ab koi active subscription
+        // nahi hai — local user ko bhi turant common bana do.
+        if (user.is_subscribed) {
+          const downgraded = await UserStore.updateUser(user.email, {
+            is_subscribed: false,
+            role: 'free',
+            role_label: getRoleLabel('free'),
+            subscription_type: 'free',
+            subscription_plan: null,
+            state_seat: null,
+          });
+          return downgraded || user;
+        }
+        return user;
+      }
 
       
       const localPlanId = getLocalPlanIdFromBackendId(activeSub.plan_id);
@@ -2518,7 +2795,9 @@ consumeQuizAttempt: async () => {
     const matchedPlan = cachedBackendPlans.find((p) => p.plan_id === localPlanId) || null;
       const newRole = matchedPlan ? matchedPlan.role : getRoleFromPlanName(activeSub.plan_name || activeSub.name || '');
 
-      if (user.role === newRole && user.is_subscribed) return user;
+      const backendExpiresAt = activeSub.expires_at || activeSub.expiry || null;
+      const expiryUnchanged = !backendExpiresAt || backendExpiresAt === user.subscription_plan?.expires_at;
+      if (user.role === newRole && user.is_subscribed && expiryUnchanged) return user;
 
       const mergedPlan = matchedPlan
         ? {
@@ -2543,7 +2822,7 @@ consumeQuizAttempt: async () => {
   },   // 👈 YE COMMA hona chahiye, semicolon ya kuch aur nahi
 
 // ✅ FIX: Ye asli getStateSeatSummary tha — pehle galti se naam badal gaya tha
-  getStateSeatSummary: async () => {
+   getStateSeatSummary: async () => {
     try {
       const user = await UserStore.getCurrentUser();
       if (!user) return null;
@@ -2551,6 +2830,7 @@ consumeQuizAttempt: async () => {
       const state = String(user.state || '').trim();
       const current_seat = normalizeStateSeat(user.state_seat);
 
+      // ✅ state minimum chahiye hi hai (state-level plans ke liye bhi)
       if (!state) {
         return {
           currentUser: user,
@@ -2561,13 +2841,30 @@ consumeQuizAttempt: async () => {
       }
 
       const allocations = await getStateSeatAllocationsFromStorage();
-      const stateKey = normalizeStateKey(state);
-      const stateAlloc = allocations[stateKey] && typeof allocations[stateKey] === 'object'
-        ? allocations[stateKey]
-        : {};
+      const now = Date.now();
 
       const seats = STATE_SEAT_ROLES.map((role) => {
-        const takenBy = String(stateAlloc?.[role.id]?.email || '').trim().toLowerCase();
+        // ✅ "Pratinidhi" kabhi lock nahi hoti — hamesha available rahegi
+        if (UNLIMITED_SEAT_IDS.includes(role.id)) {
+          const status = current_seat?.seat_id === role.id ? 'mine' : 'available';
+          return { ...role, status };
+        }
+
+        // ✅ FIX: is role ka jo plan admin ne banaya hai, uske apne
+        // state/district/taluka fields se decide hoga lock kis level par hai
+        const matchedPlan = findPlanForSeat(role.id, user);
+        const scopeKey = getPlanSeatScopeKey(matchedPlan, user);
+        if (!scopeKey) {
+          return { ...role, status: current_seat?.seat_id === role.id ? 'mine' : 'available' };
+        }
+
+        const scopeAlloc = allocations[scopeKey] && typeof allocations[scopeKey] === 'object'
+          ? allocations[scopeKey]
+          : {};
+        const entry = scopeAlloc?.[role.id] || null;
+        const expiresAt = entry?.expires_at ? new Date(entry.expires_at).getTime() : null;
+        const isExpired = expiresAt !== null && !Number.isNaN(expiresAt) && expiresAt < now;
+        const takenBy = (!isExpired && entry?.email) ? String(entry.email).trim().toLowerCase() : '';
         const status = takenBy
           ? (takenBy === user.email ? 'mine' : 'taken')
           : 'available';
@@ -2578,15 +2875,15 @@ consumeQuizAttempt: async () => {
     } catch { return null; }
   },
 
-  getSubscriptionSummary: async () => {
+   getSubscriptionSummary: async () => {
     try {
-      const user = await UserStore.getCurrentUser();
+    const user = await UserStore.syncSubscriptionFromBackend(await UserStore.getCurrentUser());
       if (!user) return null;
 
       // ✅ FIX: dummy array ki jagah ab real plans backend se fetch honge
       let plans = cachedBackendPlans;
       if (!plans.length) {
-        const plansRes = await AuthAPI.getRoleSubscriptionPlans();
+       const plansRes = await AuthAPI.getRoleSubscriptionPlans(user.id);
         if (plansRes.ok && Array.isArray(plansRes.plans)) {
           plans = plansRes.plans.map(normalizeBackendPlan);
           cachedBackendPlans = plans; // ✅ cache kar liya taaki baar baar fetch na ho
@@ -2595,10 +2892,12 @@ consumeQuizAttempt: async () => {
         }
       }
 
+           // ✅ Ab har user ko sabhi states/districts/talukas ke plans dikhenge —
+      // user kisi bhi location ka subscription browse aur purchase kar sakta hai.
       return {
         currentUser: user,
         activePlan:  hasActiveSubscription(user) ? normalizeSubscriptionPlan(user.subscription_plan) : null,
-        plans,
+        plans: plans,
         currentRole:      user.role || 'free',
         currentRoleLabel: getRoleLabel(user.role || 'free'),
       };
@@ -2613,21 +2912,35 @@ consumeQuizAttempt: async () => {
     } catch { return null; }
   },
 
-createPaymentOrder: async ({ plan_id, seat_state, seat_role_id }) => {
+createPaymentOrder: async ({ plan_id, seat_state, seat_district = '', seat_taluka = '', seat_village = '', seat_role_id }) => {
   try {
+    console.log('[DEBUG createPaymentOrder] called with:', { plan_id, seat_state, seat_district, seat_taluka, seat_village, seat_role_id });
     const user = await UserStore.getCurrentUser();
-    if (!user) return null;
+    if (!user) { console.log('[DEBUG createPaymentOrder] BLOCKED: no user'); return null; }
 
     const backendPlanId = getBackendPlanId(plan_id);
-    if (!backendPlanId) return null;
+    if (!backendPlanId) { console.log('[DEBUG createPaymentOrder] BLOCKED: bad plan_id ->', plan_id); return null; }
 
     // You need an AuthAPI method that hits your backend's
     // "create role-subscription razorpay order" endpoint,
     // mirroring createAdSubscriptionOrder / createEcomSubscriptionOrder.
    const seatMeta = getStateSeatRole(seat_role_id);
-   const orderResult = await AuthAPI.purchaseRoleSubscription({ planId: backendPlanId, stateSeat: seatMeta?.name || '' });
-    if (!orderResult?.ok) return null;
-
+   console.log('[DEBUG createPaymentOrder] seatMeta ->', seatMeta, 'seat_role_id ->', seat_role_id);
+   // ✅ FIX: pehle sirf seat ka naam (string) backend ko jaata tha, jisse
+   // backend yeh pata hi nahi laga sakta tha ki yeh seat kis district/
+   // taluka/village ke liye lock karni hai — ab full location + designation
+   // id bhi bhej rahe hain taaki backend par seat-uniqueness check ho sake.
+   const orderResult = await AuthAPI.purchaseRoleSubscription({
+     planId: backendPlanId,
+     stateSeat: seatMeta?.name || '',
+     designationId: seat_role_id || '',
+     state: seat_state || '',
+     district: seat_district || '',
+     taluka: seat_taluka || '',
+     village: seat_village || '',
+   });
+   console.log('[DEBUG createPaymentOrder] orderResult ->', orderResult);
+      if (!orderResult?.ok) { return { error: true, message: orderResult?.message || 'Unable to create order.' }; }
     const activePlan = cachedBackendPlans.find((p) => p.plan_id === plan_id) || defaultActiveSubscription;
 
     return {
@@ -2638,6 +2951,9 @@ createPaymentOrder: async ({ plan_id, seat_state, seat_role_id }) => {
       duration:     activePlan.duration,
       role:         activePlan.role || getRoleFromPlanId(activePlan.plan_id),
       seat_state:   seat_state || '',
+      seat_district: seat_district || '',
+      seat_taluka:  seat_taluka || '',
+      seat_village: seat_village || '',
       seat_role_id: seat_role_id || '',
       razorpay:     orderResult.razorpay, // { key, order_id, amount, currency }
     };
@@ -2676,19 +2992,36 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
       // is_subscribed turant TRUE karo, backend ke GET /my-role-subscriptions ka
       // wait mat karo (uska delay hi "purchase kar liya phir bhi dobara maang raha
       // hai" wale bug ki asli wajah tha)
+          const rolePayment = {
+        order_id:   razorpay_order_id || `ORD_ROLE_${Date.now()}`,
+        payment_id: razorpay_payment_id || `PAY_ROLE_${Date.now()}`,
+        amount:     Number(activePlan.price || 0),
+        status:     'success',
+        date:       today,
+        plan_id:    activePlan.plan_id,
+        plan_name:  activePlan.plan_name,
+        module:     'role',
+        signature:  razorpay_signature || '',
+      };
+
       let updatedUser = await UserStore.updateUser(user.email, {
         subscription_plan: activePlan,
         subscription_type: newRole,
         role: newRole,
         role_label: getRoleLabel(newRole),
         is_subscribed: true,
+        payment_history: [...normalizePaymentHistory(user.payment_history), rolePayment],
       });
-
       // ✅ NEW: plan ke role_id (1-6) ko seat me map karke automatically assign karo —
       // koi manual seat-selection modal nahi chahiye, purchase hi seat de dega
-      const mappedSeatId = PLAN_ROLE_ID_TO_SEAT_ID[String(activePlan.role_id_raw || '').trim()];
+        const allowedSeatIds = UserStore.getSeatIdsForRoleId(activePlan.role_id_raw);
+        // agar checkout ke time koi specific role/seat select kiya tha (seat_role_id), usi ko priority do,
+        // warna plan ke allowed roles me se pehla free seat use karo
+        const mappedSeatId = allowedSeatIds.includes(seat_role_id) ? seat_role_id : allowedSeatIds[0];
       if (mappedSeatId) {
-        const seatResult = await UserStore.saveSelectedSeat(mappedSeatId);
+        // ✅ FIX: activePlan pass karo taaki iski apni state/district/taluka
+        // scope se hi lock decide ho, sirf taluka-level assume na kare
+        const seatResult = await UserStore.saveSelectedSeat(mappedSeatId, activePlan);
         if (seatResult?.ok) {
           updatedUser = await UserStore.getCurrentUser();
         }
@@ -2855,6 +3188,7 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
       const focusItemId = options && typeof options === 'object'
         ? (options.focusItemId ? String(options.focusItemId) : null)
         : null;
+      const skipBlockedUsers = Boolean(options?.skipBlockedUsers);
       // ✅ FIX: 'all' = Home screen (GET /news, sabke posts), 'mine' (default) =
       // News Feed / Profile "My Posts" (GET /my-news, sirf apne posts)
       const feedType = options?.feedType === 'all' ? 'all' : 'mine';
@@ -2873,7 +3207,7 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
           }
         } else {
           // News Feed / My Posts: sirf isi user ke news, dedicated my-news routes se
-          const apiRes = focusItemId
+              const apiRes = focusItemId
             ? await AuthAPI.getMyNewsById(focusItemId)
             : await AuthAPI.getMyNews();
           if (apiRes.ok && focusItemId) {
@@ -2883,6 +3217,8 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
           } else if (apiRes.ok && Array.isArray(apiRes.news?.data)) {
             apiItems = apiRes.news.data; // paginated Laravel response ({data:[...], ...})
           }
+          // 🔍 TEMP DEBUG — Android me kitni posts backend se aa rahi hain, ye check karne ke liye.
+          console.log('[DEBUG my-news]', Platform.OS, 'count:', apiItems.length, apiItems.map(i => i.id));
         }
       } catch (e) {
         console.warn('[UserStore.getNewsFeedSummary] news request failed:', e);
@@ -2893,10 +3229,16 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
       // (backend blue-tick track hi nahi karta), isliye premium user ka apna post
       // fetch hone ke baad blue tick gayab ho jaata tha. Ab apne hi posts ke liye
       // hum currentUser ka live blue-tick/premium/subscriber status use karte hain.
-      const currentUserEmailForFeed = String(currentUser?.email || '').trim().toLowerCase();
+           const currentUserEmailForFeed = String(currentUser?.email || '').trim().toLowerCase();
       const currentUserHasBlueTickForFeed = Boolean(currentUser && UserStore.hasBlueTick(currentUser));
       const currentUserIsPremiumForFeed = Boolean(currentUser && UserStore.hasPremiumAccess(currentUser));
       const currentUserIsSubscriberForFeed = Boolean(currentUser && UserStore.hasActiveSubscription(currentUser));
+      // ✅ FIX: apni hi post ka seat/role bhi live currentUser se lo — subscription
+      // "PRO" se "Chief" (ya kisi bhi seat) me change hote he purani posts pe
+      // bhi turant naya role/color aa jaayega.
+      const currentUserSeatIdForFeed = String(currentUser?.state_seat?.seat_id || '').trim();
+      const currentUserSeatNameForFeed = String(currentUser?.state_seat?.seat_name || '').trim();
+      const currentUserRoleLabelForFeed = String(currentUser?.role_label || '').trim();
 
       const defaultItems = normalizeNewsFeed(apiItems.map(mapApiNewsToFeedItem)).map((item) => {
         const isOwnPost = Boolean(
@@ -2908,19 +3250,26 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
           ...item,
           author_name: item.author_name || 'RTI News',
           author_profile_image: item.author_profile_image || '',
-          author_seat_name: item.author_seat_name || 'Editorial Desk',
+          author_seat_id: isOwnPost
+            ? (currentUserSeatIdForFeed || item.author_seat_id)
+            : item.author_seat_id,
+          author_seat_name: isOwnPost
+            ? (currentUserSeatNameForFeed || item.author_seat_name || 'Editorial Desk')
+            : (item.author_seat_name || 'Editorial Desk'),
+          author_role_label: isOwnPost
+            ? (currentUserRoleLabelForFeed || item.author_role_label)
+            : item.author_role_label,
           author_has_blue_tick: Boolean(
-            item.author_has_blue_tick || (isOwnPost && currentUserHasBlueTickForFeed)
+            isOwnPost ? currentUserHasBlueTickForFeed : item.author_has_blue_tick
           ),
           author_is_premium: Boolean(
-            item.author_is_premium || (isOwnPost && currentUserIsPremiumForFeed)
+            isOwnPost ? currentUserIsPremiumForFeed : item.author_is_premium
           ),
           author_is_subscriber: Boolean(
-            item.author_is_subscriber || (isOwnPost && currentUserIsSubscriberForFeed)
+            isOwnPost ? currentUserIsSubscriberForFeed : item.author_is_subscriber
           ),
         };
       });
-
       /* Local aggregate intentionally disabled: feed content comes from /my-news.
       const aggregateItems = allUsers.flatMap((user) => {
         const injectAuthor = (item) => ({
@@ -2956,17 +3305,43 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
       // A just-created item has already been accepted by POST /news, but the
       // list endpoint may lag behind it. Include only this user's real
       // server-created records so it appears immediately on Feed and Home.
-      const justSubmittedItems = normalizeUserNewsItems(currentUser?.news || []);
-      const mergedItems = [...defaultItems, ...justSubmittedItems]
-        .filter((item, index, arr) => arr.findIndex((e) => e.id === item.id) === index)
+           const justSubmittedItems = normalizeUserNewsItems(currentUser?.news || []);
+      // A public-profile screen loads its own posts and must not make a
+      // blocked-users request merely because the profile was opened.
+      const blockedRes = skipBlockedUsers ? { ok: true, list: [] } : await UserStore.getBlockedUsers();
+      const blockedEmailsForFeed = new Set((blockedRes?.list || []).map((u) => u.email).filter(Boolean));
+      const blockedIdsForFeed = new Set((blockedRes?.list || []).map((u) => (u.id != null ? String(u.id) : '')).filter(Boolean));
+      const isBlockedFeedItem = (item) => {
+        const itemEmail = String(item.createdBy || '').trim().toLowerCase();
+        const itemAuthorId = item.author_id != null ? String(item.author_id) : '';
+        if (itemEmail && blockedEmailsForFeed.has(itemEmail)) return true;
+        if (itemAuthorId && blockedIdsForFeed.has(itemAuthorId)) return true;
+        return false;
+      };
+           const mergedItems = [...defaultItems, ...justSubmittedItems]
+        .filter((item) => !isBlockedFeedItem(item))
+        // ✅ FIX: id missing/undefined hone par pehle ye galti se doosri post ko bhi
+        // "duplicate" samajh kar hata deta tha (kyunki String(undefined) dono ke liye
+        // same ban jaata tha). Ab id na ho to us item ko unique treat karo, kabhi drop na ho.
+        .filter((item, index, arr) => {
+          if (!item.id) return true;
+          return arr.findIndex((e) => e.id && String(e.id) === String(item.id)) === index;
+        })
         .sort((a, b) => getNewsSortValue(b) - getNewsSortValue(a));
-
       const currentEmail = String(currentUser?.email || '').trim().toLowerCase();
       const postIds = mergedItems.map((i) => i.id).filter(Boolean);
 
-const engagement = Platform.OS === 'web'
-        ? await getEngagementForPostsFallback(postIds, currentEmail, focusItemId)
-        : await getEngagementForPostsSqlite(postIds, currentEmail, focusItemId);
+      // Engagement is optional decoration for a server-backed news feed.
+      // Do not lose every news card on Android if SQLite is unavailable while
+      // the development build is starting or its database is being migrated.
+      let engagement = { statsByPost: {}, commentsByPost: {} };
+      try {
+        engagement = Platform.OS === 'web'
+          ? await getEngagementForPostsFallback(postIds, currentEmail, focusItemId)
+          : await getEngagementForPostsSqlite(postIds, currentEmail, focusItemId);
+      } catch (error) {
+        console.warn('[UserStore.getNewsFeedSummary] engagement lookup failed:', error);
+      }
 
       // ✅ FIX: sirf jis post ki detail khuli hai uske comments backend se laao (GET /comments/{newsId})
       const focusItemComments = focusItemId ? await fetchBackendCommentsForPost(focusItemId) : [];
@@ -2977,23 +3352,19 @@ const engagement = Platform.OS === 'web'
         const next = { ...item };
 
         if (stat) {
-          const baseLikes = Number(item.likes || 0);
           const baseComments = Number(item.comments || 0);
           const baseShares = Number(item.shares || 0);
           const baseViews = Number(item.views || 0);
 
-          next.likes = baseLikes + Number(stat.likes || 0);
           next.comments = baseComments + Number(stat.comments || 0);
           next.shares = baseShares + Number(stat.shares || 0);
           next.views = baseViews + Number(stat.views || 0);
 
-          const legacyLiked = Boolean(
-            currentEmail
-              && Array.isArray(item.liked_by)
-              && item.liked_by.includes(currentEmail)
-          );
-          const likedNow = Boolean(stat.likedByCurrentUser || legacyLiked);
-          next.liked_by = likedNow && currentEmail ? [currentEmail] : [];
+          // ✅ FIX: likes ab sirf backend API se aate hain — local SQLite/
+          // AsyncStorage wala count/liked-by-me flag ab merge nahi hota,
+          // taaki double-counting na ho.
+          next.likes = Number(item.likes || 0);
+          next.liked_by = Array.isArray(item.liked_by) ? item.liked_by : [];
 
           const legacyBookmarked = Boolean(item.bookmarked);
           next.bookmarked = Boolean(stat.bookmarkedByCurrentUser || legacyBookmarked);
@@ -3011,16 +3382,9 @@ const engagement = Platform.OS === 'web'
       });
 
 
-// ✅ NEW: bina login guest ne jo posts like kiye hain, unka overlay UI ke liye
-      let finalItems = itemsWithEngagement;
-      if (!currentUser) {
-        const guestState = await readGuestLikes();
-        finalItems = itemsWithEngagement.map((item) => {
-          const id = String(item.id || '');
-          if (!guestState[id]) return item;
-          return { ...item, liked_by: ['__guest__'], likes: Number(item.likes || 0) + 1 };
-        });
-      }
+      // ✅ FIX: guest (bina-login) local-like overlay hata diya — likes ab
+      // sirf backend API se, aur bina login ke like possible nahi hai.
+      const finalItems = itemsWithEngagement;
 
       return {
         currentUser,
@@ -3091,10 +3455,12 @@ const engagement = Platform.OS === 'web'
         const stat = engagement?.statsByPost?.[id];
         const next = { ...item };
         if (stat) {
-  next.likes = Number(item.likes || 0) + Number(stat.likes || 0);
+  // ✅ FIX: likes/liked ab sirf backend API se (item.likes / item.liked) —
+  // local SQLite stat.likes ab merge nahi hota, double-count avoid karne ke liye.
+  next.likes = Number(item.likes || 0);
   next.shares = Number(item.shares || 0) + Number(stat.shares || 0);
   next.commentsCount = Number(stat.comments || 0);
-  next.liked = Boolean(item.liked || stat.likedByCurrentUser);
+  next.liked = Boolean(item.liked);
   next.bookmarked = Boolean(item.bookmarked || stat.bookmarkedByCurrentUser);
 }
 
@@ -3119,44 +3485,59 @@ const engagement = Platform.OS === 'web'
         return next;
       });
 
-   // ✅ NEW: guest likes overlay reels ke liye bhi
-      let finalReelItems = itemsWithEngagement;
-      if (!currentUser) {
-        const guestState = await readGuestLikes();
-        finalReelItems = itemsWithEngagement.map((item) => {
-          const id = String(item.id || '');
-          if (!guestState[id]) return item;
-          return { ...item, liked: true, likes: Number(item.likes || 0) + (item.liked ? 0 : 1) };
-        });
-      }
-
-      return { currentUser, items: finalReelItems };
+      // ✅ FIX: guest local-like overlay hata diya (reels ke liye bhi) —
+      // likes ab sirf backend API se.
+      return { currentUser, items: itemsWithEngagement };
     } catch {
       return null;
     }
   },
 
   
-  updateNewsFeedItem: async (itemId, action) => {
+  updateNewsFeedItem: async (itemId, action, meta = {}) => {
     try {
       const postId = String(itemId || '').trim();
       if (!postId) return { ok: false, message: 'Invalid post id.' };
 
-      // ✅ NEW: bina-login like/unlike — local guest store me toggle hoga
+      // ✅ FIX: like/unlike ab PURELY backend API ke through hota hai — koi
+      // local SQLite/AsyncStorage tracking nahi. Guest (bina-login) users
+      // ab like nahi kar sakte kyunki backend ko authenticated user chahiye.
+      //
+      // ✅ FIX 2: pehle hum har baar POST /likes call karke backend ke
+      // "toggle" behavior pe bharosa karte the — agar app ke known state aur
+      // backend ke real state mein kabhi mismatch ho (purane bug se ya kisi
+      // aur session se), to har tap ulta result deta tha ("like → auto
+      // unlike"). Ab hum caller se current known `liked` status (meta.liked
+      // — jo khud API/liked_by se aaya hota hai) leke EXPLICIT endpoint
+      // choose karte hain: already liked ho to DELETE /likes/{id} (unlike),
+      // nahi to POST /likes (like). Isse result hamesha predictable rehta
+      // hai, chahe backend POST khud toggle-style ho ya na ho.
       if (action === 'like') {
-        const guestCheckUser = await UserStore.getCurrentUser();
-        if (!guestCheckUser) {
-          const guestState = await readGuestLikes();
-          const alreadyLikedGuest = Boolean(guestState[postId]);
-          if (alreadyLikedGuest) {
-            delete guestState[postId];
-            await writeGuestLikes(guestState);
-            return { ok: true, liked: false, guest: true };
+        const likeUser = await UserStore.getCurrentUser();
+        if (!likeUser) return { ok: false, message: 'Please login to like this post.' };
+
+        const wasLiked = Boolean(meta?.liked);
+
+        if (wasLiked) {
+          const res = await AuthAPI.unlikeNews(postId);
+          if (!res.ok) {
+            if (res.isAuth) return { ok: false, message: 'Session expired. Please login again.' };
+            return { ok: false, message: res.message || 'Unable to unlike.' };
           }
-          guestState[postId] = true;
-          await writeGuestLikes(guestState);
-          return { ok: true, liked: true, guest: true };
+          return { ok: true, liked: false };
         }
+
+        const ensuredUser = await UserStore.ensureUserId();
+        const numericUserId = Number(ensuredUser?.id);
+        if (!Number.isFinite(numericUserId) || numericUserId <= 0) {
+          return { ok: false, message: 'Account not synced with server. Please logout and login again.' };
+        }
+        const res = await AuthAPI.likeNews({ userId: numericUserId, newsId: postId });
+        if (!res.ok) {
+          if (res.isAuth) return { ok: false, message: 'Session expired. Please login again.' };
+          return { ok: false, message: res.message || 'Unable to like.' };
+        }
+        return { ok: true, liked: Boolean(res.liked) };
       }
 
       const user = await UserStore.getCurrentUser();
@@ -3219,73 +3600,9 @@ const engagement = Platform.OS === 'web'
       const email = String(user.email || '').trim().toLowerCase();
       const now = new Date().toISOString();
 
-     
-if (action === 'like') {
-  if (!email) return { ok: false, message: 'Email missing.' };
-
-  // ✅ FIX: platform ke hisaab se sahi jagah check karo (jahan se getNewsFeedSummary padhta hai)
-  let alreadyLiked = false;
-  if (Platform.OS === 'web') {
-    const state = await readEngagementFallback();
-    alreadyLiked = Boolean(state.likesByPost?.[postId]?.[email]);
-  } else {
-    const db = await getEngagementDb();
-    if (db) {
-      const row = await db.getFirstAsync(
-        'SELECT 1 AS ok FROM post_likes WHERE post_id = ? AND user_email = ? LIMIT 1',
-        postId,
-        email
-      );
-      alreadyLiked = Boolean(row);
-    }
-  }
-
-  if (alreadyLiked) {
-    const res = await AuthAPI.unlikeNews(postId);
-    if (!res.ok) {
-      if (res.isAuth) return { ok: false, message: 'Session expired. Please login again.' };
-      return { ok: false, message: res.message || 'Unable to unlike.' };
-    }
-    if (Platform.OS === 'web') {
-      const state = await readEngagementFallback();
-      state.likesByPost[postId] = state.likesByPost[postId] || {};
-      delete state.likesByPost[postId][email];
-      await writeEngagementFallback(state);
-    } else {
-      const db = await getEngagementDb();
-      if (db) await db.runAsync('DELETE FROM post_likes WHERE post_id = ? AND user_email = ?', postId, email);
-    }
-    return { ok: true, liked: false };
-  }
-
-  const ensuredUser = await UserStore.ensureUserId();
-  const numericUserId = Number(ensuredUser?.id);
-  if (!Number.isFinite(numericUserId) || numericUserId <= 0) {
-    return { ok: false, message: 'Account not synced with server. Please logout and login again.' };
-  }
-  const res = await AuthAPI.likeNews({ userId: numericUserId, newsId: postId });
-  if (!res.ok) {
-    if (res.isAuth) return { ok: false, message: 'Session expired. Please login again.' };
-    return { ok: false, message: res.message || 'Unable to like.' };
-  }
-  if (Platform.OS === 'web') {
-    const state = await readEngagementFallback();
-    state.likesByPost[postId] = state.likesByPost[postId] || {};
-    state.likesByPost[postId][email] = true;
-    await writeEngagementFallback(state);
-  } else {
-    const db = await getEngagementDb();
-    if (db) {
-      await db.runAsync(
-        'INSERT OR IGNORE INTO post_likes (post_id, user_email, created_at) VALUES (?, ?, ?)',
-        postId,
-        email,
-        new Date().toISOString()
-      );
-    }
-  }
-  return { ok: true, liked: true };
-}
+      // ✅ FIX: 'like' action ab upar hi (function ke shuru mein) purely API
+      // se handle ho chuka hai — yahan koi local-storage wala like/unlike
+      // logic nahi bacha. (Naya like-toggle code upar dekho.)
 
       if (Platform.OS === 'web') {
         const state = await readEngagementFallback();
@@ -4326,9 +4643,19 @@ followUser: async (targetUserEmail, targetUserId) => {
       }
       if (!targetId) return { ok: false, message: 'Unable to resolve user id.' };
 
-      const apiResult = await AuthAPI.followUserApi(targetId);
+          const apiResult = await AuthAPI.followUserApi(targetId);
       if (!apiResult.ok) return apiResult;
 
+         // ✅ FIX: success ke baad local cached currentUser.following update nahi hota tha.
+      try {
+         const myFollowing = Array.isArray(currentUser.following) ? currentUser.following : [];
+        if (targetEmail && !myFollowing.includes(targetEmail)) {
+          await UserStore.updateUser(currentEmail, { following: [...myFollowing, targetEmail] });
+        }
+      } catch { /* best-effort cache sync */ }
+
+      // ✅ isi id/email ke sabhi follow buttons (app mein kahin bhi) ko turant notify karo
+      _broadcastFollowChange(targetEmail, targetId, true);
       return {
         ok: true,
         message: 'Successfully followed user.',
@@ -4357,8 +4684,18 @@ followUser: async (targetUserEmail, targetUserId) => {
       }
       if (!targetId) return { ok: false, message: 'Unable to resolve user id.' };
 
-      const apiResult = await AuthAPI.unfollowUserApi(targetId);
+             const apiResult = await AuthAPI.unfollowUserApi(targetId);
       if (!apiResult.ok) return apiResult;
+
+      // ✅ FIX: followUser wala hi cache-sync fix, unfollow ke liye.
+      try {
+        const myFollowing = Array.isArray(currentUser.following) ? currentUser.following : [];
+        await UserStore.updateUser(currentEmail, { following: myFollowing.filter((e) => e !== targetEmail) });
+      } catch { /* cache sync best-effort hai, API result asli source of truth hai */ }
+
+      // ✅ isi id/email ke sabhi follow buttons ko turant notify karo
+      _broadcastFollowChange(targetEmail, targetId, false);
+
       return {
         ok: true,
         message: 'Successfully unfollowed user.',
@@ -4371,16 +4708,33 @@ followUser: async (targetUserEmail, targetUserId) => {
       return { ok: false, message: 'Unable to unfollow user.' };
     }
   },
-  blockUser: async (targetUserEmail) => {
+     blockUser: async (targetUserEmail, targetUserId) => {
     try {
-      const targetUser = await UserStore.getUser(String(targetUserEmail || '').trim().toLowerCase());
-      if (!targetUser) return { ok: false, message: 'User not found.' };
-      const targetId = targetUser.id ?? targetUser.user_id ?? null;
+      let targetId = targetUserId ?? null;
+      if (!targetId) {
+        const targetUser = await UserStore.getUser(String(targetUserEmail || '').trim().toLowerCase());
+        targetId = targetUser?.id ?? targetUser?.user_id ?? null;
+      }
       if (!targetId) return { ok: false, message: 'Unable to resolve user id.' };
+      // ✅ FIX: sirf POST /users/block hit karo — koi doosri API call nahi.
+      // Backend khud follow-relation hata deta hai jab block hota hai, isliye
+      // yahan se separate POST /users/unfollow call karne ki zaroorat nahi thi.
       const apiResult = await AuthAPI.blockUserApi(targetId);
       if (!apiResult.ok) return apiResult;
-      // Block hote hi follow relation dono taraf se remove ho jata hai (backend), local cache bhi sync karo
-      await UserStore.unfollowUser(targetUserEmail);
+
+      // Local cache sirf update karo (koi network call nahi) taaki follow button
+      // turant "not following" dikhaye, backend se dobara fetch kiye bina.
+      try {
+        const currentUser = await UserStore.getCurrentUser();
+        const currentEmail = String(currentUser?.email || '').trim().toLowerCase();
+        const targetEmail = String(targetUserEmail || '').trim().toLowerCase();
+        if (currentUser && targetEmail) {
+          const myFollowing = Array.isArray(currentUser.following) ? currentUser.following : [];
+          await UserStore.updateUser(currentEmail, { following: myFollowing.filter((e) => e !== targetEmail) });
+        }
+        _broadcastFollowChange(targetEmail, targetId, false);
+      } catch { /* local cache sync best-effort hai */ }
+
       return { ok: true, message: 'User blocked.' };
     } catch (error) {
       console.error('blockUser error:', error);
@@ -4388,11 +4742,13 @@ followUser: async (targetUserEmail, targetUserId) => {
     }
   },
 
-  unblockUser: async (targetUserEmail) => {
+  unblockUser: async (targetUserEmail, targetUserId) => {
     try {
-      const targetUser = await UserStore.getUser(String(targetUserEmail || '').trim().toLowerCase());
-      if (!targetUser) return { ok: false, message: 'User not found.' };
-      const targetId = targetUser.id ?? targetUser.user_id ?? null;
+      let targetId = targetUserId ?? null;
+      if (!targetId) {
+        const targetUser = await UserStore.getUser(String(targetUserEmail || '').trim().toLowerCase());
+        targetId = targetUser?.id ?? targetUser?.user_id ?? null;
+      }
       if (!targetId) return { ok: false, message: 'Unable to resolve user id.' };
       const apiResult = await AuthAPI.unblockUserApi(targetId);
       if (!apiResult.ok) return apiResult;
@@ -4402,11 +4758,19 @@ followUser: async (targetUserEmail, targetUserId) => {
       return { ok: false, message: 'Unable to unblock user.' };
     }
   },
-
   getBlockedUsers: async () => {
     const result = await AuthAPI.getBlockedUsersApi();
     if (!result.ok) return result;
-    return { ok: true, list: result.list };
+    const list = (Array.isArray(result.list) ? result.list : []).map((raw) => {
+      const u = raw?.blocked_user || raw?.user || raw || {};
+      return {
+        id: u.id ?? u.user_id ?? raw?.user_id ?? raw?.blocked_user_id ?? null,
+        email: String(u.email || raw?.email || '').trim().toLowerCase(),
+        name: u.name || raw?.name || 'User',
+        profile_image: u.profile_image || raw?.profile_image || '',
+      };
+    });
+    return { ok: true, list };
   },
 
   getFollowStatus: async (targetUserEmail) => {
@@ -4422,24 +4786,48 @@ followUser: async (targetUserEmail, targetUserId) => {
       const followersCount = normalizeEmailList(targetUser.followers).length;
       const followingCount = normalizeEmailList(targetUser.following).length;
 
-      return { isFollowing, followersCount, followingCount };
+        return { isFollowing, followersCount, followingCount };
     } catch (error) {
       console.error('getFollowStatus error:', error);
       return { isFollowing: false, followersCount: 0, followingCount: 0 };
     }
   },
-getFollowSummary: async (email) => {
+
+  getFollowSummary: async (email, id) => {
   try {
     const targetEmail = String(email || '').trim().toLowerCase();
+    const targetId = id != null ? String(id) : '';
     const [followingRes, followersRes] = await Promise.all([
-      AuthAPI.getFollowingApi(),
-      AuthAPI.getFollowersApi(),
+      AuthAPI.getFollowingApi(targetId || undefined),
+      AuthAPI.getFollowersApi(targetId || undefined),
     ]);
-    const following = followingRes.ok ? followingRes.list : [];
-    const followers = followersRes.ok ? followersRes.list : [];
-    const isFollowing = targetEmail
-      ? following.some((u) => String(u?.email || u?.user_email || '').trim().toLowerCase() === targetEmail)
-      : false;
+    // Merge the last successful local mutation. This protects navigation and
+    // focus refreshes from a stale backend read right after follow/unfollow.
+    const following = _mergeFollowing((followingRes.ok ? followingRes.list : []).map(_normalizeFollowListItem));
+    const followers = (followersRes.ok ? followersRes.list : []).map(_normalizeFollowListItem);
+    // ✅ FIX: backend /users/following response mein "email" field bhejta hi nahi
+    // (sirf id, firstname, lastname, profile_image, bio aata hai) — isliye
+    // email-based match hamesha fail hota tha chahe follow backend pe save ho
+    // chuka ho. Ab id se match karo (jo reliably aata hai), email fallback rakho.
+     // ✅ NEW: match ke saath-saath us user ka numeric id bhi capture karo —
+    // isse "already following/followed by" user pe Block/Report jaise actions
+    // ke liye targetId resolve ho sakta hai, chahe post/route se author_id na mila ho.
+    let resolvedId = null;
+    const isFollowing = following.some((u) => {
+      const uId = u?.id != null ? String(u.id) : '';
+      const uEmail = String(u?.email || u?.user_email || '').trim().toLowerCase();
+      if (targetId && uId && uId === targetId) { resolvedId = u.id; return true; }
+      if (targetEmail && uEmail && uEmail === targetEmail) { resolvedId = u.id; return true; }
+      return false;
+    });
+    if (!resolvedId) {
+      const followerMatch = followers.find((u) => {
+        const uId = u?.id != null ? String(u.id) : '';
+        const uEmail = String(u?.email || u?.user_email || '').trim().toLowerCase();
+        return (targetId && uId === targetId) || (targetEmail && uEmail === targetEmail);
+      });
+      if (followerMatch?.id != null) resolvedId = followerMatch.id;
+    }
 
     return {
       isFollowing,
@@ -4447,36 +4835,68 @@ getFollowSummary: async (email) => {
       following,
       followersCount: followers.length,
       followers,
+      resolvedId,
     };
   } catch (error) {
     console.error('getFollowSummary error:', error);
     return null;
   }
 },
-  saveSelectedSeat: async (seatId) => {
+   saveSelectedSeat: async (seatId, plan = null) => {
     try {
       const user = await UserStore.getCurrentUser();
       if (!user) return { ok: false, message: 'Please login again.' };
-      const seatRoleId = String(seatId || '').trim();
+      const seatRoleId = String(seatId || '').trim() === 'seat-common' ? 'common' : String(seatId || '').trim();
       if (!seatRoleId) return { ok: false, message: 'Invalid seat id.' };
       const profileState = String(user.state || '').trim();
       if (!profileState) return { ok: false, message: 'Please select your state first.' };
-      const roleMeta = getStateSeatRole(seatRoleId);
+      const roleMeta = seatRoleId === 'common'
+        ? { id: 'common', name: 'Common User' }
+        : getStateSeatRole(seatRoleId);
       if (!roleMeta) return { ok: false, message: 'Invalid seat selection.' };
       const today = new Date().toISOString().slice(0, 10);
-      const allocations = await getStateSeatAllocationsFromStorage();
-      const stateKey = normalizeStateKey(profileState);
-      const stateAlloc = allocations[stateKey] && typeof allocations[stateKey] === 'object' ? allocations[stateKey] : {};
-      const takenBy = String(stateAlloc?.[seatRoleId]?.email || '').trim().toLowerCase();
-      if (takenBy && takenBy !== user.email) {
-        return { ok: false, message: `"${roleMeta.name}" seat already taken. Please select another.` };
+      const isUnlimitedSeat = UNLIMITED_SEAT_IDS.includes(seatRoleId);
+      const expiresAt = plan?.expires_at || user.subscription_plan?.expires_at || null;
+
+      // ✅ FIX: plan pass hua ho to usi se, warna user ko dikhne wale matching
+      // plan se — scope (state/district/taluka) decide hoga
+      const effectivePlan = plan || findPlanForSeat(seatRoleId, user);
+      const scopeKey = isUnlimitedSeat ? '' : getPlanSeatScopeKey(effectivePlan, user);
+
+      if (!isUnlimitedSeat && scopeKey) {
+        const allocations = await getStateSeatAllocationsFromStorage();
+        const scopeAlloc = allocations[scopeKey] && typeof allocations[scopeKey] === 'object' ? allocations[scopeKey] : {};
+        const entry = scopeAlloc?.[seatRoleId] || null;
+        const entryExpiresAt = entry?.expires_at ? new Date(entry.expires_at).getTime() : null;
+        const isExpired = entryExpiresAt !== null && !Number.isNaN(entryExpiresAt) && entryExpiresAt < Date.now();
+        const takenBy = (!isExpired && entry?.email) ? String(entry.email).trim().toLowerCase() : '';
+        if (takenBy && takenBy !== user.email) {
+          return { ok: false, message: `"${roleMeta.name}" seat is already taken here. Try again after it expires.` };
+        }
+        const updatedAllocations = {
+          ...allocations,
+          [scopeKey]: {
+            ...scopeAlloc,
+            [seatRoleId]: { email: user.email, name: user.name || '', assigned_at: today, expires_at: expiresAt },
+          },
+        };
+        await AsyncStorage.setItem(STATE_SEATS_KEY, JSON.stringify(updatedAllocations));
       }
-      const updatedAllocations = {
-        ...allocations,
-        [stateKey]: { ...stateAlloc, [seatRoleId]: { email: user.email, name: user.name || '', assigned_at: today } },
+
+      const seatToAssign = {
+        state: profileState,
+        // ✅ FIX: pehle hamesha user ki profile location save hoti thi, chahe
+        // plan kisi aur district/taluka/village ke liye bana ho. Ab plan ki
+        // apni location (jis par seat actually lock hui hai) priority se
+        // save hogi, user ki profile location sirf fallback hai.
+        district: String(effectivePlan?.district || user.district || '').trim(),
+        taluka: String(effectivePlan?.taluka || user.taluka || '').trim(),
+        village: String(effectivePlan?.village || user.village || '').trim(), // ✅ NEW
+        seat_id: seatRoleId,
+        seat_name: roleMeta.name,
+        assigned_at: today,
+        plan_id: String(user.subscription_plan?.plan_id || '').trim(),
       };
-      await AsyncStorage.setItem(STATE_SEATS_KEY, JSON.stringify(updatedAllocations));
-      const seatToAssign = { state: profileState, seat_id: seatRoleId, seat_name: roleMeta.name, assigned_at: today, plan_id: String(user.subscription_plan?.plan_id || '').trim() };
       const updatedUser = await UserStore.updateUser(user.email, { state_seat: seatToAssign });
       if (!updatedUser) return { ok: false, message: 'Unable to save seat.' };
       return { ok: true, seat: seatToAssign };
@@ -4521,8 +4941,15 @@ getFollowSummary: async (email) => {
         payment_history: [...normalizePaymentHistory(user.payment_history), newPayment],
         notifications: [...currentNotifications, roleNotification],
       });
-      if (!updatedUser) return { ok: false, message: 'Unable to save subscription.' };
-      await qualifyReferralForSubscribedUser(user.email);
+          if (!updatedUser) return { ok: false, message: 'Unable to save subscription.' };
+      const wasAlreadySubscribed = Boolean(user.is_subscribed);
+      await recordQualifyingTransaction({
+        buyerEmail: user.email,
+        amount: Number(activePlan.price || price || 0),
+        packageType: 'subscription',
+        transactionId: newPayment.payment_id,
+        isRenewal: wasAlreadySubscribed,
+      });
       return { ok: true, plan: activePlan, role: newRole };
     } catch (err) {
       console.error('saveSubscription error:', err);
@@ -4571,17 +4998,31 @@ getFollowSummary: async (email) => {
     } catch { return null; }
   },
   
-getActiveAdsFeed: async () => {
+getActiveAdsFeed: async (options = {}) => {
   try {
     const res = await AuthAPI.getAdsDetails(); // GET /ads-details — no login required
     if (!res.ok || !Array.isArray(res.ads)) return [];
 
     const today = new Date().toISOString().slice(0, 10);
 
+      const blockedRes = options?.skipBlockedUsers
+      ? { ok: true, list: [] }
+      : await UserStore.getBlockedUsers();
+    const blockedEmailsForAds = new Set((blockedRes?.list || []).map((u) => u.email).filter(Boolean));
+    const blockedIdsForAds = new Set((blockedRes?.list || []).map((u) => (u.id != null ? String(u.id) : '')).filter(Boolean));
+    const isBlockedAdOwner = (ad) => {
+      const ownerEmail = String(ad?.owner_email || '').trim().toLowerCase();
+      const ownerId = (ad?.owner_id ?? ad?.user_id) != null ? String(ad.owner_id ?? ad.user_id) : '';
+      if (ownerEmail && blockedEmailsForAds.has(ownerEmail)) return true;
+      if (ownerId && blockedIdsForAds.has(ownerId)) return true;
+      return false;
+    };
+
     return res.ads
       .filter((ad) => Number(ad?.status ?? 1) === 1)
       // ✅ FIX: expired ads (end_date guzar chuki) ko Home feed pe mat dikhao
       .filter((ad) => !ad?.end_date || String(ad.end_date) >= today)
+      .filter((ad) => !isBlockedAdOwner(ad))
       .map((ad) => {
         // ✅ FIX: actual field "redirection_url" hai ("url" nahi), aur usi
         // deep-link (rti-news://profile/<email>) se owner ka email nikal rahe hain
@@ -4622,8 +5063,8 @@ getActiveAdsFeed: async () => {
           updated_at: ad.updated_at || '',
         };
       })
-      .sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
-  } catch { return []; }
+        .sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
+  } catch (e) { console.log('[DEBUG getActiveAdsFeed] failed:', e); return []; }
 },
 // getAdsDetailsFeed ab isi ko point kare — same function, ek jagah se maintain hoga
 getAdsDetailsFeed: async () => UserStore.getActiveAdsFeed(),
@@ -4684,9 +5125,22 @@ createAdOrder: async ({ planId }) => {
       status: 'active',
     };
 
+     const adPayment = {
+      order_id:   `ORD_ADS_${Date.now()}`,
+      payment_id: razorpay_payment_id || `PAY_ADS_${Date.now()}`,
+      amount:     adSubscription.price,
+      status:     'success',
+      date:       today,
+      plan_id:    adSubscription.plan_id,
+      plan_name:  adSubscription.plan_name,
+      module:     'ads',
+      signature:  razorpay_signature || '',
+    };
+
     const updatedUser = await UserStore.updateUser(user.email, {
       ad_credits: newCredits,
       ad_subscription: adSubscription,
+      payment_history: [...normalizePaymentHistory(user.payment_history), adPayment],
     });
 
     if (!updatedUser) return { ok: false, message: 'Credits save nahi ho paaye.' };
@@ -4737,12 +5191,20 @@ createAdOrder: async ({ planId }) => {
         status: 'active',
       };
 
+        const wasAlreadyEcomSubscribed = Boolean(user.ecome_subscription);
       const updatedUser = await UserStore.updateUser(user.email, {
         ecome_credits: newCredits,
         ecome_subscription: ecomSubscription,
       });
 
       if (!updatedUser) return { ok: false, message: 'Subscription save nahi ho paayi.' };
+      await recordQualifyingTransaction({
+        buyerEmail: user.email,
+        amount: Number(ecomSubscription.price || 0),
+        packageType: 'ecommerce',
+        transactionId: razorpay_payment_id || `TXN-${Date.now()}`,
+        isRenewal: wasAlreadyEcomSubscribed,
+      });
       return { ok: true, credits: newCredits, subscription: ecomSubscription };
     } catch (err) {
       console.error('[UserStore.verifyEcomPayment] Error:', err);
@@ -4776,8 +5238,16 @@ createAdOrder: async ({ planId }) => {
   //       ad_subscription: adSubscription,
   //     });
 
-  //     if (!updatedUser) return { ok: false, message: 'Unable to activate ad plan.' };
-  //     return { ok: true, credits: newCredits, plan: adSubscription };
+  //          const wasAlreadyAdSubscribed = Boolean(user.ad_subscription);
+      // if (!updatedUser) return { ok: false, message: 'Unable to activate ad plan.' };
+      // await recordQualifyingTransaction({
+      //   buyerEmail: user.email,
+      //   amount: Number(price || 0),
+      //   packageType: 'ads',
+      //   transactionId: `TXN-AD-${Date.now()}`,
+      //   isRenewal: wasAlreadyAdSubscribed,
+      // });
+      // return { ok: true, credits: newCredits, plan: adSubscription };
   //   } catch { return { ok: false, message: 'Unable to activate ad plan.' }; }
   // },
 
@@ -4973,14 +5443,27 @@ deleteAd: async (adId) => {
       }
 
 // ✅ FIX: listings ab real backend /ecom-details se aayengi, dummy local ecome_listings hata diya
-      let listings = [];
+            let listings = [];
       if (includeListings) {
         try {
         const detailsRes = await AuthAPI.getEcomDetails();
         if (detailsRes.ok && Array.isArray(detailsRes.details)) {
+                 const blockedRes = options?.skipBlockedUsers
+            ? { ok: true, list: [] }
+            : await UserStore.getBlockedUsers();
+          const blockedEmailsForEcom = new Set((blockedRes?.list || []).map((u) => u.email).filter(Boolean));
+          const blockedIdsForEcom = new Set((blockedRes?.list || []).map((u) => (u.id != null ? String(u.id) : '')).filter(Boolean));
+          const isBlockedEcomOwner = (item) => {
+            const ownerEmail = String(item?.owner_email || '').trim().toLowerCase();
+            const ownerCreatedBy = String(item?.createdBy || '').trim().toLowerCase();
+            if (ownerEmail && blockedEmailsForEcom.has(ownerEmail)) return true;
+            if (ownerCreatedBy && (blockedEmailsForEcom.has(ownerCreatedBy) || blockedIdsForEcom.has(ownerCreatedBy))) return true;
+            return false;
+          };
           listings = detailsRes.details
             .map(normalizeEcomDetail)
             .filter((item) => Number(item.status) === 1)
+            .filter((item) => !isBlockedEcomOwner(item))
             .map((item) => ({
               ...item,
               sellers: Array.from(sellersByProduct.get(String(item.id))?.values?.() || []),
@@ -5086,9 +5569,21 @@ deleteAd: async (adId) => {
         expires_at: addDaysToDateString(today, validDays),
         status: 'active',
       };
+          const ecomPayment = {
+        order_id:   `ORD_ECOM_${Date.now()}`,
+        payment_id: `PAY_ECOM_${Date.now()}`,
+        amount:     plan.price,
+        status:     'success',
+        date:       today,
+        plan_id:    plan.plan_id,
+        plan_name:  plan.plan_name,
+        module:     'ecom',
+        signature:  '',
+      };
       const updatedUser = await UserStore.updateUser(user.email, {
         ecome_credits: nextCredits,
         ecome_subscription: plan,
+        payment_history: [...normalizePaymentHistory(user.payment_history), ecomPayment],
       });
       if (!updatedUser) return { ok: false, message: 'Unable to activate E-Commerce credits.' };
       return { ok: true, credits: nextCredits, plan };
@@ -5120,7 +5615,7 @@ deleteAd: async (adId) => {
         .map((item) => ({
           uri: item.uri,
           previewUri: item.previewUri || '',
-          type: item.type || 'image/jpeg',
+         type: item.mimeType || 'image/jpeg',
           name: item.name || 'image.jpg',
         }));
 

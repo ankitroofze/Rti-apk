@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useToast } from '../components/ui/ToastProvider';
 import CertificationStyles from '../styles/CertificationStyles';
 import { UserStore } from '../store/UserStore';
+import { getQuizResultTier } from '../utils/quizResultLogic';
 
 const TYPE_LABEL = {
   practice: 'Practice',
@@ -66,13 +67,14 @@ export default function MyAttemptsScreen({ navigation }) {
     });
   };
 const handleDownload = (item) => {
-  if ((item.result_type || '').toLowerCase() !== 'pass') {
+  if (!getQuizResultTier(item.percentage).passed) {
     showToast('Certificate only available for passed exams.', 'error');
     return;
   }
   navigation.navigate('CertificatePreview', {
     result: {
       quiz_title: item.quiz_title,
+      percentage: item.percentage,
       user_name: item.user_name,
       date: item.issued_at
         ? new Date(item.issued_at).toLocaleDateString('en-IN')

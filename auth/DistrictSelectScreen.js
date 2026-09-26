@@ -9,11 +9,14 @@ import {
   Platform,
   Modal,
   FlatList,
+  ImageBackground,
   StyleSheet,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold } from '@expo-google-fonts/roboto';
 import { UserStore } from '../store/UserStore';
 import { getDistricts } from '../pages/locationData';
 import styles from '../styles/RegisterStyles';
@@ -165,6 +168,7 @@ const dropStyles = StyleSheet.create({
 });
 
 export default function DistrictSelectScreen({ navigation, route }) {
+  useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold });
   const { selectedState, fromPremium, needsCreateUser } = route.params || {};
   const preselectedDistrict = route?.params?.preselectedDistrict;
 
@@ -214,12 +218,12 @@ export default function DistrictSelectScreen({ navigation, route }) {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+    <SafeAreaView style={{ flex: 1 }} edges={[]}>
     <KeyboardAvoidingView
       style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={styles.root}>
+      <ImageBackground source={require('../assets/images/profile-red.png')} resizeMode="cover" style={styles.root}>
         <View style={[styles.glow, styles.glowTop]} />
         <View style={[styles.glow, styles.glowBottom]} />
 
@@ -237,8 +241,8 @@ export default function DistrictSelectScreen({ navigation, route }) {
               activeOpacity={0.7}
             >
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Ionicons name="arrow-back-outline" size={18} color="#8a8078" />
-                <Text style={{ color: '#8a8078', fontWeight: '800', fontSize: 13 }}>Back</Text>
+                <Ionicons name="arrow-back" size={18} color="#ffffff" />
+                <Text style={{ color: '#ffffff', fontWeight: '800', fontSize: 13, fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold' }}>Back</Text>
               </View>
             </TouchableOpacity>
 
@@ -307,8 +311,10 @@ export default function DistrictSelectScreen({ navigation, route }) {
               onPress={handleNext}
               disabled={!district.trim()}
             >
-              <Text style={styles.submitBtnText}>Next</Text>
-              <Ionicons name="arrow-forward" size={18} color="#ffffff" />
+              <LinearGradient colors={['#ffffff', '#f8fafc', '#f1f5f9']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.loginButtonGradient}>
+                <Text style={styles.submitBtnText}>Next</Text>
+                <Ionicons name="arrow-forward" size={18} color="#B91C1C" />
+              </LinearGradient>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -326,7 +332,7 @@ export default function DistrictSelectScreen({ navigation, route }) {
             onClose={() => setDistrictModal(false)}
           />
         )}
-      </View>
+      </ImageBackground>
     </KeyboardAvoidingView>
     </SafeAreaView>
   );

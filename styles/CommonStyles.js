@@ -231,7 +231,7 @@ export const CommonStyles = StyleSheet.create({
     gap: 8,
     marginTop: 4,
   },
-  actionButton: {
+   actionButton: {
     flexGrow: 1,
     flexBasis: Platform.OS === 'web' ? 0 : '30%',
     minWidth: 0,
@@ -242,14 +242,14 @@ export const CommonStyles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 4,
     borderRadius: BORDER_RADIUS.small, // 4px
-    backgroundColor: COLORS.orangeLight,
+    backgroundColor: COLORS.white,
     borderWidth: 1,
-    borderColor: COLORS.orangeMid,
+    borderColor: COLORS.border,
   },
   actionButtonText: {
     fontSize: 11,
     fontWeight: TYPOGRAPHY.headingWeight,
-    color: COLORS.orange,
+    color: '#DC2626',
     flexShrink: 1,
     textAlign: 'center',
     fontFamily: TYPOGRAPHY.fontFamily,

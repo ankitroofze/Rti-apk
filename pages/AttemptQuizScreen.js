@@ -1,5 +1,5 @@
 // screens/AttemptQuizScreen.js
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ScrollView,
   Text,
@@ -13,6 +13,18 @@ import { useToast } from '../components/ui/ToastProvider';
 import { UserStore } from '../store/UserStore';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import AttemptQuizStyles from '../styles/AttemptQuizStyles';
+import { getQuizResultTier } from '../utils/quizResultLogic';
+
+const getAttemptDurationMinutes = (attempt, fallbackQuiz) => {
+  const keys = ['time_in_min', 'time_in_minutes', 'duration_minutes', 'duration_min', 'timer_minutes'];
+  for (const source of [attempt, attempt?.quiz, fallbackQuiz]) {
+    for (const key of keys) {
+      const value = Number(source?.[key]);
+      if (Number.isFinite(value) && value > 0) return value;
+    }
+  }
+  return 0;
+};
 export default function AttemptQuizScreen({ navigation, route }) {
   const { showToast } = useToast();
   const { quiz, subject, difficulty } = route.params || {};
@@ -21,8 +33,10 @@ export default function AttemptQuizScreen({ navigation, route }) {
   const [submitting, setSubmitting]           = useState(false);
   const [starting, setStarting]               = useState(true);
   const [attemptId, setAttemptId]             = useState(null);
- const [questions, setQuestions]             = useState(() => quiz?.questions || []);
+  const [questions, setQuestions]             = useState(() => quiz?.questions || []);
   const [timeLeft, setTimeLeft]               = useState(null); // seconds remaining
+  const [timerDeadline, setTimerDeadline]     = useState(null);
+  const submissionStartedRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -40,6 +54,12 @@ if (!userId || !quizTypeId) {
       if (!active) return;
       if (started.ok) {
         setAttemptId(started.attemptId || null);
+        const minutes = getAttemptDurationMinutes(started.attempt, quiz);
+        if (minutes > 0) {
+          const deadline = Date.now() + (minutes * 60 * 1000);
+          setTimerDeadline(deadline);
+          setTimeLeft(Math.ceil((deadline - Date.now()) / 1000));
+        }
         const apiQuestions = started.attempt?.questions || started.attempt?.quiz?.questions || [];
         if (Array.isArray(apiQuestions) && apiQuestions.length) {
           const LETTERS = ['A', 'B', 'C', 'D'];
@@ -67,20 +87,23 @@ if (!userId || !quizTypeId) {
 
   // Start countdown once quiz has loaded — backend ka time_in_min minutes me hota hai.
   useEffect(() => {
-    if (starting) return;
+    if (starting || timerDeadline) return;
     const minutes = Number(quiz?.time_in_min) || 0;
     if (minutes > 0) setTimeLeft(minutes * 60);
-  }, [starting]);
+  }, [starting, timerDeadline]);
 
   useEffect(() => {
-    if (timeLeft === null) return;
+    if (timeLeft === null || !timerDeadline) return;
     if (timeLeft <= 0) {
       submitAttempt(); // time up — auto submit jo bhi answer diya hai
       return;
     }
-    const t = setTimeout(() => setTimeLeft((s) => s - 1), 1000);
+    const t = setTimeout(
+      () => setTimeLeft(Math.max(0, Math.ceil((timerDeadline - Date.now()) / 1000))),
+      250
+    );
     return () => clearTimeout(t);
-  }, [timeLeft]);
+  }, [timeLeft, timerDeadline]);
 
   const formatTime = (s) => {
     const m = Math.floor(s / 60).toString().padStart(2, '0');
@@ -115,6 +138,9 @@ if (!userId || !quizTypeId) {
 
   const submitAttempt = async () => {
     if (!questions.length) return;
+    if (submissionStartedRef.current) return;
+    submissionStartedRef.current = true;
+    setTimerDeadline(null);
     setTimeLeft(null); // stop timer
     setSubmitting(true);
     let result;
@@ -137,10 +163,11 @@ if (!userId || !quizTypeId) {
         // Case/whitespace-insensitive check zyada robust hai.
         const isExamQuiz = String(quiz?.quiz_type || '').trim().toLowerCase() === 'exam';
         const percentageValue = Number(raw?.percentage ?? 0);
+        const resultTier = getQuizResultTier(percentageValue);
         result = {
           ok: true,
           percentage: percentageValue,
-          result_type: raw?.result_type || (percentageValue >= 50 ? 'Pass' : 'Fail'),
+          result_type: resultTier.result,
           obtained_marks: raw?.obtained_marks ?? 0,
           total_marks: raw?.total_marks ?? 0,
           correct_answers: raw?.correct_answers ?? 0,
@@ -161,6 +188,7 @@ if (!userId || !quizTypeId) {
     setSubmitting(false);
 
     if (!result.ok) {
+      submissionStartedRef.current = false;
       showToast(result.message || 'Submission failed.', 'error');
       return;
     }
@@ -268,18 +296,15 @@ if (!userId || !quizTypeId) {
             );
           })}
 
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-            {currentQIndex > 0 && (
-              <TouchableOpacity
-                style={[AttemptQuizStyles.nextBtn, { flex: 1, backgroundColor: '#9CA3AF' }]}
-                onPress={handlePrevious}
-                disabled={submitting}
-              >
-                <Feather name="arrow-left" size={16} color="#fff" />
-                <Text style={AttemptQuizStyles.nextBtnText}>Back</Text>
-              </TouchableOpacity>
-            )}
-
+       <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity
+              style={[AttemptQuizStyles.nextBtn, { flex: 1, backgroundColor: '#9CA3AF' }]}
+              onPress={currentQIndex > 0 ? handlePrevious : () => navigation.goBack()}
+              disabled={submitting}
+            >
+              <Feather name="arrow-left" size={16} color="#fff" />
+              <Text style={AttemptQuizStyles.nextBtnText}>Back</Text>
+            </TouchableOpacity>
             {currentQIndex < questions.length - 1 && (
               <TouchableOpacity
                 style={[AttemptQuizStyles.nextBtn, { flex: 1, backgroundColor: '#FDBA74' }]}

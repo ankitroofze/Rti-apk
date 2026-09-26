@@ -7,9 +7,11 @@ import {
   StyleSheet,
   StatusBar,
   Platform,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ModuleWebHeader from '../components/Modulewebheader';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * SHURU DESIGN TOKENS (same family as EcomeSellScreen for consistency)
@@ -31,19 +33,52 @@ const ECOME_MENU = [
     id: 'sell',
     label: 'Sell',
     icon: 'storefront-outline',
+    emoji: '🏪',
     iconStyle: 'primary',
     desc: 'List your farm produce or equipment for sale',
     screen: 'Sell',
+    image: require('../assets/images/ecom-sell.png'),
   },
   {
     id: 'buy',
     label: 'Buy',
     icon: 'cart-outline',
+    emoji: '🛒',
     iconStyle: 'dark',
     desc: 'Browse and buy farm produce or equipment',
     screen: 'FarmingBuy',   // ✅ FIXED: was 'Ecome' (self-loop)
+    image: require('../assets/images/ecom-buy.png'),
   },
 ];
+
+// Hero image for the top "Buy, Sell & Grow Together" banner
+const ECOM_HERO_IMAGE = require('../assets/images/ecom-h.png');
+
+// ✅ Web par require() kabhi-kabhi { uri, width, height } object deta hai —
+// CSS url() ke andar seedha object nahi daal sakte, isliye asli string URI nikaalte hain.
+const resolveWebUri = (source) => {
+  if (typeof source === 'string') return source;
+
+  if (source && typeof source === 'object') {
+    if (typeof source.uri === 'string') return source.uri;
+    if (source.default) return resolveWebUri(source.default);
+  }
+
+  try {
+    if (Image && typeof Image.resolveAssetSource === 'function') {
+      const resolved = Image.resolveAssetSource(source);
+      return resolved?.uri || source;
+    }
+  } catch (_) {
+    // ignore
+  }
+
+  return source;
+};
+const ECOM_HERO_IMAGE_URI = resolveWebUri(ECOM_HERO_IMAGE);
+const ECOM_SELL_IMAGE_URI = resolveWebUri(require('../assets/images/ecom-sell.png'));
+const ECOM_BUY_IMAGE_URI  = resolveWebUri(require('../assets/images/ecom-buy.png'));
+const PROFILE_RED_IMAGE_URI = resolveWebUri(require('../assets/images/profile-red.png'));
 
 const ICON_STYLES = {
   primary: { bg: SHURU.primaryLight, border: SHURU.primaryBorder, color: SHURU.primary },
@@ -71,36 +106,139 @@ if (typeof document !== 'undefined') {
       from { opacity: 0; transform: translateY(8px); }
       to   { opacity: 1; transform: translateY(0); }
     }
-    .ecome-root { display: flex; flex-direction: column; height: 100vh; font-family: 'DM Sans', sans-serif; background: #FAFAF9; }
-    .ecome-topbar { height: 60px; background: #fff; border-bottom: 1px solid #EDEDED; display: flex; align-items: center; padding: 0 24px; gap: 14px; }
-    .ecome-logo { font-family: 'Instrument Serif', serif; font-size: 20px; color: #1e293b; flex: 1; }
-    .ecome-logo span { color: #94a3b8; }
-    .ecome-main { flex: 1; display: flex; align-items: flex-start; justify-content: center; padding: 56px 24px; overflow-y: auto; }
-    .ecome-card-wrap { width: 100%; max-width: 560px; }
-    .ecome-page-title { font-family: 'Instrument Serif', serif; font-size: 30px; color: #1e293b; margin-bottom: 6px; }
-    .ecome-page-sub { font-size: 14px; color: #94a3b8; margin-bottom: 28px; }
-
-    .ecome-banner { background: linear-gradient(135deg, ${SHURU.primary}, ${SHURU.primaryDark}); border-radius: ${SHURU.radius}px; padding: 22px 24px; display: flex; align-items: center; gap: 16px; margin-bottom: 32px; box-shadow: 0 8px 24px rgba(220,38,38,0.18); }
-    .ecome-banner-icon { width: 48px; height: 48px; border-radius: ${SHURU.radiusSm}px; background: rgba(255,255,255,0.16); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 24px; }
-    .ecome-banner-title { font-size: 16px; font-weight: 700; color: #fff; }
-    .ecome-banner-sub { font-size: 12.5px; color: rgba(255,255,255,0.85); margin-top: 3px; }
-
-.ecome-sec-label { font-size: 10px; font-weight: 700; letter-spacing: 1.3px; text-transform: uppercase; color: #b0b0b0; margin-bottom: 14px; }
-    .ecome-mysub-btn { display: flex; align-items: center; justify-content: space-between; background: ${SHURU.primaryLight}; border: 1px solid ${SHURU.primaryBorder}; border-radius: ${SHURU.radius}px; padding: 14px 16px; margin-bottom: 22px; font-size: 14px; font-weight: 700; color: ${SHURU.primaryDark}; cursor: pointer; }
-
-    .ecome-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-    .ecome-card {
-      background: #fff; border: 1px solid #EDEDED; border-radius: ${SHURU.radius}px;
-      padding: 20px 16px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px;
-      cursor: pointer; animation: ecomeFadeUp 0.28s ease both;
-      transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+    .ecome-root { display: flex; flex-direction: column; height: 100vh; font-family: 'DM Sans', sans-serif; background: #fff; }
+    .ecome-topbar { height: 56px; background-image: url(${PROFILE_RED_IMAGE_URI}); background-size: cover; background-position: center; border-bottom: 1px solid #EDEDED; display: flex; align-items: center; padding: 0 20px; gap: 14px; }
+    .ecome-topbar button {
+      background: transparent; border: none; padding: 0;
+      font-size: 14px; font-weight: 800; color: #ffffff; cursor: pointer;
+      display: flex; align-items: center; gap: 6px;
     }
-    .ecome-card:hover { border-color: ${SHURU.primary}; box-shadow: 0 10px 24px rgba(0,0,0,0.06); transform: translateY(-3px); }
-    .ecome-icon { width: 42px; height: 42px; border-radius: ${SHURU.radiusSm}px; display: flex; align-items: center; justify-content: center; }
-    .ecome-label-row { display: flex; align-items: center; justify-content: space-between; width: 100%; margin-top: 2px; }
-    .ecome-label { font-size: 15px; font-weight: 700; color: #1e293b; }
-    .ecome-desc { font-size: 12.5px; color: #94a3b8; line-height: 1.45; }
-    .ecome-go-btn { width: 28px; height: 28px; border-radius: 999px; background: ${SHURU.primaryLight}; display: flex; align-items: center; justify-content: center; color: ${SHURU.primary}; font-size: 14px; flex-shrink: 0; }
+    .ecome-topbar button:hover { opacity: 0.85; }
+    .ecome-main { flex: 1; display: flex; align-items: flex-start; justify-content: center; padding: 28px 24px 56px; overflow-y: auto; background: #f8fafc; }
+    .ecome-card-wrap { width: 100%; max-width: 1180px; }
+
+    /* ── Hero ─────────────────────────────────────────────── */
+    .ecome-hero {
+      display: flex; align-items: center; justify-content: space-between; gap: 32px;
+      background-image: url(${ECOM_HERO_IMAGE_URI});
+      background-size: cover; background-position: center;
+      border-radius: 20px; padding: 22px 44px; margin-bottom: 20px; overflow: hidden;
+      border: 1px solid #fde3e5; min-height: 0;
+    }
+    .ecome-hero-left {
+      flex: 1; min-width: 280px;
+      background: transparent;
+      border-radius: 16px; padding: 20px 24px;
+    }
+    .ecome-hero-badge {
+      display: inline-flex; align-items: center; gap: 6px; background: ${SHURU.primary}; color: #fff;
+      font-size: 12px; font-weight: 700; padding: 6px 14px; border-radius: 999px; margin-bottom: 18px;
+    }
+    .ecome-hero-title { font-family: 'DM Sans', sans-serif; font-size: 38px; font-weight: 800; line-height: 1.18; color: #1e293b; margin-bottom: 14px; }
+    .ecome-hero-title span { color: ${SHURU.primary}; }
+    .ecome-hero-desc { font-size: 15px; color: #64748b; line-height: 1.6; max-width: 480px; margin-bottom: 22px; }
+    .ecome-hero-features { display: flex; flex-wrap: wrap; gap: 22px; }
+    .ecome-feature-item { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; color: #334155; }
+    .ecome-feature-icon {
+      width: 30px; height: 30px; border-radius: 999px; background: #fff; display: flex; align-items: center;
+      justify-content: center; font-size: 14px; box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    }
+    .ecome-hero-right { flex-shrink: 0; width: 320px; display: flex; align-items: center; justify-content: center; }
+    .ecome-hero-img { width: 100%; max-width: 320px; height: auto; object-fit: contain; border-radius: 16px; }
+
+    /* ── Marketplace banner ───────────────────────────────── */
+    .ecome-banner {
+      background: linear-gradient(120deg, ${SHURU.primary}, ${SHURU.primaryDark} 70%);
+      border-radius: 18px; padding: 22px 28px; display: flex; align-items: center; gap: 16px;
+      margin-bottom: 28px; box-shadow: 0 10px 26px rgba(220,38,38,0.22);
+    }
+    .ecome-banner-icon { width: 48px; height: 48px; border-radius: 14px; background: rgba(255,255,255,0.18); display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 22px; }
+    .ecome-banner-title { font-size: 17px; font-weight: 800; color: #fff; }
+    .ecome-banner-sub { font-size: 13px; color: rgba(255,255,255,0.88); margin-top: 3px; }
+    .ecome-banner-cta {
+      display: flex; align-items: center; gap: 8px; background: #fff; color: ${SHURU.primaryDark};
+      font-size: 13.5px; font-weight: 800; padding: 11px 20px; border-radius: 999px; cursor: pointer;
+      flex-shrink: 0; white-space: nowrap; transition: transform 0.15s ease;
+    }
+    .ecome-banner-cta:hover { transform: translateY(-2px); }
+
+    /* ── Section header ───────────────────────────────────── */
+    .ecome-sec-header { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+    .ecome-sec-title { font-size: 19px; font-weight: 800; color: #1e293b; }
+    .ecome-sec-sub { font-size: 13px; color: #94a3b8; margin: 4px 0 18px 0; }
+
+    /* ── Sell / Buy cards ──────────────────────────────────── */
+    .ecome-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 24px; }
+    .ecome-card {
+      position: relative; overflow: hidden; min-height: 190px; border-radius: 20px;
+      padding: 26px 26px; display: flex; flex-direction: column; justify-content: center; gap: 8px;
+      cursor: pointer; animation: ecomeFadeUp 0.28s ease both; border: 1px solid rgba(0,0,0,0.04);
+      transition: box-shadow 0.16s ease, transform 0.16s ease;
+    }
+    .ecome-card:hover { box-shadow: 0 14px 28px rgba(0,0,0,0.10); transform: translateY(-3px); }
+    .ecome-card--sell {
+      background-image: url(${ECOM_SELL_IMAGE_URI});
+      background-size: 240% auto;
+      background-position: 68% 55%;
+      background-repeat: no-repeat;
+    }
+    .ecome-card--buy {
+      background-image: url(${ECOM_BUY_IMAGE_URI});
+      background-size: cover; background-position: center;
+    }
+    .ecome-card-body {
+      position: relative; z-index: 2; max-width: 62%;
+      background: transparent;
+      border-radius: 12px; padding: 10px 14px;
+    }
+    .ecome-icon {
+      width: 46px; height: 46px; border-radius: 12px; display: flex; align-items: center;
+      justify-content: center; margin-bottom: 10px; font-size: 22px; line-height: 1;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    }
+    .ecome-label { font-size: 24px; font-weight: 900; color: #1e293b; letter-spacing: -0.2px; }
+    .ecome-desc { font-size: 13px; color: #64748b; line-height: 1.5; margin-top: 4px; }
+    .ecome-go-btn {
+      position: absolute; top: 16px; right: 16px; z-index: 3; width: 34px; height: 34px; border-radius: 999px;
+      background: ${SHURU.primary}; color: #fff; display: flex; align-items: center; justify-content: center;
+      font-size: 16px; font-weight: 800; box-shadow: 0 4px 10px rgba(220,38,38,0.35);
+    }
+
+    /* ── Stat cards ────────────────────────────────────────── */
+    .ecome-stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .ecome-stat-card {
+      background: #fff; border: 1px solid #EDEDED; border-radius: 18px; padding: 20px 22px;
+      display: flex; flex-direction: column; gap: 4px; box-shadow: 0 6px 18px rgba(0,0,0,0.04);
+    }
+    .ecome-stat-icon { width: 42px; height: 42px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 18px; margin-bottom: 8px; }
+    .ecome-stat-label { font-size: 13px; font-weight: 700; color: #64748b; }
+    .ecome-stat-value { font-size: 23px; font-weight: 800; color: #1e293b; }
+    .ecome-stat-foot { font-size: 12px; color: #94a3b8; margin-top: 2px; }
+
+    /* ── Responsive ────────────────────────────────────────── */
+    @media (max-width: 900px) {
+      /* Mobile par hero ka photo background hata ke soft brand-gradient laga diya —
+         single column layout mein poori photo (boxes/pins/phone) seedha text ke peeche
+         chali jaati thi aur overlap karke ganda dikhti thi. Gradient text ke liye clean
+         aur readable rehta hai, aur "sirf image dikhna chahiye" wale look ko bhi
+         professional tareeke se maintain karta hai. */
+      .ecome-hero {
+        flex-direction: column; align-items: stretch; padding: 0; overflow: hidden;
+        background-image: none;
+      }
+      .ecome-hero-left {
+        background: linear-gradient(160deg, ${SHURU.primaryLight} 0%, #ffffff 100%);
+        padding: 26px 22px; border-radius: 20px;
+      }
+      .ecome-hero-badge { margin-bottom: 14px; }
+      .ecome-hero-title { font-size: 26px; margin-bottom: 10px; }
+      .ecome-hero-desc { font-size: 14px; margin-bottom: 18px; }
+      .ecome-hero-features { flex-direction: column; align-items: flex-start; gap: 12px; }
+      .ecome-hero-right { display: none; }
+      .ecome-grid { grid-template-columns: 1fr; }
+      .ecome-stats-grid { grid-template-columns: 1fr; }
+      .ecome-banner { flex-wrap: wrap; }
+    }
   `;
   document.head.appendChild(el);
 }
@@ -194,54 +332,70 @@ function EcomeWeb({ navigation }) {
     return (
       <div
         key={item.id}
-        className="ecome-card"
+        className={`ecome-card ecome-card--${item.id}`}
         onClick={() => openEcomeMenuItem(navigation, item)}
       >
-        <div className="ecome-icon" style={{ background: ic.bg }}>
-          <Ionicons name={item.icon} size={20} color={ic.color} />
-        </div>
-        <div className="ecome-label-row">
+        <div className="ecome-go-btn">→</div>
+        <div className="ecome-card-body">
+          <div className="ecome-icon" style={{ background: ic.bg }}>
+            {item.emoji}
+          </div>
           <div className="ecome-label">{item.label}</div>
-          <div className="ecome-go-btn">↗</div>
+          <div className="ecome-desc">{item.desc}</div>
         </div>
-        <div className="ecome-desc">{item.desc}</div>
       </div>
     );
   });
 
   return (
     <div className="ecome-root">
-      <div className="ecome-topbar">
-        <div className="ecome-logo">News<span>Hub</span></div>
-        <button
-          onClick={() => navigation.goBack()}
-          style={{ background: 'none', border: '1px solid #e2e8f0', borderRadius: SHURU.radiusSm, padding: '6px 14px', fontSize: 13, color: '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
-        >
-          ← Back
-        </button>
-      </div>
+      {/* ✅ Web header — design ek hi jagah (components/ModuleWebHeader.js) se aata hai */}
+      <ModuleWebHeader title="Ecome (buy / sell)" navigation={navigation} onBack={() => navigation.goBack()} />
       <div className="ecome-main">
         <div className="ecome-card-wrap">
-          <div className="ecome-page-title">Ecome (buy / sell)</div>
-          <div className="ecome-page-sub">Buy, sell or rent e-commerce resources in your region</div>
-          <div className="ecome-banner">
-            <div className="ecome-banner-icon">🛒</div>
-            <div>
-              <div className="ecome-banner-title">Ecome Marketplace</div>
-              <div className="ecome-banner-sub">Connect with sellers & buyers across your region</div>
+
+          {/* Hero */}
+          <div className="ecome-hero">
+            <div className="ecome-hero-left">
+              <div className="ecome-hero-badge">🛒 Ecome Marketplace</div>
+              <div className="ecome-hero-title">Buy, Sell &amp; Grow <span>Together</span></div>
+              <div className="ecome-hero-desc">
+                Explore thousands of products, connect with trusted sellers and buyers, and grow your business in your region.
+              </div>
+              <div className="ecome-hero-features">
+                <div className="ecome-feature-item"><span className="ecome-feature-icon">🛡️</span>Safe Transactions</div>
+                <div className="ecome-feature-item"><span className="ecome-feature-icon">🚚</span>Local &amp; Regional</div>
+                <div className="ecome-feature-item"><span className="ecome-feature-icon">🤝</span>Trusted Community</div>
+              </div>
             </div>
           </div>
-          <div
-            className="ecome-mysub-btn"
-            onClick={() => navigation.navigate('My Ecom Subscription')}
-          >
-            <span>🧾 My Ecommerce Subscription</span>
-            <span>→</span>
+
+          {/* Marketplace subscription banner */}
+          <div className="ecome-banner">
+            <div className="ecome-banner-icon">👑</div>
+            <div style={{ flex: 1 }}>
+              <div className="ecome-banner-title">Ecome Marketplace</div>
+              <div className="ecome-banner-sub">Connect with sellers &amp; Buyers across your region</div>
+            </div>
+            <div
+              className="ecome-banner-cta"
+              onClick={() => navigation.navigate('My Ecom Subscription')}
+            >
+              View Plans <span>→</span>
+            </div>
           </div>
-          <div className="ecome-sec-label">What would you like to do?</div>
+
+          {/* What would you like to do */}
+          <div className="ecome-sec-header">
+            <div>
+              <div className="ecome-sec-title">What Would You Like To Do?</div>
+              <div className="ecome-sec-sub">Quick access to your marketplace activities</div>
+            </div>
+          </div>
           <div className="ecome-grid">
             {webItems}
           </div>
+
         </div>
       </div>
     </div>

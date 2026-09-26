@@ -1,12 +1,17 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Clipboard, Image, KeyboardAvoidingView, Modal,
+  Alert, Clipboard, Image, ImageBackground, KeyboardAvoidingView, Modal,
   Platform, ScrollView, Share, StatusBar, Text, TextInput,
   TouchableOpacity, TouchableWithoutFeedback, useWindowDimensions, View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import ProfileAvatar from '../components/ProfileAvatar';
+import AutoIdCardPreview from '../components/IdCardPreview';
+import AutoIdCardBackPreview from '../components/IdCardBackPreview';
+import ScaledCard from '../components/ScaledCard';
+import AutoAppointmentLetterPreview from '../components/AppointmentLetterPreview';
+import { hasDocumentSource, getProfileTier } from '../utils/profileHelpers';
 import { useToast } from '../components/ui/ToastProvider';
 import VerifiedBadge from '../components/VerifiedBadge';
 import VideoPreview from '../components/VideoPreview';
@@ -14,6 +19,7 @@ import { UserStore } from '../store/UserStore';
 import { isValidImageUrl } from '../utils/storyHelpers';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 import styles from '../styles/UserPublicProfileStyles';
+
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -146,6 +152,25 @@ const ProfileMenuSheet = ({ visible, onClose, onCopyLink, onReport, onBlock }) =
   </Modal>
 );
 
+const BlockConfirmModal = ({ visible, name, onCancel, onConfirm }) => (
+  <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onCancel}>
+    <View style={{ flex: 1, backgroundColor: 'rgba(15,23,42,0.45)', justifyContent: 'center', alignItems: 'center', padding: 24 }}>
+      <View style={{ width: '100%', maxWidth: 360, backgroundColor: '#ffffff', borderRadius: 16, padding: 24 }}>
+        <Text style={{ fontSize: 17, fontWeight: '700', color: '#0f172a', marginBottom: 8 }}>Block User</Text>
+        <Text style={{ fontSize: 14, color: '#475569', marginBottom: 20 }}>{`Are you sure you want to block "${name}"?`}</Text>
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          <TouchableOpacity onPress={onCancel} activeOpacity={0.75} style={{ flex: 1, paddingVertical: 12, borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', alignItems: 'center' }}>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#334155' }}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onConfirm} activeOpacity={0.75} style={{ flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: '#ef4444', alignItems: 'center' }}>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: '#ffffff' }}>Block</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  </Modal>
+);
+
 const COLLAPSE_CHAR_LIMIT = 180;
 const ExpandableDescription = ({ text }) => {
   const [expanded, setExpanded] = useState(false);
@@ -196,10 +221,13 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const [isFollowing, setIsFollowing] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   const [followStats, setFollowStats] = useState({ followers: 0, following: 0 });
-  const [followLists, setFollowLists] = useState({ followers: [], following: [] });
+ const [followLists, setFollowLists] = useState({ followers: [], following: [] });
   const [followModalType, setFollowModalType] = useState('');
+  const selfFollowActionRef = useRef(false);
+  const followActionInFlightRef = useRef(false);
 
   const [modalVisible, setModalVisible] = useState(false);
+  const [blockConfirmVisible, setBlockConfirmVisible] = useState(false);
   const [modalImage, setModalImage] = useState('');
   const [modalName, setModalName] = useState('');
   const [menuVisible, setMenuVisible] = useState(false);
@@ -236,23 +264,33 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         : (resolvedEmail ? await UserStore.getUser(resolvedEmail) : null);
       if (!active) return;
       setProfile(user || null);
-      try {
-        const currentUser = await UserStore.getCurrentUser();
-        const myFollowing = Array.isArray(currentUser?.following) ? currentUser.following : [];
-        const alreadyFollowing =
-          (resolvedEmail && myFollowing.includes(resolvedEmail)) ||
-          Boolean(user?.is_followed) ||
-          Boolean(user?.isFollowed);
+          try {
         if (active) {
-          setIsFollowing(alreadyFollowing);
           setFollowStats({
             followers: getNumericCount(user?.followers_count ?? user?.followers ?? user?.referral_count ?? 0),
             following: getNumericCount(user?.following_count ?? user?.following ?? 0),
           });
           setFollowLists({ followers: [], following: [] });
         }
+        // ✅ FIX: local cache / is_followed field kabhi update nahi hote follow ke baad,
+        // isliye already-followed user ke profile pe bhi "Follow" hi dikhta tha.
+        // Ab NewsFeedCard jaisa hi live check (getFollowSummary) use karo.
+            const targetIdForFollow = userId ?? user?.id ?? null;
+               const summary = (resolvedEmail || targetIdForFollow) ? await UserStore.getFollowSummary?.(resolvedEmail, targetIdForFollow) : null;
+        if (active) {
+          setIsFollowing(Boolean(summary?.isFollowing));
+          if (summary) {
+            setFollowLists({ followers: summary.followers || [], following: summary.following || [] });
+            setFollowStats({ followers: summary.followersCount || 0, following: summary.followingCount || 0 });
+          }
+        }
+        // ✅ NEW: agar backend se is post/author ka numeric id nahi mila (author_id null tha),
+        // to follow/followers list se mile id se profile.id backfill kardo — isse Block/Report
+        // jaise actions ke liye targetId resolve ho jaayega.
+        if (active && !user?.id && summary?.resolvedId) {
+          setProfile((prev) => (prev ? { ...prev, id: summary.resolvedId } : { id: summary.resolvedId }));
+        }
       } catch { /* ignore */ }
-
         const fromProfile = [
         ...(Array.isArray(user?.posts) ? user.posts : []),
         ...(Array.isArray(user?.news) ? user.news : []),
@@ -262,7 +300,9 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       const display = user || author || {};
       const authorName = String(display?.name || display?.author_name || '').trim();
 
-      const summary = (resolvedEmail || authorName) ? await UserStore.getNewsFeedSummary() : null;
+      const summary = (resolvedEmail || authorName)
+        ? await UserStore.getNewsFeedSummary({ skipBlockedUsers: true })
+        : null;
       const fromFeed = Array.isArray(summary?.items)
         ? summary.items.filter((it) => {
           const createdBy = String(it?.createdBy || '').trim().toLowerCase();
@@ -280,7 +320,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       const localAds = Array.isArray(user?.ads)
         ? user.ads.map((ad) => ({ ...ad, owner_email: ad?.owner_email || user?.email || resolvedEmail }))
         : [];
-      const publicAds = await UserStore.getActiveAdsFeed?.() || [];
+      const publicAds = await UserStore.getActiveAdsFeed?.({ skipBlockedUsers: true }) || [];
       const profileAds = [...localAds, ...publicAds]
         .filter((ad) => {
           const owner = String(ad?.owner_email || ad?.createdBy || '').trim().toLowerCase();
@@ -308,13 +348,32 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           return arr.findIndex((x) => x?.id === id) === index;
         });
 
-      setPosts(merged);
+            setPosts(merged);
       setLoading(false);
       if (!user && resolvedEmail) showToast('User profile not found on this device. Showing available info.', 'error');
     })();
     return () => { active = false; };
-  }, [resolvedEmail, showToast]);
+  // A profile may be opened with only userId (the following API does not
+  // always provide email). Include it so moving between profiles reloads.
+  }, [resolvedEmail, userId, author, showToast]);
 
+  // ✅ FIX: is profile ke liye follow button + followers count ab app mein kahin
+  // bhi (news card se bhi) follow/unfollow hote hi turant sync ho jayega.
+  useEffect(() => {
+    if (!resolvedEmail && userId == null) return undefined;
+    const unsubscribe = UserStore.subscribeFollowState?.((payload) => {
+      if (UserStore.matchesFollowTarget?.(payload, resolvedEmail, userId)) {
+        setIsFollowing(Boolean(payload.isFollowing));
+        if (!selfFollowActionRef.current) {
+          setFollowStats((prev) => ({
+            ...prev,
+            followers: Math.max(0, Number(prev.followers || 0) + (payload.isFollowing ? 1 : -1)),
+          }));
+        }
+      }
+    });
+    return () => { unsubscribe?.(); };
+  }, [resolvedEmail, userId]);
   // ── Derived profile values ──────────────────────────────────────────────────
 
   const display = profile || author || {};
@@ -323,11 +382,14 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const state = String(display?.state || '').trim();
   const district = String(display?.district || '').trim();
   const taluka = String(display?.taluka || '').trim();
-  const bio = String(display?.bio || '').trim();
+ const bio = String(display?.bio || '').trim();
+  const referralCode = (display?.is_subscribed || display?.author_is_subscribed || ['basic', 'pro', 'premium'].includes(String(display?.role || display?.author_role || '').trim().toLowerCase()))
+    ? String(display?.my_referral_code || display?.referral_code || '').trim()
+    : '';
   const seatName = String(display?.state_seat?.seat_name || display?.author_seat_name || '').trim();
   const seatId = String(display?.state_seat?.seat_id || display?.author_seat_id || '').trim();
   const roleId = String(display?.role || display?.author_role || '').trim().toLowerCase();
-  const rolePillText = roleLabelToEnglish(roleId) || roleLabel || seatName || '';
+   const rolePillText = roleLabelToEnglish(roleId) || roleLabel || seatName || '';
   const joinDate = String(display?.join_date || '').trim();
   const networkCount = (() => {
     const val = Number(display?.referral_count || 0);
@@ -363,6 +425,21 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     display?.author_has_blue_tick ||
     (profile && UserStore.hasBlueTick(profile))
   );
+  const isSubscribedProfile = Boolean(
+    display?.is_subscribed || display?.author_is_subscribed || ['basic', 'pro', 'premium'].includes(roleId)
+  );
+  // Role Based Profile Look — jis user ka profile visit ho raha hai, USKA tier
+  // (color/background) yahan se decide hota hai — visitor ko humesha profile
+  // owner ka role-color he dikhega, chahe visitor khud kisi bhi role ka ho.
+  const profileTier = getProfileTier({
+    state_seat: display?.state_seat || { seat_id: seatId },
+    role: display?.role || display?.author_role,
+    subscription_type: display?.subscription_type || display?.author_subscription_type,
+    subscription_plan: display?.subscription_plan,
+    has_blue_tick: isVerified,
+    is_subscribed: isSubscribedProfile,
+  });
+  const pillTheme = { bg: `${profileTier.accent}1F`, border: profileTier.accent, text: profileTier.accent };
   const resolvedProfilePhoto = useResolvedUri(safePhotoUri || null);
 
   // ── Sorted posts ────────────────────────────────────────────────────────────
@@ -417,7 +494,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       likes: Math.max(0, Number(post?.likes || 0) + (prevLiked ? -1 : 1)),
       liked_by: prevLiked ? [] : (viewerEmail ? [viewerEmail] : []),
     });
-    const result = await UserStore.updateNewsFeedItem(pid, 'like');
+    const result = await UserStore.updateNewsFeedItem(pid, 'like', { liked: prevLiked });
     if (!result?.ok) {
       patchPostById(pid, { likes: Number(post?.likes || 0), liked_by: Array.isArray(post?.liked_by) ? post.liked_by : [] });
       showToast(result?.message || 'Unable to update like.', 'error');
@@ -507,8 +584,12 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     const authorName = String(p?.author_name || p?.createdByName || p?.author || '').trim();
     if (authorEmail && authorEmail === resolvedEmail) return;
     if (!authorEmail && authorName && authorName.toLowerCase() === name.toLowerCase()) return;
+    // ✅ FIX: author_id bhi pass karo, warna target screen sirf local cache se
+    // profile dhundhti hai aur profile.id kabhi milta nahi — isliye Block
+    // jaisi actions (jinko real user id chahiye) API tak pahunchti hi nahi thi.
     navigation.push('UserPublicProfile', {
       email: authorEmail || undefined,
+      userId: p?.author_id || undefined,
       author: {
         name: authorName || name,
         profile_image: p?.author_profile_image || p?.authorAvatar || safePhotoUri,
@@ -535,21 +616,39 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     ]);
   };
 
-  const handleBlock = () => {
+   const handleBlock = () => {
     setMenuVisible(false);
-    Alert.alert('Block User', `Are you sure you want to block "${name}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Block', style: 'destructive', onPress: async () => { try { await UserStore.blockUser?.(resolvedEmail); } catch {} showToast(`"${name}" has been blocked.`, 'success'); navigation.goBack(); } },
-    ]);
+    setBlockConfirmVisible(true);
   };
 
-  const handleFollow = async () => {
-    if (followLoading) return;
+  const confirmBlock = async () => {
+    setBlockConfirmVisible(false);
+    const targetId = profile?.id ?? userId ?? null;
+    console.log('[handleBlock] calling blockUser with', { resolvedEmail, targetId });
+    try {
+      const result = await UserStore.blockUser?.(resolvedEmail, targetId);
+      console.log('[handleBlock] blockUser result:', result);
+      if (result?.ok) {
+        showToast(`"${name}" has been blocked.`, 'success');
+        navigation.navigate('BlockedUsersScreen');
+      } else {
+        showToast(result?.message || 'Unable to block user. Please try again.', 'error');
+      }
+    } catch (err) {
+      console.error('[handleBlock] blockUser threw:', err);
+      showToast('Something went wrong while blocking.', 'error');
+    }
+  };
+    const handleFollow = async () => {
+    if (followLoading || followActionInFlightRef.current) return;
+    followActionInFlightRef.current = true;
     if (resolvedEmail && resolvedEmail === viewerEmail) {
+      followActionInFlightRef.current = false;
       showToast("You can't follow yourself.", 'error');
       return;
     }
     setFollowLoading(true);
+    selfFollowActionRef.current = true;
     const nextFollowing = !isFollowing;
     setIsFollowing(nextFollowing);
     setFollowStats((prev) => ({
@@ -572,7 +671,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         setFollowStats((prev) => ({ ...prev, followers: Math.max(0, Number(prev.followers || 0) + (nextFollowing ? -1 : 1)) }));
         showToast(result?.message || 'Unable to update follow status.', 'error');
       } else {
-        if (Number.isFinite(Number(result?.followersCount))) {
+     if (result?.followersCount != null && Number.isFinite(Number(result.followersCount))) {
           setFollowStats((prev) => ({ ...prev, followers: Number(result.followersCount) }));
         }
         showToast(nextFollowing ? `Following ${name}` : `Unfollowed ${name}`, 'success');
@@ -583,8 +682,10 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         ...prev,
         followers: Math.max(0, Number(prev.followers || 0) + (nextFollowing ? -1 : 1)),
       }));
-      showToast('Something went wrong. Please try again.', 'error');
-    } finally {
+    showToast('Something went wrong. Please try again.', 'error');
+   } finally {
+      selfFollowActionRef.current = false;
+      followActionInFlightRef.current = false;
       setFollowLoading(false);
     }
   };
@@ -841,6 +942,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     <>
       <ProfileImageModal visible={modalVisible} imageUri={modalImage} name={modalName} onClose={() => setModalVisible(false)} />
       <ProfileMenuSheet visible={menuVisible} onClose={() => setMenuVisible(false)} onCopyLink={handleCopyProfileLink} onReport={handleReport} onBlock={handleBlock} />
+      <BlockConfirmModal visible={blockConfirmVisible} name={name} onCancel={() => setBlockConfirmVisible(false)} onConfirm={confirmBlock} />
       <Modal visible={Boolean(followModalType)} transparent animationType="slide" onRequestClose={() => setFollowModalType('')}>
         <TouchableOpacity style={styles.followModalOverlay} activeOpacity={1} onPress={() => setFollowModalType('')}>
           <TouchableWithoutFeedback>
@@ -854,7 +956,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
               <ScrollView style={styles.followModalList} contentContainerStyle={styles.followModalListContent}>
                 {(followLists[followModalType] || []).length ? (
                   (followLists[followModalType] || []).map((item) => (
-                    <TouchableOpacity key={item.email} style={styles.followUserRow} activeOpacity={0.8} onPress={() => { setFollowModalType(''); navigation.push('UserPublicProfile', { email: item.email, author: item }); }}>
+                                        <TouchableOpacity key={item.email} style={styles.followUserRow} activeOpacity={0.8} onPress={() => { setFollowModalType(''); navigation.push('UserPublicProfile', { email: item.email, userId: item.id || item.user_id || undefined, author: item }); }}>
                       <ProfileAvatar uri={item.profile_image || ''} size={42} style={styles.followUserAvatar} />
                       <View style={styles.followUserInfo}>
                         <Text style={styles.followUserName} numberOfLines={1}>{item.name || 'User'}</Text>
@@ -923,11 +1025,12 @@ export default function UserPublicProfileScreen({ route, navigation }) {
             <View style={styles.profileTopRow}>
               {/* LEFT: Avatar */}
               <TouchableOpacity
-                style={styles.avatarWrap}
-                onPress={() => openImageModal(resolvedProfilePhoto || safePhotoUri, name)}
+                style={[styles.avatarWrap, { borderColor: pillTheme.border }]}
+                
+                onPress={() => openImageModal(profileTier.key === 'common' ? '' : (resolvedProfilePhoto || safePhotoUri), name)}
                 activeOpacity={0.85}
               >
-                <ProfileAvatar uri={resolvedProfilePhoto || safePhotoUri} size={82} style={styles.avatar} />
+               <ProfileAvatar uri={resolvedProfilePhoto || safePhotoUri} size={82} style={styles.avatar} forceDefault={profileTier.key === 'common'} />
               </TouchableOpacity>
 
               {/* RIGHT: name + stats */}
@@ -968,26 +1071,50 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                 <Text style={[styles.locationLineText, { color: '#94a3b8' }]}>Member {accountAge}</Text>
               </View>
             ) : null}
-            {rolePillText ? (
-              <View style={styles.rolePill}>
-                <Feather name="star" size={12} color={ORANGE} />
-                <Text style={styles.rolePillText} numberOfLines={1}>{rolePillText}</Text>
+                    {rolePillText ? (
+              <View style={[styles.rolePill, { backgroundColor: pillTheme.bg, borderColor: pillTheme.border }]}>
+                <Feather name="star" size={12} color={pillTheme.text} />
+                <Text style={[styles.rolePillText, { color: pillTheme.text }]} numberOfLines={1}>{rolePillText}</Text>
               </View>
             ) : null}
             {(seatName || seatId) && (seatName || seatId) !== rolePillText ? (
-              <View style={styles.seatPill}>
-                <Feather name="award" size={12} color="#64748b" />
-                <Text style={styles.seatPillText} numberOfLines={1}>{seatName || seatId}</Text>
+              <View style={[styles.seatPill, { backgroundColor: pillTheme.bg, borderColor: pillTheme.border }]}>
+                <Feather name="award" size={12} color={pillTheme.text} />
+                <Text style={[styles.seatPillText, { color: pillTheme.text }]} numberOfLines={1}>{seatName || seatId}</Text>
               </View>
             ) : null}
             {bio ? <Text style={[styles.bioInline, { marginTop: 6 }]} numberOfLines={4}>{bio}</Text> : null}
+      {hasDocumentSource(display) ? (
+  <View style={{ marginTop: 14, width: '100%' }}>
+  <Text style={{ fontSize: 13, fontWeight: '800', color: '#374151', marginBottom: 8 }}>ID Card</Text>
+    <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', gap: 12 }}>
+      <ScaledCard width={170} naturalWidth={360}>
+        <AutoIdCardPreview profile={display} />
+      </ScaledCard>
+      <ScaledCard width={170} naturalWidth={360}>
+        <AutoIdCardBackPreview />
+      </ScaledCard>
+    </View>
+    <Text style={{ fontSize: 13, fontWeight: '800', color: '#374151', marginTop: 16, marginBottom: 8 }}>Appointment Letter</Text>
+    <View style={{ width: '100%', aspectRatio: 210 / 297, maxWidth: 480, alignSelf: 'center' }}>
+      <AutoAppointmentLetterPreview profile={display} />
+    </View>
+  </View>
+) : null}
+            {referralCode ? (
+  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 6 }}>
+    <Feather name="gift" size={12} color={ORANGE} />
+    <Text style={{ fontSize: 12, fontWeight: '700', color: '#475569' }}>Referral Code: {referralCode}</Text>
+  </View>
+) : null}
           </View>
 
           {/* ── Action Buttons ── */}
           <View style={styles.actionRow}>
-            <TouchableOpacity
+                      <TouchableOpacity
               style={[
                 styles.subscribeBtn,
+                !isFollowing && { backgroundColor: pillTheme.border },
                 isFollowing && { backgroundColor: '#e5e7eb', borderWidth: 1, borderColor: '#d1d5db' },
                 followLoading && { opacity: 0.7 },
               ]}
@@ -1001,7 +1128,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.shareBtn} onPress={() => setMenuVisible(true)} activeOpacity={0.85}>
-              <Feather name="share-2" size={16} color={ORANGE} />
+                           <Feather name="share-2" size={16} color={pillTheme.border} />
               <Text style={styles.shareBtnText}>Share Profile</Text>
             </TouchableOpacity>
           </View>
@@ -1126,11 +1253,11 @@ export default function UserPublicProfileScreen({ route, navigation }) {
             <View style={webSt.profileRow}>
               {/* LEFT: Avatar */}
               <TouchableOpacity
-                style={webSt.avatarWrap}
-                onPress={() => openImageModal(resolvedProfilePhoto || safePhotoUri, name)}
+                                style={[webSt.avatarWrap, { borderColor: pillTheme.border }]}
+                onPress={() => openImageModal(profileTier.key === 'common' ? '' : (resolvedProfilePhoto || safePhotoUri), name)}
                 activeOpacity={0.85}
               >
-                <ProfileAvatar uri={resolvedProfilePhoto || safePhotoUri} size={150} style={webSt.avatar} />
+               <ProfileAvatar uri={resolvedProfilePhoto || safePhotoUri} size={150} style={webSt.avatar} forceDefault={profileTier.key === 'common'} />
               </TouchableOpacity>
 
               {/* RIGHT: Info */}
@@ -1140,7 +1267,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                   <Text style={webSt.name}>{name}</Text>
                   {isVerified ? <VerifiedBadge size={22} iconSize={13} /> : null}
                   <TouchableOpacity
-                    style={[webSt.followBtn, isFollowing && webSt.followBtnActive, followLoading && { opacity: 0.7 }]}
+                                     style={[webSt.followBtn, !isFollowing && { backgroundColor: pillTheme.border }, isFollowing && webSt.followBtnActive, followLoading && { opacity: 0.7 }]}
                     onPress={handleFollow}
                     activeOpacity={0.85}
                     disabled={followLoading}
@@ -1179,12 +1306,37 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                   {(seatName || seatId) && (seatName || seatId) !== rolePillText
                     ? <Text style={webSt.bioSeat}>{seatName || seatId}</Text>
                     : null}
-                  {bio ? <Text style={webSt.bioText}>{bio}</Text> : null}
+                                 {bio ? <Text style={webSt.bioText}>{bio}</Text> : null}
                   {locationLine ? <Text style={webSt.bioLocation}>📍 {locationLine}</Text> : null}
                   {accountAge ? <Text style={webSt.bioLocation}>🗓 Member {accountAge}</Text> : null}
                 </View>
               </View>
             </View>
+
+            {/* ── ID Card / Appointment Letter / Referral Code (desktop web) ── */}
+            {hasDocumentSource(display) ? (
+              <View style={{ marginTop: 14, width: '100%' }}>
+                <Text style={{ fontSize: 13, fontWeight: '800', color: '#374151', marginBottom: 8 }}>ID Card</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 12 }}>
+                  <ScaledCard width={170} naturalWidth={360}>
+                    <AutoIdCardPreview profile={display} />
+                  </ScaledCard>
+                  <ScaledCard width={170} naturalWidth={360}>
+                    <AutoIdCardBackPreview />
+                  </ScaledCard>
+                </View>
+                <Text style={{ fontSize: 13, fontWeight: '800', color: '#374151', marginTop: 16, marginBottom: 8 }}>Appointment Letter</Text>
+                <View style={{ width: '100%', aspectRatio: 210 / 297, maxWidth: 480, alignSelf: 'flex-start' }}>
+                  <AutoAppointmentLetterPreview profile={display} />
+                </View>
+              </View>
+            ) : null}
+            {referralCode ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 6 }}>
+                <Feather name="gift" size={12} color={ORANGE} />
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#475569' }}>Referral Code: {referralCode}</Text>
+              </View>
+            ) : null}
 
             {/* ── Divider ── */}
             <View style={webSt.divider} />
@@ -1307,30 +1459,40 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
-        {/* ── Profile Header ── */}
-        <View style={styles.profileSection}>
+        {/* ── Profile Header — Role Based Profile Look: profile OWNER ke tier
+             (Common/Premium/Verified/Representative/Executive/Chief) ka color
+             aur background yahan lagta hai, visitor ke apne role se koi farak
+             nahi padta ── */}
+        <ImageBackground
+          source={profileTier.bgImage}
+          resizeMode="cover"
+          style={[styles.profileSection, { backgroundColor: 'transparent', paddingBottom: 16 }]}
+        >
           <View style={styles.profileTopRow}>
-            <TouchableOpacity style={styles.avatarWrap} onPress={() => openImageModal(resolvedProfilePhoto || safePhotoUri, name)} activeOpacity={0.85}>
+                       <TouchableOpacity style={[styles.avatarWrap, { borderColor: '#FFFFFF' }]} onPress={() => openImageModal(profileTier.key === 'common' ? '' : (resolvedProfilePhoto || safePhotoUri), name)} activeOpacity={0.85}>
               <ProfileAvatar uri={resolvedProfilePhoto || safePhotoUri} size={82} style={styles.avatar} />
             </TouchableOpacity>
 
             <View style={styles.profileInfo}>
               <View style={styles.nameRow}>
-                <Text style={styles.name} numberOfLines={2}>{name}</Text>
+                <Text style={[styles.name, { color: '#FFFFFF' }]} numberOfLines={2}>{name}</Text>
                 {isVerified ? <VerifiedBadge size={22} iconSize={12} /> : null}
+              </View>
+              <View style={{ alignSelf: 'flex-start', backgroundColor: profileTier.badgeBg, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3, marginBottom: 8 }}>
+                <Text style={{ color: profileTier.badgeText, fontSize: 11, fontWeight: '700' }}>{profileTier.label}</Text>
               </View>
               <View style={styles.statsRow}>
                 <View style={styles.statBox}>
-                  <Text style={styles.statValue}>{sortedPosts.length}</Text>
-                  <Text style={styles.statLabel}>posts</Text>
+                  <Text style={[styles.statValue, { color: '#FFFFFF' }]}>{sortedPosts.length}</Text>
+                  <Text style={[styles.statLabel, { color: 'rgba(255,255,255,0.85)' }]}>posts</Text>
                 </View>
                 <TouchableOpacity style={styles.statBox} onPress={() => setFollowModalType('followers')} activeOpacity={0.75}>
-                  <Text style={styles.statValue}>{followersCount > 999 ? `${(followersCount / 1000).toFixed(1)}k` : String(followersCount)}</Text>
-                  <Text style={styles.statLabel}>followers</Text>
+                  <Text style={[styles.statValue, { color: '#FFFFFF' }]}>{followersCount > 999 ? `${(followersCount / 1000).toFixed(1)}k` : String(followersCount)}</Text>
+                  <Text style={[styles.statLabel, { color: 'rgba(255,255,255,0.85)' }]}>followers</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.statBox} onPress={() => setFollowModalType('following')} activeOpacity={0.75}>
-                  <Text style={styles.statValue}>{String(followingCount)}</Text>
-                  <Text style={styles.statLabel}>following</Text>
+                  <Text style={[styles.statValue, { color: '#FFFFFF' }]}>{String(followingCount)}</Text>
+                  <Text style={[styles.statLabel, { color: 'rgba(255,255,255,0.85)' }]}>following</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1338,29 +1500,29 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
           {locationLine ? (
             <View style={styles.locationLine}>
-              <Feather name="map-pin" size={13} color={ORANGE} />
-              <Text style={styles.locationLineText} numberOfLines={2}>{locationLine}</Text>
+              <Feather name="map-pin" size={13} color="#FFFFFF" />
+              <Text style={[styles.locationLineText, { color: 'rgba(255,255,255,0.85)' }]} numberOfLines={2}>{locationLine}</Text>
             </View>
           ) : null}
-          {rolePillText ? (
-            <View style={styles.rolePill}>
-              <Feather name="star" size={12} color={ORANGE} />
-              <Text style={styles.rolePillText} numberOfLines={1}>{rolePillText}</Text>
+                 {rolePillText ? (
+            <View style={[styles.rolePill, { backgroundColor: pillTheme.bg, borderColor: pillTheme.border }]}>
+              <Feather name="star" size={12} color={pillTheme.text} />
+              <Text style={[styles.rolePillText, { color: pillTheme.text }]} numberOfLines={1}>{rolePillText}</Text>
             </View>
           ) : null}
           {seatName || seatId ? (
-            <View style={styles.seatPill}>
-              <Feather name="award" size={12} color="#64748b" />
-              <Text style={styles.seatPillText} numberOfLines={1}>{seatName || seatId}</Text>
+            <View style={[styles.seatPill, { backgroundColor: pillTheme.bg, borderColor: pillTheme.border }]}>
+              <Feather name="award" size={12} color={pillTheme.text} />
+              <Text style={[styles.seatPillText, { color: pillTheme.text }]} numberOfLines={1}>{seatName || seatId}</Text>
             </View>
           ) : null}
-          {bio ? <Text style={[styles.bioInline, { marginTop: 6 }]} numberOfLines={4}>{bio}</Text> : null}
-        </View>
+          {bio ? <Text style={[styles.bioInline, { marginTop: 6, color: 'rgba(255,255,255,0.92)' }]} numberOfLines={4}>{bio}</Text> : null}
+        </ImageBackground>
 
         {/* ── Action Buttons ── */}
         <View style={styles.actionRow}>
           <TouchableOpacity
-            style={[styles.subscribeBtn, isFollowing && { backgroundColor: '#e5e7eb', borderWidth: 1, borderColor: '#d1d5db' }, followLoading && { opacity: 0.7 }]}
+            style={[styles.subscribeBtn, !isFollowing && { backgroundColor: pillTheme.border }, isFollowing && { backgroundColor: '#e5e7eb', borderWidth: 1, borderColor: '#d1d5db' }, followLoading && { opacity: 0.7 }]}
             onPress={handleFollow}
             activeOpacity={0.85}
             disabled={followLoading}

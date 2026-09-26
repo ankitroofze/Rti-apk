@@ -7,6 +7,7 @@ import {
   Modal,
   Platform,
   StyleSheet,
+  ImageBackground,
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -17,7 +18,12 @@ import { useToast } from '../components/ui/ToastProvider';
 import S from '../styles/SubscriptionPlansStyles';
 import { UserStore } from '../store/UserStore';
 import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
-
+// ✅ Theme images ab constants/subscriptionThemes.js se aate hain — yehi
+// file Quiz / Ads / Ecom subscription screens bhi use karte hain, taaki
+// sabhi "buy a plan" pages ka design/colors hamesha ek jaisa rahe.
+import { getCardTheme, HEADER_BG_IMAGE, getNativeThemeImage } from '../constants/subscriptionThemes';
+import ModuleWebHeader from '../components/Modulewebheader';
+import { INDIAN_STATES, getDistricts, getTalukas, getVillages } from './locationData';
 
 // ─────────────────────────────────────────────
 // Role badge colors (kept outside StyleSheet — dynamic per role)
@@ -28,6 +34,70 @@ const ROLE_COLORS = {
   pro:     { bg: '#f0fdf4', text: '#15803d', border: '#86efac' },
   premium: { bg: '#fefce8', text: '#b45309', border: '#fcd34d' },
 };
+
+// ─────────────────────────────────────────────
+// LocationFilterDropdown — State/District/Taluka filter chip
+// (web/Android/iOS teeno par same dikhta hai, koi Platform check nahi)
+// ─────────────────────────────────────────────
+function LocationFilterDropdown({ label, value, options, onChange, placeholder = 'All', disabled = false }) {
+  const [open, setOpen] = useState(false);
+  return (
+        <View style={{ ...(Platform.OS === 'android' ? { width: '100%' } : { flex: 1 }), position: 'relative', zIndex: open ? 20 : 1, elevation: open ? 20 : 1 }}>
+      <TouchableOpacity
+        activeOpacity={disabled ? 1 : 0.7}
+        onPress={() => !disabled && setOpen((o) => !o)}
+        style={{
+          flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+          borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10,
+          paddingHorizontal: 12, paddingVertical: 10,
+          backgroundColor: disabled ? '#F3F4F6' : '#fff',
+        }}
+      >
+        <View style={{ flex: 1 }}>
+          <Text style={{ fontSize: 10, color: '#9CA3AF', fontWeight: '700', textTransform: 'uppercase', marginBottom: 1 }}>{label}</Text>
+          <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: '600', color: value ? '#111827' : '#9CA3AF' }}>
+            {value || placeholder}
+          </Text>
+        </View>
+        <Feather name={open ? 'chevron-up' : 'chevron-down'} size={16} color="#6B7280" />
+      </TouchableOpacity>
+
+      {open && !disabled && (
+           <View
+          style={{
+            marginTop: 6, maxHeight: 220,
+            backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10,
+            paddingVertical: 4, overflow: 'hidden',
+          }}
+        >
+          <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled>
+            {value ? (
+              <TouchableOpacity style={{ paddingVertical: 9, paddingHorizontal: 14 }} onPress={() => { onChange(''); setOpen(false); }}>
+                <Text style={{ fontSize: 13, color: '#EF4444', fontWeight: '700' }}>Clear ({placeholder})</Text>
+              </TouchableOpacity>
+            ) : null}
+                  {options.length === 0 ? (
+              <Text style={{ fontSize: 13, color: '#9CA3AF', paddingVertical: 9, paddingHorizontal: 14 }}>
+                      {label === 'Village' ? 'No villages found' : 'No data found'}
+              </Text>
+            ) : null}
+            {options.map((opt) => (
+              <TouchableOpacity
+                key={opt}
+                style={{ paddingVertical: 9, paddingHorizontal: 14 }}
+                onPress={() => { onChange(opt); setOpen(false); }}
+              >
+                <Text style={{ fontSize: 13, color: opt === value ? '#dc2626' : '#374151', fontWeight: opt === value ? '700' : '500' }}>
+                  {opt}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+    </View>
+  );
+}
 
 // ─────────────────────────────────────────────
 // RoleBadge — unchanged (used in both app & web)
@@ -61,6 +131,7 @@ function SeatSelectModal({
   pendingPlan,
   onClose,
   onSelectSeatId,
+  onSubmit,
 }) {
   const seatsToShow = Array.isArray(seats) ? seats : [];
   const isLoadingSeats = seatsToShow.length === 0;
@@ -132,9 +203,21 @@ function SeatSelectModal({
                   }
                 </TouchableOpacity>
               );
-            })}
+                    })}
           </View>
         </ScrollView>
+
+        <TouchableOpacity
+          activeOpacity={0.85}
+          disabled={!selectedSeatId}
+          onPress={() => onSubmit?.(selectedSeatId)}
+          style={[
+            S.seatSubmitBtn,
+            !selectedSeatId && S.seatSubmitBtnDisabled,
+          ]}
+        >
+          <Text style={S.seatSubmitBtnText}>Submit</Text>
+        </TouchableOpacity>
       </View>
       </TouchableOpacity>
     </Modal>
@@ -543,8 +626,8 @@ function WebPlanCard({ plan, index, onPress, compact }) {
   const meta       = WEB_PLAN_CARD_META[index] || {};
   const isFeatured = meta.featured;
   const planRole   = UserStore.getRoleFromPlanId(plan.plan_id);
+  const seatRoleName = UserStore.getSeatRoleNameForPlanRoleId(plan.role_id_raw);
   const [hovered, setHovered] = useState(false);
-
   return (
     <TouchableOpacity
       activeOpacity={0.92}
@@ -561,9 +644,16 @@ function WebPlanCard({ plan, index, onPress, compact }) {
     >
       {/* Header row */}
       <View style={[webStyles.planCardHeader, compact && webStyles.planCardHeaderCompact]}>
-        <Text style={[webStyles.planCardName, compact && webStyles.planCardNameCompact, isFeatured && webStyles.planCardNameFeatured]}>
-          {plan.plan_name}
-        </Text>
+              <View>
+          <Text style={[webStyles.planCardName, compact && webStyles.planCardNameCompact, isFeatured && webStyles.planCardNameFeatured]}>
+            {plan.plan_name}
+          </Text>
+          {seatRoleName ? (
+            <Text style={{ fontSize: 12, fontWeight: '700', marginTop: 2, color: isFeatured ? 'rgba(255,255,255,0.85)' : '#F97316' }}>
+              {seatRoleName}
+            </Text>
+          ) : null}
+        </View>
         {meta.popular && (
           <View style={webStyles.popularBadge}>
             <Text style={webStyles.popularBadgeText}>Popular</Text>
@@ -671,7 +761,13 @@ function WebLayout({ subscriptionData, loading, handleBuyPlan, navigation, compa
                 key={plan.plan_id}
                 plan={plan}
                 index={index}
-                onPress={handleBuyPlan}
+                onPress={(p) => navigation.navigate('SubscriptionPlanDetails', {
+                  headerTitle: 'Subscription Plans',
+                  plan: p,
+                  theme: getCardTheme(index),
+                  isActive: subscriptionData.activePlan?.plan_id === p.plan_id,
+                  onBuyPlan: handleBuyPlan,
+                })}
                 compact={compact}
               />
             ))
@@ -692,21 +788,46 @@ export default function SubscriptionPlansScreen({ navigation, route }) {
   const isCompactWeb = isWeb && windowWidth <= 1024;
   const { showPopup } = useToast();
 
-  const [loading, setLoading]               = useState(true);
+    const [loading, setLoading]               = useState(true);
   const [seatSummary, setSeatSummary]       = useState(null);
   const [selectedSeatId, setSelectedSeatId] = useState('');
   const [pendingPlan, setPendingPlan]       = useState(null);
-  const [seatModalOpen, setSeatModalOpen]   = useState(false);
+    const [seatModalOpen, setSeatModalOpen]   = useState(false);
+  const [selectedPlanId, setSelectedPlanId] = useState('');
+  const [detailsModal, setDetailsModal] = useState(null); // Read More pe click hote hi { plan, theme } set hogaoga
 
-  const [subscriptionData, setSubscriptionData] = useState({
+   const [subscriptionData, setSubscriptionData] = useState({
     currentUser:      null,
     activePlan:       null,
     plans:            [],
     currentRole:      'free',
     currentRoleLabel: 'Free Member',
   });
-  const returnTo = route?.params?.returnTo || 'Subscription Plans';
 
+   // ✅ NEW: Subscription Plans ke liye State/District/Taluka/Village filter
+  const [filterState, setFilterState] = useState('');
+  const [filterDistrict, setFilterDistrict] = useState('');
+  const [filterTaluka, setFilterTaluka] = useState('');
+  const [filterVillage, setFilterVillage] = useState('');
+  const filterDistrictOptions = filterState ? getDistricts(filterState) : [];
+    const filterTalukaOptions   = filterState && filterDistrict ? getTalukas(filterState, filterDistrict) : [];
+  // ✅ UPDATED: ab village bhi wahi master LGD list se aata hai jo Register flow
+  // (VillageSelectScreen) me use hota hai — locationData.js ki getVillages()
+  const filterVillageOptions = filterState && filterDistrict && filterTaluka
+    ? getVillages(filterState, filterDistrict, filterTaluka)
+    : [];
+
+   // ✅ FIX: plan ka apna location field khaali ho tabhi woh "national" maan ke hamesha dikhega.
+  // Agar plan ka koi field bhara hai (jaise state = "Maharashtra"), to woh plan TABHI dikhega
+  // jab user ne exact wahi filter explicitly select kiya ho — khaali filter pe nahi dikhega.
+  const filteredPlans = subscriptionData.plans.filter((plan) => {
+    const matchState    = !plan.state    || (filterState    && String(plan.state).trim().toLowerCase()    === filterState.toLowerCase());
+    const matchDistrict = !plan.district || (filterDistrict && String(plan.district).trim().toLowerCase() === filterDistrict.toLowerCase());
+    const matchTaluka   = !plan.taluka   || (filterTaluka   && String(plan.taluka).trim().toLowerCase()   === filterTaluka.toLowerCase());
+    const matchVillage  = !plan.village  || (filterVillage  && String(plan.village).trim().toLowerCase()  === filterVillage.toLowerCase());
+    return matchState && matchDistrict && matchTaluka && matchVillage;
+  });
+  const returnTo = route?.params?.returnTo || 'Subscription Plans';
   const loadPlans = useCallback(async () => {
     setLoading(true);
     const [data, seatData] = await Promise.all([
@@ -724,17 +845,38 @@ export default function SubscriptionPlansScreen({ navigation, route }) {
   useFocusEffect(useCallback(() => { loadPlans(); }, [loadPlans]));
 const stateName    = seatSummary?.state || subscriptionData.currentUser?.state || '';
 const activeSeatId = seatSummary?.current_seat?.seat_id || '';
+// ✅ NEW: seat sirf State se nahi, plan ke apne District/Taluka/Village se bhi
+// lock ho sakti hai — pendingPlan (jis plan ko user kharidne wala hai) se hi
+// yeh location liya jaayega, profile se nahi (spec: "applicable location").
+const districtName = pendingPlan?.district || subscriptionData.currentUser?.district || '';
+const talukaName   = pendingPlan?.taluka   || subscriptionData.currentUser?.taluka   || '';
+const villageName  = pendingPlan?.village  || subscriptionData.currentUser?.village  || '';
+const allowedSeatIds = pendingPlan ? UserStore.getSeatIdsForRoleId(pendingPlan.role_id_raw) : [];
+const restrictedSeats = (seatSummary?.seats || []).map((seat) =>
+  (allowedSeatIds.length && !allowedSeatIds.includes(seat.id)) ? { ...seat, status: 'disabled' } : seat
+);
 
 // 👇 YAHAN ADD KARO (navigateToPayment ki jagah)
 const startSubscriptionPayment = async (plan, seatRoleId) => {
+  // ✅ FIX: pendingPlan (outer state) ek render peeche reh sakta hai kyunki
+  // setPendingPlan() async hai — isliye location seedha `plan` argument se
+  // nikalo, taaki hamesha wahi plan ki apni district/taluka/village jaaye
+  // jiske liye actually payment ho raha hai.
+  const planDistrict = plan?.district || subscriptionData.currentUser?.district || '';
+  const planTaluka   = plan?.taluka   || subscriptionData.currentUser?.taluka   || '';
+  const planVillage  = plan?.village  || subscriptionData.currentUser?.village  || '';
+
   const orderResult = await UserStore.createPaymentOrder({
     plan_id: plan.plan_id,
     seat_state: stateName,
+    seat_district: planDistrict,
+    seat_taluka: planTaluka,
+    seat_village: planVillage,
     seat_role_id: seatRoleId,
   });
 
-  if (!orderResult) {
-    showPopup('Unable to create order.', 'error');
+    if (!orderResult || orderResult.error) {
+    showPopup(orderResult?.message || 'Unable to create order.', 'error');
     return;
   }
 
@@ -747,6 +889,9 @@ const startSubscriptionPayment = async (plan, seatRoleId) => {
         plan_id:      plan.plan_id,
         plan,               // ✅ asli clicked plan object seedha bhejo — dobara dhoondhna nahi padega
         seat_state:   stateName,
+        seat_district: planDistrict,
+        seat_taluka: planTaluka,
+        seat_village: planVillage,
         seat_role_id: seatRoleId,
       });
 
@@ -782,7 +927,9 @@ const handleBuyPlan = (plan) => {
     startSubscriptionPayment(plan, activeSeatId);
     return;
   }
-  setSeatModalOpen(true);
+   // ✅ Web par bhi ab seat-select dropdown nahi aayega — Android/iOS jaisa hi
+  // seat auto-assign ho jaayega, seedha payment start hoga
+  startSubscriptionPayment(plan, UserStore.getSeatIdForRoleId(plan.role_id_raw) || activeSeatId || '');
 };
 
 // const handleBuyPlan = (plan) => {
@@ -804,137 +951,280 @@ const handleBuyPlan = (plan) => {
 // };
 
   // ── Web renders its own full layout ──
-  if (Platform.OS === 'web') {
-    return (
-      <>
-        <WebLayout
-          subscriptionData={subscriptionData}
-          loading={loading}
-          handleBuyPlan={handleBuyPlan}
-          navigation={navigation}
-          compact={isCompactWeb}
-        />
-        {/* Seat modal works on web too */}
-      <SeatSelectModal
-        visible={seatModalOpen}
-        stateName={stateName}
-        seats={seatSummary?.seats || []}
-        selectedSeatId={selectedSeatId}
-        pendingPlan={pendingPlan}
-        onClose={() => setSeatModalOpen(false)}
-        onSelectSeatId={(seatId) => {
-          if (!seatId || !pendingPlan) return;
-          setSelectedSeatId(seatId);
-          setSeatModalOpen(false);
-        //  navigateToPayment(selectedPlan, stateName, seatId);
-          startSubscriptionPayment(selectedPlan, seatId);   // ✅ ye bhi change karo
-        }}
-      />
-      </>
-    );
-  }
+  // if (Platform.OS === 'web') {
+  //   return (
+  //     <>
+  //       <WebLayout
+  //         subscriptionData={subscriptionData}
+  //         loading={loading}
+  //         handleBuyPlan={handleBuyPlan}
+  //         navigation={navigation}
+  //         compact={isCompactWeb}
+  //       />
+  //       {/* Seat modal works on web too */}
+  //     <SeatSelectModal
+  //       visible={seatModalOpen}
+  //       stateName={stateName}
+  //            seats={restrictedSeats}
 
-  // ── App (iOS / Android) — original code untouched ──
+  //       selectedSeatId={selectedSeatId}
+  //       pendingPlan={pendingPlan}
+  //       onClose={() => setSeatModalOpen(false)}
+  //         onSelectSeatId={(seatId) => {
+  //         if (!seatId) return;
+  //         setSelectedSeatId(seatId);
+  //       }}
+  //       onSubmit={(seatId) => {
+  //         if (!seatId || !pendingPlan) return;
+  //         setSeatModalOpen(false);
+  //         const selectedPlan = pendingPlan;
+  //         setPendingPlan(null);
+  //         startSubscriptionPayment(selectedPlan, seatId);
+  //       }}
+  //     />
+  //     </>
+  //   );
+  // }
+   // ── App (iOS / Android) — image header + horizontal carousel (side arrows
+  // se ya swipe se scroll), fixed bottom "Pay" bar jiska color selected card
+  // ke hisaab se badalta hai ──
+  const selectedPlanIndex = subscriptionData.plans.findIndex((p) => p.plan_id === selectedPlanId);
+  const selectedPlanObj = selectedPlanIndex >= 0 ? subscriptionData.plans[selectedPlanIndex] : null;
+  const isSelectedPlanActive = Boolean(
+    selectedPlanObj && subscriptionData.activePlan?.plan_id === selectedPlanObj.plan_id
+  );
+  const selectedTheme = getCardTheme(selectedPlanIndex >= 0 ? selectedPlanIndex : 0);
+
+  // ✅ jo plan buy kiya hua hai (active), uska theme (color/image) — status card isi color ka dikhega
+  const activePlanIndex = subscriptionData.plans.findIndex(
+    (p) => String(p.plan_id) === String(subscriptionData.activePlan?.plan_id)
+  );
+  // ✅ FIX: plan list khaali ho ya id match na kare tab bhi red theme fallback lo,
+  // taaki active card hamesha themed (red) dikhe — plain white kabhi na ho
+  const activePlanTheme = getCardTheme(activePlanIndex >= 0 ? activePlanIndex : 1);
+
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+    <SafeAreaView style={{ flex: 1 }} edges={['left', 'right', 'bottom']}>
     <View style={S.root}>
 
-      <TouchableOpacity
-        onPress={() => navigation.navigate('QuickMenu')}
-        style={S.backBtn}
+      {/* Header — image background (screenshot jaisa) */}
+      {Platform.OS === 'web' ? (
+        /* ✅ Web header — design ek hi jagah (components/ModuleWebHeader.js) se aata hai */
+        <ModuleWebHeader title="Upgrade Your Role" navigation={navigation} />
+      ) : (
+         <ImageBackground
+        source={HEADER_BG_IMAGE}
+        style={S.headerImageWrap}
+        imageStyle={S.headerImageInner}
+        resizeMode="cover"
       >
-        <Feather name="arrow-left" size={20} color="#ea580c" />
-        <Text style={S.backBtnText}>Back</Text>
-      </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate('QuickMenu')} style={S.headerBackBtn}>
+          <Feather name="arrow-left" size={20} color="#ffffff" />
+          <Text style={S.headerBackBtnText}>Back</Text>
+        </TouchableOpacity>
+        <Text style={S.headerTitle}>Upgrade Your Role</Text>
+        <View style={{ width: 60 }} />
+      </ImageBackground>
+      )}
 
       <ScrollView
-        contentContainerStyle={S.scrollContent}
+        contentContainerStyle={[
+          S.scrollContent,
+          selectedPlanObj && !isSelectedPlanActive ? { paddingBottom: 200 } : null,
+        ]}
         showsVerticalScrollIndicator={false}
       >
         {/* Hero */}
-        <View style={S.heroCard}>
-          <Text style={S.heroEyebrow}>Plans</Text>
-          <Text style={S.heroTitle}>Subscription Plans</Text>
-          <Text style={S.heroSubtitle}>Choose a plan that suits your needs</Text>
+        <View style={S.heroPlain}>
+          <Text style={S.heroTitlePlain}>Choose Your Subscription Plan</Text>
+          <Text style={S.heroSubtitlePlain}>
+            Unlock more benefits, greater visibility and a stronger presence.
+          </Text>
         </View>
 
       {!loading ? (
-          <View style={{ width: '100%', maxWidth: 560, marginBottom: 16 }}>
+           <View style={{ width: '100%', maxWidth: 560, marginBottom: 16, alignSelf: 'center' }}>
             <SubscriptionStatusCard
               isActive={Boolean(subscriptionData.activePlan)}
               planName={subscriptionData.activePlan?.plan_name}
               price={subscriptionData.activePlan?.price}
               purchasedAt={subscriptionData.activePlan?.purchased_at}
               expiresAt={subscriptionData.activePlan?.expires_at}
+                            themeImage={getNativeThemeImage(activePlanTheme)}
+              textColor={activePlanTheme?.textColor}
             />
           </View>
         ) : null}
 
-        {/* Plans */}
-        <View style={S.card}>
-          <Text style={S.sectionTitle}>Available Plans</Text>
+             {/* Plans — 2x2 static grid (screenshot jaisa), no horizontal scroll */}
+        <Text style={S.sectionTitle}>Our Premium Plans</Text>
 
-          {loading ? (
-            <Text style={S.loadingText}>Loading plans…</Text>
-          ) : (
-            subscriptionData.plans.map((plan) => {
-              const isActive = subscriptionData.activePlan?.plan_id === plan.plan_id;
-              const planRole = UserStore.getRoleFromPlanId(plan.plan_id);
-
-              return (
-                <TouchableOpacity
-                  key={plan.plan_id}
-                  activeOpacity={0.92}
-                  disabled={isActive}
-                  onPress={() => handleBuyPlan(plan)}
-                  style={[S.planCard, isActive && S.planCardActive]}
-                >
-                  <View style={S.planTopRow}>
-                    <View style={S.planTitleWrap}>
-                      <Text style={S.planName}>{plan.plan_name}</Text>
-                      <Text style={S.planDuration}>{plan.duration}</Text>
-                    </View>
-                    <RoleBadge role={planRole} />
-                  </View>
-
-                  <Text style={S.planPrice}>₹{plan.price}</Text>
-
-                  {Array.isArray(plan.features) && plan.features.length > 0 && (
-                    <View style={S.featuresList}>
-                      {plan.features.map((feature, idx) => (
-                        <View key={idx} style={S.featureRow}>
-                          <Feather name="check" size={13} color="#14b87a" style={S.featureIcon} />
-                          <Text style={S.featureText}>{feature}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  )}
-
-                  {!isActive && <Text style={S.tapHint}>Tap to continue →</Text>}
-                </TouchableOpacity>
-              );
-            })
-          )}
+               {/* ✅ NEW: State / District / Taluka / Village filter row */}
+              <View style={{ flexDirection: Platform.OS === 'android' ? 'column' : 'row', gap: 10, marginBottom: 18, position: 'relative', zIndex: 50, elevation: 50 }}>
+          <LocationFilterDropdown
+            label="State"
+            value={filterState}
+            options={INDIAN_STATES}
+            placeholder="All States"
+            onChange={(v) => { setFilterState(v); setFilterDistrict(''); setFilterTaluka(''); setFilterVillage(''); }}
+          />
+          <LocationFilterDropdown
+            label="District"
+            value={filterDistrict}
+            options={filterDistrictOptions}
+            placeholder="All Districts"
+            disabled={!filterState}
+            onChange={(v) => { setFilterDistrict(v); setFilterTaluka(''); setFilterVillage(''); }}
+          />
+          <LocationFilterDropdown
+            label="Taluka"
+            value={filterTaluka}
+            options={filterTalukaOptions}
+            placeholder="All Talukas"
+            disabled={!filterDistrict}
+            onChange={(v) => { setFilterTaluka(v); setFilterVillage(''); }}
+          />
+          <LocationFilterDropdown
+            label="Village"
+            value={filterVillage}
+            options={filterVillageOptions}
+            placeholder="All Villages"
+            disabled={!filterTaluka}
+            onChange={setFilterVillage}
+          />
         </View>
+
+            {loading ? (
+          <Text style={S.loadingText}>Loading plans…</Text>
+        ) : filteredPlans.length === 0 ? (
+          <Text style={S.loadingText}>
+            Is location ke liye koi subscription plan available nahi hai.
+          </Text>
+        ) : (
+          <View style={S.plansGrid}>
+            {filteredPlans.map((plan, index) => {
+              const isActive = subscriptionData.activePlan?.plan_id === plan.plan_id;
+              const isSelected = selectedPlanId === plan.plan_id;
+              const theme = getCardTheme(index);
+                        return (
+                <View key={plan.plan_id} style={S.planCardWrap}>
+                  <ImageBackground
+                    source={theme.image}
+                    style={[S.planCard, isSelected && S.planCardSelected, isActive && S.planCardActive]}
+                    imageStyle={S.planCardImage}
+                    resizeMode="cover"
+                  >
+                             <Text style={[S.planName, { color: theme.textColor }]} numberOfLines={1}>
+                      {plan.plan_name}
+                    </Text>
+                    <Text style={[S.planDuration, { color: theme.mutedColor }]}>{plan.duration}</Text>
+
+                    <View style={S.planPriceRow}>
+                      <Text style={[S.planPrice, { color: theme.textColor }]}>₹{plan.price}</Text>
+                      {plan.original_price != null && (
+                        <Text style={[S.planPriceOriginal, { color: theme.mutedColor }]}>
+                          ₹{plan.original_price}
+                        </Text>
+                      )}
+                    </View>
+
+                                  {Array.isArray(plan.features) && plan.features.length > 0 && (
+                      <View style={S.featuresList}>
+                        {plan.features.slice(0, 3).map((feature, idx) => (
+                          <View key={idx} style={S.featureRow}>
+                            <Feather name="check" size={12} color={theme.checkColor} style={S.featureIcon} />
+                            <Text style={[S.featureText, { color: theme.textColor }]} numberOfLines={1}>
+                              {feature}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
+
+                    {Array.isArray(plan.features) && plan.features.length > 3 && (
+                      <TouchableOpacity onPress={() => setDetailsModal({ plan, theme })}>
+                        <Text style={{ color: theme.textColor, fontSize: 12, fontWeight: '700', textDecorationLine: 'underline', marginBottom: 6 }}>
+                          Read more
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+
+                    <TouchableOpacity
+                      activeOpacity={0.85}
+                      disabled={isActive}
+                      onPress={() => handleBuyPlan(plan)}
+                      style={[S.selectPlanBtn, isSelected && S.selectPlanBtnActive]}
+                    >
+                      <Text style={S.selectPlanBtnText}>
+                        {isActive ? 'Currently active' : 'Pay Now'}
+                      </Text>
+                      {!isActive && <Feather name="chevron-right" size={14} color="#b91c1c" />}
+                    </TouchableOpacity>
+                  </ImageBackground>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        <View style={{ height: 100 }} />
       </ScrollView>
 
-      <SeatSelectModal
-        visible={seatModalOpen}
-        stateName={stateName}
-        seats={seatSummary?.seats || []}
-        selectedSeatId={selectedSeatId}
-        pendingPlan={pendingPlan}
-        onClose={() => setSeatModalOpen(false)}
-        onSelectSeatId={(seatId) => {
-          if (!seatId || !pendingPlan) return;
-          setSelectedSeatId(seatId);
-          setSeatModalOpen(false);
-          const selectedPlan = pendingPlan;
-          setPendingPlan(null);
-        //  navigateToPayment(selectedPlan, stateName, seatId);
-          startSubscriptionPayment(selectedPlan, seatId);   // ✅ ye bhi change karo
-        }}
-      />
+      {/* Fixed bottom Pay bar — selected card ke color/image jaisa hi dikhta hai
+      {selectedPlanObj && !isSelectedPlanActive ? (
+        <View style={S.payBar}>
+          <View style={{ flex: 1 }}>
+            <Text style={S.payBarLabel} numberOfLines={1}>
+              {selectedPlanObj.plan_name} · {selectedPlanObj.duration}
+            </Text>
+            <Text style={S.payBarPrice}>₹{selectedPlanObj.price}</Text>
+          </View>
+          <TouchableOpacity onPress={() => handleBuyPlan(selectedPlanObj)} activeOpacity={0.85}>
+                     <ImageBackground
+            source={selectedTheme.image}
+              style={S.payBtn}
+              imageStyle={S.payBtnImage}
+              resizeMode="cover"
+            >
+                        <Text style={[S.payBtnText, { color: selectedTheme.textColor }]}>Pay Now</Text>
+            </ImageBackground>
+          </TouchableOpacity>
+        </View>
+      ) : null} */}
+
+           <Modal visible={!!detailsModal} transparent animationType="fade" onRequestClose={() => setDetailsModal(null)}>
+        <TouchableOpacity style={S.seatBackdrop} activeOpacity={1} onPress={() => setDetailsModal(null)}>
+          <View style={S.seatSheet}>
+            <View style={S.seatHandle} />
+            {detailsModal && (
+              <>
+                <Text style={S.seatTitle}>{detailsModal.plan.plan_name}</Text>
+                <Text style={{ fontSize: 22, fontWeight: '800', marginTop: 8, marginBottom: 4 }}>
+                  ₹{detailsModal.plan.price}
+                  {detailsModal.plan.original_price != null && (
+                    <Text style={{ fontSize: 14, textDecorationLine: 'line-through', color: '#999' }}> ₹{detailsModal.plan.original_price}</Text>
+                  )}
+                </Text>
+                <Text style={{ color: '#666', marginBottom: 12 }}>{detailsModal.plan.duration}</Text>
+                <ScrollView style={{ maxHeight: 260 }} showsVerticalScrollIndicator={false}>
+                  {(detailsModal.plan.features || []).map((f, i) => (
+                    <View key={i} style={{ flexDirection: 'row', gap: 8, marginBottom: 8 }}>
+                      <Feather name="check" size={14} color={detailsModal.theme.checkColor} />
+                      <Text style={{ flex: 1 }}>{f}</Text>
+                    </View>
+                  ))}
+                </ScrollView>
+                           <TouchableOpacity
+                  onPress={() => { const p = detailsModal.plan; setDetailsModal(null); handleBuyPlan(p); }}
+                  style={[S.seatSubmitBtn, { marginTop: 14 }]}
+                >
+                  <Text style={S.seatSubmitBtnText}>Pay Now</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
     </SafeAreaView>
   );

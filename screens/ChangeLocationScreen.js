@@ -9,7 +9,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useToast } from '../components/ui/ToastProvider';
 import { useLanguage } from '../contexts/LanguageContext';
 import { UserStore } from '../store/UserStore';
-import { INDIAN_STATES, getDistricts, getTalukas } from '../pages/locationData';
+import { INDIAN_STATES, getDistricts, getTalukas, getVillages } from '../pages/locationData';
+import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 
 // ── Step Indicator (Clickable) ────────────────────────────────────────────────
 function StepIndicator({ current, locState, locDistrict, onStepPress }) {
@@ -104,7 +105,8 @@ export default function ChangeLocationScreen({ navigation }) {
 
   const [locState, setLocState]       = useState('');
   const [locDistrict, setLocDistrict] = useState('');
-  const [locTaluka, setLocTaluka]     = useState('');
+    const [locTaluka, setLocTaluka]     = useState('');
+  const [locVillage, setLocVillage]     = useState('');
   const [search, setSearch]           = useState('');
 
   useFocusEffect(useCallback(() => {
@@ -114,28 +116,32 @@ export default function ChangeLocationScreen({ navigation }) {
       setCurrentUser(data.currentUser);
       setLocState(data.currentUser?.state || '');
       setLocDistrict(data.currentUser?.district || '');
-      setLocTaluka(data.currentUser?.taluka || '');
+          setLocTaluka(data.currentUser?.taluka || '');
+      setLocVillage(data.currentUser?.village || '');
     })();
   }, []));
 
   const districtList = locState    ? getDistricts(locState)             : [];
   const talukaList   = locDistrict ? getTalukas(locState, locDistrict)  : [];
-  const rawList      = step === 1  ? INDIAN_STATES : step === 2 ? districtList : talukaList;
+    const villageList  = locTaluka   ? getVillages(locState, locDistrict, locTaluka) : [];
+  const rawList      = step === 1  ? INDIAN_STATES : step === 2 ? districtList : step === 3 ? talukaList : villageList;
   const filteredList = rawList.filter(i => i.toLowerCase().includes(search.toLowerCase()));
 
   const stepConfig = {
     1: { headerText: t('choose.state'),    titleText: t('choose.state.title'),    placeholder: t('search.state')    },
     2: { headerText: t('choose.district'), titleText: t('choose.district.title'), placeholder: t('search.district') },
-    3: { headerText: t('choose.taluka'),   titleText: t('choose.taluka.title'),   placeholder: t('search.taluka')   },
+        3: { headerText: t('choose.taluka'),   titleText: t('choose.taluka.title'),   placeholder: t('search.taluka')   },
+    4: { headerText: 'Select Village', titleText: 'Select your village', placeholder: 'Search village...' },
   };
   const cfg = stepConfig[step];
-
-  const handleSaveDirect = async (state, district, taluka) => {
+  const handleSaveDirect = async (state, district, taluka, village = '') => {
+  
     if (!state || !currentUser) return;
     setSaving(true);
-    const result = await UserStore.updateUser(currentUser.email, { state, district, taluka });
+    const result = await UserStore.updateUser(currentUser.email, { state, district, taluka, village });
     setSaving(false);
     if (!result) { showToast(t('location.update.error'), 'error'); return; }
+       AuthAPI.updateState({ state, district, taluka, village }).catch(() => {});
     showToast(t('location.updated'), 'success');
     navigation.goBack();
   };
@@ -143,16 +149,20 @@ export default function ChangeLocationScreen({ navigation }) {
   const handleSelect = (val) => {
     setSearch('');
     if (step === 1) {
-      setLocState(val); setLocDistrict(''); setLocTaluka('');
+       setLocState(val); setLocDistrict(''); setLocTaluka(''); setLocVillage('');
       const dList = getDistricts(val);
       if (dList.length > 0) setStep(2); else handleSaveDirect(val, '', '');
     } else if (step === 2) {
-      setLocDistrict(val); setLocTaluka('');
+         setLocDistrict(val); setLocTaluka(''); setLocVillage('');
       const tList = getTalukas(locState, val);
       if (tList.length > 0) setStep(3); else handleSaveDirect(locState, val, '');
+      } else if (step === 3) {
+      setLocTaluka(val); setLocVillage('');
+      const vList = getVillages(locState, locDistrict, val);
+      if (vList.length > 0) setStep(4); else handleSaveDirect(locState, locDistrict, val, '');
     } else {
-      setLocTaluka(val);
-      handleSaveDirect(locState, locDistrict, val);
+      setLocVillage(val);
+      handleSaveDirect(locState, locDistrict, locTaluka, val);
     }
   };
 
@@ -237,7 +247,7 @@ export default function ChangeLocationScreen({ navigation }) {
               style={ws.list}
               showsVerticalScrollIndicator={false}
               renderItem={({ item }) => {
-                const isSel = step === 1 ? locState === item : step === 2 ? locDistrict === item : locTaluka === item;
+               const isSel = step === 1 ? locState === item : step === 2 ? locDistrict === item : step === 3 ? locTaluka === item : locVillage === item;
                 return (
                   <TouchableOpacity
                     style={[ws.item, isSel && ws.itemSel]}
@@ -260,7 +270,7 @@ export default function ChangeLocationScreen({ navigation }) {
             {/* Skip Taluka */}
             {step === 3 && (
               <TouchableOpacity style={ws.skipBtn} onPress={() => handleSaveDirect(locState, locDistrict, '')} disabled={saving}>
-                <Text style={ws.skipText}>{saving ? 'Saving...' : 'Skip Taluka'}</Text>
+                <Text style={ws.skipText}>{saving ? 'Saving...' : (step === 4 ? 'Skip Village' : 'Skip Taluka')}</Text>
               </TouchableOpacity>
             )}
 
@@ -325,8 +335,9 @@ export default function ChangeLocationScreen({ navigation }) {
             nameEn={item}
             selected={
               step === 1 ? locState === item :
-              step === 2 ? locDistrict === item :
-              locTaluka === item
+                            step === 2 ? locDistrict === item :
+              step === 3 ? locTaluka === item :
+              locVillage === item
             }
             onPress={() => handleSelect(item)}
           />
@@ -340,14 +351,14 @@ export default function ChangeLocationScreen({ navigation }) {
       />
 
       {/* Skip Taluka — Step 3 */}
-      {step === 3 && (
+      {step >= 3 && (
         <TouchableOpacity
           style={styles.skipBtn}
-          onPress={() => handleSaveDirect(locState, locDistrict, '')}
+          onPress={() =>handleSaveDirect(locState, locDistrict, step === 4 ? locTaluka : '')}
           disabled={saving}
         >
           <Text style={styles.skipText}>
-            {saving ? t('saving') : t('skip.taluka')}
+            {saving ? t('saving') : (step === 4 ? 'Skip Village' : t('skip.taluka'))}
           </Text>
         </TouchableOpacity>
       )}
