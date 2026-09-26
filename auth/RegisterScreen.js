@@ -2,7 +2,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { AuthAPI } from './ClientAPI/AuthApi';
-import { useMemo, useRef, useState } from 'react';
+
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   FlatList,
@@ -54,14 +55,9 @@ function getPasswordChecks(value) {
   };
 }
 
-if (Platform.OS === 'web') {
-  try {
-    const style = document.createElement('style');
-    style.textContent = `html, body, #root { height: 100%; margin: 0; padding: 0; background-color: #F0F0F5; overflow: hidden; }`;
-    document.head.appendChild(style);
-  } catch {}
-}
-
+// (ye style ab component ke andar useEffect se lagega, taaki page chhodte
+// hi html/body ka overflow:hidden reset ho jaye — neeche RegisterScreen
+// function ke start me effect add karna)
 // ─────────────────────────────────────────────────────────────
 // Toast Component
 // ─────────────────────────────────────────────────────────────
@@ -162,6 +158,14 @@ function StepIndicator({ currentStep, totalSteps }) {
 export default function RegisterScreen({ navigation }) {
   useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold });
   const { login } = useAuth();
+
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const style = document.createElement('style');
+    style.textContent = `html, body, #root { height: 100%; margin: 0; padding: 0; background-color: #F0F0F5; overflow: hidden; }`;
+    document.head.appendChild(style);
+    return () => { style.remove(); };
+  }, []);
 
   const [firstName, setFirstName] = useState('');
   const [middleName, setMiddleName] = useState('');

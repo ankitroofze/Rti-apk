@@ -15,6 +15,8 @@ import {
   Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import RightUtilityPanel from '../components/RightUtilityPanel';
+import { normalizeStoryItem, dedupeStories } from '../utils/storyHelpers';
 import AppNavbar from '../components/AppNavbar';
 import AppFooter from '../components/AppFooter';
 import ProfileAvatar from '../components/ProfileAvatar';
@@ -69,6 +71,13 @@ function buildLocationLabel(article) {
     .map((value) => String(value || '').trim())
     .filter(Boolean);
   return parts.join(', ');
+}
+
+function formatArticleDate(value) {
+  if (!value) return '';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return String(value);
+  return parsed.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 function normalizeArticle(rawArticle) {
@@ -401,7 +410,27 @@ function CommentThreadItem({
 export default function NewsDetailsScreen({ route, navigation }) {
   const { width } = useWindowDimensions();
   const responsiveWidth = getResponsiveWindowWidth(width);
-  const isCompactLayout = !IS_WEB || isMobileWebDevice() || responsiveWidth < 980;
+    const isCompactLayout = !IS_WEB || isMobileWebDevice() || responsiveWidth < 980;
+
+  const [trendingStories, setTrendingStories] = useState([]);
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const summary = await UserStore.getNewsFeedSummary({ feedType: 'all' });
+        const items = Array.isArray(summary?.items)
+          ? summary.items.map((item, index) => normalizeStoryItem(item, index)).filter(Boolean)
+          : [];
+        if (isMounted) setTrendingStories(dedupeStories(items));
+      } catch { if (isMounted) setTrendingStories([]); }
+    })();
+    return () => { isMounted = false; };
+  }, []);
+
+  const handleOpenTrendingStory = useCallback((story) => {
+    if (!story) return;
+    navigation?.navigate?.('NewsDetails', { article: story });
+  }, [navigation]);
 
   const routeArticle = route?.params?.article || null;
   const initialArticle = useMemo(() => normalizeArticle(routeArticle), [routeArticle]);
@@ -885,7 +914,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
         <View style={styles.pageBodyShell}>
           <View style={[styles.pageBodyInner, isCompactLayout && styles.pageBodyInnerCompact]}>
             <View style={styles.storyColumn}>
-              <View style={[styles.utilityRow, isCompactLayout && styles.utilityRowCompact]}>
+                   <View style={[styles.storyCardShell, isCompactLayout && styles.storyCardShellCompact]}>
                 <TouchableOpacity
                   style={styles.backButton}
                   onPress={() => navigation?.goBack?.()}
@@ -894,21 +923,6 @@ export default function NewsDetailsScreen({ route, navigation }) {
                   <Ionicons name="arrow-back-outline" size={25} color="#64748b" />
                 </TouchableOpacity>
 
-                <View style={styles.utilityChipRow}>
-                  {article.state ? (
-                    <TouchableOpacity style={styles.utilityChip} onPress={handleOpenStateFeed} activeOpacity={0.84}>
-                      <Ionicons name="location-outline" size={16} color="#f97316" />
-                      <Text style={styles.utilityChipText}>{article.state}</Text>
-                    </TouchableOpacity>
-                  ) : null}
-                  <TouchableOpacity style={styles.utilityChip} onPress={handleOpenCategoryFeed} activeOpacity={0.84}>
-                    <Ionicons name="albums-outline" size={16} color="#f97316" />
-                    <Text style={styles.utilityChipText}>{article.category}</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              <View style={[styles.storyCardShell, isCompactLayout && styles.storyCardShellCompact]}>
                 <View style={styles.storyAuthorRow}>
                   <View style={styles.storyAuthorIdentity}>
                     <TouchableOpacity
@@ -935,8 +949,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
                       activeOpacity={0.84}
                       disabled={followLoading}
                     >
-                      <Ionicons name={isFollowingAuthor ? 'person' : 'person-add-outline'} size={15} color={isFollowingAuthor ? '#f97316' : '#ffffff'} />
-                      <Text style={[styles.followAuthorButtonText, isFollowingAuthor && styles.followAuthorButtonTextActive]}>
+                      <Ionicons name={isFollowingAuthor ? 'person' : 'person-add-outline'} size={15} color={isFollowingAuthor ? (IS_WEB ? '#e11d48' : '#f97316') : '#ffffff'} />                      <Text style={[styles.followAuthorButtonText, isFollowingAuthor && styles.followAuthorButtonTextActive]}>
                         {followLoading ? '...' : isFollowingAuthor ? 'Following' : 'Follow'}
                       </Text>
                     </TouchableOpacity>
@@ -958,7 +971,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
                 <View style={styles.storyMetaRow}>
                   <View style={styles.storyMetaPill}>
                     <Ionicons name="calendar-outline" size={17} color="#94a3b8" />
-                    <Text style={styles.storyMetaPillText}>{article.date}</Text>
+                                   <Text style={styles.storyMetaPillText}>{formatArticleDate(article.date)}</Text>
                   </View>
                   <View style={styles.storyMetaPill}>
                     <Ionicons name="time-outline" size={17} color="#94a3b8" />
@@ -1105,8 +1118,17 @@ export default function NewsDetailsScreen({ route, navigation }) {
                     </TouchableOpacity>
                   </View>
                 ) : null}
-              </View>
+                      </View>
             </View>
+            {!isCompactLayout ? (
+              <View style={styles.trendingSidebar}>
+                <RightUtilityPanel
+                  navigation={navigation}
+                  trendingStories={trendingStories}
+                  onOpenDetails={handleOpenTrendingStory}
+                />
+              </View>
+            ) : null}
           </View>
 
           <AppFooter navigation={navigation} />
@@ -1245,22 +1267,24 @@ function GalleryImage({ rawUri }) {
 }
 
 const styles = StyleSheet.create({
-  screenShell: { flex: 1, backgroundColor: '#ffffff' },
+    screenShell: { flex: 1, backgroundColor: '#f1f5f9' },
   pageScrollView: { flex: 1 },
   pageScrollContent: { paddingTop: 0, paddingBottom: 80, flexGrow: 1 },
   pageScrollContentWithMobileNav: { paddingBottom: 110 },
-  pageBodyShell: { paddingTop: 0, marginTop: -1, backgroundColor: '#ffffff', flexGrow: 1 },
-  pageBodyInner: {
-    maxWidth: 1040,
+    pageBodyShell: { paddingTop: 0, marginTop: -1, backgroundColor: '#f1f5f9', flexGrow: 1 },
+   pageBodyInner: {
+    maxWidth: 1160,
     width: '100%',
     alignSelf: 'center',
-    flexDirection: 'column',
-    alignItems: 'stretch',
+    flexDirection: IS_WEB ? 'row' : 'column',
+    alignItems: 'flex-start',
+    gap: 24,
     paddingTop: 18,
     paddingHorizontal: 16,
   },
   pageBodyInnerCompact: { flexDirection: 'column' },
-  storyColumn: { flex: 1, width: '100%', maxWidth: 900, alignSelf: 'center' },
+    storyColumn: { flex: 1, width: '100%', maxWidth: 700 },
+  trendingSidebar: { width: 340, flexShrink: 0 },
   utilityRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1290,16 +1314,19 @@ const styles = StyleSheet.create({
     borderColor: '#fdba74',
   },
   utilityChipText: { color: '#f97316', fontSize: 11, fontWeight: '800', fontFamily: 'Roboto' },
-  storyCardShell: {
-    backgroundColor: 'transparent',
-    borderWidth: 0,
-    borderColor: 'transparent',
-    borderRadius: 0,
-    padding: 0,
-    overflow: 'visible',
-    ...Platform.select({ web: { boxShadow: 'none', overflow: 'visible' }, default: { elevation: 0, shadowColor: 'transparent', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0, shadowRadius: 0 } }),
+   storyCardShell: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    padding: 20,
+    overflow: 'hidden',
+    ...Platform.select({
+      web: { boxShadow: '0 1px 3px rgba(15, 23, 42, 0.06)', overflow: 'hidden' },
+      default: { elevation: 2, shadowColor: '#0f172a', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3 },
+    }),
   },
-  storyCardShellCompact: { padding: 0 },
+  storyCardShellCompact: { padding: 16, borderRadius: 10 },
   storyAuthorRow: { marginBottom: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   storyAuthorIdentity: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   storyAuthorAvatarButton: { marginRight: 12, cursor: Platform.OS === 'web' ? 'zoom-in' : 'default' },
@@ -1308,7 +1335,7 @@ const styles = StyleSheet.create({
   storyAuthorNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   storyAuthorName: { color: '#0f172a', fontSize: 22, fontWeight: '900', fontFamily: 'Roboto' },
   storyAuthorRoleText: { color: '#64748b', fontSize: 13, fontWeight: '700', marginTop: 4, fontFamily: 'Roboto' },
-  followAuthorButton: {
+   followAuthorButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1317,13 +1344,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: '#f97316',
+    backgroundColor: IS_WEB ? '#e11d48' : '#f97316',
     flexShrink: 0,
   },
-  followAuthorButtonActive: { backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fdba74' },
+  followAuthorButtonActive: IS_WEB
+    ? { backgroundColor: '#fff1f2', borderWidth: 1, borderColor: '#fda4af' }
+    : { backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fdba74' },
   followAuthorButtonDisabled: { opacity: 0.65 },
   followAuthorButtonText: { color: '#ffffff', fontSize: 12, fontWeight: '800', fontFamily: 'Roboto' },
-  followAuthorButtonTextActive: { color: '#f97316' },
+  followAuthorButtonTextActive: { color: IS_WEB ? '#e11d48' : '#f97316' },
   storyHeadlineText: {
     color: '#0f172a',
     fontSize: 34,
@@ -1335,8 +1364,18 @@ const styles = StyleSheet.create({
   storySubtitleText: { color: '#334155', fontSize: 18, lineHeight: 28, marginTop: 12, fontWeight: '700', fontFamily: 'Roboto' },
   storyExcerptText: { color: '#475569', fontSize: 16, lineHeight: 25, marginTop: 12, fontFamily: 'Roboto' },
   storyMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 16 },
-  storyMetaPill: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  storyMetaPillText: { color: '#94a3b8', fontSize: 14, fontWeight: '500', fontFamily: 'Roboto' },
+   storyMetaPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  storyMetaPillText: { color: '#64748b', fontSize: 13, fontWeight: '600', fontFamily: 'Roboto' },
   storyHeroImageWrap: { marginTop: 18, height: 220, borderRadius: 5, overflow: 'hidden', backgroundColor: '#e2e8f0', marginBottom: 16, zIndex: 0, position: 'relative', flexShrink: 0 },
   storyHeroImageWrapCompact: { height: 220 },
   storyHeroImage: { width: '100%', height: '100%' },

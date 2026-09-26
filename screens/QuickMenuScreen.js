@@ -284,17 +284,9 @@ const QM_CSS = `
   }
 `;
 
-// ── CSS ko module load hote hi inject karo (FOUC fix) ────────────────────────
-if (Platform.OS === 'web' && typeof document !== 'undefined') {
-  const _styleId = 'qm-web-styles';
-  if (!document.getElementById(_styleId)) {
-    const _el = document.createElement('style');
-    _el.id = _styleId;
-    _el.textContent = QM_CSS;
-    document.head.appendChild(_el);
-  }
-}
-// ─────────────────────────────────────────────────────────────────────────────
+// ── CSS ab sirf QuickMenuWeb ke mount hone par inject hoga (neeche dekho),
+// aur unmount hone par hata diya jayega — taaki dusre pages (Home, News
+// Details, etc.) permanently "overflow: hidden" se affect na ho.
 
 // All quick menu items (used in mobile list + web main cards)
 const MENU_SECTIONS = [
@@ -426,6 +418,27 @@ function QuickMenuWeb({ navigation }) {
   const { logout } = useAuth();
   const [activeScreen, setActiveScreen] = React.useState('Profile');
   const [profileTier, setProfileTier] = React.useState(PROFILE_TIERS.common);
+
+  React.useEffect(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    const _styleId = 'qm-web-styles';
+    let _el = document.getElementById(_styleId);
+    const alreadyExisted = Boolean(_el);
+    if (!_el) {
+      _el = document.createElement('style');
+      _el.id = _styleId;
+      _el.textContent = QM_CSS;
+      document.head.appendChild(_el);
+    }
+    return () => {
+      // Sirf tab hatao jab ye screen khud isne banaya tha — taaki dusre
+      // pages par jaate hi html/body ka overflow:hidden hat jaye.
+      if (!alreadyExisted) {
+        const existing = document.getElementById(_styleId);
+        if (existing) existing.remove();
+      }
+    };
+  }, []);
 
   React.useEffect(() => {
     let mounted = true;

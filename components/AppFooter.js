@@ -1,6 +1,7 @@
 // components/AppFooter.js
 import React from 'react';
 import {
+  Image,
   Linking,
   Platform,
   StyleSheet,
@@ -49,10 +50,10 @@ const STATE_LINK_ITEMS = [
 ];
 
 const SOCIAL_LINK_ITEMS = [
-  { label: 'Facebook', icon: 'logo-facebook', url: 'https://www.facebook.com/', color: '#2563eb' },
-  { label: 'YouTube', icon: 'logo-youtube', url: 'https://www.youtube.com/', color: '#ef4444' },
-  { label: 'LinkedIn', icon: 'logo-linkedin', url: 'https://www.linkedin.com/', color: '#0284c7' },
-  { label: 'Instagram', icon: 'logo-instagram', url: 'https://www.instagram.com/', color: '#e8732a' },
+  { label: 'Facebook', icon: 'logo-facebook', url: 'https://www.facebook.com/' },
+  { label: 'X', icon: 'logo-twitter', url: 'https://www.twitter.com/' },
+  { label: 'YouTube', icon: 'logo-youtube', url: 'https://www.youtube.com/' },
+  { label: 'Telegram', icon: 'paper-plane-outline', url: 'https://telegram.org/' },
 ];
 
 function FooterSection({ title, children }) {
@@ -94,128 +95,120 @@ export default function AppFooter({ navigation }) {
 
   const handleOpenAction = async (action) => {
     if (!action) return;
-
     if (action.url) {
-      try {
-        await Linking.openURL(action.url);
-      } catch {
-        // no-op
-      }
+      try { await Linking.openURL(action.url); } catch {}
       return;
     }
-
     if (action.email) {
-      try {
-        await Linking.openURL(`mailto:${action.email}`);
-      } catch {
-        // no-op
-      }
+      try { await Linking.openURL(`mailto:${action.email}`); } catch {}
       return;
     }
-
     if (action.screen) {
       navigation?.navigate?.(action.screen, action.params);
     }
   };
 
-  const stateItems = STATE_LINK_ITEMS.map((stateName) => ({
-    label: stateName,
-    action: {
-      screen: 'Home',
-      params: {
-        initialView: 'feed',
-        initialMenuKey: 'latest',
-        initialStateName: stateName,
-      },
-    },
-  }));
-
-  const trendingItems = [
-    { label: copy.common.latestNews, action: { screen: 'Home', params: { initialView: 'feed', initialMenuKey: 'latest' } } },
-    { label: copy.common.newsByState, action: { screen: 'Home', params: { initialView: 'states', initialMenuKey: 'states' } } },
-    { label: copy.common.politics, action: { screen: 'Home', params: { initialView: 'feed', initialMenuKey: 'politics' } } },
-    { label: copy.common.elections, action: { screen: 'Home', params: { initialView: 'feed', initialMenuKey: 'elections' } } },
-    { label: copy.common.viral, action: { screen: 'Home', params: { initialView: 'feed', initialMenuKey: 'viral' } } },
-    { label: copy.common.latestPoliticalNews, action: { screen: 'Home', params: { initialView: 'feed', initialMenuKey: 'latest_political' } } },
-  ];
-
   const quickLinks = [
     { label: copy.common.home, action: { screen: 'Home' } },
     { label: copy.common.feed, action: { screen: 'Feed' } },
-    { label: copy.common.rti, action: { screen: 'WhatIsRTI' } },
-    { label: copy.common.laws, action: { screen: 'ImportantLaws' } },
-    { label: copy.common.aboutUs, action: { screen: 'About' } },
-    { label: copy.common.contactUs, action: { screen: 'Contact' } },
+    { label: 'Create', action: { screen: 'QuickMenu' } },
+    { label: 'Advertise', action: { screen: 'Advertise' } },
   ];
 
-  const aboutLinks = [
+  const moreLinks = [
+    { label: 'Profile', action: { screen: 'Profile' } },
+    { label: 'Newspaper', action: { screen: 'Newspaper' } },
     { label: copy.common.aboutUs, action: { screen: 'About' } },
-    { label: copy.common.contactUs, action: { screen: 'Contact' } },
+    { label: copy.common.privacy, action: { screen: 'InfoPage', params: { pageKey: 'privacy' } } },
+  ];
+
+  const bottomLinks = [
+    { label: copy.common.aboutUs, action: { screen: 'About' } },
     { label: copy.common.terms, action: { screen: 'InfoPage', params: { pageKey: 'terms' } } },
     { label: copy.common.privacy, action: { screen: 'InfoPage', params: { pageKey: 'privacy' } } },
-    { label: copy.common.teamCareer, action: { screen: 'InfoPage', params: { pageKey: 'careers' } } },
-    { label: copy.common.refund, action: { screen: 'InfoPage', params: { pageKey: 'refund' } } },
+    { label: copy.common.contactUs, action: { screen: 'Contact' } },
   ];
 
   return (
     <View style={styles.footerShell}>
       <View style={styles.footerInner}>
-        <View style={styles.footerBrandRow}>
-          <View style={styles.footerBrandBlock}>
-            <Text style={styles.footerBrandTitle}>{copy.footer.brandTitle}</Text>
-            <Text style={styles.footerBrandSubtitle}>{copy.footer.brandSubtitle}</Text>
+        <View style={styles.footerTopRow}>
+          <View style={styles.footerBrandCol}>
+            <View style={styles.footerBrandHeaderRow}>
+              <Image
+                source={require('../assets/images/certificate_logo.jpg')}
+                style={styles.footerLogo}
+                resizeMode="cover"
+              />
+              <View>
+                <Text style={styles.footerBrandTitle}>{copy.footer.brandTitle}</Text>
+                <Text style={styles.footerBrandSubtitle}>{copy.footer.brandSubtitle}</Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              style={styles.footerContactLink}
+              onPress={() => handleOpenAction({ email: 'info@rtinews.in' })}
+              activeOpacity={0.84}
+            >
+              <Ionicons name="mail-outline" size={16} color="#ffffff" />
+              <Text style={styles.footerContactText}>{copy.footer.contactLine}</Text>
+            </TouchableOpacity>
           </View>
 
-          <TouchableOpacity
-            style={styles.footerBrandLink}
-            onPress={() => handleOpenAction({ screen: 'About' })}
-            activeOpacity={0.84}
-          >
-            <Text style={styles.footerBrandLinkText}>{copy.common.aboutUs}</Text>
-            <Ionicons name="open-outline" size={15} color="#ffffff" />
-          </TouchableOpacity>
+          <View style={styles.footerLinksCol}>
+            <Text style={styles.footerSectionTitle}>{copy.common.quickLinks}</Text>
+            {quickLinks.map((item) => (
+              <TouchableOpacity key={item.label} style={styles.footerLinkRow} onPress={() => handleOpenAction(item.action)} activeOpacity={0.82}>
+                <Text style={styles.footerLinkText}>{item.label}</Text>
+                <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.6)" />
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={styles.footerLinksCol}>
+            <Text style={styles.footerSectionTitle}>More</Text>
+            {moreLinks.map((item) => (
+              <TouchableOpacity key={item.label} style={styles.footerLinkRow} onPress={() => handleOpenAction(item.action)} activeOpacity={0.82}>
+                <Text style={styles.footerLinkText}>{item.label}</Text>
+                <Ionicons name="chevron-forward" size={14} color="rgba(255,255,255,0.6)" />
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <View style={styles.footerAboutCol}>
+            <Text style={styles.footerSectionTitle}>{copy.common.aboutUs}</Text>
+            <Text style={styles.footerAboutText}>
+              RTI News Network is a platform dedicated to transparent governance, citizen rights and authentic news from across India.
+            </Text>
+            <View style={styles.footerSocialRow}>
+              {SOCIAL_LINK_ITEMS.map((item) => (
+                <TouchableOpacity
+                  key={item.label}
+                  style={styles.footerSocialButton}
+                  onPress={() => handleOpenAction({ url: item.url })}
+                  activeOpacity={0.84}
+                >
+                  <Ionicons name={item.icon} size={18} color="#ffffff" />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
         </View>
-
-        <TouchableOpacity
-          style={styles.footerContactLink}
-          onPress={() => handleOpenAction({ email: 'info@rtinews.in' })}
-          activeOpacity={0.84}
-        >
-          <Text style={styles.footerContactText}>{copy.footer.contactLine}</Text>
-        </TouchableOpacity>
-
-        <View style={styles.footerDivider} />
-
-        <FooterSection title={copy.common.trendingNews}>
-          <FooterInlineLinks items={trendingItems} onPress={handleOpenAction} />
-        </FooterSection>
-
-        <FooterSection title={copy.common.stateCoverage}>
-          <FooterInlineLinks items={stateItems} onPress={handleOpenAction} />
-        </FooterSection>
-
-        <FooterSection title={copy.common.quickLinks}>
-          <FooterInlineLinks items={quickLinks} onPress={handleOpenAction} />
-        </FooterSection>
-
-        <FooterSection title={copy.common.aboutRtiNews}>
-          <FooterInlineLinks items={aboutLinks} onPress={handleOpenAction} />
-        </FooterSection>
 
         <View style={styles.footerBottomDivider} />
 
-        <View style={styles.footerSocialWrap}>
-          <Text style={styles.footerSocialTitle}>{copy.common.followOn}</Text>
-          <View style={styles.footerSocialRow}>
-            {SOCIAL_LINK_ITEMS.map((item) => (
-              <TouchableOpacity
-                key={item.label}
-                style={styles.footerSocialButton}
-                onPress={() => handleOpenAction({ url: item.url })}
-                activeOpacity={0.84}
-              >
-                <Ionicons name={item.icon} size={28} color={item.color} />
-              </TouchableOpacity>
+        <View style={styles.footerBottomRow}>
+          <Text style={styles.footerCopyrightText}>
+            © {new Date().getFullYear()} {copy.footer.brandTitle}. All rights reserved.
+          </Text>
+          <View style={styles.footerBottomLinksRow}>
+            {bottomLinks.map((item, index) => (
+              <React.Fragment key={item.label}>
+                <TouchableOpacity onPress={() => handleOpenAction(item.action)} activeOpacity={0.82}>
+                  <Text style={styles.footerBottomLinkText}>{item.label}</Text>
+                </TouchableOpacity>
+                {index < bottomLinks.length - 1 ? <Text style={styles.footerBottomLinkSep}>|</Text> : null}
+              </React.Fragment>
             ))}
           </View>
         </View>
@@ -234,123 +227,53 @@ const styles = StyleSheet.create({
     width: '100%',
     alignSelf: 'center',
     paddingHorizontal: Platform.OS === 'web' ? 32 : 18,
-    paddingTop: 24,
-    paddingBottom: 22,
+    paddingTop: 32,
+    paddingBottom: 20,
   },
-  footerBrandRow: {
+  footerTopRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: 16,
+    gap: 24,
     flexWrap: 'wrap',
   },
-  footerBrandBlock: {
-    flex: 1,
-    minWidth: 240,
-  },
-  footerBrandTitle: {
-    color: '#ffffff',
-    fontSize: 24,
-    fontWeight: '600', // ✅ Weight 600
-    fontFamily: FONT_FAMILY, // ✅ Roboto font
-  },
-  footerBrandSubtitle: {
-    color: '#d7f2ef',
-    fontSize: 13,
-    fontWeight: '600', // ✅ Weight 600
-    marginTop: 4,
-    fontFamily: FONT_FAMILY, // ✅ Roboto font
-  },
-  footerBrandLink: {
-    flexDirection: 'row',
+  footerBrandCol: { flex: 1.4, minWidth: 240 },
+  footerBrandHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  footerLogo: { width: 44, height: 44, borderRadius: 22 },
+  footerBrandTitle: { color: '#ffffff', fontSize: 18, fontWeight: '700', fontFamily: FONT_FAMILY },
+  footerBrandSubtitle: { color: '#d7f2ef', fontSize: 12, fontWeight: '600', marginTop: 2, fontFamily: FONT_FAMILY },
+  footerContactLink: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16 },
+  footerContactText: { color: '#ffffff', fontSize: 13, fontWeight: '600', fontFamily: FONT_FAMILY },
+  footerLinksCol: { minWidth: 140 },
+  footerSectionTitle: { color: '#ffffff', fontSize: 15, fontWeight: '700', marginBottom: 12, fontFamily: FONT_FAMILY },
+  footerLinkRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 6, gap: 6 },
+  footerLinkText: { color: 'rgba(255,255,255,0.85)', fontSize: 13, fontWeight: '600', fontFamily: FONT_FAMILY },
+  footerAboutCol: { flex: 1.4, minWidth: 240 },
+  footerAboutText: { color: 'rgba(255,255,255,0.8)', fontSize: 13, lineHeight: 20, fontFamily: FONT_FAMILY },
+  footerSocialRow: { flexDirection: 'row', gap: 10, marginTop: 14 },
+  footerSocialButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
-    gap: 6,
-  },
-  footerBrandLinkText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600', // ✅ Weight 600
-    textDecorationLine: 'underline',
-    fontFamily: FONT_FAMILY, // ✅ Roboto font
-  },
-  footerContactLink: {
-    marginTop: 22,
-    alignSelf: 'flex-start',
-  },
-  footerContactText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600', // ✅ Weight 600
-    fontFamily: FONT_FAMILY, // ✅ Roboto font
-  },
-  footerDivider: {
-    marginTop: 22,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(186, 230, 253, 0.18)',
-  },
-  footerSection: {
-    marginTop: 28,
-  },
-  footerSectionTitle: {
-    color: '#ffe4e6',
-    fontSize: 16,
-    fontWeight: '600', // ✅ Weight 600
-    marginBottom: 14,
-    fontFamily: FONT_FAMILY, // ✅ Roboto font
-  },
-  footerInlineList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 10,
-  },
-  footerInlineButton: {
-    paddingRight: 18,
-    marginRight: 4,
-    borderRightWidth: 1,
-    borderRightColor: 'rgba(186, 230, 253, 0.16)',
-  },
-  footerInlineButtonLast: {
-    borderRightWidth: 0,
-    paddingRight: 0,
-    marginRight: 0,
-  },
-  footerInlineButtonText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '600', // ✅ Weight 600
-    fontFamily: FONT_FAMILY, // ✅ Roboto font
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,255,255,0.12)',
   },
   footerBottomDivider: {
-    marginTop: 26,
+    marginTop: 28,
     borderTopWidth: 1,
     borderTopColor: 'rgba(186, 230, 253, 0.18)',
   },
-  footerSocialWrap: {
-    marginTop: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  footerSocialTitle: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '600', // ✅ Weight 600
-    fontFamily: FONT_FAMILY, // ✅ Roboto font
-  },
-  footerSocialRow: {
+  footerBottomRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 14,
-    marginTop: 14,
+    justifyContent: 'space-between',
     flexWrap: 'wrap',
+    gap: 10,
+    paddingTop: 16,
   },
-  footerSocialButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 6, // ✅ Border radius 6px
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
-  },
+  footerCopyrightText: { color: 'rgba(255,255,255,0.75)', fontSize: 12, fontFamily: FONT_FAMILY },
+  footerBottomLinksRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+  footerBottomLinkText: { color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '600', fontFamily: FONT_FAMILY },
+  footerBottomLinkSep: { color: 'rgba(255,255,255,0.3)', fontSize: 12 },
 });

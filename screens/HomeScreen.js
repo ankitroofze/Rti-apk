@@ -1086,7 +1086,7 @@ const handleOpenLeadForm = useCallback((story) => {
 const styles = StyleSheet.create({
   screenShell: { flex: 1, backgroundColor: '#ffffff' },
   pageScrollView: { flex: 1, backgroundColor: '#ffffff' },
-  pageScrollContent: { paddingTop: 4, paddingBottom: 24, backgroundColor: '#ffffff' },
+  pageScrollContent: { paddingTop: 4, paddingBottom: 0, backgroundColor: '#ffffff' },
   pageScrollContentMobile: { paddingTop: 0 },
   pageScrollContentWithMobileNav: { paddingBottom: 90 },
   // ✅ center everything below the header: full-width row that centers its

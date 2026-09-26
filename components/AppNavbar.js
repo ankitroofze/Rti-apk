@@ -701,7 +701,7 @@ export default function AppNavbar({ activeScreen, navigation, hideTopHeader = fa
 
 const styles = StyleSheet.create({
   // ─── Desktop ───────────────────────────────────────────────────────────
-  desktopNavbarShell: {
+    desktopNavbarShell: {
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
@@ -712,7 +712,7 @@ const styles = StyleSheet.create({
         zIndex: 5000,
         overflow: 'visible',
         boxShadow: 'none',
-        transition: 'box-shadow 0.2s ease',
+        transition: 'background-color 0.2s ease, box-shadow 0.2s ease, backdrop-filter 0.2s ease',
       },
       default: {
         boxShadow: '0px 2px 4px rgba(0,0,0,0.2)',
@@ -720,10 +720,14 @@ const styles = StyleSheet.create({
     }),
   },
   desktopNavbarShellScrolled: {
-    backgroundColor: '#ffffff',
     ...Platform.select({
-      web: { boxShadow: '0 6px 20px rgba(15, 23, 42, 0.30)' },
-      default: {},
+      web: {
+        backgroundColor: 'rgba(255, 255, 255, 0.72)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        boxShadow: '0 6px 20px rgba(15, 23, 42, 0.12)',
+      },
+      default: { backgroundColor: '#ffffff' },
     }),
   },
   desktopNavbarInner: {
