@@ -60,7 +60,8 @@ export default function SubscriptionPlanPurchase({
   activePlanId,
   statusCard,
   onPay,
-   payLabel = 'Pay Now',
+ payLabel = 'Pay Now',
+  processingPlanId = null,
   emptyText = 'Abhi koi plan available nahi hai.',
 }) {
     const insets = useSafeAreaInsets();
@@ -182,12 +183,12 @@ export default function SubscriptionPlanPurchase({
 
                     <TouchableOpacity
                       activeOpacity={0.85}
-                      disabled={isActive}
-                      onPress={() => onPay(plan)}
-                      style={[S.selectPlanBtn, isSelected && S.selectPlanBtnActive]}
+disabled={isActive || Boolean(processingPlanId)}
+onPress={() => { if (typeof onPay === 'function') onPay(plan); }}
+style={[S.selectPlanBtn, isSelected && S.selectPlanBtnActive, processingPlanId && processingPlanId !== plan.id && { opacity: 0.5 }]}
                     >
-                      <Text style={S.selectPlanBtnText}>
-                        {isActive ? 'Currently active' : payLabel}
+                    <Text style={S.selectPlanBtnText} numberOfLines={1}>
+{isActive ? 'Currently active' : (processingPlanId === plan.id ? 'Processing…' : payLabel)}
                       </Text>
                       {!isActive && <Feather name="chevron-right" size={14} color="#b91c1c" />}
                     </TouchableOpacity>

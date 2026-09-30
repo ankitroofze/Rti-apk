@@ -10,7 +10,7 @@ import ModuleMobileHeader from '../components/ModuleMobileHeader';
 const PURCHASE_LINKS = [
   { label: 'Role / Membership Plans', screen: 'Subscription Plans', icon: 'award' },
   { label: 'Quiz Subscription Plans', screen: 'My Quiz Subscription', icon: 'check-square' },
-  { label: 'Ads Subscription Plans',  screen: 'My Ads Subscription', icon: 'trending-up' },
+  { label: 'Ads Subscription Plans',  screen: 'AdPlans', icon: 'trending-up' },
   { label: 'Ecom Subscription Plans', screen: 'My Ecom Subscription', icon: 'shopping-bag' },
 ];
 

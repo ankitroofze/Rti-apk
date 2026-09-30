@@ -1,18 +1,22 @@
 import React, { useCallback, useState } from 'react';
 import {
+  Platform,
+  Image,
+  ImageBackground,
   ScrollView,
   StatusBar,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather, Ionicons } from '@expo/vector-icons';
+import ModuleWebHeader from '../components/Modulewebheader';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useToast } from '../components/ui/ToastProvider';
 import CertificationStyles from '../styles/CertificationStyles';
 import { UserStore } from '../store/UserStore';
-import { getQuizResultTier } from '../utils/quizResultLogic';
+import { getQuizResultTier, getScoreText } from '../utils/quizResultLogic';
 
 const TYPE_LABEL = {
   practice: 'Practice',
@@ -96,19 +100,34 @@ const handleDownload = (item) => {
 
   return (
     <View style={[CertificationStyles.root]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#F3F4F6" />
-      <View style={{ height: insets.top, backgroundColor: '#fff' }} />
-
-      {/* Back Header */}
-      <TouchableOpacity
-        style={CertificationStyles.backRow}
-        onPress={() => navigation.goBack()}
-        activeOpacity={0.75}
-      >
-        <Feather name="arrow-left" size={20} color="#F97316" />
-        <Text style={CertificationStyles.backText}>Back</Text>
-      </TouchableOpacity>
-
+         <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+      {Platform.OS === 'web' ? (
+        <ModuleWebHeader title="My Attempts" navigation={navigation} />
+      ) : (
+        <View
+          style={{
+            width: '100%',
+            overflow: 'hidden',
+            backgroundColor: '#b91c1c',
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 12,
+            paddingHorizontal: 16,
+            paddingBottom: 14,
+            paddingTop: insets.top + 8,
+          }}
+        >
+          <Image
+            source={require('../assets/images/profile-red.png')}
+            resizeMode="cover"
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' }}
+          />
+          <TouchableOpacity onPress={() => navigation.goBack()} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }} activeOpacity={0.7}>
+            <Ionicons name="chevron-back" size={24} color="#ffffff" />
+          </TouchableOpacity>
+          <Text style={{ fontSize: 15, color: '#fff', fontFamily: 'Roboto_400Regular' }}>My Attempts</Text>
+        </View>
+      )}
       <ScrollView
         style={CertificationStyles.scrollView}
         contentContainerStyle={[
@@ -118,10 +137,15 @@ const handleDownload = (item) => {
         showsVerticalScrollIndicator={false}
       >
         {/* Hero */}
-        <View style={CertificationStyles.heroCard}>
-          <Text style={CertificationStyles.heroEyebrow}>RTI Certification</Text>
-          <Text style={CertificationStyles.heroTitle}>My Attempts</Text>
-        </View>
+              <ImageBackground
+          source={require('../assets/images/profile-red.png')}
+          resizeMode="cover"
+          imageStyle={{ borderRadius: 12 }}
+          style={[CertificationStyles.heroCard, { backgroundColor: '#b91c1c', overflow: 'hidden' }]}
+        >
+          <Text style={[CertificationStyles.heroEyebrow, { color: 'rgba(255,255,255,0.85)' }]}>RTI Certification</Text>
+          <Text style={[CertificationStyles.heroTitle, { color: '#ffffff' }]}>My Attempts</Text>
+        </ImageBackground>
 
         {/* List */}
         <View style={CertificationStyles.card}>
@@ -158,7 +182,7 @@ const handleDownload = (item) => {
                     <Feather name="bar-chart-2" size={15} color="#F97316" />
                     <Text style={CertificationStyles.scoreText}>
                       Score: <Text style={CertificationStyles.scoreBold}>
-                        {item.obtained_marks ?? 0}/{item.total_marks ?? 0} ({item.percentage}%)
+                       {getScoreText(item).full}
                       </Text>
                     </Text>
                   </View>

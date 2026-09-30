@@ -571,7 +571,8 @@ const defaultWalletTransactions = [
 // ];
 
 
-let cachedBackendPlans = []; // ✅ FIX: backend se fetch hone ke baad yahan cache hoga
+let cachedBackendPlans = [];
+let roleLookupPlans = []; // bina user-filter wali poori plans list (active plan ka naam/price/roles dhoondhne ke liye)
 
 // ✅ FIX: role ab plan ke NAME se decide hoga (numeric id se nahi), kyunki backend id har baar alag ho sakti hai
 const getRoleFromPlanName = (planName = '') => {
@@ -607,6 +608,9 @@ const normalizeBackendPlan = (raw = {}) => {
     description:  raw.description || '',
 role_id_raw:  raw.role_id || '',               // ✅ comma-separated multi-role id, ab handled
     validity_days: Number(raw.days || raw.validity_days || 30),
+    // ✅ Sold flag — sirf tab true hoga jab backend plans list me ye field bheje
+    // (is_sold / sold / is_taken / seat_taken / is_available:false). Warna false.
+    is_sold: Boolean(raw.is_sold ?? raw.sold ?? raw.is_taken ?? raw.seat_taken ?? (raw.is_available === false)),
     features:     Array.isArray(raw.features) ? raw.features : [],
     // ✅ FIX: plan ke naam se hi role decide hoga (premium/pro/basic/free) — jo plan buy karoge wahi role milega
     role:         getRoleFromPlanName(planName),
@@ -820,7 +824,9 @@ const normalizeSubscription = (s = {}) => ({
   duration:  s.duration  || defaultActiveSubscription.duration,
   features:  Array.isArray(s.features) ? s.features : [],
   role:      s.role      || getRoleFromPlanId(s.plan_id),
-  purchased_at: s.purchased_at || null,
+   purchased_at: s.purchased_at || null,
+  role_id_raw:  s.role_id_raw  || '',
+  validity_days: s.validity_days || undefined,
   expires_at:   s.expires_at   || null,
 });
 const normalizeSubscriptionPlan = (plan) => {
@@ -1500,6 +1506,38 @@ const normalizeEmailList = (items = []) => (
 
 const CREDIT_VALIDITY_DAYS = 30;
 
+// ✅ Web/other device pe kiya purchase is device pe laane ke liye (backend /my-subscriptions se)
+let lastCreditSyncAt = 0;
+const pickNum = (...vals) => {
+  for (const v of vals) {
+    if (v !== undefined && v !== null && v !== '') {
+      const n = Number(v);
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  return null;
+};
+const detectSubType = (s = {}) => {
+  const t = String(s.type || s.category || s.subscription_type || s.plan_type || s.module || '').toLowerCase().trim();
+    if (t.includes('quiz') || t.includes('certif') || t.includes('exam')) return 'quiz';
+    const tn = t.replace(/[^a-z]/g, '');
+  if (tn.includes('ecom')) return 'ecom';
+  if (s.ecom_sub_id || s.ecom_subscription_id) return 'ecom';
+  if (/^(ads?|advert\w*|adsubscription|adssubscription)$/.test(tn)) return 'ads';
+  return null;
+};
+const isBackendSubActive = (s = {}) => {
+  const status = String(s.status || '').toLowerCase();
+  const paid = Number(s.payment_status) === 1 || status === 'active';
+  if (!paid) return false;
+  const exp = s.expires_at || s.expiry || s.end_date;
+  if (exp) {
+    const t = new Date(`${String(exp).slice(0, 10)}T23:59:59`).getTime();
+    if (Number.isFinite(t) && Date.now() > t) return false;
+  }
+  return true;
+};
+
 const addDaysToDateString = (dateValue, days = CREDIT_VALIDITY_DAYS) => {
   const base = dateValue ? new Date(dateValue) : new Date();
   const safeBase = Number.isFinite(base.getTime()) ? base : new Date();
@@ -2014,9 +2052,150 @@ export const UserStore = {
   hasActiveQuizSubscription: (user) => hasActiveQuizSubscription(user),
   getQuizSubscriptionRemainingCount: (user) => getQuizSubscriptionRemainingCount(user),
 hasActiveEcomSubscription: (user) => hasActiveEcomSubscription(user),
-  hasActiveAdSubscription: (user) => hasActiveAdSubscription(user),
+    hasActiveAdSubscription: (user) => hasActiveAdSubscription(user),
 
-// ✅ NEW: /my-subscriptions se combined list (jo liya hai wo sab) fetch karta hai
+  // ✅ NEW: pehle backend se sync (await) karta hai, phir fresh user deta hai
+  getCurrentUserSynced: async () => {
+    try { await UserStore.syncCreditSubscriptionsFromBackend({ force: true }); } catch (e) { /* ignore */ }
+    return UserStore.getCurrentUser();
+  },
+syncCreditSubscriptionsFromBackend: async ({ force = false } = {}) => {
+  try {
+    if (!force && Date.now() - lastCreditSyncAt < 20000) return;
+    lastCreditSyncAt = Date.now();
+
+    const user = await UserStore.getCurrentUser();
+    if (!user) return;
+
+    const [res, quizRes] = await Promise.all([
+      AuthAPI.getMySubscriptions(),
+      AuthAPI.getMyQuizSubscriptions(),
+    ]);
+    if (!res?.ok && !quizRes?.ok) {
+      console.warn('[syncCreditSubscriptions] both endpoints failed:', res?.message, quizRes?.message);
+      return;
+    }
+
+    // Backend kabhi array, kabhi {ads:[..], ecom:[..], quiz:[..]} jaisa grouped object bhejta hai —
+    // dono ko flat list me badal do, aur group ka naam 'type' bana do (agar record me type nahi hai).
+    const TYPE_KEYS = ['type', 'category', 'subscription_type', 'plan_type', 'module'];
+    const flatten = (raw, hint = null) => {
+      if (!raw) return [];
+      if (Array.isArray(raw)) return raw.flatMap((x) => flatten(x, hint));
+      if (typeof raw !== 'object') return [];
+      const isRecord = ['id', 'plan_id', 'plan_name', 'expires_at', 'status', 'payment_status', 'purchased_at']
+        .some((k) => raw[k] !== undefined);
+      if (isRecord) {
+        const hasType = TYPE_KEYS.some((k) => raw[k]);
+        return [hasType || !hint ? raw : { ...raw, type: hint }];
+      }
+      return Object.keys(raw).flatMap((k) => (
+        raw[k] && typeof raw[k] === 'object' ? flatten(raw[k], ['data', 'subscriptions', 'items'].includes(k) ? hint : k) : []
+      ));
+    };
+
+    const mainList = res?.ok ? flatten(res.subscriptions) : [];
+    const quizList = quizRes?.ok ? flatten(quizRes.subscriptions, 'quiz').map((s) => ({ ...s, type: 'quiz' })) : [];
+    const list = [...mainList, ...quizList];
+    console.log('[syncCreditSubscriptions] backend list:', JSON.stringify(list));
+
+    // ── Lenient active check: pending/failed/expired ko chhod kar baaki sab active ──
+    const isActiveSub = (s = {}) => {
+      const status = String(s.status ?? '').toLowerCase();
+      if (['expired', 'inactive', 'cancelled', 'canceled', 'failed', 'refunded', 'pending', 'created'].includes(status)) return false;
+      const ps = s.payment_status;
+      if (ps !== undefined && ps !== null && ps !== '') {
+        if (!['1', 'true', 'paid', 'success', 'captured', 'completed', 'active'].includes(String(ps).toLowerCase())) return false;
+      }
+      const exp = s.expires_at || s.expiry || s.end_date || s.expiry_date;
+      if (exp) {
+        const t = new Date(`${String(exp).slice(0, 10)}T23:59:59`).getTime();
+        if (Number.isFinite(t) && Date.now() > t) return false;
+      }
+      return true;
+    };
+
+    // har type (ads / ecom / quiz) ki sabse nayi active subscription
+    const latest = {};
+    list.filter(isActiveSub).forEach((s) => {
+      const type = detectSubType(s);
+      if (!type) return;
+      const stamp = String(s.purchased_at || s.created_at || s.start_date || '');
+      if (!latest[type] || stamp > String(latest[type].purchased_at || latest[type].created_at || latest[type].start_date || '')) latest[type] = s;
+    });
+    console.log('[syncCreditSubscriptions] detected types:', Object.keys(latest).join(',') || 'NONE');
+
+    const build = (s) => {
+      const days = pickNum(s.days, s.validity_days, s.duration_days, s.plan?.days, s.plan?.validity_days);
+      const purchasedAt = String(s.purchased_at || s.start_date || s.created_at || new Date().toISOString()).slice(0, 10);
+      const expiresAt = String(s.expires_at || s.expiry || s.end_date || s.expiry_date || '').slice(0, 10)
+        || addDaysToDateString(purchasedAt, days || CREDIT_VALIDITY_DAYS);
+      return {
+        plan_id: s.plan_id ?? s.plan?.id ?? s.id,
+        plan_name: s.plan_name || s.title || s.name || s.plan?.title || s.plan?.plan_name || 'Subscription Plan',
+        price: pickNum(s.price, s.amount, s.plan?.price) ?? 0,
+        credits: pickNum(s.credits, s.plan?.credits) ?? 0,
+        duration: `${days || CREDIT_VALIDITY_DAYS} Days`,
+        validity_days: days || CREDIT_VALIDITY_DAYS,
+        purchased_at: purchasedAt,
+        expires_at: expiresAt,
+        status: 'active',
+      };
+    };
+    const isNew = (local, sub) => !local
+      || String(local.plan_id) !== String(sub.plan_id)
+      || String(local.purchased_at || '').slice(0, 10) !== sub.purchased_at
+      || String(local.expires_at || '').slice(0, 10) !== sub.expires_at;
+
+    const updates = {};
+
+    if (latest.ads) {
+      const sub = build(latest.ads);
+      const backendCredits = pickNum(latest.ads.remaining_credits, latest.ads.credits_remaining, latest.ads.credits_left, latest.ads.ad_credits);
+      if (isNew(user.ad_subscription, sub)) {
+        updates.ad_subscription = sub;
+        updates.ad_credits = backendCredits ?? sub.credits ?? 0;
+      } else if (backendCredits !== null && backendCredits !== Number(user.ad_credits ?? 0)) {
+        updates.ad_credits = backendCredits;
+      }
+    }
+
+    if (latest.ecom) {
+      const sub = build(latest.ecom);
+      const backendCredits = pickNum(latest.ecom.remaining_credits, latest.ecom.credits_remaining, latest.ecom.credits_left, latest.ecom.ecome_credits);
+      if (isNew(user.ecome_subscription, sub)) {
+        updates.ecome_subscription = sub;
+        updates.ecome_credits = backendCredits ?? sub.credits ?? 0;
+      } else if (backendCredits !== null && backendCredits !== Number(user.ecome_credits ?? 0)) {
+        updates.ecome_credits = backendCredits;
+      }
+    }
+
+    if (latest.quiz) {
+      const sub = build(latest.quiz);
+      const total = pickNum(latest.quiz.quiz_count, latest.quiz.total_count, latest.quiz.plan?.quiz_count);
+      const backendRemaining = pickNum(latest.quiz.remaining_count, latest.quiz.remaining_attempts, latest.quiz.quiz_remaining);
+      if (isNew(user.quiz_subscription_plan, sub)) {
+        updates.quiz_subscription_expiry = new Date(`${sub.expires_at}T23:59:59`).toISOString();
+        updates.quiz_subscription_plan = {
+          plan_id: sub.plan_id, plan_name: sub.plan_name, price: sub.price,
+          duration: sub.validity_days, quiz_count: total,
+          purchased_at: sub.purchased_at, expires_at: sub.expires_at,
+        };
+        updates.quiz_subscription_total_count = total;
+        updates.quiz_subscription_remaining_count = backendRemaining ?? total;
+      } else if (backendRemaining !== null && backendRemaining !== user.quiz_subscription_remaining_count) {
+        updates.quiz_subscription_remaining_count = backendRemaining;
+      }
+    }
+
+    console.log('[syncCreditSubscriptions] updates:', JSON.stringify(updates));
+    if (Object.keys(updates).length) await UserStore.updateUser(user.email, updates);
+  } catch (err) {
+    console.warn('[syncCreditSubscriptionsFromBackend] failed:', err);
+  }
+},
+
 getMySubscriptions: async () => {
   try {
     const res = await AuthAPI.getMySubscriptions();
@@ -2041,13 +2220,13 @@ getEcomSubscriptionPlans: async () => {
     const res = await AuthAPI.getEcomSubscriptions();
     if (!res.ok || !Array.isArray(res.plans) || !res.plans.length) return [];
     return res.plans.map((p) => {
-      const validityDays = Number(p.validity_days ?? p.duration_days ?? 30);
+      const validityDays = Number(p.days ?? p.validity_days ?? p.duration_days ?? 30);
       return {
         id: p.id ?? p.plan_id,
         label: p.title || p.plan_name || p.name || 'E-Commerce Plan',
         price: Number(p.price ?? 0),
         credits: Number(p.credits ?? p.listing_credits ?? p.listings ?? 0),
-        duration: p.duration || `${validityDays} Days`,
+               duration: `${validityDays} Days`,
         validity_days: validityDays,
       };
     });
@@ -2060,17 +2239,19 @@ getQuizSubscriptionPlans: async () => {
     const res = await AuthAPI.getQuizSubscriptionPlans();
     if (!res.ok || !Array.isArray(res.plans)) return [];
     return res.plans.map((p) => {
-      const duration = Number(p.duration ?? p.months ?? p.validity_months ?? 1);
+      const days = Number(p.days ?? p.validity_days ?? p.duration_days ?? (Number(p.duration ?? p.months ?? p.validity_months ?? 1) * 30));
+      const duration = days;
       // Backend field name abhi confirm nahi hai isliye common naming variants sab try karte hain.
       const quizCountRaw = p.quiz_count ?? p.quizCount ?? p.attempts ?? p.no_of_quiz ?? p.total_quiz ?? p.quiz_limit;
       const quizCount = quizCountRaw !== undefined && quizCountRaw !== null ? Number(quizCountRaw) : null; // null = unlimited/unspecified
       return {
         id: p.id ?? p.plan_id,
-        label: p.title || p.plan_name || p.name || `${duration} Month${duration > 1 ? 's' : ''}`,
+        label: p.title || p.plan_name || p.name || `${days} Day${days > 1 ? 's' : ''}`,
         price: Number(p.price ?? 0),
         duration,
-        unit: duration > 1 ? 'months' : 'month',
-        perMonth: duration > 0 ? Math.round(Number(p.price ?? 0) / duration) : Number(p.price ?? 0),
+        days,
+        unit: days > 1 ? 'days' : 'day',
+        perMonth: days > 0 ? Math.round((Number(p.price ?? 0) / days) * 30) : Number(p.price ?? 0),
         quizCount,
       };
     });
@@ -2101,9 +2282,9 @@ verifyQuizPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_sig
       return { ok: false, message: verifyRes?.message || 'Payment verification failed.' };
     }
 
-    const durationMonths = Number(plan?.duration || 1);
+       const validityDays = Number(plan?.days) || (Number(plan?.duration || 1) * 30);
     const expiryDate = new Date();
-    expiryDate.setDate(expiryDate.getDate() + durationMonths * 30);
+    expiryDate.setDate(expiryDate.getDate() + validityDays);
     const today = new Date().toISOString().slice(0, 10);
 
     // plan.quizCount === kitne quiz attempts is subscription me milte hain.
@@ -2475,6 +2656,7 @@ consumeQuizAttempt: async () => {
 
   getCurrentUser: async () => {
     try {
+      UserStore.syncCreditSubscriptionsFromBackend().catch(() => {});
       const email = await AsyncStorage.getItem(CURRENT_USER_KEY);
       if (!email) return null;
       // ✅ FIX: stored email bhi lowercase se match karo
@@ -2755,7 +2937,439 @@ consumeQuizAttempt: async () => {
 
 // ✅ FIX: Backend se subscription ki real truth fetch karke local storage sync karo
   // Isse "buy karne ke baad bhi subscribe maang raha hai" wala mismatch bug fix hoga
+syncRoleSubscriptionV3: async (existingUser) => {
+    try {
+      const user = existingUser || await UserStore.getCurrentUser();
+      if (!user) return null;
+
+      const toList = (r) => {
+        if (!r) return [];
+        if (Array.isArray(r)) return r;
+        if (typeof r === 'object') {
+          const inner = r.subscriptions || r.data || r.role_subscriptions || r.items;
+          if (Array.isArray(inner)) return inner;
+          if (inner && typeof inner === 'object') return [inner];
+          return [r];
+        }
+        return [];
+      };
+
+      const [roleRes, allRes] = await Promise.all([
+        AuthAPI.getMyRoleSubscriptions(),
+        AuthAPI.getMySubscriptions(),
+      ]);
+      if (!roleRes?.ok && !allRes?.ok) return user;
+
+      const roleList = roleRes?.ok ? toList(roleRes.subscriptions) : [];
+      const allList = allRes?.ok
+        ? toList(allRes.subscriptions).filter((s) =>
+            /role|member|premium/.test(String(s.type || s.category || s.subscription_type || s.plan_type || s.module || '').toLowerCase()))
+        : [];
+      const subs = [...roleList, ...allList];
+      console.log('[syncRoleSubscriptionV3] role list:', JSON.stringify(roleRes?.subscriptions), '| combined list:', JSON.stringify(allRes?.subscriptions));
+
+      const num = (...vals) => {
+        for (const v of vals) {
+          if (v !== undefined && v !== null && v !== '' && Number.isFinite(Number(v))) return Number(v);
+        }
+        return null;
+      };
+      const LIVE_WORDS = ['active', 'success', 'paid'];
+      const DEAD_WORDS = ['expired', 'inactive', 'cancelled', 'canceled', 'failed', 'refunded'];
+      const isExpiredByDate = (s) => {
+        const exp = s.expires_at || s.expiry || s.end_date;
+        if (!exp) return false;
+        const t = new Date(`${String(exp).slice(0, 10)}T23:59:59`).getTime();
+        return Number.isFinite(t) && Date.now() > t;
+      };
+      const stateOf = (s = {}) => {
+        const st = String(s.status ?? '').toLowerCase();
+        if (DEAD_WORDS.includes(st) || isExpiredByDate(s)) return 'dead';
+        const ps = s.payment_status;
+        const hasPs = ps !== undefined && ps !== null && ps !== '';
+        if (hasPs && Number(ps) !== 1 && !LIVE_WORDS.includes(st)) return 'pending';
+        return 'live';
+      };
+      const stampOf = (s = {}) => String(s.purchased_at || s.created_at || '');
+      const activeSub = subs.filter((s) => stateOf(s) === 'live').sort((a, b) => stampOf(b).localeCompare(stampOf(a)))[0];
+
+      if (!activeSub) {
+        const boughtAt = new Date(user.subscription_plan?.purchased_at || 0).getTime();
+        const isFresh = Number.isFinite(boughtAt) && (Date.now() - boughtAt) < 10 * 60 * 1000;
+        const allDead = subs.length > 0 && subs.every((s) => stateOf(s) === 'dead');
+        if (allDead && user.is_subscribed && !isFresh) {
+          const downgraded = await UserStore.updateUser(user.email, {
+            is_subscribed: false,
+            role: 'free',
+            role_label: getRoleLabel('free'),
+            subscription_type: 'free',
+            subscription_plan: null,
+            state_seat: null,
+          });
+          return downgraded || user;
+        }
+        return user;
+      }
+
+      if (!cachedBackendPlans.length) {
+        try {
+          const plansRes = await AuthAPI.getRoleSubscriptionPlans(user.id);
+          if (plansRes.ok && Array.isArray(plansRes.plans)) {
+            cachedBackendPlans = plansRes.plans.map(normalizeBackendPlan);
+          }
+        } catch (e) { /* ignore */ }
+      }
+
+      const nested = [activeSub.plan, activeSub.role_subscription_plan, activeSub.subscription_plan, activeSub.subscriptionPlan]
+        .find((o) => o && typeof o === 'object') || {};
+      const local = user.subscription_plan;
+      const planIdRaw = activeSub.plan_id ?? activeSub.role_subscription_plan_id ?? activeSub.subscription_plan_id ?? nested.id ?? activeSub.id;
+      const localPlanId = getLocalPlanIdFromBackendId(planIdRaw);
+      const nameHint = activeSub.plan_name || activeSub.title || activeSub.name || nested.title || nested.plan_name || nested.name || '';
+
+      // plan dhoondo: pehle user-filtered cache me, phir bina filter wali poori list me, phir naam se
+      const findPlan = () => {
+        for (const pool of [cachedBackendPlans, roleLookupPlans]) {
+          const hit = (localPlanId && pool.find((p) => Number(p.plan_id) === localPlanId))
+            || (nameHint && pool.find((p) => String(p.plan_name).trim().toLowerCase() === String(nameHint).trim().toLowerCase()));
+          if (hit) return hit;
+        }
+        return null;
+      };
+      let matchedPlan = findPlan();
+      if (!matchedPlan) {
+        try {
+          const allPlansRes = await AuthAPI.getRoleSubscriptionPlans(); // bina user filter
+          if (allPlansRes.ok && Array.isArray(allPlansRes.plans)) {
+            roleLookupPlans = allPlansRes.plans.map(normalizeBackendPlan);
+            matchedPlan = findPlan();
+          }
+        } catch (e) { /* ignore */ }
+      }
+
+      const days = num(activeSub.days, activeSub.validity_days, activeSub.duration_days, nested.days, matchedPlan?.validity_days) || 30;
+      const today = new Date().toISOString().slice(0, 10);
+      const purchasedAt = String(
+        activeSub.purchased_at || activeSub.start_date || activeSub.created_at || local?.purchased_at || today
+      ).slice(0, 10);
+      const expiresAt = String(activeSub.expires_at || activeSub.expiry || activeSub.end_date || '').slice(0, 10)
+        || addDaysToDateString(purchasedAt, days);
+
+      const localName = local?.plan_name && local.plan_name !== 'Subscription Plan' ? local.plan_name : '';
+      const planName = matchedPlan?.plan_name || nameHint || localName || 'Subscription Plan';
+      const newRole = matchedPlan?.role || getRoleFromPlanName(planName);
+
+      // price: plan ka price -> backend ka paid amount -> is device ki payment history -> purana local
+      const paidLocal = (Array.isArray(user.payment_history) ? user.payment_history : [])
+        .filter((h) => h.module === 'role' && String(h.status).toLowerCase() === 'success'
+          && (!localPlanId || String(h.plan_id) === String(localPlanId)))
+        .slice(-1)[0];
+      // ✅ Priority: backend ka ASLI paid amount pehle (taaki Android/iOS/Web sab par same dikhe),
+      // phir plan ka offer price, phir baaki. Device-local values sabse last.
+      const price = [
+        activeSub.paid_amount, activeSub.amount, activeSub.total_amount, activeSub.final_price,
+        matchedPlan?.price, activeSub.offer_price, nested.offer_price, activeSub.price, nested.price,
+        paidLocal?.amount, local?.price,
+      ].map(Number).find((n) => Number.isFinite(n) && n > 0) ?? 0;
+
+      // roles (designations) — role_id comma-separated (1-6)
+      const roleIdRaw = String(matchedPlan?.role_id_raw || activeSub.role_id || nested.role_id || local?.role_id_raw || '');
+
+      const unchanged = user.is_subscribed && user.role === newRole && local
+        && String(local.plan_id) === String(localPlanId ?? planIdRaw ?? local.plan_id)
+        && String(local.purchased_at || '').slice(0, 10) === purchasedAt
+        && String(local.expires_at || '').slice(0, 10) === expiresAt
+        && Number(local.price) > 0 && Boolean(localName)
+        && (!roleIdRaw || String(local.role_id_raw || '') === roleIdRaw);
+      if (unchanged) return user;
+
+      const mergedPlan = {
+        ...(matchedPlan || {}),
+        plan_id: localPlanId ?? planIdRaw ?? local?.plan_id,
+        plan_name: planName,
+        price,
+        duration: `${days} Days`,
+        validity_days: days,
+        role: newRole,
+        role_id_raw: roleIdRaw,
+        purchased_at: purchasedAt,
+        expires_at: expiresAt,
+      };
+
+      const updatedUser = await UserStore.updateUser(user.email, {
+        subscription_plan: mergedPlan,
+        subscription_type: newRole,
+        role: newRole,
+        role_label: getRoleLabel(newRole),
+        is_subscribed: true,
+      });
+      return updatedUser || user;
+    } catch (err) {
+      console.warn('[syncRoleSubscriptionV3] failed:', err);
+      return await UserStore.getCurrentUser();
+    }
+  },
+
+  syncRoleSubscriptionV2: async (existingUser) => {
+    return UserStore.syncRoleSubscriptionV3(existingUser);
+  },
+
+  // ⚠️ purana version — ab use nahi hota, delete kar sakte ho
+  _unusedV2Sync: async (existingUser) => {
+    try {
+      const user = existingUser || await UserStore.getCurrentUser();
+      if (!user) return null;
+
+      // response kisi bhi shape me ho — array / {data:[..]} / {data:{..}} / single object
+      const toList = (r) => {
+        if (!r) return [];
+        if (Array.isArray(r)) return r;
+        if (typeof r === 'object') {
+          const inner = r.subscriptions || r.data || r.role_subscriptions || r.items;
+          if (Array.isArray(inner)) return inner;
+          if (inner && typeof inner === 'object') return [inner];
+          return [r];
+        }
+        return [];
+      };
+
+      // dono endpoints try karo: /my-role-subscriptions aur combined /my-subscriptions (type=role)
+      const [roleRes, allRes] = await Promise.all([
+        AuthAPI.getMyRoleSubscriptions(),
+        AuthAPI.getMySubscriptions(),
+      ]);
+      if (!roleRes?.ok && !allRes?.ok) return user; // network/auth problem — local jaisa hai waisa rehne do
+
+      const roleList = roleRes?.ok ? toList(roleRes.subscriptions) : [];
+      const allList = allRes?.ok
+        ? toList(allRes.subscriptions).filter((s) =>
+            /role|member|premium/.test(String(s.type || s.category || s.subscription_type || s.plan_type || s.module || '').toLowerCase()))
+        : [];
+      const subs = [...roleList, ...allList];
+      console.log('[syncRoleSubscriptionV2] role list:', JSON.stringify(roleRes?.subscriptions), '| combined list:', JSON.stringify(allRes?.subscriptions));
+
+      const num = (...vals) => {
+        for (const v of vals) {
+          if (v !== undefined && v !== null && v !== '' && Number.isFinite(Number(v))) return Number(v);
+        }
+        return null;
+      };
+      const LIVE_WORDS = ['active', 'success', 'paid'];
+      const DEAD_WORDS = ['expired', 'inactive', 'cancelled', 'canceled', 'failed', 'refunded'];
+      const isExpiredByDate = (s) => {
+        const exp = s.expires_at || s.expiry || s.end_date;
+        if (!exp) return false;
+        const t = new Date(`${String(exp).slice(0, 10)}T23:59:59`).getTime();
+        return Number.isFinite(t) && Date.now() > t;
+      };
+      // 'live' | 'pending' | 'dead'
+      const stateOf = (s = {}) => {
+        const st = String(s.status ?? '').toLowerCase();
+        if (DEAD_WORDS.includes(st) || isExpiredByDate(s)) return 'dead';
+        const ps = s.payment_status;
+        const hasPs = ps !== undefined && ps !== null && ps !== '';
+        if (hasPs && Number(ps) !== 1 && !LIVE_WORDS.includes(st)) return 'pending';
+        return 'live';
+      };
+      const stampOf = (s = {}) => String(s.purchased_at || s.created_at || '');
+      const activeSub = subs.filter((s) => stateOf(s) === 'live').sort((a, b) => stampOf(b).localeCompare(stampOf(a)))[0];
+
+      if (!activeSub) {
+        // sirf tab downgrade karo jab backend me entries hon aur SAB clearly expire/cancel ho chuki hon.
+        // Khaali list, pending, ya samajh na aane wali response pe kabhi downgrade nahi.
+        const boughtAt = new Date(user.subscription_plan?.purchased_at || 0).getTime();
+        const isFresh = Number.isFinite(boughtAt) && (Date.now() - boughtAt) < 10 * 60 * 1000;
+        const allDead = subs.length > 0 && subs.every((s) => stateOf(s) === 'dead');
+        if (allDead && user.is_subscribed && !isFresh) {
+          const downgraded = await UserStore.updateUser(user.email, {
+            is_subscribed: false,
+            role: 'free',
+            role_label: getRoleLabel('free'),
+            subscription_type: 'free',
+            subscription_plan: null,
+            state_seat: null,
+          });
+          return downgraded || user;
+        }
+        return user;
+      }
+
+      // plans cache khaali ho (naya device / fresh login) to pehle plans laao
+      if (!cachedBackendPlans.length) {
+        try {
+          const plansRes = await AuthAPI.getRoleSubscriptionPlans(user.id);
+          if (plansRes.ok && Array.isArray(plansRes.plans)) {
+            cachedBackendPlans = plansRes.plans.map(normalizeBackendPlan);
+          }
+        } catch (e) { /* plans na mile to bhi backend ke data se plan bana lenge */ }
+      }
+
+      const planIdRaw = activeSub.plan_id ?? activeSub.role_subscription_plan_id ?? activeSub.subscription_plan_id ?? activeSub.id;
+      const localPlanId = getLocalPlanIdFromBackendId(planIdRaw);
+      const matchedPlan = localPlanId ? (cachedBackendPlans.find((p) => Number(p.plan_id) === localPlanId) || null) : null;
+
+      const days = num(activeSub.days, activeSub.validity_days, activeSub.duration_days, matchedPlan?.validity_days) || 30;
+      const today = new Date().toISOString().slice(0, 10);
+      const purchasedAt = String(
+        activeSub.purchased_at || activeSub.start_date || activeSub.created_at || user.subscription_plan?.purchased_at || today
+      ).slice(0, 10);
+      const expiresAt = String(activeSub.expires_at || activeSub.expiry || activeSub.end_date || '').slice(0, 10)
+        || addDaysToDateString(purchasedAt, days);
+      const planName = matchedPlan?.plan_name || activeSub.plan_name || activeSub.title || activeSub.name
+        || activeSub.plan?.title || user.subscription_plan?.plan_name || 'Subscription Plan';
+      const newRole = matchedPlan?.role || getRoleFromPlanName(planName);
+
+      const local = user.subscription_plan;
+      const unchanged = user.is_subscribed && user.role === newRole && local
+        && String(local.plan_id) === String(localPlanId ?? planIdRaw ?? local.plan_id)
+        && String(local.purchased_at || '').slice(0, 10) === purchasedAt
+        && String(local.expires_at || '').slice(0, 10) === expiresAt;
+      if (unchanged) return user;
+
+      const mergedPlan = {
+        ...(matchedPlan || {}),
+        plan_id: localPlanId ?? planIdRaw ?? local?.plan_id,
+        plan_name: planName,
+        price: matchedPlan?.price ?? num(activeSub.price, activeSub.amount, activeSub.plan?.price, local?.price) ?? 0,
+        duration: `${days} Days`,
+        validity_days: days,
+        role: newRole,
+        purchased_at: purchasedAt,
+        expires_at: expiresAt,
+      };
+
+      const updatedUser = await UserStore.updateUser(user.email, {
+        subscription_plan: mergedPlan,
+        subscription_type: newRole,
+        role: newRole,
+        role_label: getRoleLabel(newRole),
+        is_subscribed: true,
+      });
+      return updatedUser || user;
+    } catch (err) {
+      console.warn('[syncRoleSubscriptionV2] failed:', err);
+      return await UserStore.getCurrentUser();
+    }
+  },
+
   syncSubscriptionFromBackend: async (existingUser) => {
+    return UserStore.syncRoleSubscriptionV2(existingUser);
+  },
+
+  // ⚠️ purana version — ab use nahi hota, delete kar sakte ho
+  _unusedOldSyncSubscription: async (existingUser) => {
+    try {
+      const user = existingUser || await UserStore.getCurrentUser();
+      if (!user) return null;
+
+      const res = await AuthAPI.getMyRoleSubscriptions();
+      if (!res.ok) return user;
+
+      // response kisi bhi shape me ho (array / {data:[..]} / single object) — sab handle
+      let raw = res.subscriptions;
+      if (raw && !Array.isArray(raw)) raw = raw.subscriptions || raw.data || raw.role_subscriptions || [raw];
+      const subs = Array.isArray(raw) ? raw : [];
+      console.log('[syncSubscriptionFromBackend] backend subs:', JSON.stringify(subs));
+
+      const num = (...vals) => {
+        for (const v of vals) {
+          if (v !== undefined && v !== null && v !== '' && Number.isFinite(Number(v))) return Number(v);
+        }
+        return null;
+      };
+      const isLive = (s = {}) => {
+        const st = String(s.status || '').toLowerCase();
+        const paid = Number(s.payment_status) === 1 || ['active', 'success', 'paid'].includes(st);
+        if (!paid) return false;
+        const exp = s.expires_at || s.expiry || s.end_date;
+        if (exp) {
+          const t = new Date(`${String(exp).slice(0, 10)}T23:59:59`).getTime();
+          if (Number.isFinite(t) && Date.now() > t) return false;
+        }
+        return true;
+      };
+      const stampOf = (s = {}) => String(s.purchased_at || s.created_at || '');
+      const activeSub = subs.filter(isLive).sort((a, b) => stampOf(b).localeCompare(stampOf(a)))[0];
+
+      if (!activeSub) {
+        // abhi kiya hua purchase (10 min ke andar) ho to backend delay ki wajah se downgrade mat karo
+        const boughtAt = new Date(user.subscription_plan?.purchased_at || 0).getTime();
+        const isFresh = Number.isFinite(boughtAt) && (Date.now() - boughtAt) < 10 * 60 * 1000;
+        if (Array.isArray(raw) && user.is_subscribed && !isFresh) {
+          const downgraded = await UserStore.updateUser(user.email, {
+            is_subscribed: false,
+            role: 'free',
+            role_label: getRoleLabel('free'),
+            subscription_type: 'free',
+            subscription_plan: null,
+            state_seat: null,
+          });
+          return downgraded || user;
+        }
+        return user;
+      }
+
+      // ✅ FIX: plans cache khaali ho (naya device / fresh login) to pehle plans laao,
+      // warna matchedPlan null rehta tha aur subscription_plan null save ho jata tha
+      if (!cachedBackendPlans.length) {
+        try {
+          const plansRes = await AuthAPI.getRoleSubscriptionPlans(user.id);
+          if (plansRes.ok && Array.isArray(plansRes.plans)) {
+            cachedBackendPlans = plansRes.plans.map(normalizeBackendPlan);
+          }
+        } catch (e) { /* plans na mile to bhi backend ke subscription data se plan bana lenge */ }
+      }
+
+      const planIdRaw = activeSub.plan_id ?? activeSub.role_subscription_plan_id ?? activeSub.subscription_plan_id;
+      const localPlanId = getLocalPlanIdFromBackendId(planIdRaw);
+      const matchedPlan = localPlanId ? (cachedBackendPlans.find((p) => Number(p.plan_id) === localPlanId) || null) : null;
+
+      const days = num(activeSub.days, activeSub.validity_days, activeSub.duration_days, matchedPlan?.validity_days) || 30;
+      const today = new Date().toISOString().slice(0, 10);
+      const purchasedAt = String(
+        activeSub.purchased_at || activeSub.start_date || activeSub.created_at || user.subscription_plan?.purchased_at || today
+      ).slice(0, 10);
+      const expiresAt = String(activeSub.expires_at || activeSub.expiry || activeSub.end_date || '').slice(0, 10)
+        || addDaysToDateString(purchasedAt, days);
+      const planName = matchedPlan?.plan_name || activeSub.plan_name || activeSub.title || activeSub.name
+        || activeSub.plan?.title || user.subscription_plan?.plan_name || 'Subscription Plan';
+      const newRole = matchedPlan?.role || getRoleFromPlanName(planName);
+
+      const local = user.subscription_plan;
+      const unchanged = user.is_subscribed && user.role === newRole && local
+        && String(local.plan_id) === String(localPlanId ?? planIdRaw ?? local.plan_id)
+        && String(local.purchased_at || '').slice(0, 10) === purchasedAt
+        && String(local.expires_at || '').slice(0, 10) === expiresAt;
+      if (unchanged) return user;
+
+      const mergedPlan = {
+        ...(matchedPlan || {}),
+        plan_id: localPlanId ?? planIdRaw ?? local?.plan_id,
+        plan_name: planName,
+        price: matchedPlan?.price ?? num(activeSub.price, activeSub.amount, activeSub.plan?.price, local?.price) ?? 0,
+        duration: `${days} Days`,
+        validity_days: days,
+        role: newRole,
+        purchased_at: purchasedAt,
+        expires_at: expiresAt,
+      };
+
+      const updatedUser = await UserStore.updateUser(user.email, {
+        subscription_plan: mergedPlan,
+        subscription_type: newRole,
+        role: newRole,
+        role_label: getRoleLabel(newRole),
+        is_subscribed: true,
+      });
+
+      return updatedUser || user;
+    } catch {
+      return await UserStore.getCurrentUser();
+    }
+  },
+
+  // ⚠️ purana version — ab use nahi hota (naya upar wala hai). Chaho to delete kar sakte ho.
+  _oldSyncSubscriptionFromBackend: async (existingUser) => {
     try {
       const user = existingUser || await UserStore.getCurrentUser();
       if (!user) return null;
@@ -2896,7 +3510,22 @@ consumeQuizAttempt: async () => {
       // user kisi bhi location ka subscription browse aur purchase kar sakta hai.
       return {
         currentUser: user,
-        activePlan:  hasActiveSubscription(user) ? normalizeSubscriptionPlan(user.subscription_plan) : null,
+activePlan:  (() => {
+          if (!hasActiveSubscription(user)) return null;
+          const ap = normalizeSubscriptionPlan(user.subscription_plan);
+          if (!ap) return null;
+          const known = [...plans, ...roleLookupPlans].find((p) => String(p.plan_id) === String(ap.plan_id));
+          const roleIdRaw = user.subscription_plan?.role_id_raw || ap.role_id_raw || known?.role_id_raw || '';
+          const roleNamesStr = UserStore.getSeatRoleNameForPlanRoleId(roleIdRaw);
+          const genericName = !ap.plan_name || ap.plan_name === 'Subscription Plan';
+          return {
+            ...ap,
+            plan_name: genericName ? (known?.plan_name || ap.plan_name) : ap.plan_name,
+            price: Number(ap.price) > 0 ? ap.price : (known?.price ?? ap.price),
+            role_id_raw: roleIdRaw,
+            role_names: roleNamesStr ? roleNamesStr.split(', ') : [],
+          };
+        })(),
         plans: plans,
         currentRole:      user.role || 'free',
         currentRoleLabel: getRoleLabel(user.role || 'free'),
@@ -2930,17 +3559,25 @@ createPaymentOrder: async ({ plan_id, seat_state, seat_district = '', seat_taluk
    // backend yeh pata hi nahi laga sakta tha ki yeh seat kis district/
    // taluka/village ke liye lock karni hai — ab full location + designation
    // id bhi bhej rahe hain taaki backend par seat-uniqueness check ho sake.
+   // ✅ Premium plan par seat lock nahi hota — sirf plan_id jaayega
+   const planForOrder = cachedBackendPlans.find((p) => p.plan_id === plan_id);
    const orderResult = await AuthAPI.purchaseRoleSubscription({
      planId: backendPlanId,
-     stateSeat: seatMeta?.name || '',
-     designationId: seat_role_id || '',
+     isPremium: isPremiumPlan(planForOrder),
      state: seat_state || '',
      district: seat_district || '',
      taluka: seat_taluka || '',
      village: seat_village || '',
    });
    console.log('[DEBUG createPaymentOrder] orderResult ->', orderResult);
-      if (!orderResult?.ok) { return { error: true, message: orderResult?.message || 'Unable to create order.' }; }
+      // ✅ 409 seat_unavailable yahin ruk jaata hai — Razorpay checkout khulega hi nahi
+      if (!orderResult?.ok) {
+        return {
+          error: true,
+          seatUnavailable: Boolean(orderResult?.seatUnavailable),
+          message: orderResult?.message || 'Unable to create order.',
+        };
+      }
     const activePlan = cachedBackendPlans.find((p) => p.plan_id === plan_id) || defaultActiveSubscription;
 
     return {
@@ -2956,8 +3593,25 @@ createPaymentOrder: async ({ plan_id, seat_state, seat_district = '', seat_taluk
       seat_village: seat_village || '',
       seat_role_id: seat_role_id || '',
       razorpay:     orderResult.razorpay, // { key, order_id, amount, currency }
+      seat:         orderResult.seat || null, // reserved_until yahan milega (Premium par null)
     };
   } catch { return null; }
+},
+
+// ✅ NEW: payment fail / cancel — reserved seat turant release karne ke liye.
+// module 'role' -> /role-subscriptions/payment/failed
+// baaki (ads / ecom / quiz) -> purana shared /subscriptions/payment/failed
+markPaymentFailed: async (razorpay_order_id, error_code, error_description, module = 'shared') => {
+  try {
+    if (!razorpay_order_id) return { ok: false };
+    const payload = { razorpay_order_id, error_code, error_description };
+    return module === 'role'
+      ? await AuthAPI.markRoleSubscriptionPaymentFailed(payload)
+      : await AuthAPI.markSubscriptionPaymentFailed(payload);
+  } catch (err) {
+    console.error('[UserStore.markPaymentFailed] Error:', err);
+    return { ok: false };
+  }
 },
 
 
@@ -2971,7 +3625,12 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
         razorpay_order_id, razorpay_payment_id, razorpay_signature,
       });
       if (!verifyRes?.ok) {
-        return { ok: false, message: verifyRes?.message || 'Payment verification failed.' };
+        // ✅ seatUnavailable aage pass karo (409) taaki screen us plan ko Sold mark kar sake
+        return {
+          ok: false,
+          seatUnavailable: Boolean(verifyRes?.seatUnavailable),
+          message: verifyRes?.message || 'Payment verification failed.',
+        };
       }
 
 // ✅ FIX: pehle screen se passed asli plan use karo — cache lookup pe depend
@@ -4973,6 +5632,7 @@ followUser: async (targetUserEmail, targetUserId) => {
   },
 
   getAdCreditsSummary: async () => {
+    await UserStore.syncCreditSubscriptionsFromBackend();
     try {
       const user = await UserStore.getCurrentUser();
       if (!user) return null;
@@ -4998,6 +5658,64 @@ followUser: async (targetUserEmail, targetUserId) => {
     } catch { return null; }
   },
   
+// ✅ NEW: Profile "My Posts" ke liye — user ke apne Advertisement posts.
+// Sources: (1) user.ads (jo My Ads screen dikhati hai) + (2) backend GET /ads-details me
+// jahan owner_id / user_id / owner_email ya redirection_url (profile/<email>) is user se match kare.
+// Har ad ko post-shape me convert karta hai; id 'ad-<id>' hoti hai taaki news ki id se na takraye.
+getMyAdPosts: async () => {
+  try {
+    const user = await UserStore.getCurrentUser();
+    if (!user) return [];
+    const myEmail = String(user.email || '').trim().toLowerCase();
+    const myId = user.id != null ? String(user.id) : '';
+
+    const byId = new Map();
+    (Array.isArray(user.ads) ? user.ads : []).forEach((ad) => {
+      if (ad?.id != null) byId.set(String(ad.id), ad);
+    });
+
+    try {
+      const res = await AuthAPI.getAdsDetails();
+      if (res?.ok && Array.isArray(res.ads)) {
+        res.ads.forEach((ad) => {
+          if (ad?.id == null) return;
+          const ownerId = (ad.owner_id ?? ad.user_id) != null ? String(ad.owner_id ?? ad.user_id) : '';
+          const ownerEmail = String(ad.owner_email || '').trim().toLowerCase();
+          const m = String(ad.redirection_url || '').match(/profile\/([^/?]+)/);
+          let deepEmail = '';
+          if (m?.[1]) { try { deepEmail = decodeURIComponent(m[1]).trim().toLowerCase(); } catch { deepEmail = m[1].trim().toLowerCase(); } }
+          const isMine = (ownerId && myId && ownerId === myId)
+            || (ownerEmail && ownerEmail === myEmail)
+            || (deepEmail && deepEmail === myEmail);
+          if (isMine) byId.set(String(ad.id), { ...(byId.get(String(ad.id)) || {}), ...ad });
+        });
+      }
+    } catch (e) { /* backend fail ho to local ads hi dikhenge */ }
+
+    return Array.from(byId.values()).map((ad) => {
+      const created = ad.created_at || ad.createdAt || ad.start_date || '';
+      const img = ad.image || ad.photo || '';
+      return {
+        id: `ad-${ad.id}`,
+        ad_id: ad.id,
+        is_ad: true,
+        post_type: 'ad',
+        title: ad.title || 'Advertisement',
+        content: ad.title || ad.description || '',
+        description: ad.description || '',
+        image: img,
+        photo: img,
+        createdAt: created,
+        created_at: created,
+        end_date: ad.end_date || '',
+        views: Number(ad.views ?? 0),
+        likes: 0,
+        comments: 0,
+      };
+    });
+  } catch (e) { console.log('[getMyAdPosts] failed:', e); return []; }
+},
+
 getActiveAdsFeed: async (options = {}) => {
   try {
     const res = await AuthAPI.getAdsDetails(); // GET /ads-details — no login required
@@ -5362,6 +6080,7 @@ deleteAd: async (adId) => {
     { plan_id: 'ecome-power-monthly', plan_name: 'Power E-Commerce', price: 1499, credits: 50, duration: '30 Days', validity_days: 30 },
   ]),
   getEcomeMarketplaceSummary: async (options = {}) => {
+    await UserStore.syncCreditSubscriptionsFromBackend();
     try {
       const includeListings = options.includeListings !== false;
       const includeEnquiries = Boolean(options.includeEnquiries);
@@ -5434,8 +6153,8 @@ deleteAd: async (adId) => {
             plan_name: p.plan_name ?? p.name,
             price: Number(p.price ?? 0),
             credits: Number(p.credits ?? p.listing_credits ?? 0),
-            duration: p.duration || `${p.validity_days || 30} Days`,
-            validity_days: Number(p.validity_days ?? 30),
+                       duration: `${Number(p.days ?? p.validity_days ?? 30)} Days`,
+            validity_days: Number(p.days ?? p.validity_days ?? 30),
           }));
         }
       } catch (e) {

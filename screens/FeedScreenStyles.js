@@ -2,7 +2,23 @@ import { StyleSheet, Platform, Dimensions } from 'react-native';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const styles = StyleSheet.create({
+const FONT_FAMILY = Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto';
+
+// Har style object me (agar usme pehle se fontFamily nahi hai) Roboto add
+// kar deta hai — taaki poore Feed screen ka text ek hi baar me Roboto ho jaye.
+function withRobotoFont(rawStyles) {
+  const result = {};
+  Object.keys(rawStyles).forEach((key) => {
+    const value = rawStyles[key];
+    result[key] =
+      value && typeof value === 'object' && !Array.isArray(value) && value.fontFamily === undefined
+        ? { ...value, fontFamily: FONT_FAMILY }
+        : value;
+  });
+  return result;
+}
+
+const styles = StyleSheet.create(withRobotoFont({
 
   // ── Reel Card ─────────────────────────────────────────────────────────────
   reel: {
@@ -595,9 +611,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  sendBtnText: { fontSize: 17, color: '#fff' },
+   sendBtnText: { fontSize: 17, color: '#fff' },
   closeBtn: { alignItems: 'center', paddingVertical: 10 },
   closeBtnText: { fontSize: 14, color: '#475569', fontWeight: '600' },
-});
+}));
 
 export default styles;

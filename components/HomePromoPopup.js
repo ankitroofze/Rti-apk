@@ -7,16 +7,20 @@ import React, { useState } from 'react';
 import {
   View,
   Image,
+    Text,
   TouchableOpacity,
   StyleSheet,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
+import AutoFitAdImage from './AutoFitAdImage';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { openExternalUrl } from '../utils/adRedirect';
 
 export default function HomePromoPopup({ ad, onPress }) {
   const [visible, setVisible] = useState(false);
+    const { width: winW, height: winH } = useWindowDimensions();
 
   useFocusEffect(
     React.useCallback(() => {
@@ -46,23 +50,27 @@ export default function HomePromoPopup({ ad, onPress }) {
         onPress={() => setVisible(false)}
       />
 
-      <View style={styles.card} pointerEvents="box-none">
-        {/* ── Sirf image, poore container ke andar ── */}
-        <View style={styles.imageWrap}>
-          <TouchableOpacity activeOpacity={0.9} onPress={handlePress} style={styles.imageTouchable}>
-            <Image source={{ uri: ad.image || ad.brandLogo }} style={styles.fullImage} resizeMode="cover" />
+           <View style={styles.card} pointerEvents="box-none">
+        <Text style={styles.adCaption}>ADVERTISEMENT</Text>
+
+        <View style={styles.imageBox}>
+          <TouchableOpacity activeOpacity={0.92} onPress={handlePress}>
+            <AutoFitAdImage
+              uri={ad.image || ad.brandLogo}
+              maxWidth={Math.min(winW * 0.88, 520)}
+              maxHeight={winH * 0.75}
+            />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.closeBtn}
+            onPress={() => setVisible(false)}
+            accessibilityLabel="Close advertisement"
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <Ionicons name="close" size={20} color="#fff" />
           </TouchableOpacity>
         </View>
-
-        {/* ── Close button — card ke overflow:hidden ke BAHAR (sibling), isliye clip nahi hota ── */}
-        <TouchableOpacity
-          style={styles.closeBtn}
-          onPress={() => setVisible(false)}
-          accessibilityLabel="Close advertisement"
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        >
-          <Ionicons name="close" size={20} color="#fff" />
-        </TouchableOpacity>
       </View>
     </View>
   );
@@ -71,30 +79,18 @@ export default function HomePromoPopup({ ad, onPress }) {
 const CARD_WIDTH = '82%';
 
 const styles = StyleSheet.create({
-  overlayWrap: {
+   overlayWrap: {
     ...StyleSheet.absoluteFillObject,
-    zIndex: 999,
+    ...Platform.select({ web: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }, default: {} }),
+    zIndex: 99999,
+    elevation: 99999,
     alignItems: 'center',
     justifyContent: 'center',
   },
   dim: { backgroundColor: 'rgba(15,15,20,0.55)' },
-  card: {
-    width: CARD_WIDTH,
-    maxWidth: 340,
-    aspectRatio: 3 / 4,
-    borderRadius: 22,
-    backgroundColor: '#000',
-    ...Platform.select({
-      web: { boxShadow: '0 12px 40px rgba(0,0,0,0.35)' },
-      default: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.35,
-        shadowRadius: 20,
-        elevation: 12,
-      },
-    }),
-  },
+  card: { alignItems: 'center', justifyContent: 'center' },
+  adCaption: { fontSize: 10, color: '#ffffff', fontWeight: '700', letterSpacing: 0.6, marginBottom: 6 },
+  imageBox: { position: 'relative' },
   imageWrap: {
     flex: 1,
     borderRadius: 22,

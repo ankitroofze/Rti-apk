@@ -45,11 +45,13 @@ export default function AdPlansScreen({ navigation, route }) {
   const { showPopup } = useToast();
 
   const [plans, setPlans] = useState([]);
-  const [plansLoading, setPlansLoading] = useState(true);
+ const [plansLoading, setPlansLoading] = useState(true);
+  const [processingPlanId, setProcessingPlanId] = useState(null);
   const [plansError, setPlansError] = useState(null);
 
   const [selectedPlan, setSelectedPlan] = useState(null);
-  const [currentCredits, setCurrentCredits] = useState(0);
+    const [currentCredits, setCurrentCredits] = useState(0);
+  const [adSub, setAdSub] = useState(null);
   const [loadingData, setLoadingData] = useState(true);
   const [loading, setLoading] = useState(false);
 
@@ -74,12 +76,16 @@ export default function AdPlansScreen({ navigation, route }) {
       }
       setPlansLoading(false);
 
-      if (summary) setCurrentCredits(summary.credits || 0);
+      if (summary) {
+        setCurrentCredits(summary.credits || 0);
+        setAdSub(summary.ad_subscription || null);
+      }
       setLoadingData(false);
     })();
   }, []);
-
-  const doBuy = useCallback(async (plan) => {
+const doBuy = useCallback(async (plan) => {
+    setProcessingPlanId(plan?.id ?? null);
+  
     if (!plan) return;
     setLoading(true);
     const orderResult = await UserStore.createAdOrder({ planId: plan.id });
@@ -152,6 +158,10 @@ export default function AdPlansScreen({ navigation, route }) {
         !loadingData
           ? {
               isActive: currentCredits > 0,
+              planName: adSub?.plan_name,
+              price: adSub?.price,
+              purchasedAt: adSub?.purchased_at,
+              expiresAt: adSub?.expires_at,
               countLabel: currentCredits > 0
                 ? `${currentCredits} ad credit${currentCredits === 1 ? '' : 's'} available`
                 : 'No ad credits available — buy a plan to start posting.',
@@ -159,7 +169,8 @@ export default function AdPlansScreen({ navigation, route }) {
           : null
       }
       onPay={loading ? undefined : handlePay}
-      payLabel={loading ? 'Processing…' : 'Pay Now'}
+     payLabel="Pay Now"
+      processingPlanId={loading ? processingPlanId : null}
       emptyText={plansError || 'Abhi koi ad plan available nahi hai.'}
     />
   );

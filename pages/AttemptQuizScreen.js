@@ -170,9 +170,9 @@ if (!userId || !quizTypeId) {
           result_type: resultTier.result,
           obtained_marks: raw?.obtained_marks ?? 0,
           total_marks: raw?.total_marks ?? 0,
-          correct_answers: raw?.correct_answers ?? 0,
+                correct_answers: raw?.correct_answers ?? null,
           wrong_answers: raw?.wrong_answers ?? 0,
-          total_questions: raw?.total_questions ?? 0,
+          total_questions: raw?.total_questions || questions.length,
           // Backend agar practice/training me galti se bhi certificate bhej de, front-end usse ignore karega.
           certificate_file: isExamQuiz ? (raw?.certificate_file || null) : null,
           certificate_number: isExamQuiz ? (raw?.certificate_number || null) : null,
@@ -229,7 +229,7 @@ if (!userId || !quizTypeId) {
           style={AttemptQuizStyles.backBtn}
           onPress={() => navigation.goBack()}
         >
-          {/* ← White icon because topBar background is #F97316 */}
+          {/* ← White icon because topBar background is red */}
           <Feather name="arrow-left" size={20} color="#ffffff" />
         </TouchableOpacity>
         <Text style={AttemptQuizStyles.topBarTitle}>Attempt Quiz</Text>
@@ -241,7 +241,7 @@ if (!userId || !quizTypeId) {
         showsVerticalScrollIndicator={false}
       >
         {starting ? (
-          <View style={AttemptQuizStyles.card}><ActivityIndicator size="large" color="#F97316" /></View>
+          <View style={AttemptQuizStyles.card}><ActivityIndicator size="large" color="#dc2626" /></View>
         ) : null}
         {/* Hero */}
         <View style={AttemptQuizStyles.heroCard}>
@@ -256,7 +256,7 @@ if (!userId || !quizTypeId) {
               Question {currentQIndex + 1} of {questions.length}
             </Text>
             {timeLeft !== null && (
-              <Text style={{ color: '#F97316', fontWeight: '700' }}>{formatTime(timeLeft)}</Text>
+              <Text style={{ color: '#dc2626', fontWeight: '700' }}>{formatTime(timeLeft)}</Text>
             )}
           </View>
 
@@ -307,7 +307,7 @@ if (!userId || !quizTypeId) {
             </TouchableOpacity>
             {currentQIndex < questions.length - 1 && (
               <TouchableOpacity
-                style={[AttemptQuizStyles.nextBtn, { flex: 1, backgroundColor: '#FDBA74' }]}
+                style={[AttemptQuizStyles.nextBtn, { flex: 1, backgroundColor: '#fca5a5' }]}
                 onPress={handleSkip}
                 disabled={submitting}
               >

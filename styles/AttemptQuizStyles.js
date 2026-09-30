@@ -2,6 +2,11 @@
 import { StyleSheet, Platform } from 'react-native';
 import { CommonStyles, COLORS, TYPOGRAPHY, BORDER_RADIUS } from './CommonStyles';
 
+const RED = '#dc2626';
+const RED_DARK = '#b91c1c';
+const RED_LIGHT = '#fef2f2';
+const RED_MID = '#fecaca';
+
 const AttemptQuizStyles = StyleSheet.create({
   root: CommonStyles.rootContainer,
 
@@ -11,7 +16,7 @@ const AttemptQuizStyles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
     paddingVertical: 16,
-    backgroundColor: COLORS.orange,
+    backgroundColor: RED_DARK,
   },
   topBarTitle: {
     fontSize: 18,
@@ -28,9 +33,9 @@ const AttemptQuizStyles = StyleSheet.create({
 
   scrollContent: CommonStyles.scrollContainer,
 
-  heroCard: CommonStyles.heroContainer,
-  heroEyebrow: CommonStyles.heroEyebrow,
-  heroTitle: CommonStyles.heroTitle,
+  heroCard: { ...CommonStyles.heroContainer, backgroundColor: RED_DARK },
+  heroEyebrow: { ...CommonStyles.heroEyebrow, color: RED_MID },
+  heroTitle: { ...CommonStyles.heroTitle, color: '#ffffff' },
 
   card: {
     ...CommonStyles.largeCard,
@@ -54,7 +59,7 @@ const AttemptQuizStyles = StyleSheet.create({
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: COLORS.orange,
+    backgroundColor: RED,
     borderRadius: 999,
   },
 
@@ -79,8 +84,8 @@ const AttemptQuizStyles = StyleSheet.create({
     marginBottom: 10,
   },
   optionBtnSelected: {
-    borderColor: COLORS.orange,
-    backgroundColor: COLORS.orangeLight,
+    borderColor: RED,
+    backgroundColor: RED_LIGHT,
   },
   optionLabel: {
     width: 32,
@@ -91,7 +96,7 @@ const AttemptQuizStyles = StyleSheet.create({
     justifyContent: 'center',
   },
   optionLabelSelected: { 
-    backgroundColor: COLORS.orange 
+    backgroundColor: RED 
   },
   optionLabelText: { 
     fontSize: 13, 
@@ -110,13 +115,14 @@ const AttemptQuizStyles = StyleSheet.create({
     fontFamily: TYPOGRAPHY.fontFamily,
   },
   optionTextSelected: { 
-    color: COLORS.orange, 
+    color: RED, 
     fontWeight: TYPOGRAPHY.headingWeight 
   },
 
-  nextBtn: CommonStyles.primaryButton,
+  nextBtn: { ...CommonStyles.primaryButton, backgroundColor: RED },
   nextBtnDisabled: { 
     ...CommonStyles.primaryButton, 
+    backgroundColor: RED,
     opacity: 0.45 
   },
   nextBtnText: CommonStyles.primaryButtonText,

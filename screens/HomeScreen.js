@@ -28,7 +28,7 @@ import LeftEcomSidebar from '../components/LeftEcomSidebar';
 import StateDirectorySection from '../components/StateDirectorySection';
 import RightUtilityPanel from '../components/RightUtilityPanel';
 import MarqueeMenuBar from '../components/MarqueeMenuBar';
-
+import AutoFitAdImage from '../components/AutoFitAdImage';
 const PINK = '#FF2D78';
 const PINK_LIGHT = '#fff5f9';
 const PINK_BORDER = '#ffe0ed';
@@ -60,7 +60,8 @@ function homeStoryFromAd(ad = {}) {
     video: '',
     state: ad.state || '',
     district: ad.district || '',
-    date: ad.updated_at || ad.created_at || '',
+    date: ad.created_at || ad.updated_at || '',
+    created_at: ad.created_at || ad.updated_at || '',
     publishedAgo: ad.updated_at || ad.created_at || '',
     author_name: ad.owner_name || 'Advertiser',
     author_profile_image: ad.owner_profile_image || '',
@@ -225,6 +226,7 @@ function RotatingSponsoredAd({ ads = [], onClose, onPress }) {
 }
 
 function TopRotatingAdSlot({ ads = [], onPress }) {
+    const { width: winW } = useWindowDimensions();
   const [index, setIndex] = useState(0);
   useEffect(() => {
     if (ads.length < 2) return undefined;
@@ -237,18 +239,20 @@ function TopRotatingAdSlot({ ads = [], onPress }) {
   return (
     <TouchableOpacity style={styles.topAdSlot} activeOpacity={0.92} onPress={() => onPress?.(ad)}>
       <Text style={styles.adCaption}>ADVERTISEMENT</Text>
-      <Image source={{ uri: image }} style={styles.topAdImage} resizeMode="cover" />
+<AutoFitAdImage uri={image} maxWidth={Math.min(winW - 24, 960)} maxHeight={260} />
     </TouchableOpacity>
   );
 }
 
 function InFeedAdSlot({ ad, onPress }) {
+    const { width: winW } = useWindowDimensions();
   const image = ad?.image || ad?.photo || ad?.image_url || ad?.images?.[0] || ad?.photos?.[0];
   if (!image) return null;
   return (
     <TouchableOpacity style={styles.inFeedAdSlot} activeOpacity={0.92} onPress={() => onPress?.(ad)}>
       <Text style={styles.adCaption}>ADVERTISEMENT</Text>
-      <Image source={{ uri: image }} style={styles.inFeedAdImage} resizeMode="cover" />
+   
+<AutoFitAdImage uri={image} maxWidth={Math.min(winW - 24, 520)} maxHeight={420} />
     </TouchableOpacity>
   );
 }
@@ -610,7 +614,14 @@ export default function HomeScreen({ navigation, route }) {
       // Advertisements are shown only as rotating image popups, never mixed
       // into the editorial news cards.
       setActiveAds(adStories);
-      setLiveStories(interleaveHomeStories(fetchedStories, [], ecomeStories));
+      const mixedNewsAndAds = [...fetchedStories, ...adStories];
+      mixedNewsAndAds.sort((a, b) => {
+        const dateA = new Date(a.createdAt || a.created_at || a.date || 0).getTime() || 0;
+        const dateB = new Date(b.createdAt || b.created_at || b.date || 0).getTime() || 0;
+        if (dateB !== dateA) return dateB - dateA;
+        return String(b.id || '').localeCompare(String(a.id || ''), undefined, { numeric: true });
+      });
+      setLiveStories(interleaveHomeStories(mixedNewsAndAds, [], ecomeStories));
     } catch { setLiveStories([]); }
   }, []);
 
@@ -735,7 +746,7 @@ const allStories = useMemo(() => {
      // Home shows only live API news; never pad the feed with dummy stories.
     // ✅ Web par center feed me sirf news cards — ecom/ads ko hata do (right panel me already dikh rahe hai)
     if (IS_WEB) {
-      scopedStories = scopedStories.filter((story) => !story.isAd && !story.isEcome);
+       scopedStories = scopedStories.filter((story) => !story.isEcome);
     }
     return scopedStories;
   }, [allStories, language, searchQuery, selectedMenuKey, selectedStateName, viewMode]);
@@ -885,7 +896,7 @@ const handleOpenLeadForm = useCallback((story) => {
       locationOptions={utilityLocationOptions}
       onSelectState={handleStateSelection} onSelectDistrict={handleDistrictSelection}
       isCompactLayout={isCompactLayout} commonCopy={commonCopy} homeCopy={homeCopy}
-    trendingStories={allStories} onOpenDetails={handleOpenDetails}
+   trendingStories={allStories.filter((s) => !s.isAd)} onOpenDetails={handleOpenDetails}
       ads={allAdsList} onOpenLeadForm={handleOpenLeadForm}
       onViewMoreAds={handleViewMoreAds} onBackFromAds={handleBackFromAds}
       showingAllAds={showAllAds} firstNewsStory={firstNewsStory}
@@ -908,7 +919,7 @@ const handleOpenLeadForm = useCallback((story) => {
             />
           </View>
         )} */}
-        {viewMode !== 'states' && Platform.OS !== 'android' ? <TopRotatingAdSlot ads={allAdsList} onPress={handleSponsoredAdPress} /> : null}
+
 
         <View style={[styles.pageBodyInner, isCompactLayout && styles.pageBodyInnerCompact, isMobileLayout && styles.pageBodyInnerMobile]}>
 
@@ -926,7 +937,7 @@ const handleOpenLeadForm = useCallback((story) => {
               {IS_WEB ? (
                 <LeftEcomSidebar
                   navigation={navigation}
-                  stories={allStories}
+                stories={allStories.filter((s) => !s.isAd)}
                   onOpenDetails={handleOpenDetails}
                   commonCopy={commonCopy}
                 />
@@ -987,7 +998,9 @@ const handleOpenLeadForm = useCallback((story) => {
                     <View style={[styles.storyCardsStack, isMobileLayout && styles.storyCardsStackMobile]}>
                       {visibleStories.map((story, index) => (
                         <React.Fragment key={story.id}>
-                        {story.isEcome ? (
+                        {story.isAd ? (
+                          <InFeedAdSlot ad={story} onPress={handleSponsoredAdPress} />
+                        ) : story.isEcome ? (
                       <EcomeHomeRow story={story} index={index} list={visibleStories} navigation={navigation} />
                       ) : (
                                             <NewsFeedCard
@@ -1008,7 +1021,7 @@ const handleOpenLeadForm = useCallback((story) => {
   } : null}
                       />
                       )}
-                      {(index + 1) % 4 === 0 ? <InFeedAdSlot ad={allAdsList[Math.floor(index / 4) % Math.max(allAdsList.length, 1)]} onPress={handleSponsoredAdPress} /> : null}
+                    
                       </React.Fragment>
                       ))}
                     </View>
@@ -1105,10 +1118,10 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f0f2f7',
     marginBottom: 4,
   },
-  topAdSlot: { width: '100%', maxWidth: 970, alignSelf: 'center', marginVertical: 10, alignItems: 'center', borderWidth: 1, borderColor: '#e5e7eb', backgroundColor: '#fafafa', padding: 5 },
+  topAdSlot: { width: '100%', maxWidth: 970, alignSelf: 'center', marginVertical: 10, alignItems: 'center' },
   topAdImage: { width: '100%', height: 90, maxWidth: 960, backgroundColor: '#e2e8f0' },
   adCaption: { fontSize: 9, color: '#64748b', fontWeight: '700', marginBottom: 3, letterSpacing: 0.3 },
-  inFeedAdSlot: { width: '100%', marginVertical: 12, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fafafa', padding: 8, alignItems: 'center' },
+   inFeedAdSlot: { width: '100%', marginVertical: 12, alignItems: 'center' },
   inFeedAdImage: { width: '100%', height: 230, backgroundColor: '#e2e8f0' },
 
   sidebarStickyWrapper: {

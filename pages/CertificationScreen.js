@@ -4,8 +4,7 @@ import {
   Image,
   Platform,
   ScrollView,
-  StatusBar,
-  Text,
+    StatusBar,
   TouchableOpacity,
   View,
   ImageBackground,
@@ -15,6 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useToast } from '../components/ui/ToastProvider';
+import Text from '../components/RobotoText';
 import CertificationStyles from '../styles/CertificationStyles';
 import { UserStore } from '../store/UserStore';
 import { MODULE_HEADER_HEIGHT_WEB } from '../constants/subscriptionThemes';
@@ -202,6 +202,8 @@ const handleAttemptQuiz = useCallback((item) => {
         quiz_title:             item.quiz_title,
         quiz_type:              item.quiz_type,
         percentage:             item.score,
+        total_questions:        item.total_questions,
+        correct_answers:        item.correct_answers,
         result_type:            item.result_type,
         certificate_file:       item.certificate_file,
         local_certificate_path: item.local_certificate_path,

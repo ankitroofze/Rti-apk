@@ -735,7 +735,7 @@ export const AuthAPI = {
    * POST /role-subscriptions/purchase
    * Body: { plan_id }
    */
-   purchaseRoleSubscription: async ({ planId, stateSeat, designationId = '', state = '', district = '', taluka = '', village = '' }) => {
+   purchaseRoleSubscription: async ({ planId, isPremium = false, state = '', district = '', taluka = '', village = '' }) => {
     try {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
@@ -744,18 +744,30 @@ export const AuthAPI = {
       // (STATE_SEAT_ROLES ka id / role_id) aur poori applicable location
       // (state/district/taluka/village) bhi paayega — isi se woh seat ko
       // uski exact location par lock/unlock kar sakega.
-      const { status, data } = await postJSON('/role-subscriptions/purchase', {
-        plan_id: planId,
-        state_seat: stateSeat,
-        designation_id: designationId,
-        state,
-        district,
-        taluka,
-        village,
-      }, token);
+      // ✅ Seat Lock: Premium plan par seat lock nahi hota — sirf plan_id bhejo.
+      // Role plan par state (required) + district/taluka/village (optional, beech me gap nahi).
+      // Purana `state_seat` param hata diya — naya code sirf `state` use karta hai.
+      const body = { plan_id: planId };
+      if (!isPremium) {
+        body.state = state;
+        if (district) body.district = district;
+        if (taluka && district) body.taluka = taluka;
+        if (village && taluka && district) body.village = village;
+      }
+      const { status, data } = await postJSON('/role-subscriptions/purchase', body, token);
 
       if (status === 200 || status === 201) {
-        return { ok: true, razorpay: data?.razorpay, message: data?.message };
+        // seat.reserved_until se 15-min countdown dikha sakte ho (Premium par seat = null)
+        return { ok: true, razorpay: data?.razorpay, seat: data?.seat || null, message: data?.message };
+      }
+      // ✅ 409 seat_unavailable — seat kisi aur ke paas hai. Razorpay MAT kholo.
+      if (status === 409) {
+        return {
+          ok: false,
+          seatUnavailable: true,
+          code: data?.code || 'seat_unavailable',
+          message: data?.message || 'This seat is already taken. Please choose another location.',
+        };
       }
       if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
       if (status === 422) {
@@ -788,11 +800,41 @@ export const AuthAPI = {
       if (status === 200 || status === 201) {
         return { ok: true, data };
       }
+      // ✅ 409 seat_unavailable — payment ho gaya par 15 min ke baad seat kisi aur ko mil chuki.
+      // Backend refund try karta hai. "Subscription active" MAT dikhao.
+      if (status === 409) {
+        return {
+          ok: false,
+          seatUnavailable: true,
+          code: data?.code || 'seat_unavailable',
+          message: data?.message || 'This seat was taken by someone else before your payment completed. A refund will be initiated.',
+        };
+      }
       if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
       return { ok: false, message: data?.message || `Payment verification failed (${status}).` };
     } catch (err) {
       console.error('[AuthAPI.verifyRoleSubscriptionPayment] Error:', err);
       return { ok: false, isNetwork: true, message: 'Network error during verification.' };
+    }
+  },
+
+  /**
+   * ✅ NEW: Role Subscription payment fail / cancel
+   * POST /role-subscriptions/payment/failed
+   * Isse reserved seat turant release hoti hai (warna 15 min hold rehti hai).
+   */
+  markRoleSubscriptionPaymentFailed: async ({ razorpay_order_id, error_code, error_description }) => {
+    try {
+      const token = await getAuthToken();
+      const { status, data } = await postJSON('/role-subscriptions/payment/failed', {
+        razorpay_order_id,
+        error_code,
+        error_description,
+      }, token);
+      return { ok: status === 200 || status === 201, data, message: data?.message };
+    } catch (err) {
+      console.error('[AuthAPI.markRoleSubscriptionPaymentFailed] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
     }
   },
  /**

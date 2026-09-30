@@ -49,7 +49,8 @@ export default function QuizSubscriptionScreen({ navigation, route }) {
   const [plans, setPlans]               = useState(PLANS); // static fallback until backend responds
   const [selectedPlan, setSelectedPlan] = useState(PLANS[1].id);
   const [loading, setLoading]           = useState(false);
-  const [plansLoading, setPlansLoading] = useState(true);
+ const [plansLoading, setPlansLoading] = useState(true);
+  const [processingPlanId, setProcessingPlanId] = useState(null);
   const [remainingCount, setRemainingCount] = useState(null); // null = no existing / unlimited-legacy sub
 
   useEffect(() => {
@@ -79,7 +80,8 @@ export default function QuizSubscriptionScreen({ navigation, route }) {
     return () => { active = false; };
   }, []);
 
-  const doSubscribe = useCallback(async (plan) => {
+ const doSubscribe = useCallback(async (plan) => {
+    setProcessingPlanId(plan?.id ?? null);
     if (!plan) return;
     setLoading(true);
     try {
@@ -163,7 +165,8 @@ export default function QuizSubscriptionScreen({ navigation, route }) {
           : null
       }
       onPay={loading ? undefined : handlePay}
-           payLabel={loading ? 'Processing…' : 'Pay Now'}
+       payLabel="Pay Now"
+      processingPlanId={loading ? processingPlanId : null}
     />
   );
 }

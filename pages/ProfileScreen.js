@@ -479,12 +479,15 @@ export default function ProfileScreen({ navigation }) {
     let syncedSubscriptionUser = null;
     let feedSummary = null;
     let followSummary = null;
+    let adPosts = [];
     try {
-      [profileRes, syncedSubscriptionUser, feedSummary, followSummary] = await Promise.all([
+      [profileRes, syncedSubscriptionUser, feedSummary, followSummary, adPosts] = await Promise.all([
         AuthAPI.getProfile().catch(() => null),
         UserStore.syncSubscriptionFromBackend(user).catch(() => null),
         UserStore.getNewsFeedSummary?.().catch?.(() => null) ?? Promise.resolve(null),
         UserStore.getFollowSummary(user.email).catch(() => null),
+        // ✅ Advertisement Posts bhi My Posts me dikhane ke liye
+        UserStore.getMyAdPosts().catch(() => []),
       ]);
     } catch {
       // best-effort — fail ho to bhi cached data already dikh chuka hai, crash nahi
@@ -535,19 +538,21 @@ export default function ProfileScreen({ navigation }) {
       ...(Array.isArray(user.news) ? user.news : []),
       ...(Array.isArray(user.news_feed) ? user.news_feed : []),
     ];
-    const allPosts = [...ownFeedPosts, ...ownLocalPosts];
+    const ownAdPosts = Array.isArray(adPosts) ? adPosts : [];
+    const allPosts = [...ownFeedPosts, ...ownLocalPosts, ...ownAdPosts];
     const mergedPostKeys = new Set(allPosts.map((item, index) =>
       String(item?.id || `fallback-${index}`)
     ));
 
     const seenIds = new Set();
-    const userPostsData = [...ownFeedPosts, ...ownLocalPosts].filter(item => {
+    const postTs = (item) => Date.parse(item?.createdAt || item?.created_at || item?.date || '') || 0;
+    const userPostsData = [...ownFeedPosts, ...ownLocalPosts, ...ownAdPosts].filter(item => {
       const key = item?.id ? String(item.id) : null;
       if (!key) return true;
       if (seenIds.has(key)) return false;
       seenIds.add(key);
       return true;
-    });
+    }).sort((a, b) => postTs(b) - postTs(a)); // newest first (news + ads ek saath)
     setUserPosts(userPostsData);
 
     if (revisionAtStart === followRevisionRef.current) {
@@ -1161,6 +1166,8 @@ const handlePickImage = async () => {
 
   const openUserPost = async (post) => {
     if (!post) return;
+    // ✅ Ad post: NewsDetails (news-only) nahi, My Ads screen kholo (wahin edit/delete hai)
+    if (post.is_ad) { navigation.navigate('MyAds'); return; }
     try { if (post.id) await UserStore.updateNewsFeedItem(post.id, 'view'); } catch {}
     navigation.navigate('NewsDetails', { article: post });
   };
@@ -1359,6 +1366,11 @@ const handlePickImage = async () => {
                       </View>
                     </View>
                   )}
+                  {post.is_ad ? (
+                    <View style={{ position: 'absolute', top: 6, left: 6, backgroundColor: '#f59e0b', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 }}>
+                      <Text style={{ fontSize: 9, fontWeight: '800', color: '#ffffff' }}>AD</Text>
+                    </View>
+                  ) : null}
                 </TouchableOpacity>
               );
             })}
@@ -1373,12 +1385,19 @@ const handlePickImage = async () => {
                 />
                 <View>
                   <Text style={w.postAuthor}>{savedProfile.name || 'User'}</Text>
-                  <Text style={w.postTime}>{new Date(post.createdAt || post.date || Date.now()).toLocaleDateString()}</Text>
+                  <Text style={w.postTime}>{new Date(post.createdAt || post.date || Date.now()).toLocaleDateString()}{post.is_ad ? '  •  Advertisement' : ''}</Text>
                 </View>
               </View>
               <Text style={w.postContent}>{post.content || post.title || post.description || ''}</Text>
               {getPostImage(post) ? <Image source={{ uri: getPostImage(post) }} style={w.postImage} resizeMode="cover" /> : null}
               <View style={w.postActions}>
+  {post.is_ad ? (
+    <View style={w.postActionBtn}>
+      <Feather name="eye" size={18} color="#64748b" />
+      <Text style={w.postActionText}>{post.views || 0}</Text>
+    </View>
+  ) : null}
+  {!post.is_ad ? (
   <TouchableOpacity
     style={w.postActionBtn}
     activeOpacity={0.75}
@@ -1392,7 +1411,9 @@ const handlePickImage = async () => {
     <Feather name="heart" size={18} color="#64748b" />
     <Text style={w.postActionText}>{post.likes || 0}</Text>
   </TouchableOpacity>
+  ) : null}
 
+  {!post.is_ad ? (
   <TouchableOpacity
     style={w.postActionBtn}
     activeOpacity={0.75}
@@ -1401,6 +1422,7 @@ const handlePickImage = async () => {
     <Feather name="message-circle" size={18} color="#64748b" />
     <Text style={w.postActionText}>{post.comments || 0}</Text>
   </TouchableOpacity>
+  ) : null}
 
   <TouchableOpacity
     style={w.postActionBtn}

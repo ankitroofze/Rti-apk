@@ -35,6 +35,7 @@ const SHURU = {
   primary: '#dc2626',       // border-primary / bg-primary
   primaryLight: '#fef2f2',  // bg-[#FDF1F1] equivalent
   primaryBorder: '#dc2626',
+  fieldBorder: '#d1d5db',
   radius: 8,                // rounded-md
   radiusPill: 999,          // rounded-full (buttons)
   borderWidth: 1,           // Shuru inputs use a thin 1px border
@@ -388,6 +389,7 @@ function EcomeSellMobile({ navigation }) {
            <ImageBackground
         source={require('../assets/images/profile-red.png')}
         resizeMode="cover"
+        imageStyle={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%', resizeMode: 'cover' }}
         style={[styles.header, { paddingTop: insets.top + 8 }]}
       >
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.7}>
@@ -474,34 +476,6 @@ function EcomeSellMobile({ navigation }) {
         <Text style={styles.fieldLabel}>Description<Text style={styles.required}> *</Text></Text>
         <TextInput style={[styles.inputBox, styles.textArea]} placeholder="Add more detail" placeholderTextColor={SHURU.placeholder} value={form.description} onChangeText={form.setDescription} multiline numberOfLines={4} textAlignVertical="top" />
 
-        <Text style={styles.fieldLabel}>City / Locality</Text>
-        <TouchableOpacity style={styles.selectBox} onPress={() => form.setCityOpen(!form.cityOpen)} activeOpacity={0.8}>
-          <Text style={form.city ? styles.selectValue : styles.selectPlaceholder}>
-            {form.city || 'Use profile location or choose city'}
-          </Text>
-          <Ionicons name={form.cityOpen ? 'chevron-up' : 'chevron-down'} size={18} color="#94a3b8" />
-        </TouchableOpacity>
-        {form.cityOpen && (
-          <View style={styles.dropdown}>
-            {form.cityChoices.length > 0 ? form.cityChoices.map((item) => (
-              <TouchableOpacity
-                key={item}
-                style={[styles.dropdownItem, form.city === item && styles.dropdownItemActive]}
-                onPress={() => { form.setCity(item); form.setCityOpen(false); }}
-                activeOpacity={0.7}
-              >
-                <Text style={[styles.dropdownItemText, form.city === item && styles.dropdownItemTextActive]}>{item}</Text>
-                {form.city === item && <Ionicons name="checkmark" size={16} color={SHURU.primary} />}
-              </TouchableOpacity>
-            )) : (
-              <View style={styles.dropdownItem}>
-                <Text style={styles.dropdownItemText}>No saved location found</Text>
-              </View>
-            )}
-          </View>
-        )}
-        <TextInput style={[styles.inputBox, styles.cityInput]} placeholder="Or type city/locality" placeholderTextColor={SHURU.placeholder} value={form.city} onChangeText={form.setCity} />
-
         <Text style={styles.fieldLabel}>Contact</Text>
         <TextInput style={styles.inputBox} placeholder="Enter your contact number" placeholderTextColor={SHURU.placeholder} value={form.contact} onChangeText={(v) => form.setContact(normalizeIndianMobileNumber(v))} keyboardType="phone-pad" maxLength={10} />
 
@@ -528,18 +502,23 @@ function EcomeSellWeb({ navigation }) {
 
   return (
     <View style={web.root}>
-      <View style={web.topbar}>
+      <ImageBackground
+        source={require('../assets/images/profile-red.png')}
+        resizeMode="cover"
+        imageStyle={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%', resizeMode: 'cover' }}
+        style={web.topbar}
+      >
         <Text style={web.logo}>
-          News<Text style={{ color: '#94a3b8' }}>Hub</Text>
+          News<Text style={{ color: 'rgba(255,255,255,0.75)' }}>Hub</Text>
         </Text>
         <TouchableOpacity style={web.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
-          <Ionicons name="arrow-back" size={14} color="#64748b" />
+          <Ionicons name="arrow-back" size={14} color="#ffffff" />
           <Text style={web.backBtnText}>Back</Text>
         </TouchableOpacity>
         <TouchableOpacity style={web.topSubmitBtn} onPress={form.handleSubmit} activeOpacity={0.85}>
           <Text style={web.topSubmitBtnText}>Submit</Text>
         </TouchableOpacity>
-      </View>
+      </ImageBackground>
 
       <ScrollView
         style={web.scroll}
@@ -550,18 +529,6 @@ function EcomeSellWeb({ navigation }) {
         <View style={[web.formWrap, isNarrow && { maxWidth: '100%' }]}>
           <Text style={web.pageTitle}>Sell</Text>
           <Text style={web.pageSub}>Ecome (buy / sell) — List your product for sale</Text>
-
-          <View style={web.creditsCard}>
-            <Text style={web.creditsTitle}>Monthly E-Commerce Subscription</Text>
-            <Text style={web.creditsSub}>{form.credits} credits available · 30 days validity · 1 credit per listing</Text>
-            <View style={web.plansRow}>
-              {form.plans.map((plan) => (
-                <TouchableOpacity key={plan.plan_id} style={web.planBtn} onPress={() => form.handleBuyPlan(plan)} activeOpacity={0.85}>
-                  <Text style={web.planBtnText}>₹{plan.price} → {plan.plan_name} · {plan.credits} listings</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
 
           <Text style={web.label}>1. Category <Text style={web.required}>*</Text></Text>
           <TouchableOpacity style={[web.selectBtn, form.sectorOpen && web.selectBtnOpen]} onPress={() => form.setSectorOpen(!form.sectorOpen)} activeOpacity={0.8}>
@@ -627,36 +594,6 @@ function EcomeSellWeb({ navigation }) {
           <Text style={web.label}>Description <Text style={web.required}>*</Text></Text>
           <TextInput style={[web.input, web.textarea]} placeholder="Add more detail" placeholderTextColor={SHURU.placeholder} value={form.description} onChangeText={form.setDescription} multiline numberOfLines={4} textAlignVertical="top" />
 
-          <Text style={web.label}>City / Locality</Text>
-          <TouchableOpacity style={[web.selectBtn, form.cityOpen && web.selectBtnOpen]} onPress={() => form.setCityOpen(!form.cityOpen)} activeOpacity={0.8}>
-            <Text style={form.city ? web.selectValue : web.selectPlaceholder}>
-              {form.city || 'Use profile location or choose city'}
-            </Text>
-            <Ionicons name={form.cityOpen ? 'chevron-up' : 'chevron-down'} size={16} color="#94a3b8" />
-          </TouchableOpacity>
-          {form.cityOpen && (
-            <View style={web.dropdown}>
-              <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
-                {form.cityChoices.length > 0 ? form.cityChoices.map((item, i) => (
-                  <TouchableOpacity
-                    key={item}
-                    style={[web.dropdownItem, form.city === item && web.dropdownItemSelected, i < form.cityChoices.length - 1 && web.dropdownItemBorder]}
-                    onPress={() => { form.setCity(item); form.setCityOpen(false); }}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[web.dropdownItemText, form.city === item && web.dropdownItemTextSelected]}>{item}</Text>
-                    {form.city === item && <Ionicons name="checkmark" size={16} color={SHURU.primary} />}
-                  </TouchableOpacity>
-                )) : (
-                  <View style={web.dropdownItem}>
-                    <Text style={web.dropdownItemText}>No saved location found</Text>
-                  </View>
-                )}
-              </ScrollView>
-            </View>
-          )}
-          <TextInput style={[web.input, { marginTop: 10 }]} placeholder="Or type city/locality" placeholderTextColor={SHURU.placeholder} value={form.city} onChangeText={form.setCity} />
-
           <Text style={web.label}>Contact</Text>
           <TextInput style={web.input} placeholder="Enter your contact number" placeholderTextColor={SHURU.placeholder} value={form.contact} onChangeText={(v) => form.setContact(normalizeIndianMobileNumber(v))} keyboardType="phone-pad" maxLength={10} />
 
@@ -687,7 +624,7 @@ export default function EcomeSellScreen({ navigation }) {
   useEffect(() => {
     let active = true;
     (async () => {
-      const user = await UserStore.getCurrentUser();
+        const user = await UserStore.getCurrentUserSynced();
       if (!active) return;
       const hasSub = UserStore.hasActiveEcomSubscription(user);
       if (!hasSub) {
@@ -795,9 +732,9 @@ const web = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#F7F7F7' },
   topbar: {
     height: 60,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E6E6E6',
+    width: '100%',
+    overflow: 'hidden',
+    backgroundColor: '#b91c1c',
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 24,
@@ -807,26 +744,27 @@ const web = StyleSheet.create({
     flex: 1,
     fontSize: 20,
     fontWeight: '700',
-    color: '#1e293b',
+    color: '#ffffff',
   },
   backBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     borderWidth: SHURU.borderWidth,
-    borderColor: '#e2e8f0',
+    borderColor: 'rgba(255,255,255,0.45)',
+    backgroundColor: 'rgba(255,255,255,0.16)',
     borderRadius: SHURU.radius,
     paddingHorizontal: 14,
     paddingVertical: 7,
   },
-  backBtnText: { fontSize: 13, color: '#64748b' },
+  backBtnText: { fontSize: 13, color: '#ffffff' },
   topSubmitBtn: {
-    backgroundColor: SHURU.primary,
+    backgroundColor: '#ffffff',
     borderRadius: SHURU.radiusPill,
     paddingHorizontal: 22,
     paddingVertical: 9,
   },
-  topSubmitBtnText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  topSubmitBtnText: { fontSize: 14, fontWeight: '700', color: SHURU.primary },
 
   scroll: { flex: 1 },
   scrollContent: {
@@ -870,14 +808,14 @@ const web = StyleSheet.create({
     fontWeight: '600',
     color: '#353535',
     marginBottom: 7,
-    marginTop: 18,
+    marginTop: 12,
   },
   required: { color: '#ef4444' },
 
   // === Shuru input: rounded-md, border-primary, px-3 py-4, text-xs ===
   input: {
     borderWidth: SHURU.borderWidth,
-    borderColor: SHURU.primaryBorder,
+    borderColor: SHURU.fieldBorder,
     borderRadius: SHURU.radius,
     paddingHorizontal: 12,   // px-3
     paddingVertical: 16,     // py-4
@@ -895,7 +833,7 @@ const web = StyleSheet.create({
   // === Shuru select: same border-primary + rounded-md look ===
   selectBtn: {
     borderWidth: SHURU.borderWidth,
-    borderColor: SHURU.primaryBorder,
+    borderColor: SHURU.fieldBorder,
     borderRadius: SHURU.radius,
     paddingHorizontal: 12,
     paddingVertical: 16,
@@ -914,7 +852,7 @@ const web = StyleSheet.create({
     marginTop: 6,
     backgroundColor: '#fff',
     borderWidth: SHURU.borderWidth,
-    borderColor: SHURU.primaryBorder,
+    borderColor: SHURU.fieldBorder,
     borderRadius: SHURU.radius + 4,
     overflow: 'hidden',
     shadowColor: '#000',
@@ -1018,16 +956,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f1f5f9',
+     paddingVertical: 12,
+    backgroundColor: '#b91c1c',
+    overflow: 'hidden',
     gap: 10,
   },
   backBtn: {
     width: 36, height: 36, borderRadius: SHURU.radiusPill,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0',
+    backgroundColor: 'rgba(255,255,255,0.16)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.45)',
   },
   headerTitle: {
     fontSize: 15, fontWeight: '400', color: '#ffffff',
@@ -1046,7 +983,7 @@ const styles = StyleSheet.create({
 
   // === Shuru-style field label ===
   fieldLabel: {
-    fontSize: 16, fontWeight: '600', color: '#353535', marginBottom: 4, marginTop: 20,
+    fontSize: 16, fontWeight: '600', color: '#353535', marginBottom: 4, marginTop: 12,
     fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
   },
   fieldSubLabel: {
@@ -1057,7 +994,7 @@ const styles = StyleSheet.create({
 
   // === Shuru select box (rounded-md + border-primary) ===
   selectBox: {
-    borderWidth: SHURU.borderWidth, borderColor: SHURU.primaryBorder, borderRadius: SHURU.radius,
+    borderWidth: SHURU.borderWidth, borderColor: SHURU.fieldBorder, borderRadius: SHURU.radius,
     paddingHorizontal: 12, paddingVertical: 16,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: SHURU.inputBg,
@@ -1065,7 +1002,7 @@ const styles = StyleSheet.create({
   selectPlaceholder: { fontSize: 12, color: SHURU.placeholder },
   selectValue: { fontSize: 12, color: SHURU.textDark, fontWeight: '600' },
   dropdown: {
-    borderWidth: SHURU.borderWidth, borderColor: SHURU.primaryBorder, borderRadius: SHURU.radius + 4,
+    borderWidth: SHURU.borderWidth, borderColor: SHURU.fieldBorder, borderRadius: SHURU.radius + 4,
     backgroundColor: '#fff', marginTop: 4, overflow: 'hidden',
     shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08, shadowRadius: 12, elevation: 5, zIndex: 99,

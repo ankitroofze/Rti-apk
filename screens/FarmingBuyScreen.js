@@ -349,8 +349,8 @@ const EnquiryFormModal = ({ product, onClose, onSaved }) => {
           </View>
           <ScrollView contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
             <View style={styles.productInfoBox}>
-              <View style={{width:36,height:36,borderRadius:10,backgroundColor:'#fff',alignItems:'center',justifyContent:'center',borderWidth:1,borderColor:'#fed7aa'}}>
-                <Ionicons name="cube-outline" size={18} color="#ea580c" />
+              <View style={{width:36,height:36,borderRadius:10,backgroundColor:'#fff',alignItems:'center',justifyContent:'center',borderWidth:1,borderColor:'#fecaca'}}>
+                <Ionicons name="cube-outline" size={18} color="#dc2626" />
               </View>
               <View style={{flex:1}}>
                 <Text style={styles.productInfoLabel}>Product</Text>
@@ -862,8 +862,8 @@ export default function FarmingBuyScreen({ navigation }) {
                     </View>
                     <View style={styles.modalActions}>
                       <TouchableOpacity style={styles.modalCallBtn} onPress={() => handleCall(selectedProduct.contact)} activeOpacity={0.85}>
-                        <Ionicons name="call" size={18} color="#fff" />
-                        <Text style={styles.modalActionText}>Call Seller</Text>
+                        <Ionicons name="call" size={18} color="#dc2626" />
+                        <Text style={[styles.modalActionText, { color: '#dc2626' }]}>Call Seller</Text>
                       </TouchableOpacity>
                       <TouchableOpacity style={styles.modalWhatsappBtn} onPress={() => handleWhatsApp(selectedProduct)} activeOpacity={0.85}>
                         <Ionicons name="logo-whatsapp" size={18} color="#fff" />
@@ -1504,7 +1504,7 @@ heroBannerImage: {
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  modalThumbWrapActive: { borderColor: '#ea580c' },
+  modalThumbWrapActive: { borderColor: '#dc2626' },
   modalThumbImage: { width: '100%', height: '100%' },
   modalThumbFallback: {
     flex: 1,
@@ -1558,17 +1558,17 @@ heroBannerImage: {
     fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
   },
   modalPriceBadge: {
-    backgroundColor: '#fff7ed',
+    backgroundColor: '#fef2f2',
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderWidth: 1,
-    borderColor: '#fed7aa',
+    borderColor: '#fecaca',
   },
   modalPriceText: {
     fontSize: 16,
     fontWeight: '900',
-    color: '#ea580c',
+    color: '#dc2626',
     fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
   },
   modalMetaChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10, marginBottom: 14 },
@@ -1635,7 +1635,9 @@ heroBannerImage: {
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#0369a1',
+    backgroundColor: '#fef2f2',
+    borderWidth: 1,
+    borderColor: '#fecaca',
     borderRadius: 14,
     paddingVertical: 14,
   },
@@ -1645,7 +1647,7 @@ heroBannerImage: {
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#16a34a',
+    backgroundColor: '#dc2626',
     borderRadius: 14,
     paddingVertical: 14,
   },
@@ -1654,7 +1656,7 @@ heroBannerImage: {
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#ea580c',
+    backgroundColor: '#dc2626',
     borderRadius: 14,
     paddingVertical: 14,
     marginTop: 10,
@@ -1684,10 +1686,10 @@ heroBannerImage: {
   },
   formContent: { padding: 16, paddingBottom: 32 },
   productInfoBox: {
-    backgroundColor: '#fff7ed',
+    backgroundColor: '#fef2f2',
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#fed7aa',
+    borderColor: '#fecaca',
     paddingHorizontal: 14,
     paddingVertical: 12,
     marginBottom: 16,
@@ -1697,7 +1699,7 @@ heroBannerImage: {
   },
   productInfoLabel: {
     fontSize: 11,
-    color: '#ea580c',
+    color: '#dc2626',
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.6,
@@ -1751,7 +1753,7 @@ heroBannerImage: {
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#16a34a',
+    backgroundColor: '#dc2626',
     borderRadius: 14,
     paddingVertical: 16,
     marginTop: 20,

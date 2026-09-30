@@ -280,11 +280,11 @@ const SubscriptionPlansStyles = StyleSheet.create({
   // ── "Select Plan" pill andar card ke ──
    selectPlanBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
-    backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 999, paddingVertical: 14, paddingHorizontal: 42,
-    marginTop: 8, alignSelf: 'center',
+    backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 999, paddingVertical: 11, paddingHorizontal: 10,
+  marginTop: 8, alignSelf: 'stretch',
   },
   selectPlanBtnActive: { backgroundColor: '#ffffff' },
-  selectPlanBtnText: { color: '#b91c1c', fontSize: 13, fontWeight: '800', fontFamily: FONT.bold },
+selectPlanBtnText: { color: '#b91c1c', fontSize: 13, fontWeight: '800', fontFamily: FONT.bold, flexShrink: 1, textAlign: 'center' },
   planTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

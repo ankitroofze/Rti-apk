@@ -16,7 +16,7 @@ export default function MyEcomSubscriptionScreen({ navigation }) {
   const [credits, setCredits] = useState(0);
 const load = useCallback(async () => {
     setLoading(true);
-    const user = await UserStore.getCurrentUser();
+     const user = await UserStore.getCurrentUserSynced();
     const isActive = user ? UserStore.hasActiveEcomSubscription(user) : false;
     if (!isActive) {
       setLoading(false);

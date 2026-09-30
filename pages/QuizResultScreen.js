@@ -11,7 +11,7 @@ import { Feather } from '@expo/vector-icons';
 import { useToast } from '../components/ui/ToastProvider';
 import { UserStore } from '../store/UserStore';
 import QuizResultStyles from '../styles/QuizResultStyles';
-import { getQuizResultTier } from '../utils/quizResultLogic';
+import { getQuizResultTier, getScoreText } from '../utils/quizResultLogic';
 
 export default function QuizResultScreen({ navigation, route }) {
   const { showToast } = useToast();
@@ -21,7 +21,8 @@ console.log('QUIZ RESULT DATA:', JSON.stringify(result));
   const [downloading, setDownloading] = useState(false);
   const [savedPath, setSavedPath] = useState('');
 
-  const resultTier = getQuizResultTier(result?.percentage);
+   const resultTier = getQuizResultTier(result?.percentage);
+  const scoreInfo = getScoreText(result);
   const isPass = resultTier.passed;
   // Certificate sirf Exam test type ke liye hi valid hai.
   // ✅ FIX: case/whitespace-insensitive compare — backend "Exam"/" exam" jaisa bhi
@@ -98,7 +99,7 @@ console.log('QUIZ RESULT DATA:', JSON.stringify(result));
         <View style={QuizResultStyles.certScoreRow}>
           <View style={QuizResultStyles.certScoreBox}>
             <Text style={QuizResultStyles.certScoreLabel}>Score</Text>
-            <Text style={QuizResultStyles.certScoreValue}>{result?.obtained_marks ?? 0}/{result?.total_marks ?? 0}</Text>
+            <Text style={QuizResultStyles.certScoreValue}>{scoreInfo.text || `${result?.percentage ?? 0}%`}</Text>
           </View>
           <View style={QuizResultStyles.certScoreBox}>
             <Text style={QuizResultStyles.certScoreLabel}>Result</Text>
@@ -109,7 +110,11 @@ console.log('QUIZ RESULT DATA:', JSON.stringify(result));
           <View style={QuizResultStyles.certScoreBox}>
             <Text style={QuizResultStyles.certScoreLabel}>Date</Text>
             <Text style={QuizResultStyles.certScoreValue}>
-              {result?.date || new Date().toLocaleDateString('en-IN')}
+                          {(() => {
+                const d = result?.date ? new Date(result.date) : new Date();
+                const valid = !isNaN(d.getTime()) ? d : new Date();
+                return valid.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+              })()}
             </Text>
           </View>
         </View>
@@ -146,7 +151,7 @@ console.log('QUIZ RESULT DATA:', JSON.stringify(result));
           onPress={() => navigation.goBack()}
           activeOpacity={0.7}
         >
-          <Feather name="arrow-left" size={22} color="#F97316" />
+          <Feather name="arrow-left" size={22} color="#dc2626" />
         </TouchableOpacity>
         <Text style={QuizResultStyles.headerTitle}>Quiz Result</Text>
         <View style={QuizResultStyles.headerPlaceholder} />
@@ -177,7 +182,7 @@ console.log('QUIZ RESULT DATA:', JSON.stringify(result));
 
           <View style={QuizResultStyles.infoRow}>
             <Text style={QuizResultStyles.infoLabel}>Score</Text>
-            <Text style={QuizResultStyles.infoValue}>{result?.obtained_marks ?? 0}/{result?.total_marks ?? 0} ({result?.percentage ?? 0}%)</Text>
+            <Text style={QuizResultStyles.infoValue}>{scoreInfo.full}</Text>
           </View>
           <View style={QuizResultStyles.infoRow}>
             <Text style={QuizResultStyles.infoLabel}>Status</Text>
@@ -219,7 +224,7 @@ console.log('QUIZ RESULT DATA:', JSON.stringify(result));
           </>
       ) : (
           <View style={QuizResultStyles.failMessageBox}>
-            <Feather name="info" size={16} color="#F97316" />
+            <Feather name="info" size={16} color="#dc2626" />
             <Text style={QuizResultStyles.failMessageText}>
               {isPass
                 ? 'Certificate sirf Exam type ke liye issue hota hai. Practice/Training me certificate nahi milta.'

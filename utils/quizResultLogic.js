@@ -1,4 +1,14 @@
 // One source of truth for quiz result and certificate eligibility.
+export const getScoreText = (r = {}) => {
+  const pct = Number(r?.percentage ?? r?.score ?? 0) || 0;
+  const totalQ = Number(r?.total_questions) || 0;
+  const total = totalQ || Number(r?.total_marks) || 0;
+  if (!total) return { text: '', full: `${pct}%` };
+  let obtained = totalQ && r?.correct_answers != null ? Number(r.correct_answers)
+    : (!totalQ && r?.obtained_marks != null ? Number(r.obtained_marks) : NaN);
+  if (!Number.isFinite(obtained) || (obtained === 0 && pct > 0)) obtained = Math.round((pct / 100) * total);
+  return { text: `${obtained}/${total}`, full: `${obtained}/${total} (${pct}%)` };
+};
 export const getQuizResultTier = (percentage = 0) => {
   const value = Number(percentage);
   const pct = Number.isFinite(value) ? Math.max(0, value) : 0;

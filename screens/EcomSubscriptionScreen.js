@@ -53,7 +53,8 @@ export default function EcomSubscriptionScreen({ navigation, route }) {
   const [plans, setPlans] = useState(PLANS);
   const [selectedPlan, setSelectedPlan] = useState(PLANS[1].id);
   const [loading, setLoading] = useState(false);
-  const [plansLoading, setPlansLoading] = useState(true);
+const [plansLoading, setPlansLoading] = useState(true);
+  const [processingPlanId, setProcessingPlanId] = useState(null);
   const [existingCredits, setExistingCredits] = useState(null);
 
   useEffect(() => {
@@ -72,7 +73,7 @@ export default function EcomSubscriptionScreen({ navigation, route }) {
   useEffect(() => {
     let active = true;
     (async () => {
-      const user = await UserStore.getCurrentUser();
+      const user = await UserStore.getCurrentUserSynced();
       if (!active || !user) return;
       const hasSub = UserStore.hasActiveEcomSubscription(user);
       setExistingCredits(hasSub ? Number(user.ecome_credits || 0) : null);
@@ -81,6 +82,7 @@ export default function EcomSubscriptionScreen({ navigation, route }) {
   }, []);
 
   const doSubscribe = useCallback(async (plan) => {
+    setProcessingPlanId(plan?.id ?? null);
     if (!plan) return;
     setLoading(true);
     try {
@@ -160,7 +162,8 @@ export default function EcomSubscriptionScreen({ navigation, route }) {
           : null
       }
       onPay={loading ? undefined : handlePay}
-          payLabel={loading ? 'Processing…' : 'Pay Now'}
+payLabel="Pay Now"
+      processingPlanId={loading ? processingPlanId : null}
     />
   );
 }

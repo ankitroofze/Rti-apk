@@ -735,7 +735,8 @@ function WebLayout({ subscriptionData, loading, handleBuyPlan, navigation, compa
               planName={subscriptionData.activePlan?.plan_name}
               price={subscriptionData.activePlan?.price}
               purchasedAt={subscriptionData.activePlan?.purchased_at}
-              expiresAt={subscriptionData.activePlan?.expires_at}
+expiresAt={subscriptionData.activePlan?.expires_at}
+              roles={subscriptionData.activePlan?.role_names}
               onBuyPress={() => setSeatModalOpen(true)}
             />
           </View>
@@ -795,6 +796,8 @@ export default function SubscriptionPlansScreen({ navigation, route }) {
     const [seatModalOpen, setSeatModalOpen]   = useState(false);
   const [selectedPlanId, setSelectedPlanId] = useState('');
   const [detailsModal, setDetailsModal] = useState(null); // Read More pe click hote hi { plan, theme } set hogaoga
+  // ✅ Sold seats (plan + location key). Backend 409 seat_unavailable aate hi yahan add hota hai.
+  const [soldKeys, setSoldKeys] = useState([]);
 
    const [subscriptionData, setSubscriptionData] = useState({
     currentUser:      null,
@@ -825,7 +828,8 @@ export default function SubscriptionPlansScreen({ navigation, route }) {
     const matchDistrict = !plan.district || (filterDistrict && String(plan.district).trim().toLowerCase() === filterDistrict.toLowerCase());
     const matchTaluka   = !plan.taluka   || (filterTaluka   && String(plan.taluka).trim().toLowerCase()   === filterTaluka.toLowerCase());
     const matchVillage  = !plan.village  || (filterVillage  && String(plan.village).trim().toLowerCase()  === filterVillage.toLowerCase());
-    return matchState && matchDistrict && matchTaluka && matchVillage;
+    const isMyActivePlan = subscriptionData.activePlan?.plan_id === plan.plan_id;
+    return isMyActivePlan || (matchState && matchDistrict && matchTaluka && matchVillage);
   });
   const returnTo = route?.params?.returnTo || 'Subscription Plans';
   const loadPlans = useCallback(async () => {
@@ -856,26 +860,53 @@ const restrictedSeats = (seatSummary?.seats || []).map((seat) =>
   (allowedSeatIds.length && !allowedSeatIds.includes(seat.id)) ? { ...seat, status: 'disabled' } : seat
 );
 
+// ✅ Seat location: plan ki fixed location > screen ka filter > profile
+const getSeatLocation = (plan) => ({
+  seatState:    plan?.state    || filterState    || stateName,
+  planDistrict: plan?.district || filterDistrict || subscriptionData.currentUser?.district || '',
+  planTaluka:   plan?.taluka   || filterTaluka   || subscriptionData.currentUser?.taluka   || '',
+  planVillage:  plan?.village  || filterVillage  || subscriptionData.currentUser?.village  || '',
+});
+const soldKeyFor = (plan) => {
+  const l = getSeatLocation(plan);
+  return [plan?.plan_id, l.seatState, l.planDistrict, l.planTaluka, l.planVillage]
+    .map((v) => String(v || '').trim().toLowerCase()).join('|');
+};
+// Premium par seat lock nahi — wo kabhi Sold nahi hota. Active plan bhi Sold nahi dikhega.
+const isPlanSold = (plan) => {
+  if (!plan || UserStore.isPremiumPlan(plan)) return false;
+  if (subscriptionData.activePlan?.plan_id === plan.plan_id) return false;
+  return Boolean(plan.is_sold) || soldKeys.includes(soldKeyFor(plan));
+};
+const markPlanSold = (plan) => {
+  const k = soldKeyFor(plan);
+  setSoldKeys((prev) => (prev.includes(k) ? prev : [...prev, k]));
+};
+
 // 👇 YAHAN ADD KARO (navigateToPayment ki jagah)
 const startSubscriptionPayment = async (plan, seatRoleId) => {
   // ✅ FIX: pendingPlan (outer state) ek render peeche reh sakta hai kyunki
   // setPendingPlan() async hai — isliye location seedha `plan` argument se
   // nikalo, taaki hamesha wahi plan ki apni district/taluka/village jaaye
   // jiske liye actually payment ho raha hai.
-  const planDistrict = plan?.district || subscriptionData.currentUser?.district || '';
-  const planTaluka   = plan?.taluka   || subscriptionData.currentUser?.taluka   || '';
-  const planVillage  = plan?.village  || subscriptionData.currentUser?.village  || '';
+  // ✅ Seat location ki priority: plan ki fixed location > screen par chuna hua filter > profile.
+  // Pehle filter ignore hota tha, isliye 2 users alag profile location se alag seat khareed rahe the.
+  const { seatState, planDistrict, planTaluka, planVillage } = getSeatLocation(plan);
 
   const orderResult = await UserStore.createPaymentOrder({
     plan_id: plan.plan_id,
-    seat_state: stateName,
+    seat_state: seatState,
     seat_district: planDistrict,
     seat_taluka: planTaluka,
     seat_village: planVillage,
     seat_role_id: seatRoleId,
   });
 
-    if (!orderResult || orderResult.error) {
+  // ✅ 409 seat_unavailable / koi bhi error: message dikhao, Razorpay mat kholo,
+  // user dusri location chun sakta hai
+  if (!orderResult || orderResult.error) {
+    // ✅ 409 seat_unavailable -> is location par plan Sold mark, dobara buy nahi hoga
+    if (orderResult?.seatUnavailable) markPlanSold(plan);
     showPopup(orderResult?.message || 'Unable to create order.', 'error');
     return;
   }
@@ -888,7 +919,7 @@ const startSubscriptionPayment = async (plan, seatRoleId) => {
         razorpay_signature:  response.razorpay_signature,
         plan_id:      plan.plan_id,
         plan,               // ✅ asli clicked plan object seedha bhejo — dobara dhoondhna nahi padega
-        seat_state:   stateName,
+        seat_state:   seatState,
         seat_district: planDistrict,
         seat_taluka: planTaluka,
         seat_village: planVillage,
@@ -899,20 +930,34 @@ const startSubscriptionPayment = async (plan, seatRoleId) => {
         showPopup(`🎉 ${plan.plan_name} activated!`, 'success');
         setTimeout(() => navigation.navigate(returnTo), 1500);
       } else {
+        // ✅ verify 409 (seat_unavailable) yahin aata hai — "activated" mat dikhao, sirf message
+        if (verifyResult?.seatUnavailable) markPlanSold(plan);
         showPopup(verifyResult?.message || 'Payment verification failed.', 'error');
       }
     },
     onFailed: async (errorInfo) => {
+      // ✅ 'role' pass karo -> POST /role-subscriptions/payment/failed (seat turant free)
       await UserStore.markPaymentFailed(
         errorInfo.razorpay_order_id,
         errorInfo.error_code,
-        errorInfo.error_description
+        errorInfo.error_description,
+        'role'
       );
       showPopup(errorInfo.error_description || 'Payment failed.', 'error');
     },
   });
 };
 const handleBuyPlan = (plan) => {
+  // ✅ Sold plan ko koi doosra user buy nahi kar sakta
+  if (isPlanSold(plan)) {
+    showPopup('This seat is already taken. Please choose another location.', 'error');
+    return;
+  }
+  // ✅ Premium par seat lock nahi — state check / seat ke bina seedha payment
+  if (UserStore.isPremiumPlan(plan)) {
+    startSubscriptionPayment(plan, '');
+    return;
+  }
   if (!stateName) {
     showPopup('Please select your state first.', 'error', {
       primaryLabel: 'Open',
@@ -1045,7 +1090,8 @@ const handleBuyPlan = (plan) => {
       {!loading ? (
            <View style={{ width: '100%', maxWidth: 560, marginBottom: 16, alignSelf: 'center' }}>
             <SubscriptionStatusCard
-              isActive={Boolean(subscriptionData.activePlan)}
+              isActive={Boolean(subscriptionData.activePlan) && (!subscriptionData.activePlan?.expires_at || new Date(subscriptionData.activePlan.expires_at) >= new Date())}
+              roles={subscriptionData.activePlan?.role_names}
               planName={subscriptionData.activePlan?.plan_name}
               price={subscriptionData.activePlan?.price}
               purchasedAt={subscriptionData.activePlan?.purchased_at}
@@ -1104,6 +1150,7 @@ const handleBuyPlan = (plan) => {
           <View style={S.plansGrid}>
             {filteredPlans.map((plan, index) => {
               const isActive = subscriptionData.activePlan?.plan_id === plan.plan_id;
+              const isSold = isPlanSold(plan);
               const isSelected = selectedPlanId === plan.plan_id;
               const theme = getCardTheme(index);
                         return (
@@ -1151,14 +1198,14 @@ const handleBuyPlan = (plan) => {
 
                     <TouchableOpacity
                       activeOpacity={0.85}
-                      disabled={isActive}
+                      disabled={isActive || isSold}
                       onPress={() => handleBuyPlan(plan)}
-                      style={[S.selectPlanBtn, isSelected && S.selectPlanBtnActive]}
+                      style={[S.selectPlanBtn, isSelected && S.selectPlanBtnActive, isSold && { opacity: 0.6, backgroundColor: '#e5e7eb' }]}
                     >
-                      <Text style={S.selectPlanBtnText}>
-                        {isActive ? 'Currently active' : 'Pay Now'}
+                      <Text style={[S.selectPlanBtnText, isSold && { color: '#6b7280' }]}>
+                        {isActive ? 'Currently active' : isSold ? 'Sold' : 'Pay Now'}
                       </Text>
-                      {!isActive && <Feather name="chevron-right" size={14} color="#b91c1c" />}
+                      {!isActive && !isSold && <Feather name="chevron-right" size={14} color="#b91c1c" />}
                     </TouchableOpacity>
                   </ImageBackground>
                 </View>

@@ -53,6 +53,7 @@ export default function SubscriptionStatusCard({
   expiresAt,
   onBuyPress,
   buyButtonLabel = 'Subscribe',
+  roles,
   themeImage,
   textColor,
 }) {
@@ -95,7 +96,19 @@ export default function SubscriptionStatusCard({
           {price !== undefined && price !== null ? (
             <Text style={[styles.price, { color: dynamicMuted }]}>₹{price}</Text>
           ) : null}
-          {countLabel ? <Text style={[styles.countLabel, isThemed && { color: '#ffffff' }]}>{countLabel}</Text> : null}
+{countLabel ? <Text style={[styles.countLabel, isThemed && { color: '#ffffff' }]}>{countLabel}</Text> : null}
+          {Array.isArray(roles) && roles.length > 0 ? (
+            <View style={styles.rolesWrap}>
+              <Text style={[styles.metaLabel, { color: dynamicMuted }]}>Roles</Text>
+              <View style={styles.rolesRow}>
+                {roles.map((r, i) => (
+                  <View key={`${r}-${i}`} style={[styles.roleChip, isThemed && styles.roleChipThemed]}>
+                    <Text style={[styles.roleChipText, { color: isThemed ? '#ffffff' : C.textDark }]}>{r}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
 
           <View style={styles.metaRow}>
             {purchasedAt ? (
@@ -120,7 +133,7 @@ export default function SubscriptionStatusCard({
 
       {onBuyPress ? (
         <TouchableOpacity style={styles.buyBtn} onPress={onBuyPress} activeOpacity={0.85}>
-          <Feather name="zap" size={15} color={C.white} />
+<Feather name="zap" size={15} color="#111111" />
           <Text style={styles.buyBtnText}>{isActive ? 'Renew / Change Plan' : buyButtonLabel}</Text>
         </TouchableOpacity>
       ) : null}
@@ -161,6 +174,11 @@ const styles = StyleSheet.create({
   price: { fontSize: 14, color: C.textMid, marginBottom: 6, fontFamily: FONT.regular },
   countLabel: { fontSize: 13, color: C.green, fontWeight: '600', marginBottom: 10, fontFamily: FONT.medium },
 
+   rolesWrap: { marginBottom: 10 },
+  rolesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },
+  roleChip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, backgroundColor: C.orangeLight, borderWidth: 1, borderColor: C.border },
+  roleChipThemed: { backgroundColor: 'rgba(255,255,255,0.2)', borderColor: 'rgba(255,255,255,0.4)' },
+  roleChipText: { fontSize: 12, fontWeight: '600', fontFamily: FONT.medium },
   metaRow: { flexDirection: 'row', gap: 24, marginTop: 4 },
   metaItem: {},
   metaLabel: { fontSize: 11, color: C.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, fontFamily: FONT.regular },
@@ -170,7 +188,9 @@ const styles = StyleSheet.create({
 
   buyBtn: {
     marginTop: 12,
-    backgroundColor: C.orange,
+backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     borderRadius: 10,
     paddingVertical: 11,
     flexDirection: 'row',
@@ -178,5 +198,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
   },
-  buyBtnText: { color: C.white, fontSize: 14, fontWeight: '700' },
+buyBtnText: { color: '#111111', fontSize: 14, fontWeight: '700' },
 });

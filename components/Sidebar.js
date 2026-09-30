@@ -21,7 +21,7 @@ const menuItems = [
   { label: 'Payment History',    icon: 'card-outline' },
   { label: 'Withdraw',           icon: 'cash-outline' },
   { label: 'Subscription Plans', icon: 'star-outline' },
-  { label: 'My Ads Subscription', icon: 'megaphone-outline' },
+  { label: 'Ads Subscription', icon: 'megaphone-outline' },
    { label: 'My Ecom Subscription', icon: 'storefront-outline' },
   { label: 'My Quiz Subscription', icon: 'school-outline' },
   { label: 'News Feed',          icon: 'newspaper-outline' },
@@ -68,6 +68,11 @@ export default function Sidebar({ visible, onClose, onItemPress, activeItem = 'D
 
     if (label === 'Payment History') {
       navigation.navigate('PaymentHistory');
+      return;
+    }
+
+      if (label === 'Ads Subscription') {
+      navigation.navigate('AdPlans');
       return;
     }
 

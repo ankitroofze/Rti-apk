@@ -22,7 +22,7 @@ export default function MyAdSubscriptionScreen({ navigation }) {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const user = await UserStore.getCurrentUser();
+       const user = await UserStore.getCurrentUserSynced();
     const isActive = user ? UserStore.hasActiveAdSubscription(user) : false; // ✅ dual check: credits + date
     if (!isActive) {
       setLoading(false);

@@ -280,7 +280,7 @@ export default function SettingsScreen({ navigation }) {
              {/* Change Location — temporarily removed from all platforms */}
           <SettingsItem icon="person-add-outline" label="Reporter Registration"             onPress={() => nav('Register')} />
          <SettingsItem icon="megaphone-outline" label="Advertise"                          onPress={() => nav('Advertise')} />
-          <SettingsItem icon="pricetags-outline" label="My Advertisement Subscription" onPress={() => nav('My Ads Subscription')} />
+      <SettingsItem icon="pricetags-outline" label="Ads Subscription" onPress={() => nav('AdPlans')} />
           {/* Purchase blue tick — temporarily removed from all platforms */}
           <SettingsItem icon="card-outline" label="My subscriptions"                   onPress={() => nav('Subscription Plans')} />
           <SettingsItem icon="cart-outline" label="Commerce & Ads Center"             onPress={() => nav('CommerceAdsCenter')} />

@@ -16,7 +16,7 @@ export default function MyQuizSubscriptionScreen({ navigation }) {
 
  const load = useCallback(async () => {
     setLoading(true);
-    const user = await UserStore.getCurrentUser();
+        const user = await UserStore.getCurrentUserSynced();
     const isActive = user ? UserStore.hasActiveQuizSubscription(user) : false;
     // ✅ NEW: koi active subscription nahi hai to seedha purchase list pe bhej do.
     if (!isActive) {

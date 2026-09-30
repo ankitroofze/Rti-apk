@@ -2,6 +2,11 @@
 import { StyleSheet, Platform } from 'react-native';
 import { CommonStyles, COLORS, TYPOGRAPHY, BORDER_RADIUS } from './CommonStyles';
 
+const RED = '#dc2626';
+const RED_DARK = '#b91c1c';
+const RED_LIGHT = '#fef2f2';
+const RED_MID = '#fecaca';
+
 const QuizResultStyles = StyleSheet.create({
   root: CommonStyles.rootContainer,
 
@@ -30,9 +35,9 @@ const QuizResultStyles = StyleSheet.create({
 
   scrollContent: CommonStyles.scrollContainer,
 
-  heroCard: CommonStyles.heroContainer,
-  heroEyebrow: CommonStyles.heroEyebrow,
-  heroTitle: CommonStyles.heroTitle,
+  heroCard: { ...CommonStyles.heroContainer, backgroundColor: RED_DARK },
+  heroEyebrow: { ...CommonStyles.heroEyebrow, color: RED_MID },
+  heroTitle: { ...CommonStyles.heroTitle, color: '#ffffff' },
 
   resultCard: {
     ...CommonStyles.largeCard,
@@ -259,7 +264,7 @@ certOuter: {
     fontFamily: TYPOGRAPHY.fontFamily,
   },
 
-downloadBtn: { ...CommonStyles.greenButton, borderRadius: 3, marginTop: 8, marginBottom: 12, flex: 1 , width:190 },
+downloadBtn: { ...CommonStyles.greenButton, backgroundColor: RED, borderRadius: 3, marginTop: 8, marginBottom: 12, flex: 1 , width:190 },
 downloadBtnText: CommonStyles.greenButtonText,
   savedNote: {
     fontSize: 12,
@@ -274,12 +279,12 @@ downloadBtnText: CommonStyles.greenButtonText,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: COLORS.orangeLight,
-    borderColor: COLORS.orangeMid,
+    backgroundColor: RED_LIGHT,
+    borderColor: RED_MID,
   },
   failMessageText: {
     fontSize: 14,
-    color: COLORS.orange,
+    color: RED,
     fontWeight: '500',
     fontFamily: TYPOGRAPHY.fontFamily,
   },
