@@ -1,3 +1,4 @@
+import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useCallback, useRef, useState } from 'react';
 import {
   Image,
@@ -147,6 +148,9 @@ export default function LiveStreamingScreen({ navigation }) {
   /* ✅ Web header — design ek hi jagah (components/ModuleWebHeader.js) se aata hai */
   <ModuleWebHeader title="Live Streaming" navigation={navigation} />
 ) : (
+Platform.OS === 'android' ? (
+<ModuleAndroidHeader title="Live Streaming" onBack={() => navigation.navigate('QuickMenu')} />
+) : (
 <ImageBackground
   source={require('../assets/images/profile-red.png')}
   resizeMode="cover"
@@ -158,6 +162,7 @@ export default function LiveStreamingScreen({ navigation }) {
   </TouchableOpacity>
   <Text style={H.title}>Live Streaming</Text>
 </ImageBackground>
+)
 )}
 
       <ScrollView

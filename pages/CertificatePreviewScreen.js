@@ -1,3 +1,4 @@
+import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import { Feather } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { Asset } from 'expo-asset';
@@ -36,6 +37,9 @@ const GOLD_LATTER     = require('../assets/images/gold_latter.png');  // right -
 const USER_IMG_FRAME  = require('../assets/images/user_img.png');     // photo frame
 const DATE_BANNER     = require('../assets/images/date_banner.png');  // date background
 const EMAIL_BANNER    = require('../assets/images/email_banner.png'); // email footer
+
+// ✅ Signer fixed — certificate par hamesha yahi naam aayega (user ka naam nahi)
+const SIGNER_NAME = 'Hon. Mr. Shoukat Abdulkalam Naikwadi';
 
 const CERT_WIDTH = 1024;
 const CERT_HEIGHT = 1536;
@@ -264,7 +268,7 @@ const buildCertificateHtml = ({ images, userName, issueDate, photoUri, resultTie
       <img class="layer logo-center" src="${images.logoCenter}" alt="" />
       <img class="layer logo-right" src="${images.logoRight}" alt="" />
       <img class="layer header-image" src="${images.header}" alt="" />
-      <p class="text header-user">Hon. Mr. ${escapeHtml(userName)}</p>
+      <p class="text header-user">${escapeHtml(SIGNER_NAME)}</p>
       <img class="layer ribbon" src="${images.ribbon}" alt="" />
       <p class="text awardee-name">${escapeHtml(userName)}</p>
       <p class="text passed-text">has successfully passed the examination conducted by
@@ -276,7 +280,7 @@ organisational social work field since <span class="highlight">"15th"</span> Yea
 outstanding achievement!</p>
       <img class="layer gold-wings" src="${images.goldWings}" alt="" />
       <img class="layer gold-latter" src="${images.goldLatter}" alt="" />
-      <p class="text signatory-name">Hon. Mr. ${escapeHtml(userName)}</p>
+           <p class="text signatory-name">${escapeHtml(SIGNER_NAME)}</p>
       <p class="text signatory-role">Chief Editor / Owner / Publisher / All India
 President Bhartiya Mahiti Adhikar<span class="small"> (All India RTI News Work)</span></p>
       <div class="photo-wrapper">
@@ -562,7 +566,11 @@ export default function CertificatePreviewScreen({ navigation, route }) {
   return (
     <View style={styles.root}>
       {/* Back Button Header */}
-      <View style={[styles.customHeader, { paddingTop: insets.top + 12 }]}>
+      {Platform.OS === 'android' ? (
+<ModuleAndroidHeader title="Certificate Preview" onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Certification'))} />
+) : (
+<>
+<View style={[styles.customHeader, { paddingTop: insets.top + 12 }]}>
         <TouchableOpacity 
           style={styles.backButton}
           onPress={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Certification'))}
@@ -574,12 +582,14 @@ export default function CertificatePreviewScreen({ navigation, route }) {
         <Text style={styles.headerTitle}>Certificate Preview</Text>
         <View style={styles.headerPlaceholder} />
       </View>
+</>
+)}
 
       <ScrollView
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
       >
-        <StatusBar barStyle="dark-content" backgroundColor="#f5e6c8" />
+        {Platform.OS !== 'android' && <StatusBar barStyle="dark-content" backgroundColor="#f5e6c8" />}
 
         <View
           style={styles.templateCard}
@@ -613,7 +623,7 @@ export default function CertificatePreviewScreen({ navigation, route }) {
               
               {/* ── BHARTIYA HEADER BANNER ── */}
              <Image source={HEADER_BHARTIYA} style={styles.headerImage} resizeMode="contain" />
-             <Text style={styles.headerUserName}>Hon. Mr. {userName}</Text>
+                        <Text style={styles.headerUserName}>{SIGNER_NAME}</Text>
               {/* ── RIBBON ── */}
               <Image source={RIBBON_IMG} style={styles.ribbonImage} resizeMode="contain" />
 
@@ -660,7 +670,7 @@ export default function CertificatePreviewScreen({ navigation, route }) {
               <Image source={GOLD_LATTER} style={styles.goldLatter} resizeMode="contain" />
 
               {/* ── SIGNATORY ── */}
-              <Text style={styles.signatoryName}>Hon. Mr. {userName}</Text>
+              <Text style={styles.signatoryName}>{SIGNER_NAME}</Text>
               <Text style={styles.signatoryRole}>
                 Chief Editor / Owner / Publisher / All India{'\n'}
                 President Bhartiya Mahiti Adhikar

@@ -7,22 +7,23 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { Ionicons } from '@expo/vector-icons';
 import { UserStore } from '../store/UserStore';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
+import QRCode from 'react-native-qrcode-svg';
+import { Image } from 'react-native';
+import { normalizeReferral } from '../utils/Referralservice';
 import ModuleWebHeader from '../components/Modulewebheader';
 
-const REFER_LINK = 'https://play.google.com/store/apps/details?id=com.yourcompany.rtiapp';
 const APP_NAME = 'RTI App';
-
-const buildReferLink = (code = '') => `${REFER_LINK}${code ? `&ref=${encodeURIComponent(code)}` : ''}`;
-const buildReferMessage = (code = '') => (
+// ✅ Referral link frontend par generate NAHI hota — backend (GET /referral) se aata hai.
+const buildReferMessage = (code = '', link = '') => (
   `Join ${APP_NAME} using my referral code: ${code || 'RTI'}\n\n` +
   `Signup karo, mobile verify karo aur subscription lo.\n\n` +
-  `Download: ${buildReferLink(code)}`
+  (link ? `Join: ${link}` : '')
 );
 
 const PLATFORMS = [
   { id: 'whatsapp', label: 'WhatsApp', icon: 'logo-whatsapp', color: '#25D366', bg: '#e9fbe9', getUrl: (msg) => `https://wa.me/?text=${encodeURIComponent(msg)}` },
   { id: 'whatsapp_status', label: 'WhatsApp Status', icon: 'logo-whatsapp', color: '#128C7E', bg: '#e0f4f2', getUrl: (msg) => `https://wa.me/?text=${encodeURIComponent(msg)}` },
-  { id: 'instagram', label: 'Instagram', icon: 'logo-instagram', color: '#E1306C', bg: '#fde8ef', getUrl: () => 'https://www.instagram.com/', note: 'Link copy ho jayega' },
+  { id: 'instagram', label: 'Instagram', icon: 'logo-instagram', color: '#E1306C', bg: '#fde8ef', getUrl: () => 'https://www.instagram.com/' },
   { id: 'facebook', label: 'Facebook', icon: 'logo-facebook', color: '#1877F2', bg: '#e7f0fd', getUrl: (_msg, link) => `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(link)}` },
   { id: 'twitter', label: 'Twitter / X', icon: 'logo-twitter', color: '#1DA1F2', bg: '#e7f5fd', getUrl: (msg) => `https://twitter.com/intent/tweet?text=${encodeURIComponent(msg)}` },
   { id: 'telegram', label: 'Telegram', icon: 'paper-plane-outline', color: '#229ED9', bg: '#e4f4fb', getUrl: (msg, link) => `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(msg)}` },
@@ -44,6 +45,7 @@ export default function ReferScreen({ navigation }) {
   const [summary, setSummary] = useState(null);
     const [loading, setLoading] = useState(true);
   const [eligible, setEligible] = useState(false);
+  const [apiReferral, setApiReferral] = useState(null); // backend: { code, link, qr, qrIsImage }
 
   useEffect(() => {
     let mounted = true;
@@ -64,6 +66,7 @@ try {
       if (mounted && apiResult.ok) {
         const root = apiResult.data?.data || apiResult.data || {};
         const referralCode = String(root.referral_code || root.my_referral_code || '').trim();
+        setApiReferral(normalizeReferral(apiResult.data));
         const referralCount = Number(root.total_referrals ?? root.referral_count ?? 0);
         const totalCommission = Number(root.total_commission ?? root.commission ?? 0);
         const currentTier = UserStore.getReferralTier(referralCount);
@@ -104,8 +107,9 @@ useEffect(() => {
 }, [summary?.my_referral_code]);
 
   const referralCode = summary?.my_referral_code || '';
-  const personalLink = useMemo(() => buildReferLink(referralCode), [referralCode]);
-  const referMessage = useMemo(() => buildReferMessage(referralCode), [referralCode]);
+  const personalLink = apiReferral?.link || '';   // sirf backend ka link
+  const qrValue = apiReferral?.qr || '';           // backend ka qr payload (ya wahi link)
+  const referMessage = useMemo(() => buildReferMessage(referralCode, personalLink), [referralCode, personalLink]);
   const nextRank = summary?.next_rank;
   const validCount = Number(summary?.referral_count || 0);
   const nextNeeded = nextRank ? Math.max(0, nextRank.min - validCount) : 0;
@@ -149,7 +153,7 @@ useEffect(() => {
   }
 
   const handleCopy = (value = personalLink) => {
-
+    if (!value) return;
     Clipboard.setString(value);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
@@ -158,7 +162,7 @@ useEffect(() => {
   const handleShare = async (platform) => {
     if (platform.isNativeShare) {
       try {
-        await Share.share({ message: referMessage, url: personalLink });
+        await Share.share(personalLink ? { message: referMessage, url: personalLink } : { message: referMessage });
       } catch (_e) {}
       return;
     }
@@ -243,10 +247,25 @@ useEffect(() => {
 
           <Text style={[styles.linkLabel, { marginTop: 14 }]}>Your Refer Link</Text>
           <View style={styles.linkRow}>
-            <Text style={styles.linkText} numberOfLines={1}>{personalLink}</Text>
-            <TouchableOpacity style={styles.smallCopyBtn} onPress={() => handleCopy(personalLink)} activeOpacity={0.8}>
-              <Ionicons name="copy-outline" size={15} color="#2563eb" />
+            <Text style={styles.linkText} numberOfLines={1}>{personalLink || (loading ? 'Loading…' : 'Link not available yet')}</Text>
+            <TouchableOpacity style={styles.smallCopyBtn} onPress={() => handleCopy(personalLink)} disabled={!personalLink} activeOpacity={0.8}>
+              <Ionicons name="copy-outline" size={15} color={personalLink ? '#2563eb' : '#94a3b8'} />
             </TouchableOpacity>
+          </View>
+
+          <Text style={[styles.linkLabel, { marginTop: 14 }]}>Your Referral QR</Text>
+          <View style={{ alignItems: 'center', paddingVertical: 10 }}>
+            {qrValue ? (
+              <View style={{ backgroundColor: '#fff', padding: 10, borderRadius: 10 }}>
+                {apiReferral?.qrIsImage ? (
+                  <Image source={{ uri: qrValue }} style={{ width: 160, height: 160 }} resizeMode="contain" />
+                ) : (
+                  <QRCode value={qrValue} size={160} backgroundColor="#ffffff" color="#000000" />
+                )}
+              </View>
+            ) : (
+              <Text style={styles.linkText}>{loading ? 'Loading…' : 'QR not available yet'}</Text>
+            )}
           </View>
         </View>
 

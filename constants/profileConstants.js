@@ -30,6 +30,7 @@ export const COMMON_USER_COLOR = { bg: '#FFFFFF', border: '#E2E8F0', text: '#647
 // background card image (assets/images me pehle se maujood) + accent color.
 export const PROFILE_BG_GREY   = require('../assets/images/profile-grey.png');
 export const PROFILE_BG_GREEN  = require('../assets/images/profile-green.png');
+export const PROFILE_BG_YELLOW = require('../assets/images/profile-yellow.png');
 export const PROFILE_BG_BLUE   = require('../assets/images/profile-blue.png');
 export const PROFILE_BG_ORANGE = require('../assets/images/profile-orange.png');
 export const PROFILE_BG_PURPLE = require('../assets/images/profile-purple.png');
@@ -51,16 +52,19 @@ export const PROFILE_TIERS = {
   },
   premium: {
     key: 'premium', order: 1, label: 'Premium User',
-    bgImage: PROFILE_BG_GREEN, accent: '#10B981',
-    gradient: ['#0d502d', '#39af72', '#056B37'],
-    gradientDark: ['#0b4427', '#2caf6b', '#084928'],
+    // Premium membership card uses the dedicated yellow artwork.
+    bgImage: PROFILE_BG_YELLOW, accent: '#D97706',
+    gradient: ['#FDE047', '#FBBF24', '#D97706'],
+    gradientDark: ['#FACC15', '#F59E0B', '#D97706'],
     badgeBg: 'rgba(255,255,255,0.22)', badgeText: '#FFFFFF',
   },
   verified: {
     key: 'verified', order: 2, label: 'Verified User',
-    bgImage: PROFILE_BG_BLUE, accent: '#3B82F6',
-    gradient: ['#1E3A8A', '#3B82F6', '#1D4ED8'],
-    gradientDark: ['#1E3A8A', '#2563EB', '#1E40AF'],
+    // The Premium Plan / verified profile uses the requested yellow artwork;
+    // its badge and accents remain blue so the verified state is unmistakable.
+    bgImage: PROFILE_BG_YELLOW, accent: '#3B82F6',
+    gradient: ['#FDE047', '#FBBF24', '#D97706'],
+    gradientDark: ['#FACC15', '#F59E0B', '#D97706'],
     badgeBg: 'rgba(255,255,255,0.22)', badgeText: '#FFFFFF',
   },
   representative: {
@@ -113,7 +117,12 @@ export const SEAT_ID_TO_TIER = {
   village_representative:         'representative',
   village_reporter:               'representative',
   public_communication_associate: 'representative',
-  rural_reporter:                 'representative',
+   rural_reporter:                 'representative',
+  '1': 'chief', '2': 'executive', '3': 'executive', '4': 'representative', '5': 'chief',
+  '6': 'representative', '7': 'representative', '8': 'representative', '9': 'representative', '10': 'representative',
+  '11': 'representative', '12': 'representative', '13': 'representative', '14': 'representative', '15': 'representative',
+  '16': 'representative', '17': 'representative', '18': 'representative', '19': 'representative', '20': 'representative',
+  '21': 'representative', '22': 'representative', '23': 'representative', '24': 'representative', '25': 'representative',
 };
 // Ranks Configuration
 export const RANKS = [

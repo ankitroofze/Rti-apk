@@ -1,3 +1,4 @@
+import NameWithTick from './NameWithTick';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
@@ -19,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { getSiteCopy } from '../constants/siteCopy';
+import RefreshButton from './RefreshButton';
 import { UserStore } from '../store/UserStore';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getProfileTier, AVATAR_IMAGE } from '../utils/profileHelpers';
@@ -29,11 +31,11 @@ const IS_WEB = Platform.OS === 'web';
 
 const DESKTOP_NAV_ITEMS = [
   { labelKey: 'home', screen: 'Home', icon: 'home-outline' },
-  { labelKey: 'feed', screen: 'Feed', icon: 'newspaper-outline' },
-  { labelKey: 'create', screen: 'QuickMenu', icon: 'grid-outline', isCreateBtn: true },
-  { labelKey: 'advertise', screen: 'Advertise', icon: 'megaphone-outline', isAdvertiseBtn: true },
-  { labelKey: 'Profile', screen: 'Profile', icon: 'person-outline' },
-  { labelKey: 'newspaper', screen: 'NewspaperList', icon: 'newspaper-outline' },
+  { labelKey: 'News Feed', screen: 'Feed', icon: 'newspaper-outline' },
+  { labelKey: 'Publish', screen: 'QuickMenu', icon: 'grid-outline', isCreateBtn: true },
+  { labelKey: 'Promote', screen: 'Advertise', icon: 'megaphone-outline', isAdvertiseBtn: true },
+  { labelKey: 'My Profile', screen: 'Profile', icon: 'person-outline' },
+  { labelKey: 'E-Paper', screen: 'NewspaperList', icon: 'newspaper-outline' },
 
 ];
 
@@ -251,6 +253,7 @@ function ProfileDropdown({ navigation, showNameLabel }) {
   const [avatarError, setAvatarError] = useState(false);
   const [isReady, setIsReady] = useState(false);
   const [currentUserName, setCurrentUserName] = useState('');
+  const [currentUserTick, setCurrentUserTick] = useState(false);
   const [isPremiumUser, setIsPremiumUser] = useState(false);
   const triggerRef = useRef(null);
   const copy = useMemo(() => getSiteCopy(language), [language]);
@@ -271,6 +274,7 @@ function ProfileDropdown({ navigation, showNameLabel }) {
             return validUri;
           });
           setCurrentUserName(user?.name || '');
+          setCurrentUserTick(UserStore.hasBlueTick(user));
           setIsPremiumUser(UserStore.hasPremiumAccess(user));
         } catch {
           if (!alive) return;
@@ -302,7 +306,7 @@ function ProfileDropdown({ navigation, showNameLabel }) {
     setIsOpen(false);
     setAvatarError(false);
     setAvatarUri('');
-    navigation?.navigate?.('Home');
+      navigation?.reset?.({ index: 0, routes: [{ name: 'Login' }] });
   };
 
   if (!isReady) return null;
@@ -367,7 +371,7 @@ function ProfileDropdown({ navigation, showNameLabel }) {
         )}
         {showNameLabel ? (
           <View style={styles.profileNameLabelWrap}>
-            <Text style={styles.profileNameLabel} numberOfLines={1}>{currentUserName}</Text>
+            <NameWithTick name={currentUserName} show={currentUserTick} style={styles.profileNameLabel} badgeSize={14} />
             {isPremiumUser ? <Text style={styles.profilePremiumLabel}>Premium</Text> : null}
           </View>
         ) : null}
@@ -525,7 +529,8 @@ function MobileTopHeader({ navigation, handleNavigate, handleHomeShortcut }) {
         </View>
               <View style={styles.mobileTopHeaderActions}>
           <NavbarLanguageSelector compact />
-          <NotificationBell navigation={navigation} />
+<RefreshButton />
+<NotificationBell navigation={navigation} />
           <ProfileDropdown navigation={navigation} />
         </View>
       </View>
@@ -688,7 +693,8 @@ export default function AppNavbar({ activeScreen, navigation, hideTopHeader = fa
 
         <View style={styles.desktopUtilityRow}>
           <NavbarLanguageSelector />
-          <NotificationBell navigation={navigation} />
+        <RefreshButton />
+<NotificationBell navigation={navigation} />
         </View>
 
         <View style={styles.desktopActionsRow}>
@@ -711,7 +717,7 @@ const styles = StyleSheet.create({
         top: 0,
         zIndex: 5000,
         overflow: 'visible',
-        boxShadow: 'none',
+        boxShadow: '0 4px 12px rgba(15, 23, 42, 0.08)',
         transition: 'background-color 0.2s ease, box-shadow 0.2s ease, backdrop-filter 0.2s ease',
       },
       default: {
@@ -822,22 +828,28 @@ const styles = StyleSheet.create({
 
   // ─── Mobile Top Header ─────────────────────────────────────────────────
   // Shell wraps both the logo/actions row AND the gallery slider row below it.
-  mobileTopHeaderShell: {
+   mobileTopHeaderShell: {
     backgroundColor: '#ffffff',
     borderBottomWidth: 0,
+    borderBottomLeftRadius: 4,
+    borderBottomRightRadius: 4,
+    zIndex: 10,
     ...Platform.select({
       web: {
         position: 'sticky',
         top: 0,
         zIndex: 1100,
-        boxShadow: '0 4px 16px rgba(15, 23, 42, 0.08)',
+        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.28)',
       },
-      default: {
+      android: {
         elevation: 6,
-        ...Platform.select({
-  web: { boxShadow: '0 2px 8px rgba(0,0,0,0.1)' },
-  default: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4 },
-}),
+        shadowColor: '#000',
+      },
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.3,
+        shadowRadius: 14,
       },
     }),
   },

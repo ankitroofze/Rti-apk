@@ -1,13 +1,42 @@
 // components/ui/ToastProvider.js
-import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
-import { Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
-const ToastContext = createContext({ showToast: () => {}, showPopup: () => {}, hidePopup: () => {} });
+const ToastContext = createContext({
+  showToast: () => {}, showPopup: () => {}, hidePopup: () => {},
+  showLoader: () => {}, hideLoader: () => {},
+});
 
 export function ToastProvider({ children }) {
   const [toast, setToast] = useState(null);
   const [popup, setPopup] = useState(null);
   const timeoutRef = useRef(null);
+
+  // ── Global loader ──
+  const [loaderVisible, setLoaderVisible] = useState(false);
+  const loaderCount = useRef(0);
+  const loaderTimer = useRef(null);
+  const failsafeTimer = useRef(null);
+
+  const showLoader = useCallback(() => {
+    loaderCount.current += 1;
+    if (loaderCount.current === 1) {
+      loaderTimer.current = setTimeout(() => setLoaderVisible(true), 250);
+      failsafeTimer.current = setTimeout(() => {
+        loaderCount.current = 0;
+        setLoaderVisible(false);
+      }, 30000);
+    }
+  }, []);
+
+  const hideLoader = useCallback(() => {
+    loaderCount.current = Math.max(0, loaderCount.current - 1);
+    if (loaderCount.current === 0) {
+      clearTimeout(loaderTimer.current);
+      clearTimeout(failsafeTimer.current);
+      setLoaderVisible(false);
+    }
+  }, []);
 
   const showToast = useCallback((message, type = 'info') => {
     if (timeoutRef.current) {
@@ -43,7 +72,10 @@ export function ToastProvider({ children }) {
     });
   }, []);
 
-  const value = useMemo(() => ({ showToast, showPopup, hidePopup }), [hidePopup, showPopup, showToast]);
+    const value = useMemo(
+    () => ({ showToast, showPopup, hidePopup, showLoader, hideLoader }),
+    [hidePopup, showPopup, showToast, showLoader, hideLoader]
+  );
 
   return (
     <ToastContext.Provider value={value}>
@@ -106,6 +138,16 @@ export function ToastProvider({ children }) {
           </View>
         </Modal>
       ) : null}
+       {loaderVisible && Platform.OS === 'android' ? (
+        <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={() => {}}>
+          <View style={styles.loaderBackdrop}>
+            <View style={styles.loaderCard}>
+              <ActivityIndicator size="large" color="#dc2626" />
+              <Text style={styles.loaderText}>Please wait...</Text>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
     </ToastContext.Provider>
   );
 }
@@ -114,7 +156,36 @@ export function useToast() {
   return useContext(ToastContext);
 }
 
+// Jab tak `active` true hai, global loader dikhega
+export function useBusy(active) {
+  const { showLoader, hideLoader } = useContext(ToastContext);
+  useEffect(() => {
+    if (!active) return undefined;
+    showLoader();
+    return () => hideLoader();
+  }, [active, showLoader, hideLoader]);
+}
+
 const styles = StyleSheet.create({
+  loaderBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loaderCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 14,
+    paddingVertical: 22,
+    paddingHorizontal: 30,
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  loaderText: { marginTop: 10, fontSize: 13, color: '#334155', fontWeight: '600' },
   // Font Family for all text
   fontFamily: {
     fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto',

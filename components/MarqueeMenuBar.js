@@ -39,9 +39,11 @@ const VISIBLE_COUNT = 9; // "All" + 8 pills visible, baaki "More" ke andar
   );
 }
 
+const ACTIVE_RED = '#dc2626';
+
 const styles = StyleSheet.create({
   // full-width bottom-border strip, but centers its inner content
-            outerWrapper: {
+  outerWrapper: {
     width: '100%',
     backgroundColor: '#ffffff',
     borderTopWidth: 0,
@@ -55,56 +57,50 @@ const styles = StyleSheet.create({
     }),
   },
   trackScroll: { width: '100%' },
- track: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  paddingHorizontal: 12,
-  gap: 15,
-  paddingVertical: 0,
-  minHeight: 40,
+  track: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    gap: 15,
+    paddingVertical: 0,
+    minHeight: 40,
+    backgroundColor: '#ffffff',
+    ...(Platform.OS !== 'web' && {
+      shadowColor: '#0f172a',
+      shadowOffset: { width: 0, height: 3 },
+      shadowOpacity: 0.12,
+      shadowRadius: 5,
+      elevation: 4,
+    }),
+    ...(Platform.OS === 'web' && {
+      boxShadow: '0px 3px 5px rgba(15, 23, 42, 0.12)',
+    }),
+  },
 
-  backgroundColor: '#ffffff',
+  // ── Category tabs (selected = red text + red underline) ──
+  tab: { alignItems: 'center', paddingHorizontal: 10, paddingVertical: 8 },
+  tabLabel: {
+    fontSize: 14.5,
+    fontWeight: '400',
+    color: '#4e5663',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
+  },
+  tabLabelActive: {
+    color: ACTIVE_RED,
+    fontWeight: '700',
+  },
+  tabUnderline: { marginTop: 4, height: 2, width: '100%', backgroundColor: ACTIVE_RED, borderRadius: 2 },
 
-  // Roboto
-  fontFamily: Platform.OS === 'web'
-    ? "'Roboto', sans-serif"
-    : 'Roboto_400Regular',
-
-  // Android + iOS
-  ...(Platform.OS !== 'web' && {
-    shadowColor: '#0f172a',
-    shadowOffset: {
-      width: 0,
-      height: 3,
-    },
-    shadowOpacity: 0.12,
-    shadowRadius: 5,
-    elevation: 4,
-  }),
-
-  // Web
-  ...(Platform.OS === 'web' && {
-    boxShadow: '0px 3px 5px rgba(15, 23, 42, 0.12)',
-  }),
-},
+  // ── "More" dropdown (unused now, kept for later) ──
   pill: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1.5,
-      tab: { alignItems: 'center', paddingHorizontal: 10, paddingVertical: 8 },
-    // Match the news description font across Android, iOS, and web.
-    tabLabel: { fontSize: 14.5, fontWeight: '400', color: '#4e5663', fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular' },
-  tabLabelActive: { color: '#f97316', fontWeight: '700' },
-  tabUnderline: { marginTop: 4, height: 2, width: '100%', backgroundColor: '#f97316', borderRadius: 2 },
   },
   pillLabel: { fontSize: 12.5, fontWeight: '700' },
   moreBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 999,
     paddingHorizontal: 14, paddingVertical: 8, backgroundColor: '#ffffff',
-      tab: { alignItems: 'center', paddingHorizontal: 10, paddingVertical: 8 },
-   tabLabel: { fontSize: 14.5, fontWeight: '400', color: '#64748b', fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular' },
-  tabLabelActive: { color: '#f97316', fontWeight: '700' },
-  tabUnderline: { marginTop: 4, height: 2, width: '100%', backgroundColor: '#f97316', borderRadius: 2 },
   },
   moreBtnText: { fontSize: 12.5, fontWeight: '700', color: '#0f172a' },
   overlay: { flex: 1, backgroundColor: 'rgba(15,23,42,0.35)', justifyContent: 'flex-start', alignItems: 'flex-end' },

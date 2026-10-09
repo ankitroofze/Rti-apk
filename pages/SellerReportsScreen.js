@@ -1,3 +1,4 @@
+import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useCallback, useState } from 'react';
 import {
   Alert,
@@ -182,7 +183,14 @@ export default function SellerReportsScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.root}>
-      <View style={styles.header}>
+      {Platform.OS === 'android' ? (
+<ModuleAndroidHeader title="Your Reports" subtitle="Seller Analytics" onBack={() => navigation?.goBack?.()}
+  rightExtra={<TouchableOpacity onPress={loadData} activeOpacity={0.8} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
+<Ionicons name="refresh" size={20} color="#fff" />
+</TouchableOpacity>} />
+) : (
+<>
+<View style={styles.header}>
         <TouchableOpacity
           style={styles.backBtn}
           onPress={() => navigation?.goBack?.()}
@@ -202,6 +210,8 @@ export default function SellerReportsScreen({ navigation }) {
           <Ionicons name="refresh" size={20} color="#0f172a" />
         </TouchableOpacity>
       </View>
+</>
+)}
 
       <ScrollView
         showsVerticalScrollIndicator={false}

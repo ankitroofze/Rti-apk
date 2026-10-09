@@ -128,7 +128,7 @@ if (!userId || !quizTypeId) {
     if (currentQIndex < questions.length - 1) {
       setCurrentQIndex((prev) => prev + 1);
     } else {
-      showToast('Yeh last question hai — Submit dabaye ya piche jaake skip kiya hua answer kare.', 'info');
+      showToast('This is the last question. Tap Submit, or go back and answer any skipped question.', 'info');
     }
   };
 

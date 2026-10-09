@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 import QRCodeGen from 'qrcode';
 import { esc, fmt, fmtValidUpto, generateMemberId, getRank, getIssueDate } from './profileHelpers';
-import { buildVerificationUrl } from './verificationHelpers';
+import { getIdCardVerification, buildFallbackQrUrl, buildPageVerifyUrl, formatCardDate } from './idCardService';
 import { resolveModuleImageSrc, resolvePdfImageSrc } from './imageHandling';
 import {
   RTI_VOICE_LOGO,
@@ -21,26 +21,46 @@ import {
 // isko print/PDF HTML mein <img> tag ke andar embed kiya jaata hai.
 async function buildQrDataUri(profile) {
   try {
-    const url = buildVerificationUrl(profile);
-    const svg = await QRCodeGen.toString(url, { type: 'svg', margin: 0, width: 120 });
-    const base64 = typeof btoa === 'function'
-      ? btoa(unescape(encodeURIComponent(svg)))
-      : Buffer.from(svg, 'utf-8').toString('base64');
-    return `data:image/svg+xml;base64,${base64}`;
+    const card = await getIdCardVerification();
+       const payload = String(buildPageVerifyUrl(card?.qr_payload) || buildFallbackQrUrl(profile) || '').trim();
+    if (!payload) return '';
+
+    // Backend ne ready-made image/SVG diya ho to seedha use karo
+    if (/^data:image\//i.test(payload)) return payload;
+    if (/^https?:\/\/\S+\.(png|jpe?g|gif|webp|svg)(\?\S*)?$/i.test(payload)) return payload;
+
+    const toDataUri = (svg) => {
+      const b64 = typeof btoa === 'function'
+        ? btoa(unescape(encodeURIComponent(svg)))
+        : Buffer.from(svg, 'utf-8').toString('base64');
+      return `data:image/svg+xml;base64,${b64}`;
+    };
+    if (/^<svg[\s>]|^<\?xml/i.test(payload)) return toDataUri(payload);
+
+    const encode = async (text) =>
+      toDataUri(await QRCodeGen.toString(text, { type: 'svg', margin: 0, width: 120, errorCorrectionLevel: 'L' }));
+
+    try {
+      return await encode(payload);
+    } catch (_e) {
+      const fb = String(card?.verification_url || '').trim();
+      return fb && fb !== payload ? await encode(fb) : '';
+    }
   } catch (_e) {
     return '';
   }
 }
 
 export async function buildIdCardHtml(profile, { webPreview = Platform.OS === 'web' } = {}) {
-  const memberId = generateMemberId(profile.email);
+  const idCardData = await getIdCardVerification(); // /id-cards API: id_number + valid_until
+  const memberId = idCardData?.id_number || generateMemberId(profile.email);
   const rank = getRank(profile.referral_count || 0);
   const seatName = String(profile?.state_seat?.seat_name || profile?.author_seat_name || '').trim();
   const designation = seatName || `${rank.title} - RTI News Member`;
   const location = [profile.village, profile.state].filter(Boolean).join(', ') || 'Not provided';
     const validUptoDate = new Date(getIssueDate(profile));
   validUptoDate.setFullYear(validUptoDate.getFullYear() + 1);
-  const validUpto = new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(validUptoDate); // ✅ ab preview jaisa hi DD/MM/YYYY format
+  const validUpto = formatCardDate(idCardData?.valid_until) || new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(validUptoDate); // ✅ ab preview jaisa hi DD/MM/YYYY format
   const docTitle = profile?.name?.trim() ? `ID Card - ${profile.name.trim()}` : 'ID Card';
   const resolvedPhoto = await resolvePdfImageSrc(profile.profile_image);
   const photoHtml = resolvedPhoto
@@ -56,6 +76,8 @@ export async function buildIdCardHtml(profile, { webPreview = Platform.OS === 'w
   const micIconSrc = await resolveModuleImageSrc(MIC_ICON, 'image/png');
   const micSvg = `<img src="${esc(micIconSrc || MIC_ICON_B64)}" style="width:40px;height:40px;object-fit:contain;border-radius:50%;"/>`;
   const qrDataUri = await buildQrDataUri(profile);
+  const verifyUrl = (await getIdCardVerification())?.verification_url || '';
+  const verifyLineHtml = verifyUrl ? `<div style="font-size:8px;color:#1a3a8a;word-break:break-all;margin-top:2px;">Verify: ${esc(verifyUrl)}</div>` : '';
   const qrInnerHtml = qrDataUri
     ? `<div class="id-card-qr-inner"><img src="${esc(qrDataUri)}" style="width:100%;height:100%;object-fit:contain;"/></div>`
     : '<div class="id-card-qr-inner"><div class="title">QR</div></div>';
@@ -214,6 +236,7 @@ export async function buildIdCardHtml(profile, { webPreview = Platform.OS === 'w
       <div class="id-card-row"><div class="id-card-key-light">Area:-</div><div class="id-card-val-light">${esc(location)}</div></div>
       <div class="id-card-row"><div class="id-card-key-light">Mo:</div><div class="id-card-val-light">${esc(profile.contact_number || '')}</div></div>
  <div class="id-card-row"><div class="id-card-key-light">ID No:-</div><div style="font-size:12px;font-weight:900;color:#cc2200;">${esc(memberId)}</div><div style="font-size:10px;font-weight:900;color:#15803d;margin-left:8px;">Valid Upto:</div><div style="font-size:10px;font-weight:900;color:#cc2200;margin-left:3px;">${esc(validUpto)}</div></div>
+      ${verifyLineHtml}
     </div>
       <div class="press-footer-wrapper">
         <div class="press-green-bar">
@@ -324,14 +347,15 @@ ${responsiveScript}
 
 export async function buildIdCardFrontAndBackHtml(profile, { webPreview = Platform.OS === 'web' } = {}) {
   // ── shared / front data ──
-  const memberId = generateMemberId(profile.email);
+  const idCardData = await getIdCardVerification(); // /id-cards API: id_number + valid_until
+  const memberId = idCardData?.id_number || generateMemberId(profile.email);
   const rank = getRank(profile.referral_count || 0);
   const seatName = String(profile?.state_seat?.seat_name || profile?.author_seat_name || '').trim();
   const designation = seatName || `${rank.title} - RTI News Member`;
   const location = [profile.village, profile.state].filter(Boolean).join(', ') || 'Not provided';
     const validUptoDate = new Date(getIssueDate(profile));
   validUptoDate.setFullYear(validUptoDate.getFullYear() + 1);
-  const validUpto = new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(validUptoDate); // ✅ preview jaisa DD/MM/YYYY
+  const validUpto = formatCardDate(idCardData?.valid_until) || new Intl.DateTimeFormat('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).format(validUptoDate); // ✅ preview jaisa DD/MM/YYYY
   const docTitle = profile?.name?.trim() ? `ID Card - ${profile.name.trim()}` : 'ID Card';
   const resolvedPhoto = await resolvePdfImageSrc(profile.profile_image);
   const photoHtml = resolvedPhoto
@@ -348,6 +372,8 @@ export async function buildIdCardFrontAndBackHtml(profile, { webPreview = Platfo
   const micIconSrc = await resolveModuleImageSrc(MIC_ICON, 'image/png');
   const micSvg = `<img src="${esc(micIconSrc || MIC_ICON_B64)}" style="width:40px;height:40px;object-fit:contain;border-radius:50%;"/>`;
   const qrDataUri = await buildQrDataUri(profile);
+  const verifyUrl = (await getIdCardVerification())?.verification_url || '';
+  const verifyLineHtml = verifyUrl ? `<div style="font-size:8px;color:#1a3a8a;word-break:break-all;margin-top:2px;">Verify: ${esc(verifyUrl)}</div>` : '';
   const qrInnerHtml = qrDataUri
     ? `<div class="id-card-qr-inner"><img src="${esc(qrDataUri)}" style="width:100%;height:100%;object-fit:contain;"/></div>`
     : '<div class="id-card-qr-inner"><div class="title">QR</div></div>';
@@ -522,6 +548,7 @@ export async function buildIdCardFrontAndBackHtml(profile, { webPreview = Platfo
             <div class="id-card-row"><div class="id-card-key-light">Area:-</div><div class="id-card-val-light">${esc(location)}</div></div>
             <div class="id-card-row"><div class="id-card-key-light">Mo:</div><div class="id-card-val-light">${esc(profile.contact_number || '')}</div></div>
                     <div class="id-card-row"><div class="id-card-key-light">ID No:-</div><div style="font-size:14px;font-weight:900;color:#cc2200;">${esc(memberId)}</div><div style="font-size:17px;font-weight:900;color:#15803d;margin-left:8px;">Valid Upto:</div><div style="font-size:17px;font-weight:900;color:#cc2200;margin-left:3px;">${esc(validUpto)}</div></div>
+            ${verifyLineHtml}
           </div>
                ${identityImgSrc ? `
       <div class="identity-green-bar">

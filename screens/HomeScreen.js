@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Image, Modal, Platform, ScrollView, StyleSheet, Text,
+ ActivityIndicator, Image, Modal, Platform, RefreshControl, ScrollView, StyleSheet, Text,
   TextInput, TouchableOpacity, View, useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
@@ -29,6 +29,8 @@ import StateDirectorySection from '../components/StateDirectorySection';
 import RightUtilityPanel from '../components/RightUtilityPanel';
 import MarqueeMenuBar from '../components/MarqueeMenuBar';
 import AutoFitAdImage from '../components/AutoFitAdImage';
+import MediaGallery from '../components/MediaGallery';
+import { groupAdStories } from '../utils/adGrouping';
 const PINK = '#FF2D78';
 const PINK_LIGHT = '#fff5f9';
 const PINK_BORDER = '#ffe0ed';
@@ -56,8 +58,8 @@ function homeStoryFromAd(ad = {}) {
     category: 'Sponsored',
     menuTags: ['latest', 'viral'],
     image: photo,
-    images: photo ? [photo] : [],
-    video: '',
+    images: Array.isArray(ad.images) && ad.images.length ? ad.images : (photo ? [photo] : []),
+    video: ad.video || '',
     state: ad.state || '',
     district: ad.district || '',
     date: ad.created_at || ad.updated_at || '',
@@ -99,13 +101,20 @@ function interleaveAdStories(stories = [], ads = []) {
   return [...mixed, ...ads.slice(adIndex)];
 }
 function homeStoryFromEcome(item = {}) {
-  const image = item.image || item.images?.[0] || item.photos?.[0] || item.mediaItems?.[0]?.uri || '';
+  const images = Array.from(new Set([
+    item.image,
+    ...(Array.isArray(item.images) ? item.images : []),
+    ...(Array.isArray(item.photos) ? item.photos : []),
+    ...(Array.isArray(item.mediaItems) ? item.mediaItems.filter((media) => String(media?.type || 'image').toLowerCase() !== 'video').map((media) => media?.uri) : []),
+  ].map((value) => typeof value === 'string' ? value : (value?.uri || value?.url || value?.image_url || value?.image || '')).filter(Boolean)));
+  const image = images[0] || '';
   return {
     id: `ecome-${item.id || item.ecom_id || Date.now()}`,
     isEcome: true,
     title: item.product_name || item.title || 'Ecome listing',
     description: item.description || '',
     image,
+    images,
     price: item.price || '',
     quantity: item.quantity || '',
     city: item.city || item.location || '',
@@ -129,12 +138,22 @@ function interleaveHomeStories(news = [], ads = [], ecomeListings = []) {
   return [...result, ...ecomeListings.slice(ecomeIndex)];
 }
 
+// E-commerce cards use the same 5-second, swipeable image gallery as news and ads.
+function EcomeImageGallery({ item, style }) {
+  const [width, setWidth] = useState(0);
+  const images = Array.isArray(item.images) && item.images.length ? item.images : (item.image ? [item.image] : []);
+  if (!images.length) return <View style={[style, ecomeRowStyles.imageFallback]}><Ionicons name="storefront-outline" size={28} color="#dc2626" /></View>;
+  return (
+    <View style={style} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
+      {width ? <MediaGallery images={images} width={width} maxHeight={120} /> : null}
+    </View>
+  );
+}
+
 function EcomeGridCard({ item, navigation }) {
   return (
     <TouchableOpacity style={ecomeRowStyles.cell} activeOpacity={0.88} onPress={() => navigation.navigate('FarmingBuy')}>
-      {item.image
-        ? <Image source={{ uri: item.image }} style={ecomeRowStyles.image} resizeMode="cover" />
-        : <View style={[ecomeRowStyles.image, ecomeRowStyles.imageFallback]}><Ionicons name="storefront-outline" size={28} color="#dc2626" /></View>}
+      <EcomeImageGallery item={item} style={ecomeRowStyles.image} />
       <View style={ecomeRowStyles.body}>
         <View style={ecomeRowStyles.topRow}>
           <Text style={ecomeRowStyles.badge}>ECOME</Text>
@@ -168,7 +187,7 @@ function EcomeHomeRow({ story, index, list, navigation }) {
 function EcomeHomeCard({ item, navigation }) {
   return (
     <TouchableOpacity style={ecomeStyles.card} activeOpacity={0.88} onPress={() => navigation.navigate('FarmingBuy')}>
-      {item.image ? <Image source={{ uri: item.image }} style={ecomeStyles.image} resizeMode="cover" /> : <View style={[ecomeStyles.image, ecomeStyles.imageFallback]}><Ionicons name="storefront-outline" size={30} color="#dc2626" /></View>}
+      <EcomeImageGallery item={item} style={ecomeStyles.image} />
       <View style={ecomeStyles.body}>
         <View style={ecomeStyles.topRow}><Text style={ecomeStyles.badge}>ECOME</Text><Text style={ecomeStyles.category}>{item.category}</Text></View>
         <Text style={ecomeStyles.title} numberOfLines={2}>{item.title}</Text>
@@ -245,14 +264,66 @@ function TopRotatingAdSlot({ ads = [], onPress }) {
 }
 
 function InFeedAdSlot({ ad, onPress }) {
-    const { width: winW } = useWindowDimensions();
-  const image = ad?.image || ad?.photo || ad?.image_url || ad?.images?.[0] || ad?.photos?.[0];
-  if (!image) return null;
+  const { width: winW } = useWindowDimensions();
+  const [page, setPage] = useState(0);
+  const imageOf = (a) => a?.image || a?.photo || a?.image_url || a?.images?.[0] || a?.photos?.[0];
+  // Ek hi user ke 2+ ads: ek slot ke andar side-scroll karke dekho
+  const group = Array.isArray(ad?.adGroup) && ad.adGroup.length > 1 ? ad.adGroup : null;
+  const slideW = Math.min(winW - 24, 520);
+
+  if (group) {
+    return (
+      <View style={styles.inFeedAdSlot}>
+        <Text style={styles.adCaption}>ADVERTISEMENT  •  {Math.min(page + 1, group.length)}/{group.length}</Text>
+        <View style={{ width: slideW }}>
+          <ScrollView
+            horizontal
+            pagingEnabled
+            nestedScrollEnabled
+            showsHorizontalScrollIndicator={false}
+            scrollEventThrottle={16}
+            onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / slideW))}
+          >
+            {group.map((a) => (
+              <TouchableOpacity key={String(a.id)} style={{ width: slideW, alignItems: 'center' }} activeOpacity={0.92} onPress={() => onPress?.(a)}>
+                <AutoFitAdImage uri={imageOf(a)} maxWidth={slideW} maxHeight={420} />
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 8 }}>
+            {group.map((a, i) => (
+              <View key={String(a.id)} style={{ width: i === page ? 16 : 6, height: 6, borderRadius: 3, backgroundColor: i === page ? '#f97316' : '#cbd5e1' }} />
+            ))}
+          </View>
+        </View>
+      </View>
+    );
+  }
+
+   const image = imageOf(ad);
+  const gallery = Array.isArray(ad?.images) ? ad.images.filter(Boolean) : [];
+  const hasVideo = Boolean(ad?.video);
+  if (!image && !hasVideo) return null;
+
+  if (gallery.length > 1 || hasVideo) {
+    return (
+      <View style={styles.inFeedAdSlot}>
+        <Text style={styles.adCaption}>ADVERTISEMENT</Text>
+        <MediaGallery
+          images={gallery.length ? gallery : [image]}
+          video={ad.video}
+          width={Math.min(winW - 24, 520)}
+          maxHeight={420}
+          onPressImage={() => onPress?.(ad)}
+        />
+      </View>
+    );
+  }
+
   return (
     <TouchableOpacity style={styles.inFeedAdSlot} activeOpacity={0.92} onPress={() => onPress?.(ad)}>
       <Text style={styles.adCaption}>ADVERTISEMENT</Text>
-   
-<AutoFitAdImage uri={image} maxWidth={Math.min(winW - 24, 520)} maxHeight={420} />
+      <AutoFitAdImage uri={image} maxWidth={Math.min(winW - 24, 520)} maxHeight={420} />
     </TouchableOpacity>
   );
 }
@@ -534,7 +605,16 @@ export default function HomeScreen({ navigation, route }) {
 
   const handledRegistrationToastRef = useRef(false);
   const handledSubscriptionModalRef = useRef(false);
-  const pageScrollRef = useRef(null);
+ const pageScrollRef = useRef(null);
+  const newsCursorRef = useRef(null);
+  const newsHasMoreRef = useRef(true);
+  const newsLoadingRef = useRef(false);
+  const newsReqIdRef = useRef(0);
+  const newsStoriesRef = useRef([]);
+  const adStoriesRef = useRef([]);
+  const ecomeStoriesRef = useRef([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const scrollYRef = useRef(0);
   const handleRailWheel = IS_WEB
     ? (e) => {
@@ -591,40 +671,74 @@ export default function HomeScreen({ navigation, route }) {
     setSearchQuery('');
   }, [routeInitialView, routeInitialMenuKey, routeInitialStateName]);
 
-  const loadNewsStories = useCallback(async () => {
+   const loadNewsStories = useCallback(async ({ loadMore = false } = {}) => {
+    const sortByNewest = (a, b) => {
+      const dateA = new Date(a.createdAt || a.created_at || a.date || 0).getTime() || 0;
+      const dateB = new Date(b.createdAt || b.created_at || b.date || 0).getTime() || 0;
+      if (dateB !== dateA) return dateB - dateA;
+      return String(b.id || '').localeCompare(String(a.id || ''), undefined, { numeric: true });
+    };
+
+    if (loadMore && (newsLoadingRef.current || !newsHasMoreRef.current)) return; // duplicate / has_more=false
+    const reqId = ++newsReqIdRef.current;
+    newsLoadingRef.current = true;
+    if (loadMore) setLoadingMore(true);
+
     try {
+      const cursor = loadMore ? newsCursorRef.current : null;
       const [summary, activeAds, ecomeSummary] = await Promise.all([
-        UserStore.getNewsFeedSummary({ feedType: 'all' }),
-        UserStore.getActiveAdsFeed(),
-        UserStore.getEcomeMarketplaceSummary(),
+        UserStore.getNewsFeedSummary({ feedType: 'all', type: 1, perPage: 10, ...(cursor ? { cursor } : {}) }),
+        loadMore ? Promise.resolve(null) : UserStore.getActiveAdsFeed(),
+        loadMore ? Promise.resolve(null) : UserStore.getEcomeMarketplaceSummary(),
       ]);
-      const fetchedStories = Array.isArray(summary?.items)
+      if (reqId !== newsReqIdRef.current) return;   // purana response (refresh ke baad) ignore
+      if (loadMore && !summary) return;             // temporary fail — cursor/hasMore jaisa tha waisa rahe
+
+      const pageStories = Array.isArray(summary?.items)
         ? summary.items.map((item, index) => normalizeStoryItem(item, index)).filter(Boolean)
         : [];
-      // Newest published/created story must always appear first, even if the
-      // API response arrives in a different order.
-      fetchedStories.sort((a, b) => {
-        const dateA = new Date(a.createdAt || a.created_at || a.date || 0).getTime() || 0;
-        const dateB = new Date(b.createdAt || b.created_at || b.date || 0).getTime() || 0;
-        if (dateB !== dateA) return dateB - dateA;
-        return String(b.id || '').localeCompare(String(a.id || ''), undefined, { numeric: true });
-      });
-      const adStories = Array.isArray(activeAds) ? activeAds.map(homeStoryFromAd) : [];
-      const ecomeStories = Array.isArray(ecomeSummary?.listings) ? ecomeSummary.listings.map(homeStoryFromEcome) : [];
-      // Advertisements are shown only as rotating image popups, never mixed
-      // into the editorial news cards.
-      setActiveAds(adStories);
-      const mixedNewsAndAds = [...fetchedStories, ...adStories];
-      mixedNewsAndAds.sort((a, b) => {
-        const dateA = new Date(a.createdAt || a.created_at || a.date || 0).getTime() || 0;
-        const dateB = new Date(b.createdAt || b.created_at || b.date || 0).getTime() || 0;
-        if (dateB !== dateA) return dateB - dateA;
-        return String(b.id || '').localeCompare(String(a.id || ''), undefined, { numeric: true });
-      });
-      setLiveStories(interleaveHomeStories(mixedNewsAndAds, [], ecomeStories));
-    } catch { setLiveStories([]); }
+
+      if (loadMore) {
+        const seen = new Set(newsStoriesRef.current.map((s) => String(s.id)));
+        newsStoriesRef.current = [...newsStoriesRef.current, ...pageStories.filter((s) => !seen.has(String(s.id)))];
+      } else {
+        newsStoriesRef.current = pageStories;
+        adStoriesRef.current = Array.isArray(activeAds) ? activeAds.map(homeStoryFromAd) : [];
+        ecomeStoriesRef.current = Array.isArray(ecomeSummary?.listings) ? ecomeSummary.listings.map(homeStoryFromEcome) : [];
+        // Advertisements sirf rotating popup mein, news cards ke beech nahi (existing rule)
+        setActiveAds(adStoriesRef.current);
+      }
+
+      const pg = summary?.pagination || null;
+      newsCursorRef.current = pg?.next_cursor || null;
+      newsHasMoreRef.current = Boolean(pg?.has_more && pg?.next_cursor);
+
+      const news = [...newsStoriesRef.current].sort(sortByNewest);
+      const mixed = [...news, ...groupAdStories(adStoriesRef.current)].sort(sortByNewest);
+      setLiveStories(interleaveHomeStories(mixed, [], ecomeStoriesRef.current));
+    } catch {
+      if (!loadMore && reqId === newsReqIdRef.current) setLiveStories([]);
+    } finally {
+      if (reqId === newsReqIdRef.current) {
+        newsLoadingRef.current = false;
+        setLoadingMore(false);
+      }
+    }
   }, []);
 
+  // ✅ Pull-to-refresh: cursor reset, list replace, page 1 dobara
+  const handleRefreshNews = useCallback(async () => {
+    setRefreshing(true);
+    newsCursorRef.current = null;
+    newsHasMoreRef.current = true;
+    await loadNewsStories();
+    setRefreshing(false);
+  }, [loadNewsStories]);
+
+  // ✅ Infinite scroll: next_cursor se agla page, append
+  const handleLoadMoreNews = useCallback(() => {
+    loadNewsStories({ loadMore: true });
+  }, [loadNewsStories]);
   const loadCurrentUser = useCallback(async () => {
     try {
       const user = await UserStore.getCurrentUser();
@@ -838,13 +952,12 @@ const handleOpenLeadForm = useCallback((story) => {
 
   // ── Full-screen "promo" popup (Android home only) — built from the first
   // active sponsored ad, styled like a big brand offer card. ────────────
-  const homePromoAd = useMemo(() => {
-    const source = allAdsList?.[0];
-    if (!source) return null;
+  const homePromoAds = useMemo(() => (allAdsList || []).map((source) => {
     const image = source.image || source.photo || source.image_url || source.images?.[0] || source.photos?.[0];
+    if (!image) return null;
     const gallery = Array.isArray(source.images) && source.images.length
       ? source.images.slice(0, 3)
-      : (image ? [image] : []);
+      : [image];
     return {
       brandName: source.owner_name || 'Sponsored',
       headline: source.title || 'Great Deals. Bigger Savings.',
@@ -858,7 +971,7 @@ const handleOpenLeadForm = useCallback((story) => {
       owner_mobile: source.owner_mobile,
       ...source,
     };
-  }, [allAdsList]);
+  }).filter(Boolean), [allAdsList]);
 
   const handleViewMoreAds = useCallback(() => setShowAllAds(true), []);
   const handleBackFromAds = useCallback(() => setShowAllAds(false), []);
@@ -1049,7 +1162,14 @@ const handleOpenLeadForm = useCallback((story) => {
       <AppNavbar navigation={navigation} activeScreen="Home" hideBottomBar={true} />
       <ScrollView
         ref={pageScrollRef}
-        onScroll={(e) => { scrollYRef.current = e.nativeEvent.contentOffset.y; }}
+      onScroll={(e) => {
+          const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+          scrollYRef.current = contentOffset.y;
+          if (viewMode !== 'states' && contentOffset.y + layoutMeasurement.height >= contentSize.height - 800) {
+            handleLoadMoreNews();
+          }
+        }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefreshNews} tintColor="#f97316" colors={['#f97316']} />}
         scrollEventThrottle={16}
         style={styles.pageScrollView}
         contentContainerStyle={[
@@ -1059,7 +1179,8 @@ const handleOpenLeadForm = useCallback((story) => {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        {pageContent}
+     {pageContent}
+        {loadingMore ? <ActivityIndicator style={{ marginVertical: 16 }} color="#f97316" /> : null}
       </ScrollView>
       {isMobileLayout && (
         <AppNavbar navigation={navigation} activeScreen="Home" hideTopHeader={true} />
@@ -1088,7 +1209,7 @@ const handleOpenLeadForm = useCallback((story) => {
       {/* <RotatingSponsoredAd ads={allAdsList} onPress={handleSponsoredAdPress} /> */}
 
             {(Platform.OS === 'android' || IS_WEB) && viewMode !== 'states' ? (
-        <HomePromoPopup ad={homePromoAd} onPress={handleSponsoredAdPress} />
+        <HomePromoPopup ads={homePromoAds} onPress={handleSponsoredAdPress} />
       ) : null}
     </View>
   );

@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Image,
   ScrollView,
   Text,
   TextInput,
   TouchableOpacity,
+  Platform,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -64,6 +66,36 @@ export default function LoginScreen({ navigation, route }) {
     navigation.reset({ index: 0, routes: [{ name: redirectTo }] });
   };
 
+  // ✅ NEW: deleted account ko reactivate karo (public API, token nahi bhejna)
+  const reactivateAccount = async (email) => {
+    setSubmitting(true);
+    try {
+      const result = await AuthAPI.reactivateAccount({ email, password });
+      if (result.ok) {
+        // Reactivate response bilkul login jaisa hai — token AuthAPI me save ho chuka hai
+        await finishLogin(email, result.user);
+        return;
+      }
+      // 422 (incorrect creds / already active / inactive-admin), 429, network — sab message dikhao
+      setErrors((prev) => ({ ...prev, general: result.message || 'Unable to reactivate account.' }));
+    } catch {
+      setErrors((prev) => ({ ...prev, general: 'Reactivation failed. Please try again.' }));
+    } finally { setSubmitting(false); }
+  };
+
+  const confirmReactivate = (email) => {
+    const message = 'Account deleted hai. Kya aap dobara active karna chahte hain?';
+    if (Platform.OS === 'web') {
+      // react-native-web par Alert.alert multi-button support nahi karta
+      if (typeof window !== 'undefined' && window.confirm(message)) reactivateAccount(email);
+      return;
+    }
+    Alert.alert('Account Deleted', message, [
+      { text: 'Nahi', style: 'cancel' },
+      { text: 'Reactivate', onPress: () => reactivateAccount(email) },
+    ]);
+  };
+
   const handleLogin = async () => {
     if (!validate()) return;
     setSubmitting(true);
@@ -73,6 +105,8 @@ export default function LoginScreen({ navigation, route }) {
       if (isEmail) {
         const result = await AuthAPI.login({ email: value.toLowerCase(), password });
         if (result.ok) { await finishLogin(value.toLowerCase(), result.user); return; }
+        // ✅ NEW: deleted account -> reactivate ka option do
+        if (result.code === 'account_deleted') { confirmReactivate(value.toLowerCase()); return; }
         if (!result.isNetwork) { setErrors((prev) => ({ ...prev, general: result.message || 'Invalid credentials.' })); return; }
       }
       const mobile = value.replace(/\s/g, '');

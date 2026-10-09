@@ -21,6 +21,11 @@ export default function RtmpBroadcaster({
   const publisherRef = useRef(null);
   const lastSwitchSignal = useRef(switchCameraSignal);
   const preparedRef = useRef(false);
+  // hybridRef sirf pehli baar bante waqt callbacks capture karta tha (useMemo [] ), isliye
+  // onConnectionSuccess me broadcastId hamesha purana (null) milta tha aur live "submit" kabhi nahi hota tha.
+  // Ab hamesha latest callbacks ref se call hote hain.
+  const callbacksRef = useRef({});
+  callbacksRef.current = { onConnectionSuccess, onConnectionFailed, onDisconnect };
 
   const hybridRef = useMemo(
     () => callback((ref) => {
@@ -35,9 +40,10 @@ export default function RtmpBroadcaster({
       ref.setAutoReconnect(5, 3000);
 
       ref.setOnConnectionEvent((event, message) => {
-        if (event === 'connectionSuccess') onConnectionSuccess?.();
-        else if (event === 'connectionFailed') onConnectionFailed?.(message);
-        else if (event === 'disconnect') onDisconnect?.(message);
+        const cb = callbacksRef.current;
+        if (event === 'connectionSuccess') cb.onConnectionSuccess?.();
+        else if (event === 'connectionFailed') cb.onConnectionFailed?.(message);
+        else if (event === 'disconnect') cb.onDisconnect?.(message);
       });
     }),
     []

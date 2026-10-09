@@ -119,7 +119,8 @@ export default function QuizSubscriptionScreen({ navigation, route }) {
           await UserStore.markPaymentFailed(
             errorInfo.razorpay_order_id,
             errorInfo.error_code,
-            errorInfo.error_description
+            errorInfo.error_description,
+            'quiz'
           );
           showPopup(errorInfo.error_description || 'Payment failed or cancelled.', 'error');
         },

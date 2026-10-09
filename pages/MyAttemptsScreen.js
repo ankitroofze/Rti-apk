@@ -1,3 +1,4 @@
+import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useCallback, useState } from 'react';
 import {
   Platform,
@@ -13,7 +14,7 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import ModuleWebHeader from '../components/Modulewebheader';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useToast } from '../components/ui/ToastProvider';
+import { useToast, useBusy } from '../components/ui/ToastProvider';
 import CertificationStyles from '../styles/CertificationStyles';
 import { UserStore } from '../store/UserStore';
 import { getQuizResultTier, getScoreText } from '../utils/quizResultLogic';
@@ -28,7 +29,8 @@ export default function MyAttemptsScreen({ navigation }) {
   const { showToast } = useToast();
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
-  const [attempts, setAttempts] = useState([]);
+   const [attempts, setAttempts] = useState([]);
+  useBusy(loading);
 
   const loadAttempts = useCallback(async () => {
     setLoading(true);
@@ -71,12 +73,18 @@ export default function MyAttemptsScreen({ navigation }) {
     });
   };
 const handleDownload = (item) => {
+  // Certificate sirf Exam type + Pass ke liye. Practice/Training me nahi milta.
+  if (String(item.quiz_type || '').trim().toLowerCase() !== 'exam') {
+  showToast('Certificate is available only for Exam attempts, not for Practice or Training.', 'error');
+    return;
+  }
   if (!getQuizResultTier(item.percentage).passed) {
     showToast('Certificate only available for passed exams.', 'error');
     return;
   }
   navigation.navigate('CertificatePreview', {
     result: {
+      quiz_type: item.quiz_type,
       quiz_title: item.quiz_title,
       percentage: item.percentage,
       user_name: item.user_name,
@@ -96,7 +104,10 @@ const handleDownload = (item) => {
       ? CertificationStyles.passBadge
       : CertificationStyles.retryBadge;
 
-  const canDownload = (item) => (item.result_type || '').toLowerCase() === 'pass';
+  // Certificate: sirf Exam type + Pass. Pehle sirf pass check hota tha, isliye
+  // Practice/Training pass hone par bhi Download button chalu ho jata tha.
+  const isExamAttempt = (item) => String(item.quiz_type || '').trim().toLowerCase() === 'exam';
+  const canDownload = (item) => isExamAttempt(item) && getQuizResultTier(item.percentage).passed;
 
   return (
     <View style={[CertificationStyles.root]}>
@@ -104,7 +115,10 @@ const handleDownload = (item) => {
       {Platform.OS === 'web' ? (
         <ModuleWebHeader title="My Attempts" navigation={navigation} />
       ) : (
-        <View
+        Platform.OS === 'android' ? (
+<ModuleAndroidHeader title="My Attempts" onBack={() => navigation.goBack()} />
+) : (
+<View
           style={{
             width: '100%',
             overflow: 'hidden',
@@ -127,6 +141,7 @@ const handleDownload = (item) => {
           </TouchableOpacity>
           <Text style={{ fontSize: 15, color: '#fff', fontFamily: 'Roboto_400Regular' }}>My Attempts</Text>
         </View>
+)
       )}
       <ScrollView
         style={CertificationStyles.scrollView}
@@ -173,7 +188,7 @@ const handleDownload = (item) => {
                 <View style={CertificationStyles.scoreRow}>
                   <Feather name="tag" size={13} color="#F97316" />
                   <Text style={CertificationStyles.scoreText}>
-                    Type: <Text style={CertificationStyles.scoreBold}>{TYPE_LABEL[item.quiz_type] || item.quiz_type || '—'}</Text>
+                    Type: <Text style={CertificationStyles.scoreBold}>{TYPE_LABEL[String(item.quiz_type || '').trim().toLowerCase()] || item.quiz_type || '—'}</Text>
                   </Text>
                 </View>
 
@@ -258,7 +273,7 @@ const handleDownload = (item) => {
             ))
           ) : (
             <Text style={CertificationStyles.emptyText}>
-              Aapne abhi tak koi quiz attempt nahi kiya hai.
+           You have not attempted any quiz yet.
             </Text>
           )}
         </View>

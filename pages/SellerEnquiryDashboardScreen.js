@@ -1,3 +1,4 @@
+import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useCallback, useState } from 'react';
 import {
   Alert,
@@ -14,6 +15,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { UserStore } from '../store/UserStore';
+import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
+
+const FONT = { regular: 'Roboto_400Regular', medium: 'Roboto_500Medium', bold: 'Roboto_700Bold', black: 'Roboto_900Black' };
 
 const IS_WEB = Platform.OS === 'web';
 
@@ -108,6 +112,8 @@ const EnquiryBuyerCard = ({ enquiry, product, onCall, onWhatsApp, index }) => {
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 export default function SellerEnquiryDashboardScreen({ navigation }) {
+  // Roboto load (fonts load hone tak system font, phir Roboto apply hota hai)
+  useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const insets = useSafeAreaInsets();
   const [loading, setLoading]         = useState(true);
   const [listings, setListings]       = useState([]);
@@ -166,7 +172,14 @@ export default function SellerEnquiryDashboardScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.root}>
-      <View style={{ height: IS_WEB ? 0 : insets.top, backgroundColor: '#111' }} />
+      {Platform.OS === 'android' ? (
+<ModuleAndroidHeader title="Enquiries Received" onBack={() => navigation?.goBack?.()}
+  rightExtra={<TouchableOpacity onPress={loadData} activeOpacity={0.8} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
+<Ionicons name="refresh-outline" size={20} color="#fff" />
+</TouchableOpacity>} />
+) : (
+<>
+<View style={{ height: IS_WEB ? 0 : insets.top, backgroundColor: '#111' }} />
 
       {/* ── Topbar ── */}
       <View style={styles.header}>
@@ -179,6 +192,8 @@ export default function SellerEnquiryDashboardScreen({ navigation }) {
           <Ionicons name="refresh-outline" size={18} color={IS_WEB ? '#ea580c' : '#fff'} />
         </TouchableOpacity>
       </View>
+</>
+)}
 
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -308,8 +323,8 @@ const styles = StyleSheet.create({
     borderBottomColor: IS_WEB ? '#f0e8e0' : '#1e1e1e',
   },
   backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 6 },
-  backLabel:   { fontSize: 13, color: '#ea580c', fontWeight: '500' },
-  headerTitle: { flex: 1, fontSize: 15, fontWeight: '600', color: IS_WEB ? '#0f172a' : '#fff' },
+  backLabel:   { fontSize: 13, color: '#ea580c', fontWeight: '500', fontFamily: FONT.medium },
+  headerTitle: { flex: 1, fontSize: 15, fontWeight: '600', color: IS_WEB ? '#0f172a' : '#fff' , fontFamily: FONT.medium },
   refreshBtn:  { padding: 6 },
 
   container: {
@@ -321,17 +336,17 @@ const styles = StyleSheet.create({
   },
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 10 },
   loadingDot:  { width: 36, height: 36, borderRadius: 18, backgroundColor: '#fff7ed', borderWidth: 2, borderColor: '#ea580c' },
-  loadingText: { fontSize: 13, color: '#94a3b8' },
+  loadingText: { fontSize: 13, color: '#94a3b8' , fontFamily: FONT.regular },
 
   pageHeader: { paddingTop: 24, paddingBottom: 4 },
-  pageTitle:  { fontSize: 26, fontWeight: '600', color: '#0f172a', letterSpacing: -0.4 },
-  pageSub:    { fontSize: 13, color: '#94a3b8', marginTop: 4 },
+  pageTitle:  { fontSize: 26, fontWeight: '600', color: '#0f172a', letterSpacing: -0.4, fontFamily: FONT.medium },
+  pageSub:    { fontSize: 13, color: '#94a3b8', marginTop: 4, fontFamily: FONT.regular },
 
   // ── Stats ──
   statsRow: { flexDirection: 'row', gap: 10, marginTop: 14, marginBottom: 16 },
   statBox:  { flex: 1, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, padding: 12, alignItems: 'center' },
-  statLabel: { fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '600', textAlign: 'center' },
-  statVal:   { fontSize: 22, fontWeight: '600', color: '#0f172a', marginTop: 4 },
+  statLabel: { fontSize: 10, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.6, fontWeight: '600', textAlign: 'center' , fontFamily: FONT.medium },
+  statVal:   { fontSize: 22, fontWeight: '600', color: '#0f172a', marginTop: 4, fontFamily: FONT.medium },
 
   // ── Product card ──
   productCard: {
@@ -352,17 +367,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff7ed',
     alignItems: 'center', justifyContent: 'center',
   },
-  productTitle:   { fontSize: 14, fontWeight: '600', color: '#0f172a' },
+  productTitle:   { fontSize: 14, fontWeight: '600', color: '#0f172a', fontFamily: FONT.medium },
   productMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 },
-  productPrice:   { fontSize: 12, fontWeight: '600', color: '#ea580c' },
-  metaDot:        { fontSize: 11, color: '#cbd5e1' },
-  productCity:    { fontSize: 11, color: '#94a3b8' },
+  productPrice:   { fontSize: 12, fontWeight: '600', color: '#ea580c', fontFamily: FONT.medium },
+  metaDot:        { fontSize: 11, color: '#cbd5e1', fontFamily: FONT.regular },
+  productCity:    { fontSize: 11, color: '#94a3b8', fontFamily: FONT.regular },
   enquiryCountBadge: {
     minWidth: 26, height: 26, borderRadius: 13,
     backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fed7aa',
     alignItems: 'center', justifyContent: 'center', paddingHorizontal: 6,
   },
-  enquiryCountText: { fontSize: 12, fontWeight: '700', color: '#ea580c' },
+  enquiryCountText: { fontSize: 12, fontWeight: '700', color: '#ea580c' , fontFamily: FONT.bold },
 
   // ── Expanded section ──
   expandedWrap: {
@@ -371,7 +386,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   noEnquiryWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 16, paddingHorizontal: 4 },
-  noEnquiryText: { fontSize: 13, color: '#94a3b8' },
+  noEnquiryText: { fontSize: 13, color: '#94a3b8' , fontFamily: FONT.regular },
 
   // ── Buyer card ──
   buyerCard: {
@@ -387,11 +402,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fed7aa',
     alignItems: 'center', justifyContent: 'center',
   },
-  avatarText:     { fontSize: 13, fontWeight: '700', color: '#ea580c' },
-  buyerName:      { fontSize: 13, fontWeight: '600', color: '#0f172a' },
-  buyerEmail:     { fontSize: 11, color: '#94a3b8', marginTop: 2 },
+  avatarText:     { fontSize: 13, fontWeight: '700', color: '#ea580c', fontFamily: FONT.bold },
+  buyerName:      { fontSize: 13, fontWeight: '600', color: '#0f172a', fontFamily: FONT.medium },
+  buyerEmail:     { fontSize: 11, color: '#94a3b8', marginTop: 2, fontFamily: FONT.regular },
   buyerIndexBadge:{ backgroundColor: '#f1f5f9', borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3 },
-  buyerIndexText: { fontSize: 10, fontWeight: '700', color: '#64748b' },
+  buyerIndexText: { fontSize: 10, fontWeight: '700', color: '#64748b' , fontFamily: FONT.bold },
 
   buyerChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
   chip: {
@@ -399,7 +414,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0',
     borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4,
   },
-  chipText: { fontSize: 11, fontWeight: '600', color: '#ea580c' },
+  chipText: { fontSize: 11, fontWeight: '600', color: '#ea580c' , fontFamily: FONT.medium },
 
   messageBox: {
     flexDirection: 'row', gap: 6, alignItems: 'flex-start',
@@ -407,7 +422,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#e2e8f0',
     padding: 10, marginBottom: 10,
   },
-  messageText: { fontSize: 12, color: '#475569', lineHeight: 18, flex: 1 },
+  messageText: { fontSize: 12, color: '#475569', lineHeight: 18, flex: 1 , fontFamily: FONT.regular },
 
   buyerActions: { flexDirection: 'row', gap: 8 },
   callBtn: {
@@ -418,11 +433,11 @@ const styles = StyleSheet.create({
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 6, backgroundColor: '#16a34a', borderRadius: 10, paddingVertical: 10,
   },
-  actionBtnText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  actionBtnText: { fontSize: 12, fontWeight: '700', color: '#fff' , fontFamily: FONT.bold },
 
   // ── Empty ──
   emptyBox:      { alignItems: 'center', backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', paddingVertical: 52, marginTop: 12 },
   emptyIconWrap: { width: 64, height: 64, borderRadius: 20, backgroundColor: '#fff7ed', alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
-  emptyTitle:    { fontSize: 16, fontWeight: '700', color: '#0f172a' },
-  emptySub:      { fontSize: 12, color: '#64748b', marginTop: 6, textAlign: 'center', paddingHorizontal: 32, lineHeight: 18 },
+  emptyTitle:    { fontSize: 16, fontWeight: '700', color: '#0f172a', fontFamily: FONT.bold },
+  emptySub:      { fontSize: 12, color: '#64748b', marginTop: 6, textAlign: 'center', paddingHorizontal: 32, lineHeight: 18, fontFamily: FONT.regular },
 });

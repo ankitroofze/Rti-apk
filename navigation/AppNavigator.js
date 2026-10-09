@@ -15,6 +15,7 @@ import RegisterScreen from '../auth/RegisterScreen';
 import StateSelectScreen from '../auth/StateSelectScreen';
 import DistrictSelectScreen from '../auth/DistrictSelectScreen';
 import TalukaSelectScreen from '../auth/TalukaSelectScreen';
+import VillageSelectScreen from '../auth/VillageSelectScreen';
 import ForgotPasswordScreen from '../auth/ForgotPasswordScreen';
 import ResetPasswordScreen from '../auth/ResetPasswordScreen';
 // import DashboardScreen from '../pages/DashboardScreen';
@@ -88,7 +89,8 @@ export default function AppNavigator() {
     { name: 'Register', component: RegisterScreen },
     { name: 'StateSelect', component: StateSelectScreen },
     { name: 'DistrictSelect', component: DistrictSelectScreen },
-    { name: 'TalukaSelect', component: TalukaSelectScreen },
+       { name: 'TalukaSelect', component: TalukaSelectScreen },
+    { name: 'VillageSelect', component: VillageSelectScreen },
     { name: 'ForgotPassword', component: ForgotPasswordScreen },
     { name: 'ResetPassword', component: ResetPasswordScreen },
     // { name: 'Dashboard', component: DashboardScreen },

@@ -1,4 +1,5 @@
 // components/NewsFeedCard.js
+import NameWithTick from './NameWithTick';
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import {
   View, Text, Image, TouchableOpacity, StyleSheet,
@@ -22,6 +23,8 @@ import { getAdRedirectMeta, openAdRedirect } from '../utils/adRedirect';
 import styles from './NewsFeedCardStyles';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getProfileTier } from '../utils/profileHelpers';
+import MediaGallery from './MediaGallery';
+import { MediaLogo, MediaTicker } from './MediaBrandOverlay';
 
 // ─────────────────────────────────────────────
 // Like persistence helpers
@@ -60,6 +63,7 @@ async function setLikedId(email, storyId, liked) {
 // CommentItem
 // ─────────────────────────────────────────────
 function CommentItem({
+  currentUserId,
   comment,
   currentUserEmail,
   onEdit,
@@ -68,6 +72,8 @@ function CommentItem({
   onLike,
   expandedReplyThreads,
   onToggleReplies,
+  repliesMeta,
+  onLoadMoreReplies,
   editingCommentId,
   editingCommentText,
   onEditingTextChange,
@@ -80,11 +86,15 @@ function CommentItem({
   onCancelReply,
   isReply = false,
 }) {
-  const isCurrentUser = currentUserEmail && String(comment.author_email || '').trim().toLowerCase() === currentUserEmail;
+  const isCurrentUser = Boolean(
+    comment.is_mine ||
+    (currentUserId != null && comment.author_id && String(comment.author_id) === String(currentUserId)) ||
+    (currentUserEmail && String(comment.author_email || '').trim().toLowerCase() === currentUserEmail)
+  );
   const isEditing = editingCommentId === comment.id;
   const isReplying = replyingToCommentId === comment.id;
-  const isLiked = Array.isArray(comment.liked_by) && currentUserEmail && comment.liked_by.includes(currentUserEmail);
-  const replyCount = Array.isArray(comment.replies) ? comment.replies.length : 0;
+  const isLiked = Boolean(comment.liked_by_me);
+  const replyCount = Math.max(Number(comment.replies_count || 0), Array.isArray(comment.replies) ? comment.replies.length : 0);
   const hasReplies = replyCount > 0;
   const areRepliesExpanded = Boolean(expandedReplyThreads?.[comment.id]);
 
@@ -121,9 +131,9 @@ function CommentItem({
           </View>
         ) : (
           <View style={styles.commentBubble}>
-            <Text style={styles.commentAuthor}>{comment.author}</Text>
+            <NameWithTick name={comment.author} show={Boolean(comment.author_has_blue_tick)} style={styles.commentAuthor} badgeSize={13} />
             <Text style={styles.commentText}>{comment.text}</Text>
-            <Text style={styles.commentTime}>{comment.time}</Text>
+            <Text style={styles.commentTime}>{comment.time}{comment.edited_at ? ' • Edited' : ''}</Text>
           </View>
         )}
 
@@ -160,7 +170,7 @@ function CommentItem({
               placeholder="Write a reply..."
               placeholderTextColor="#94a3b8"
               multiline
-              maxLength={300}
+              maxLength={1000}
               autoFocus={true}
             />
             <View style={styles.commentReplyActions}>
@@ -194,7 +204,8 @@ function CommentItem({
                 {comment.replies.map((reply) => (
                   <CommentItem
                     key={reply.id}
-                    comment={reply}
+                  comment={reply}
+                    currentUserId={currentUserId}
                     currentUserEmail={currentUserEmail}
                     onEdit={onEdit}
                     onDelete={onDelete}
@@ -202,6 +213,8 @@ function CommentItem({
                     onLike={onLike}
                     expandedReplyThreads={expandedReplyThreads}
                     onToggleReplies={onToggleReplies}
+                    repliesMeta={repliesMeta}
+                    onLoadMoreReplies={onLoadMoreReplies}
                     editingCommentId={editingCommentId}
                     editingCommentText={editingCommentText}
                     onEditingTextChange={onEditingTextChange}
@@ -215,6 +228,14 @@ function CommentItem({
                     isReply={true}
                   />
                 ))}
+                {repliesMeta?.[comment.id]?.loading ? (
+                  <ActivityIndicator size="small" color="#f97316" style={{ marginVertical: 6 }} />
+                ) : null}
+                {repliesMeta?.[comment.id]?.hasMore && !repliesMeta?.[comment.id]?.loading ? (
+                  <TouchableOpacity onPress={() => onLoadMoreReplies(comment.id)} activeOpacity={0.8} style={styles.commentLoadMoreBtn}>
+                    <Text style={styles.commentLoadMoreText}>Aur replies dekhein</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
             ) : null}
           </View>
@@ -425,6 +446,34 @@ function NewsSectionBlock({ title, items, onPress, onLike, onOpenComments, onSha
 // ─────────────────────────────────────────────
 // Main Card Component
 // ─────────────────────────────────────────────
+// ✅ NEW: UserStore ke mapped comment -> card ke comment shape
+const toCardComment = (c = {}) => ({
+  id: String(c.id || ''),
+  text: String(c.text || ''),
+  author: String(c.author || 'User'),
+  authorInitial: String(c.author || 'U').charAt(0).toUpperCase(),
+  authorAvatar: String(c.author_avatar || ''),
+  author_id: c.author_id != null ? String(c.author_id) : '',
+  author_email: String(c.author_email || ''),
+  author_has_blue_tick: Boolean(c.author_has_blue_tick),
+  time: c.date || '',
+  edited_at: c.edited_at || null,
+  likes: Number(c.likes || 0),
+  liked_by: Array.isArray(c.liked_by) ? c.liked_by : [],
+  liked_by_me: Boolean(c.liked_by_me),
+  is_mine: Boolean(c.is_mine),
+  replies_count: Number(c.replies_count ?? (Array.isArray(c.replies) ? c.replies.length : 0)),
+  replies: Array.isArray(c.replies) ? c.replies.map(toCardComment) : [],
+});
+
+// ✅ NEW: GET /news ke latest_comments[] (max 2) -> preview rows
+const mapPreviewComments = (list) => (Array.isArray(list) ? list : []).slice(0, 2).map((c) => ({
+  id: c?.id != null ? `cmt-${c.id}` : '',
+  text: String(c?.comment ?? c?.text ?? '').trim(),
+  author: String(c?.user?.name || c?.author || 'User'),
+  avatar: String(c?.user?.profile_image_url || ''),
+})).filter((c) => c.id && c.text);
+
 export default function NewsFeedCard({
   story,
   isCompactLayout,
@@ -449,22 +498,37 @@ export default function NewsFeedCard({
 
  const [currentEmail, setCurrentEmail] = useState('');
   const [currentUserId, setCurrentUserId] = useState(null);
-  const [isLiked, setIsLiked] = useState(false);
+ const [isLiked, setIsLiked] = useState(Boolean(story.liked_by_me));
   const [likesCount, setLikesCount] = useState(Number(story.likes || 0));
   const [commentsCount, setCommentsCount] = useState(Number(story.comments || 0));
   const [sharesCount, setSharesCount] = useState(Number(story.shares || 0));
   const [viewsCount] = useState(Number(story.views || 0));
   const [showComments, setShowComments] = useState(false);
+  const [mediaWidth, setMediaWidth] = useState(0);
   const [commentText, setCommentText] = useState('');
-  const [localComments, setLocalComments] = useState([]);
+   const [localComments, setLocalComments] = useState([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentsHasMore, setCommentsHasMore] = useState(false);
+  const commentsLoadingRef = useRef(false);
+  const commentsCursorRef = useRef(null);
+  const commentsHasMoreRef = useRef(true);
+  const [previewComments, setPreviewComments] = useState(() => mapPreviewComments(story.latest_comments));
   const [editingCommentId, setEditingCommentId] = useState(null);
   const [editingCommentText, setEditingCommentText] = useState('');
   const [replyingToCommentId, setReplyingToCommentId] = useState(null);
   const [replyText, setReplyText] = useState('');
   const [expandedReplyThreads, setExpandedReplyThreads] = useState({});
+  // ✅ replies ki lazy-loading state: { [commentId]: { loading, loaded, hasMore, cursor } }
+  const repliesMetaRef = useRef({});
+  const [repliesMeta, setRepliesMeta] = useState({});
+  const likeBusyRef = useRef(new Set());
   const [showActionMenu, setShowActionMenu] = useState(false);
+  // ✅ Web: 3-dot menu chhota dropdown ban ke button ke neeche khulta hai (bottom sheet nahi)
+  const moreBtnRef = useRef(null);
+  const [menuAnchor, setMenuAnchor] = useState(null);
   const [isFollowingAuthor, setIsFollowingAuthor] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
+  const [isBlockedNow, setIsBlockedNow] = useState(false);
   const followActionInFlightRef = useRef(false);  
   const inputRef = useRef(null);
   const storyAuthorEmail = String(story.author_email || story.createdBy || story.created_by || '').trim().toLowerCase();
@@ -529,9 +593,40 @@ export default function NewsFeedCard({
     return null;
   }, []);
 
-  const handleToggleReplies = useCallback((commentId) => {
-    setExpandedReplyThreads((prev) => ({ ...prev, [commentId]: !prev[commentId] }));
+  const setReplyMeta = useCallback((commentId, patch) => {
+    repliesMetaRef.current = { ...repliesMetaRef.current, [commentId]: { ...(repliesMetaRef.current[commentId] || {}), ...patch } };
+    setRepliesMeta(repliesMetaRef.current);
   }, []);
+
+  // GET /comments/{commentId}/replies  (cursor pagination). more=true -> agla page
+  const loadReplies = useCallback(async (commentId, { more = false } = {}) => {
+    const meta = repliesMetaRef.current[commentId] || {};
+    if (meta.loading) return;
+    if (more && !meta.hasMore) return;
+    setReplyMeta(commentId, { loading: true });
+    try {
+      const res = await UserStore.getCommentReplies(commentId, { cursor: more ? meta.cursor : null, perPage: 20 });
+      if (!res?.ok) { setReplyMeta(commentId, { loading: false }); return; }
+      const page = res.replies.map(toCardComment);
+      setLocalComments((prev) => prev.map((c) => {
+        if (c.id !== commentId) return c;
+        const old = Array.isArray(c.replies) ? c.replies : [];
+        return { ...c, replies: more ? [...old, ...page.filter((p) => !old.some((x) => x.id === p.id))] : page };
+      }));
+      setReplyMeta(commentId, { loading: false, loaded: true, cursor: res.nextCursor || null, hasMore: Boolean(res.hasMore && res.nextCursor) });
+    } catch {
+      setReplyMeta(commentId, { loading: false });
+    }
+  }, [setReplyMeta]);
+
+  const handleLoadMoreReplies = useCallback((commentId) => loadReplies(commentId, { more: true }), [loadReplies]);
+
+  const handleToggleReplies = useCallback((commentId) => {
+    const isOpen = Boolean(expandedReplyThreads[commentId]);
+    setExpandedReplyThreads((prev) => ({ ...prev, [commentId]: !prev[commentId] }));
+    // pehli baar kholne par hi replies fetch karo
+    if (!isOpen && !repliesMetaRef.current[commentId]?.loaded) loadReplies(commentId);
+  }, [expandedReplyThreads, loadReplies]);
 
    useEffect(() => {
     let alive = true;
@@ -558,14 +653,12 @@ export default function NewsFeedCard({
       // to ye stale poll/refresh se aaya story prop trust nahi karenge —
       // warna optimistic update turant "auto unlike" hoke ulta ho jaata tha.
       if (Date.now() - lastOwnLikeActionAtRef.current < 15000) return;
-      const serverLiked = Boolean(Array.isArray(story.liked_by) && story.liked_by.includes(currentEmail));
-      const likedIds = await getLikedIds(currentEmail);
-      const localLiked = Boolean(likedIds[story.id]);
+     const serverLiked = story.liked_by_me !== undefined ? Boolean(story.liked_by_me) : Boolean(Array.isArray(story.liked_by) && story.liked_by.includes(currentEmail));
       if (!alive) return;
-      setIsLiked(serverLiked || localLiked);
+      setIsLiked(serverLiked);
     })();
     return () => { alive = false; };
-  }, [currentEmail, story.id, story.liked_by]);
+  }, [currentEmail, story.id, story.liked_by, story.liked_by_me]);
 
   useEffect(() => {
     let alive = true;
@@ -676,6 +769,12 @@ const safeImage = isValidImageUrl(effectiveImageUri)
     : buildPlaceholderImage(story.id || story.title);
 
   const isFileAttachment = story.mediaType === 'File' && Boolean(story.file?.uri);
+
+  // 2+ images => swipeable gallery. Bahar ka TouchableOpacity Android pe horizontal
+  // swipe/scroll chheen leta tha, isliye gallery ke case me plain View use hota hai
+  // (image tap MediaGallery ke andar onPressImage se handle hota hai).
+  const hasImageGallery = Array.isArray(story.images) && story.images.filter(Boolean).length > 1;
+  if (__DEV__) console.log('[GALLERY]', story.id, Platform.OS, 'images:', story.images?.length, JSON.stringify(story.images));
   const fileNameOrUri = String(story.file?.name || story.file?.uri || '').toLowerCase();
   const fileKind = isFileAttachment
     ? (fileNameOrUri.endsWith('.pdf') ? 'pdf' : /\.docx?$/i.test(fileNameOrUri) ? 'doc' : 'file')
@@ -741,6 +840,17 @@ const safeImage = isValidImageUrl(effectiveImageUri)
     return () => { safePause(player); };
   }, [player]);
 
+  // ✅ FIX: video poora chalne ke baad state "playing" hi atka rehta tha aur player end par khada tha,
+  // isliye pause/play ke baad dobara play nahi hota tha. End par start par rewind + paused state.
+  useEffect(() => {
+    if (!canPlayVideo || !player || typeof player.addListener !== 'function') return undefined;
+    const sub = player.addListener('playToEnd', () => {
+      try { player.currentTime = 0; } catch (_) {}
+      setVideoPaused(true);
+    });
+    return () => { try { sub?.remove?.(); } catch (_) {} };
+  }, [canPlayVideo, player]);
+
   const [videoDurationLabel, setVideoDurationLabel] = useState('');
   useEffect(() => {
     if (!canPlayVideo || !player) return;
@@ -760,8 +870,21 @@ const safeImage = isValidImageUrl(effectiveImageUri)
   }, [canPlayVideo, player]);
 
   const handleVideoPress = () => {
-    if (videoPaused) { setVideoPaused(false); setShowVideoPoster(false); }
-    else { setVideoPaused(true); }
+    // Asli player state dekho (sirf React state par bharosa nahi) — taaki pause ke baad play hamesha chale
+    let playingNow = false;
+    try { playingNow = Boolean(player?.playing); } catch (_) { playingNow = !videoPaused; }
+    if (!videoPaused && playingNow) {
+      safePause(player);
+      setVideoPaused(true);
+      return;
+    }
+    try {
+      const dur = Number(player?.duration || 0);
+      if (dur > 0 && Number(player?.currentTime || 0) >= dur - 0.2) player.currentTime = 0;
+    } catch (_) {}
+    setShowVideoPoster(false);
+    setVideoPaused(false);
+    safePlay(player); // state pehle se false ho tab bhi seedha play karo
   };
 
   const handleAdPress = useCallback(() => {
@@ -791,139 +914,132 @@ const safeImage = isValidImageUrl(effectiveImageUri)
     } catch {}
   }, []);
 
+  const goToLogin = useCallback(() => {
+    try {
+      if (navigation?.navigate) { navigation.navigate('Login'); return; }
+    } catch {}
+    showLoginRequired();
+  }, [navigation, showLoginRequired]);
+
   const requireLogin = useCallback(() => {
     if (isLoggedIn && currentEmail) return true;
-    showLoginRequired();
+    goToLogin();
     return false;
-  }, [currentEmail, isLoggedIn, showLoginRequired]);
+  }, [currentEmail, isLoggedIn, goToLogin]);
 
 const handleLike = async () => {
   if (!requireLogin()) return;
-  if (likeInFlightRef.current) return;
+  if (likeInFlightRef.current) return;      // is news ka request pending hai — dobara nahi
   likeInFlightRef.current = true;
 
-  const prev = isLiked;
-  const newLiked = !prev;
-  setIsLiked(newLiked);
-  setLikesCount((c) => c + (newLiked ? 1 : -1));
+  const prevLiked = isLiked;
+  const prevCount = likesCount;
+  setIsLiked(!prevLiked);
+  setLikesCount(Math.max(0, prevCount + (prevLiked ? -1 : 1)));
   lastOwnLikeActionAtRef.current = Date.now();
 
   try {
-    const user = await UserStore.ensureUserId();
-    const userId = user?.id || user?.user_id;
-    if (!userId) throw new Error('No user id');
-
-    // ✅ backend ka /likes endpoint khud toggle karta hai (Instagram jaisa) —
-    // like/unlike dono ke liye SAME POST call, alag DELETE nahi.
+    let adUserId = null;
+    if (isAdStory) {
+      const u = await UserStore.ensureUserId();
+      adUserId = u?.id || u?.user_id || null;
+    }
+    // ✅ News ke liye user_id NAHI jaata
     const result = await AuthAPI.likeNews({
-      userId,
+      userId: adUserId,
       newsId: isAdStory ? null : story.id,
       adsId: isAdStory ? story.id : null,
     });
 
     if (!result?.ok) {
-      setIsLiked(prev);
-      setLikesCount((c) => c + (prev ? 1 : -1));
+      setIsLiked(prevLiked);                // exact rollback
+      setLikesCount(prevCount);
       lastOwnLikeActionAtRef.current = 0;
-      if (result?.isAuth) showLoginRequired();
+      if (result?.isAuth) goToLogin();
+      else Alert.alert('Like', result?.message || 'Unable to update like. Please try again.');
       return;
     }
 
-    // ✅ backend ka result.liked hi final sach hai — hamara optimistic guess
-    // galat nikla to count ko yahi sahi kar dega.
-    const finalLiked = result.liked;
-    if (finalLiked !== newLiked) {
-      setLikesCount((c) => c + (finalLiked ? 1 : -1));
-    }
+    // ✅ backend ka response final truth
+    const finalLiked = Boolean(result.liked);
     setIsLiked(finalLiked);
-    await setLikedId(currentEmail, story.id, finalLiked);
-    await UserStore.syncLocalLikeEngagement(story.id, finalLiked);
+    if (Number.isFinite(result.likesCount)) {
+      setLikesCount(result.likesCount);
+    } else {
+      setLikesCount(Math.max(0, prevCount + (finalLiked ? 1 : 0) - (prevLiked ? 1 : 0)));
+    }
   } catch {
-    setIsLiked(prev);
-    setLikesCount((c) => c + (prev ? 1 : -1));
+    setIsLiked(prevLiked);
+    setLikesCount(prevCount);
     lastOwnLikeActionAtRef.current = 0;
   } finally {
     likeInFlightRef.current = false;
   }
 };
+   const loadComments = useCallback(async ({ reset = false } = {}) => {
+    if (commentsLoadingRef.current) return;                    // duplicate request nahi
+    if (!reset && !commentsHasMoreRef.current) return;         // has_more=false -> stop
+    commentsLoadingRef.current = true;
+    setCommentsLoading(true);
+    try {
+      const res = await UserStore.getNewsCommentsPage(story.id, {
+        cursor: reset ? null : commentsCursorRef.current,
+        perPage: 20,
+      });
+      if (!res?.ok) return;
+      if (reset) { repliesMetaRef.current = {}; setRepliesMeta({}); setExpandedReplyThreads({}); }
+      const page = res.comments.map(toCardComment);
+      setLocalComments((prev) => (
+        reset ? page : [...prev, ...page.filter((p) => !prev.some((x) => x.id === p.id))]
+      ));
+      commentsCursorRef.current = res.nextCursor || null;
+      commentsHasMoreRef.current = Boolean(res.hasMore && res.nextCursor);
+      setCommentsHasMore(commentsHasMoreRef.current);
+    } catch {
+    } finally {
+      commentsLoadingRef.current = false;
+      setCommentsLoading(false);
+    }
+  }, [story.id]);
+
+  // Comments dekhna PUBLIC hai (guest bhi). Add comment par login maanga jaata hai.
   const handleComment = async () => {
-    if (!requireLogin()) return;
-    setShowComments((prev) => {
-      const next = !prev;
-      if (next) {
-        setTimeout(() => inputRef.current?.focus(), 100);
-      } else {
-        setEditingCommentId(null);
-        setEditingCommentText('');
-        setReplyingToCommentId(null);
-        setReplyText('');
-        setExpandedReplyThreads({});
-      }
-      return next;
-    });
-    if (!showComments) {
-      try {
-        const summary = await UserStore.getNewsFeedSummary({ focusItemId: story.id });
-        const item = Array.isArray(summary?.items) ? summary.items.find((it) => it.id === story.id) : null;
-        const rawComments = Array.isArray(item?.comments_list) ? item.comments_list : [];
-        const formattedComments = rawComments.map((c) => ({
-          id: String(c.id || ''),
-          text: String(c.text || ''),
-          author: String(c.author || 'User'),
-          authorInitial: String(c.author || 'U').charAt(0).toUpperCase(),
-          authorAvatar: '',
-          author_email: String(c.author_email || ''),
-          time: c.date || '',
-          edited_at: c.edited_at || null,
-          likes: Number(c.likes || 0),
-          liked_by: Array.isArray(c.liked_by) ? c.liked_by : [],
-          replies: Array.isArray(c.replies) ? c.replies.map((r) => ({
-            id: String(r.id || ''),
-            text: String(r.text || ''),
-            author: String(r.author || 'User'),
-            authorInitial: String(r.author || 'U').charAt(0).toUpperCase(),
-            authorAvatar: '',
-            author_email: String(r.author_email || ''),
-            time: r.date || '',
-            edited_at: r.edited_at || null,
-            likes: Number(r.likes || 0),
-            liked_by: Array.isArray(r.liked_by) ? r.liked_by : [],
-          })) : [],
-        }));
-        setLocalComments(formattedComments);
-        setExpandedReplyThreads({});
-        setCommentsCount(Number(item?.comments || commentsCount || 0));
-      } catch {}
+    const next = !showComments;
+    setShowComments(next);
+    if (next) {
+      if (isLoggedIn) setTimeout(() => inputRef.current?.focus(), 100);
+      await loadComments({ reset: true });
+    } else {
+      setEditingCommentId(null);
+      setEditingCommentText('');
+      setReplyingToCommentId(null);
+      setReplyText('');
+      setExpandedReplyThreads({});
     }
   };
-
   const handleSubmitComment = async () => {
     if (!requireLogin()) return;
-    const trimmed = commentText.trim();
+    const trimmed = commentText.trim().slice(0, 1000);
     if (!trimmed) return;
     try {
       const result = await UserStore.addNewsComment(story.id, trimmed, { isAd: isAdStory });
-      if (!result?.ok) return;
-      const added = result.comment || {};
-      const newComment = {
-        id: String(added.id || Date.now().toString()),
-        text: String(added.text || trimmed),
-        author: String(added.author || userName),
-        authorInitial: String(added.author || userName).charAt(0).toUpperCase(),
-        authorAvatar: userAvatar,
-        author_email: currentEmail,
-        time: added.date || 'Now',
-        edited_at: null,
-        likes: 0,
-        liked_by: [],
-        replies: [],
-      };
-      setLocalComments((prev) => [newComment, ...prev]);
-      setCommentsCount((c) => c + 1);
+      if (!result?.ok) {
+        if (result?.isAuth) goToLogin();
+        else Alert.alert('Comment', result?.message || 'Unable to add comment.');
+        return;
+      }
+      const newComment = { ...toCardComment(result.comment || {}), replies: [] };
+      if (!newComment.authorAvatar) newComment.authorAvatar = userAvatar;
+      if (!newComment.author_id && currentUserId != null) newComment.author_id = String(currentUserId);
+      setLocalComments((prev) => [newComment, ...prev.filter((c) => c.id !== newComment.id)]);
+      setPreviewComments((prev) => [
+        { id: newComment.id, text: newComment.text, author: newComment.author, avatar: newComment.authorAvatar },
+        ...prev,
+      ].slice(0, 2));
+      setCommentsCount((c) => (Number.isFinite(result.commentsCount) ? result.commentsCount : c + 1));
       setCommentText('');
     } catch {}
   };
-
   const handleEditComment = useCallback((commentId, currentText) => {
     setReplyingToCommentId(null);
     setReplyText('');
@@ -936,12 +1052,17 @@ const handleLike = async () => {
     if (!trimmed || !editingCommentId) return;
     try {
       const result = await UserStore.editNewsComment(story.id, editingCommentId, trimmed);
-      if (!result?.ok) return;
+      if (!result?.ok) {
+        if (result?.isAuth) goToLogin();
+        else if (result?.notFound) await loadComments({ reset: true });
+        else Alert.alert('Edit', result?.message || 'Unable to edit comment.');
+        return;
+      }
       setLocalComments((prev) =>
         prev.map((comment) => {
-          if (comment.id === editingCommentId) return { ...comment, text: trimmed };
+          if (comment.id === editingCommentId) return { ...comment, text: trimmed, edited_at: new Date().toISOString() };
           if (Array.isArray(comment.replies)) {
-            return { ...comment, replies: comment.replies.map((r) => r.id === editingCommentId ? { ...r, text: trimmed } : r) };
+            return { ...comment, replies: comment.replies.map((r) => r.id === editingCommentId ? { ...r, text: trimmed, edited_at: new Date().toISOString() } : r) };
           }
           return comment;
         })
@@ -953,23 +1074,41 @@ const handleLike = async () => {
 
   const handleCancelEdit = () => { setEditingCommentId(null); setEditingCommentText(''); };
 
-  const handleDeleteComment = async (commentId) => {
+   const handleDeleteComment = async (commentId) => {
     try {
       const result = await UserStore.deleteNewsComment(story.id, commentId);
-      if (!result?.ok) return;
-      setLocalComments((prev) =>
-        prev.map((c) => {
-          if (c.id === commentId) return null;
-          if (Array.isArray(c.replies)) return { ...c, replies: c.replies.filter((r) => r.id !== commentId) };
-          return c;
-        }).filter(Boolean)
-      );
-      setCommentsCount((c) => Math.max(0, c - 1));
+      if (result?.notFound) {
+        // already deleted / available nahi — list ko backend se reconcile karo
+        await loadComments({ reset: true });
+        return;
+      }
+      if (!result?.ok) {
+        if (result?.isAuth) goToLogin();
+        else Alert.alert('Delete', result?.message || 'Unable to delete comment.');
+        return;
+      }
+      if (String(commentId).startsWith('rpl-')) {
+        // reply delete: sirf replies_count badalta hai, news ka comments_count nahi
+        setLocalComments((prev) =>
+          prev.map((c) => (
+            Array.isArray(c.replies) && c.replies.some((r) => r.id === commentId)
+              ? {
+                  ...c,
+                  replies: c.replies.filter((r) => r.id !== commentId),
+                  replies_count: Number.isFinite(result.repliesCount) ? result.repliesCount : Math.max(0, (c.replies_count || 0) - 1),
+                }
+              : c
+          ))
+        );
+      } else {
+        setLocalComments((prev) => prev.filter((c) => c.id !== commentId));
+        setPreviewComments((prev) => prev.filter((p) => p.id !== commentId));
+        setCommentsCount((c) => (Number.isFinite(result.commentsCount) ? result.commentsCount : Math.max(0, c - 1)));
+      }
       if (editingCommentId === commentId) { setEditingCommentId(null); setEditingCommentText(''); }
       if (replyingToCommentId === commentId) { setReplyingToCommentId(null); setReplyText(''); }
     } catch {}
   };
-
   const handleReplyComment = useCallback((commentId) => {
     if (!requireLogin()) return;
     const parentCommentId = findParentCommentId(localComments, commentId) || commentId;
@@ -982,44 +1121,36 @@ const handleLike = async () => {
       setReplyingToCommentId(commentId);
       setReplyText('');
       setExpandedReplyThreads((prev) => ({ ...prev, [parentCommentId]: true }));
+      const parent = localComments.find((c) => c.id === parentCommentId);
+      if (parent && Number(parent.replies_count || 0) > 0 && !repliesMetaRef.current[parentCommentId]?.loaded) loadReplies(parentCommentId);
     }
-  }, [findParentCommentId, localComments, replyingToCommentId, requireLogin]);
+  }, [findParentCommentId, localComments, replyingToCommentId, requireLogin, loadReplies]);
 
   const handleSubmitReply = async () => {
     if (!requireLogin()) return;
-    const trimmed = replyText.trim();
+    const trimmed = replyText.trim().slice(0, 1000);
     if (!trimmed || !replyingToCommentId) return;
     try {
-      const result = await UserStore.replyNewsComment(story.id, replyingToCommentId, trimmed, { isAd: isAdStory });
-      if (!result?.ok) return;
-      const added = result.comment || {};
-      const newReply = {
-        id: String(added.id || Date.now().toString()),
-        text: String(added.text || trimmed),
-        author: String(added.author || userName),
-        authorInitial: String(added.author || userName).charAt(0).toUpperCase(),
-        authorAvatar: userAvatar,
-        author_email: currentEmail,
-        time: added.date || 'Now',
-        edited_at: null,
-        likes: 0,
-        liked_by: [],
-      };
-      const parentCommentId = findParentCommentId(localComments, replyingToCommentId);
-      setLocalComments((prev) =>
-        prev.map((c) => {
-          if (c.id === replyingToCommentId || c.id === parentCommentId) {
-            return { ...c, replies: Array.isArray(c.replies) ? [newReply, ...c.replies] : [newReply] };
-          }
-          return c;
-        })
-      );
-      if (parentCommentId || replyingToCommentId) {
-        setExpandedReplyThreads((prev) => ({ ...prev, [parentCommentId || replyingToCommentId]: true }));
+      // reply hamesha top-level comment par jaata hai (reply ke upar reply = uska parent comment)
+      const parentCommentId = findParentCommentId(localComments, replyingToCommentId) || replyingToCommentId;
+      const result = await UserStore.replyNewsComment(story.id, parentCommentId, trimmed);
+      if (!result?.ok) {
+        if (result?.isAuth) goToLogin();
+        else if (result?.notFound) await loadComments({ reset: true });
+        else Alert.alert('Reply', result?.message || 'Unable to add reply.');
+        return;
       }
-      setCommentsCount((c) => c + 1);
+      // sirf replies_count badhao — news ka comments_count reply par nahi badalta
+      setLocalComments((prev) => prev.map((c) => (
+        c.id === parentCommentId
+          ? { ...c, replies_count: Number.isFinite(result.repliesCount) ? result.repliesCount : (c.replies_count || 0) + 1 }
+          : c
+      )));
+      setExpandedReplyThreads((prev) => ({ ...prev, [parentCommentId]: true }));
       setReplyingToCommentId(null);
       setReplyText('');
+      // server ke order me thread dobara laao
+      await loadReplies(parentCommentId);
     } catch {}
   };
 
@@ -1027,31 +1158,39 @@ const handleLike = async () => {
 
   const handleLikeComment = async (commentId) => {
     if (!requireLogin()) return;
+    if (likeBusyRef.current.has(commentId)) return;   // double-tap guard
+    likeBusyRef.current.add(commentId);
+
+    const patch = (fn) => setLocalComments((prev) => prev.map((c) => {
+      if (c.id === commentId) return fn(c);
+      if (Array.isArray(c.replies) && c.replies.some((r) => r.id === commentId)) {
+        return { ...c, replies: c.replies.map((r) => (r.id === commentId ? fn(r) : r)) };
+      }
+      return c;
+    }));
+    const toggle = (c) => {
+      const was = Boolean(c.liked_by_me);
+      return { ...c, liked_by_me: !was, likes: Math.max(0, (c.likes || 0) + (was ? -1 : 1)) };
+    };
+
+    patch(toggle);                                     // 1) optimistic
     try {
       const result = await UserStore.likeNewsComment(story.id, commentId);
-      if (!result?.ok) return;
-      setLocalComments((prev) =>
-        prev.map((c) => {
-          if (c.id === commentId) {
-            const wasLiked = Array.isArray(c.liked_by) && currentEmail && c.liked_by.includes(currentEmail);
-            return { ...c, likes: Math.max(0, (c.likes || 0) + (wasLiked ? -1 : 1)), liked_by: wasLiked ? c.liked_by.filter((e) => e !== currentEmail) : [...(c.liked_by || []), currentEmail] };
-          }
-          if (Array.isArray(c.replies)) {
-            return {
-              ...c,
-              replies: c.replies.map((r) => {
-                if (r.id === commentId) {
-                  const wasLiked = Array.isArray(r.liked_by) && currentEmail && r.liked_by.includes(currentEmail);
-                  return { ...r, likes: Math.max(0, (r.likes || 0) + (wasLiked ? -1 : 1)), liked_by: wasLiked ? r.liked_by.filter((e) => e !== currentEmail) : [...(r.liked_by || []), currentEmail] };
-                }
-                return r;
-              }),
-            };
-          }
-          return c;
-        })
-      );
-    } catch {}
+      if (!result?.ok) {                               // 3) fail -> wapas
+        patch(toggle);
+        if (result?.isAuth) goToLogin();
+        return;
+      }
+      patch((c) => ({                                  // 2) server se sync
+        ...c,
+        liked_by_me: Boolean(result.liked),
+        likes: Number.isFinite(result.likesCount) ? result.likesCount : c.likes,
+      }));
+    } catch {
+      patch(toggle);
+    } finally {
+      likeBusyRef.current.delete(commentId);
+    }
   };
 
   const handleShare = async () => {
@@ -1062,14 +1201,37 @@ const handleLike = async () => {
         { title: story.title, message: richShareMessage, url: postLink },
         { subject: story.title, dialogTitle: 'Share karo' }
       );
-      if (result.action === Share.sharedAction) {
-        setSharesCount((c) => c + 1);
-        try { await UserStore.updateNewsFeedItem(story.id, 'share'); } catch {}
+      if (result.action === Share.sharedAction && !isAdStory) {
+        const res = await AuthAPI.shareNews(story.id);
+        if (res?.ok) {
+          if (Number.isFinite(res.shareCount)) setSharesCount(res.shareCount);   // backend ka count
+        } else if (res?.rateLimited) {
+          Alert.alert('Share', 'Please try again later.');
+        }
       }
     } catch {}
   };
 
-  const closeActionMenu = () => setShowActionMenu(false);
+  const closeActionMenu = () => { setShowActionMenu(false); setMenuAnchor(null); };
+  const toggleActionMenu = () => {
+    if (showActionMenu) { closeActionMenu(); return; }
+    if (Platform.OS === 'web' && moreBtnRef.current?.measureInWindow) {
+      moreBtnRef.current.measureInWindow((x, y, w, h) => {
+        const menuW = 190;
+        const menuH = 140;
+        const viewH = typeof window !== 'undefined' ? window.innerHeight : 800;
+        const viewW = typeof window !== 'undefined' ? window.innerWidth : 1200;
+        const openUp = y + h + menuH + 8 > viewH;
+        setMenuAnchor({
+          top: openUp ? Math.max(8, y - menuH - 4) : y + h + 4,
+          left: Math.max(8, Math.min(x + w - menuW, viewW - menuW - 8)),
+        });
+        setShowActionMenu(true);
+      });
+      return;
+    }
+    setShowActionMenu(true);
+  };
   const showActionResult = (title, message) => { try { Alert.alert(title, message); } catch {} };
 
   const handleReport = async () => {
@@ -1077,8 +1239,24 @@ const handleLike = async () => {
     await UserStore.recordNewsFeedMenuAction(story.id, 'report', { title: story.title || '', reason: 'Reported from news feed menu' });
     showActionResult('Report submitted', 'Thanks. This post has been reported for review.');
   };
+  const handleBlockAuthor = async () => {
+    closeActionMenu();
+    if (!currentEmail) { showActionResult('Login required', 'Please login to block this user.'); return; }
+    if (!hasFollowTarget || isOwnStory) return;
+    try {
+      const result = await UserStore.blockUser(storyAuthorEmail, storyAuthorId);
+      if (result?.ok === false) {
+        showActionResult('Block', result?.message || 'Unable to block user.');
+        return;
+      }
+      setIsBlockedNow(true); // is user ka post turant feed se hat jayega
+    } catch {
+      showActionResult('Block', 'Unable to block user.');
+    }
+  };
 
   const handleCopyLink = async () => {
+
     closeActionMenu();
     let copied = false;
     try {
@@ -1126,12 +1304,6 @@ const handleLike = async () => {
   const stillCapturing = thumbnailCapturing && !posterReady;
   const currentUserEmail = String(currentUser?.email || '').trim().toLowerCase();
   const currentUserHasBlueTick = Boolean(currentUser && UserStore.hasBlueTick(currentUser));
-  const authorHasBlueTick = Boolean(
-    story.author_has_blue_tick || story.authorHasBlueTick || story.createdByBlueTick ||
-    story.has_blue_tick ||
-    (storyAuthorEmail && currentUserEmail === storyAuthorEmail && currentUserHasBlueTick)
-  );
-
   const [liveAuthorProfile, setLiveAuthorProfile] = useState(null);
 
   useEffect(() => {
@@ -1143,10 +1315,46 @@ const handleLike = async () => {
     return () => { cancelled = true; };
   }, [storyAuthorId]);
 
-  const seatLabel = getLocalizedSeatLabel(
-    liveAuthorProfile?.state_seat?.seat_name || story.author_seat_name,
-    commonCopy
+  // Refresh the profile entitlement so a web purchase appears on Android and
+  // an old post cannot retain a tick after the Premium Plan expires.
+    const authorHasBlueTick = Boolean(
+    story.author_has_blue_tick ||
+    (liveAuthorProfile
+      ? UserStore.hasBlueTick(liveAuthorProfile)
+      : (
+        (storyAuthorEmail && currentUserEmail === storyAuthorEmail && currentUserHasBlueTick) ||
+        UserStore.hasBlueTick({
+          subscription_plan: story.author_subscription_plan,
+          is_subscribed: story.author_is_subscriber || story.author_is_premium,
+        })
+      ))
   );
+
+  // Seat name (jaise "Car Nicobar") ab nahi dikhana. Uski jagah author ke
+  // subscription plan ka role name dikhega.
+  const authorPlanForRole = liveAuthorProfile?.subscription_plan || story.author_subscription_plan || null;
+  const planRoleNames = (authorPlanForRole?.role_names?.length
+    ? authorPlanForRole.role_names
+    : String(UserStore.getSeatRoleNameForPlanRoleId(authorPlanForRole?.role_id_raw || authorPlanForRole?.role_id || '') || '')
+        .split(', ')
+  ).filter(Boolean);
+  // Seat id ("district_head") se role ka naam banao -> "District Head".
+  // Seat NAME ("Car Nicobar") use nahi karna, sirf seat ID se role ka naam.
+  const authorSeatId = String(
+    liveAuthorProfile?.state_seat?.seat_id || story.author_seat_id || story.author_state_seat?.seat_id || ''
+  ).trim();
+  const seatRoleFromId = authorSeatId
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .trim();
+  // Priority: plan ke role names > seat id wala role > plan name > role label
+  const seatLabel =
+    planRoleNames.join(', ') ||
+    seatRoleFromId ||
+    String(authorPlanForRole?.plan_name || authorPlanForRole?.name || '').trim() ||
+    String(liveAuthorProfile?.role_label || story.author_role_label || '').trim();
+  // TEMP DEBUG: check karne ke baad ye line hata dena.
+  if (typeof console !== 'undefined') console.log('[PLAN-ROLE-DEBUG]', story.author_name, { authorSeatId, seatLabel, liveAuthorPlan: liveAuthorProfile?.subscription_plan, storyPlan: story.author_subscription_plan, seat_name_from_backend: liveAuthorProfile?.state_seat?.seat_name || story.author_seat_name });
   const authorTier = getProfileTier({
     seat_id: liveAuthorProfile?.state_seat?.seat_id || story.author_seat_id || story.author_state_seat?.seat_id,
     role: liveAuthorProfile?.role || story.author_role,
@@ -1157,7 +1365,17 @@ const handleLike = async () => {
       ? Boolean(liveAuthorProfile.is_subscribed)
       : Boolean(story.author_is_subscribed || story.author_is_subscriber || story.author_is_premium),
   });
+  const useGalleryWrap = hasImageGallery && !canPlayVideo && !isFileAttachment;
+  const HeroWrap = useGalleryWrap ? View : TouchableOpacity;
+  const heroWrapProps = useGalleryWrap
+    ? {}
+    : {
+        onPress: canPlayVideo ? handleVideoPress : (isFileAttachment ? handleFileOpen : handleImagePress),
+        activeOpacity: 0.95,
+      };
   const authorAvatarUri = isValidImageUrl(story.author_profile_image) ? story.author_profile_image : '';
+
+  if (isBlockedNow) return null;
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -1197,20 +1415,26 @@ const handleLike = async () => {
             ) : null}
             
             <View style={styles.storyAuthorMetaRow}>
-              {story.state ? (
-                <View style={styles.storyMetaPill}>
+                       {story.state ? (
+                <View style={[styles.storyMetaPill, { flexShrink: 1 }]}>
                   <Ionicons name="location-outline" size={12} color="#94a3b8" />
-                  <TouchableOpacity onPress={() => onOpenLocation(story.state)} activeOpacity={0.82}>
-                    <Text style={styles.storyMetaSmall}>
+                  <TouchableOpacity style={{ flexShrink: 1 }} onPress={() => onOpenLocation(story.state)} activeOpacity={0.82}>
+                    <Text style={styles.storyMetaSmall} numberOfLines={1} maxFontSizeMultiplier={1.1}>
                       {story.district ? `${story.district}, ${story.state}` : story.state}
                     </Text>
                   </TouchableOpacity>
                 </View>
               ) : null}
-              <View style={styles.storyMetaPill}>
-                <Ionicons name="time-outline" size={12} color="#94a3b8" />
-                <Text style={styles.storyMetaSmall}>{story.publishedAgo || story.date || 'Just now'}</Text>
-              </View>
+                          {(() => {
+                const agoText = String(story.publishedAgo || story.date || '').trim();
+                if (!agoText || /^updated recently$/i.test(agoText)) return null;
+                return (
+                  <View style={[styles.storyMetaPill, { flexShrink: 0 }]}>
+                    <Ionicons name="time-outline" size={12} color="#94a3b8" />
+                    <Text style={styles.storyMetaSmall} numberOfLines={1} maxFontSizeMultiplier={1.1}>{agoText}</Text>
+                  </View>
+                );
+              })()}
             </View>
           </View>
 
@@ -1219,49 +1443,52 @@ const handleLike = async () => {
             <TouchableOpacity
               style={[
                 styles.storyFollowBtnWrap,
-                isFollowingAuthor && styles.storyFollowBtnActive,
                 followLoading && styles.storyFollowBtnDisabled,
               ]}
               onPress={handleToggleFollowAuthor}
               activeOpacity={0.84}
               disabled={followLoading}
             >
-              {isFollowingAuthor ? (
-                <View style={styles.storyFollowBtn}>
-                  <Ionicons name="person" size={14} color="#16a34a" />
-                  <Text style={[styles.storyFollowBtnText, styles.storyFollowBtnTextActive]}>
-                    {followLoading ? '...' : 'Following'}
-                  </Text>
-                </View>
-              ) : (
-                <LinearGradient
-                  colors={authorTier.gradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={styles.storyFollowBtn}
-                >
-                  <Ionicons name="person-add-outline" size={14} color="#ffffff" />
-                  <Text style={styles.storyFollowBtnText}>
-                    {followLoading ? '...' : 'Follow'}
-                  </Text>
-                </LinearGradient>
-              )}
+              <View style={styles.storyFollowBtn}>
+                <Ionicons
+                  name={isFollowingAuthor ? 'person' : 'person-add-outline'}
+                  size={14}
+                  color="#dc2626"
+                />
+                <Text style={styles.storyFollowBtnText}>
+                  {followLoading ? '...' : (isFollowingAuthor ? 'Following' : 'Follow')}
+                </Text>
+              </View>
             </TouchableOpacity>
           ) : null}
     
           {/* ── More Button ── */}
-          <TouchableOpacity
-            style={[styles.storyMoreBtnTop, showActionMenu && styles.storyMoreBtnTopActive]}
-            onPress={(e) => { e.stopPropagation?.(); setShowActionMenu((v) => !v); }}
-            activeOpacity={0.82}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="ellipsis-vertical" size={20} color="#374151" />
-          </TouchableOpacity>
+          <View ref={moreBtnRef} collapsable={false}>
+            <TouchableOpacity
+              style={[styles.storyMoreBtnTop, showActionMenu && styles.storyMoreBtnTopActive]}
+              onPress={(e) => { e.stopPropagation?.(); toggleActionMenu(); }}
+              activeOpacity={0.82}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="ellipsis-vertical" size={20} color="#374151" />
+            </TouchableOpacity>
+          </View>
         </TouchableOpacity>
 
               {/* ── Hero Image / Video (ab headline se upar, FB layout) ── */}
-     <TouchableOpacity style={styles.storyHeroImageWrap} onPress={canPlayVideo ? handleVideoPress : (isFileAttachment ? handleFileOpen : handleImagePress)} activeOpacity={0.95}>
+     <HeroWrap
+       style={[
+         styles.storyHeroImageWrap,
+         hasImageGallery
+           ? { height: undefined, backgroundColor: '#ffffff' }
+           : null,
+       ]}
+       onLayout={(event) => {
+         const w = Math.round(event.nativeEvent.layout.width);
+         if (w && w !== mediaWidth) setMediaWidth(w);
+       }}
+       {...heroWrapProps}
+     >
           {canPlayVideo ? (
             <>
               <VideoView player={player} style={[StyleSheet.absoluteFill, { width: '100%', height: '100%' }]} contentFit="cover" nativeControls={false} fullscreenOptions={{ enabled: false }} playsInline onFirstFrameRender={() => setShowVideoPoster(false)} />
@@ -1278,11 +1505,24 @@ const handleLike = async () => {
               )}
               {videoPaused && (
                 <View style={styles.storyVideoPlayOverlay}>
-                  <View style={styles.storyVideoPlayBadge}><Ionicons name="play" size={24} color="#0f172a" /></View>
+                  <TouchableOpacity
+                    style={styles.storyVideoPlayBadge}
+                    onPress={(e) => { e?.stopPropagation?.(); handleVideoPress(); }}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="play" size={26} color="#0f172a" />
+                  </TouchableOpacity>
                 </View>
               )}
               {!videoPaused && (
-                <View style={styles.videoPlayingIndicator}><Ionicons name="pause" size={18} color="#ffffff" /></View>
+                <TouchableOpacity
+                  style={styles.videoPlayingIndicator}
+                  onPress={(e) => { e?.stopPropagation?.(); handleVideoPress(); }}
+                  activeOpacity={0.8}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="pause" size={18} color="#ffffff" />
+                </TouchableOpacity>
               )}
             </>
         ) : isFileAttachment ? (
@@ -1302,9 +1542,20 @@ const handleLike = async () => {
                 </Text>
               </TouchableOpacity>
             </View>
+          ) : hasImageGallery && mediaWidth ? (
+            <MediaGallery
+              images={story.images}
+              width={mediaWidth}
+              maxHeight={240}
+              radius={6}
+              onPressImage={handleImagePress}
+            />
           ) : (
             <Image source={{ uri: safeImage }} style={styles.storyHeroImage} resizeMode="cover" />
           )}
+          {/* ✅ Brand overlay: top-left logo + bottom auto-scroll "RTI INDIA NEWS" ticker */}
+          <MediaLogo />
+          <MediaTicker />
           {story.isFeatured ? (
             <View style={styles.topStoryRibbon}>
               <Text style={styles.topStoryRibbonText}>TOP STORY</Text>
@@ -1392,13 +1643,13 @@ const handleLike = async () => {
           >
             <Ionicons name="expand-outline" size={16} color="#ffffff" />
           </TouchableOpacity>
-        </TouchableOpacity>
+        </HeroWrap>
 
         {/* ── Headline + Excerpt (ab media ke niche, FB layout) ── */}
         <View style={styles.storyContentWrap}>
           <TouchableOpacity onPress={() => { if (!handleAdPress()) onOpenDetails(story); }} activeOpacity={0.88}>
             <Text style={styles.storyHeadlineText} numberOfLines={2} ellipsizeMode="tail">{story.title}</Text>
-            {story.subtitle ? <Text style={styles.storySubtitleText} numberOfLines={2}>{story.subtitle}</Text> : null}
+           
           </TouchableOpacity>
           {story.excerpt ? <InlineReadMore text={story.excerpt} style={styles.storyExcerptText} onPress={() => { if (!handleAdPress()) onOpenDetails(story); }} /> : null}
           {story.description && story.description !== story.excerpt ? <InlineReadMore text={story.description} style={styles.storyDescriptionText} onPress={() => { if (!handleAdPress()) onOpenDetails(story); }} /> : null}
@@ -1441,23 +1692,40 @@ const handleLike = async () => {
             <Text style={styles.singleActionText}>Share{sharesCount > 0 ? ` (${sharesCount})` : ''}</Text>
           </TouchableOpacity>
 
-                    <TouchableOpacity
-            style={styles.singleActionItem}
-            onPress={() => { if (!handleAdPress()) onOpenDetails(story); }}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="bookmark-outline" size={16} color="#475569" />
-            <Text style={styles.singleActionText}>Save</Text>
-          </TouchableOpacity>
+        
         </View>
 
-             {/* ── More Menu ── */}
-        <Modal visible={showActionMenu} transparent animationType="fade" statusBarTranslucent onRequestClose={closeActionMenu}>
+          {!isAdStory && !showComments && (previewComments.length > 0 || commentsCount > 0) ? (
+          <View style={styles.commentPreviewWrap}>
+            {commentsCount > 0 ? (
+              <TouchableOpacity onPress={handleComment} activeOpacity={0.8}>
+                <Text style={styles.commentPreviewViewAll}>View all {commentsCount} comments</Text>
+              </TouchableOpacity>
+            ) : null}
+            {previewComments.map((c) => (
+              <View key={c.id} style={styles.commentPreviewRow}>
+                {c.avatar ? (
+                  <Image source={{ uri: c.avatar }} style={styles.commentPreviewAvatar} />
+                ) : (
+                  <View style={[styles.commentPreviewAvatar, styles.commentPreviewAvatarFallback]}>
+                    <Text style={styles.commentPreviewAvatarText}>{String(c.author || 'U').charAt(0).toUpperCase()}</Text>
+                  </View>
+                )}
+                <Text style={styles.commentPreviewText} numberOfLines={2}>
+                  <Text style={styles.commentPreviewAuthor}>{c.author} </Text>{c.text}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {/* ── More Menu ── */}
+        <Modal visible={showActionMenu} transparent animationType={menuAnchor ? 'none' : 'fade'} statusBarTranslucent onRequestClose={closeActionMenu}>
           <TouchableWithoutFeedback onPress={closeActionMenu}>
-            <View style={styles.storyMoreMenuBackdrop}>
+            <View style={menuAnchor ? styles.storyMoreMenuBackdropWeb : styles.storyMoreMenuBackdrop}>
               <TouchableWithoutFeedback>
-                <View style={styles.storyMoreMenuSheet}>
-                  <View style={styles.storyMoreMenuHandle} />
+                <View style={menuAnchor ? [styles.storyMoreMenu, { position: 'absolute', top: menuAnchor.top, left: menuAnchor.left }] : styles.storyMoreMenuSheet}>
+                  {!menuAnchor ? <View style={styles.storyMoreMenuHandle} /> : null}
                   <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleReport} activeOpacity={0.82}>
                     <Ionicons name="flag-outline" size={18} color="#ef4444" />
                     <Text style={styles.storyMoreMenuText}>Report</Text>
@@ -1470,9 +1738,17 @@ const handleLike = async () => {
                     <Ionicons name="share-social-outline" size={18} color="#0ea5e9" />
                     <Text style={styles.storyMoreMenuText}>Share</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={[styles.storyMoreMenuItem, { borderBottomWidth: 0, justifyContent: 'center' }]} onPress={closeActionMenu} activeOpacity={0.82}>
-                    <Text style={[styles.storyMoreMenuText, { color: '#64748b' }]}>Cancel</Text>
-                  </TouchableOpacity>
+                  {hasFollowTarget && !isOwnStory && !isAdStory ? (
+                    <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleBlockAuthor} activeOpacity={0.82}>
+                      <Ionicons name="ban-outline" size={18} color="#ef4444" />
+                      <Text style={styles.storyMoreMenuText}>Block</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                  {!menuAnchor ? (
+                    <TouchableOpacity style={[styles.storyMoreMenuItem, { borderBottomWidth: 0, justifyContent: 'center' }]} onPress={closeActionMenu} activeOpacity={0.82}>
+                      <Text style={[styles.storyMoreMenuText, { color: '#64748b' }]}>Cancel</Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               </TouchableWithoutFeedback>
             </View>
@@ -1495,7 +1771,8 @@ const handleLike = async () => {
                 maxLength={300}
                 returnKeyType="send"
                 blurOnSubmit={true}
-                onSubmitEditing={handleSubmitComment}
+              onSubmitEditing={handleSubmitComment}
+                onFocus={() => { if (!isLoggedIn) { inputRef.current?.blur?.(); goToLogin(); } }}
               />
               <TouchableOpacity
                 style={[styles.commentSendBtn, !commentText.trim() && styles.commentSendBtnDisabled]}
@@ -1513,12 +1790,15 @@ const handleLike = async () => {
                     key={item.id}
                     comment={item}
                     currentUserEmail={currentEmail}
+                  currentUserId={currentUserId}
                     onEdit={handleEditComment}
                     onDelete={handleDeleteComment}
                     onReply={handleReplyComment}
                     onLike={handleLikeComment}
                     expandedReplyThreads={expandedReplyThreads}
                     onToggleReplies={handleToggleReplies}
+                    repliesMeta={repliesMeta}
+                    onLoadMoreReplies={handleLoadMoreReplies}
                     editingCommentId={editingCommentId}
                     editingCommentText={editingCommentText}
                     onEditingTextChange={setEditingCommentText}
@@ -1531,6 +1811,13 @@ const handleLike = async () => {
                     onCancelReply={handleCancelReply}
                   />
                 ))}
+                {commentsHasMore ? (
+                  <TouchableOpacity onPress={() => loadComments()} disabled={commentsLoading} activeOpacity={0.8} style={styles.commentLoadMoreBtn}>
+                    {commentsLoading
+                      ? <ActivityIndicator size="small" color="#f97316" />
+                      : <Text style={styles.commentLoadMoreText}>Aur comments dekhein</Text>}
+                  </TouchableOpacity>
+                ) : null}
               </View>
             )}
           </View>

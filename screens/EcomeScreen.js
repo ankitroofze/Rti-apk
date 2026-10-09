@@ -1,3 +1,4 @@
+import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React from 'react';
 import {
   View,
@@ -251,7 +252,11 @@ function EcomeMobile({ navigation }) {
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <View style={{ height: insets.top, backgroundColor: '#fff' }} />
+      {Platform.OS === 'android' ? (
+<ModuleAndroidHeader title="Ecome (buy / sell)" subtitle="Buy, sell or rent e-commerce resources" onBack={() => navigation.goBack()} />
+) : (
+<>
+<View style={{ height: insets.top, backgroundColor: '#fff' }} />
 
       {/* Header */}
       <View style={styles.header}>
@@ -267,6 +272,8 @@ function EcomeMobile({ navigation }) {
           <Text style={styles.headerSubtitle}>Buy, sell or rent e-commerce resources</Text>
         </View>
       </View>
+</>
+)}
 
       <ScrollView
         showsVerticalScrollIndicator={false}

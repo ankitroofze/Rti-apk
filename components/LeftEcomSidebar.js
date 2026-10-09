@@ -1,6 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, ImageBackground, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { UserStore } from '../store/UserStore';
 
 const SOCIAL_ITEMS = [
   { icon: 'logo-facebook', color: '#1877F2', url: 'https://www.facebook.com/' },
@@ -39,13 +40,31 @@ export default function LeftEcomSidebar({ navigation, stories = [], onOpenDetail
       .filter(Boolean);
   }, [stories]);
 
+  // ✅ Ecom products seedha wahi source se (View All wale page jaisa) taaki home par bhi 3 dikhein.
+  const [ecomListings, setEcomListings] = useState([]);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const summary = await UserStore.getEcomeMarketplaceSummary();
+        if (mounted && Array.isArray(summary?.listings)) setEcomListings(summary.listings);
+      } catch {}
+    })();
+    return () => { mounted = false; };
+  }, []);
+
   const products = useMemo(() => {
+    const fromListings = ecomListings.slice(0, 3).map((p) => ({
+      id: `listing-${p.id}`, title: p.title, subtitle: p.description || 'Ecome listing',
+      price: p.price || '', image: p.image || p.mediaItems?.[0]?.uri || '',
+    }));
+    if (fromListings.length) return fromListings;
     const real = stories.filter((s) => s.isEcome).slice(0, 3);
     return real.length ? real.map((p) => ({
       id: p.id, title: p.title, subtitle: p.description || 'Ecome listing',
       price: p.price || '', image: p.image,
     })) : DEMO_PRODUCTS;
-  }, [stories]);
+  }, [ecomListings, stories]);
 
   const openScreen = (screenName) => navigation?.navigate?.(screenName);
 

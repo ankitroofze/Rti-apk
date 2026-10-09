@@ -1,17 +1,19 @@
+import NameWithTick from '../components/NameWithTick';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Clipboard, Image, ImageBackground, KeyboardAvoidingView, Modal,
   Platform, ScrollView, Share, StatusBar, Text, TextInput,
   TouchableOpacity, TouchableWithoutFeedback, useWindowDimensions, View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import ProfileAvatar from '../components/ProfileAvatar';
 import AutoIdCardPreview from '../components/IdCardPreview';
 import AutoIdCardBackPreview from '../components/IdCardBackPreview';
 import ScaledCard from '../components/ScaledCard';
 import AutoAppointmentLetterPreview from '../components/AppointmentLetterPreview';
-import { hasDocumentSource, getProfileTier } from '../utils/profileHelpers';
+import { hasDocumentSource, getProfileTier, generateMemberId } from '../utils/profileHelpers';
 import { useToast } from '../components/ui/ToastProvider';
 import VerifiedBadge from '../components/VerifiedBadge';
 import VideoPreview from '../components/VideoPreview';
@@ -19,6 +21,14 @@ import { UserStore } from '../store/UserStore';
 import { isValidImageUrl } from '../utils/storyHelpers';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 import styles from '../styles/UserPublicProfileStyles';
+import ProfileStyles from '../styles/ProfileStyles';
+import { PROFILE_BG_RED } from '../constants/profileConstants';
+
+// Red header image ko poore header me fill karne ke liye
+const RED_HEADER_IMG = {
+  position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+  width: '100%', height: '100%', resizeMode: 'cover',
+};
 
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -100,6 +110,8 @@ function roleLabelToEnglish(role = '') {
 }
 
 const ORANGE = '#FF9967';
+// Referral code ka color (label black rahega, sirf code red)
+const REFERRAL_RED = '#DC2626';
 
 // ── Modals ─────────────────────────────────────────────────────────────────────
 
@@ -201,10 +213,15 @@ const ExpandableDescription = ({ text }) => {
 
 export default function UserPublicProfileScreen({ route, navigation }) {
   const { showToast } = useToast();
+  // showToast ki identity har toast ke baad badal sakti hai — usse effect dobara chalta tha,
+  // stale backend data aata tha aur followers count achanak 0 ho jata tha. Ref se stable rakho.
+  const showToastRef = useRef(showToast);
+  useEffect(() => { showToastRef.current = showToast; }, [showToast]);
    const { email, author, userId } = route?.params || {};
 
   // ── Responsive width detection ─────────────────────────────────────────────
   const { width: windowWidth } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
 
   const resolvedEmail = useMemo(
     () => (email ? String(email).trim().toLowerCase() : ''),
@@ -279,9 +296,11 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                const summary = (resolvedEmail || targetIdForFollow) ? await UserStore.getFollowSummary?.(resolvedEmail, targetIdForFollow) : null;
         if (active) {
           setIsFollowing(Boolean(summary?.isFollowing));
-          if (summary) {
+          // followersCount / followingCount null aaye (target ki id resolve nahi hui) to
+          // purane counts mat todo — warna count achanak 0 ho jata tha.
+          if (summary && summary.followersCount != null && summary.followingCount != null) {
             setFollowLists({ followers: summary.followers || [], following: summary.following || [] });
-            setFollowStats({ followers: summary.followersCount || 0, following: summary.followingCount || 0 });
+            setFollowStats({ followers: summary.followersCount, following: summary.followingCount });
           }
         }
         // ✅ NEW: agar backend se is post/author ka numeric id nahi mila (author_id null tha),
@@ -297,8 +316,10 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         ...(Array.isArray(user?.news_feed) ? user.news_feed : []),
       ];
 
-      const display = user || author || {};
+           const display = user || author || {};
       const authorName = String(display?.name || display?.author_name || '').trim();
+      const effectiveEmail = String(resolvedEmail || user?.email || '').trim().toLowerCase();
+      const effectiveId = String(userId ?? user?.id ?? '').trim();
 
       const summary = (resolvedEmail || authorName)
         ? await UserStore.getNewsFeedSummary({ skipBlockedUsers: true })
@@ -306,8 +327,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       const fromFeed = Array.isArray(summary?.items)
         ? summary.items.filter((it) => {
           const createdBy = String(it?.createdBy || '').trim().toLowerCase();
-          if (resolvedEmail && createdBy) return createdBy === resolvedEmail;
-          if (!resolvedEmail && authorName) {
+          if (effectiveEmail && createdBy) return createdBy === effectiveEmail;
+          if (!effectiveEmail && authorName) {
             const itemAuthor = String(it?.author_name || it?.createdByName || it?.author || '').trim();
             return itemAuthor && itemAuthor.toLowerCase() === authorName.toLowerCase();
           }
@@ -324,7 +345,9 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       const profileAds = [...localAds, ...publicAds]
         .filter((ad) => {
           const owner = String(ad?.owner_email || ad?.createdBy || '').trim().toLowerCase();
-          return resolvedEmail ? owner === resolvedEmail : false;
+          const adOwnerId = String(ad?.owner_id ?? ad?.user_id ?? '').trim();
+          if (effectiveEmail && owner === effectiveEmail) return true;
+          return Boolean(effectiveId && adOwnerId && adOwnerId === effectiveId);
         })
         .map((ad) => ({
           ...ad,
@@ -350,12 +373,12 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
             setPosts(merged);
       setLoading(false);
-      if (!user && resolvedEmail) showToast('User profile not found on this device. Showing available info.', 'error');
+      if (!user && resolvedEmail) showToastRef.current?.('User profile not found on this device. Showing available info.', 'error');
     })();
     return () => { active = false; };
   // A profile may be opened with only userId (the following API does not
   // always provide email). Include it so moving between profiles reloads.
-  }, [resolvedEmail, userId, author, showToast]);
+  }, [resolvedEmail, userId, author]);
 
   // ✅ FIX: is profile ke liye follow button + followers count ab app mein kahin
   // bhi (news card se bhi) follow/unfollow hote hi turant sync ho jayega.
@@ -376,20 +399,20 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   }, [resolvedEmail, userId]);
   // ── Derived profile values ──────────────────────────────────────────────────
 
-  const display = profile || author || {};
+    const display = profile || author || {};
   const name = String(display?.name || display?.author_name || 'User').trim() || 'User';
   const roleLabel = String(display?.role_label || display?.author_role_label || '').trim();
   const state = String(display?.state || '').trim();
   const district = String(display?.district || '').trim();
   const taluka = String(display?.taluka || '').trim();
  const bio = String(display?.bio || '').trim();
-  const referralCode = (display?.is_subscribed || display?.author_is_subscribed || ['basic', 'pro', 'premium'].includes(String(display?.role || display?.author_role || '').trim().toLowerCase()))
-    ? String(display?.my_referral_code || display?.referral_code || '').trim()
-    : '';
-  const seatName = String(display?.state_seat?.seat_name || display?.author_seat_name || '').trim();
-  const seatId = String(display?.state_seat?.seat_id || display?.author_seat_id || '').trim();
-  const roleId = String(display?.role || display?.author_role || '').trim().toLowerCase();
-   const rolePillText = roleLabelToEnglish(roleId) || roleLabel || seatName || '';
+  const rawReferralCode = String(display?.my_referral_code || display?.referral_code || '').trim();
+    // Latest active Premium plan hamesha purane seat/role label se upar rahega
+  const latestIsPremium = Boolean(UserStore.hasBlueTick(profile || display));
+  const seatName = latestIsPremium ? '' : String(display?.state_seat?.seat_name || display?.author_seat_name || '').trim();
+  const seatId = latestIsPremium ? '' : String(display?.state_seat?.seat_id || display?.author_seat_id || '').trim();
+  const roleId = latestIsPremium ? 'premium' : String(display?.role || display?.author_role || '').trim().toLowerCase();
+  const rolePillText = latestIsPremium ? 'Premium User' : (roleLabelToEnglish(roleId) || roleLabel || seatName || '');
   const joinDate = String(display?.join_date || '').trim();
   const networkCount = (() => {
     const val = Number(display?.referral_count || 0);
@@ -419,12 +442,9 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
   const photoUri = display?.profile_image || display?.author_profile_image || '';
   const safePhotoUri = isValidImageUrl(photoUri) ? photoUri : '';
-  const isVerified = Boolean(
-    UserStore.hasBlueTick(display) ||
-    display?.has_blue_tick ||
-    display?.author_has_blue_tick ||
-    (profile && UserStore.hasBlueTick(profile))
-  );
+  // Never trust stale post/legacy flags: entitlement belongs to this profile's
+  // active Premium Plan and is identical on web and Android.
+  const isVerified = Boolean(UserStore.hasBlueTick(profile || display));
   const isSubscribedProfile = Boolean(
     display?.is_subscribed || display?.author_is_subscribed || ['basic', 'pro', 'premium'].includes(roleId)
   );
@@ -432,14 +452,23 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   // (color/background) yahan se decide hota hai — visitor ko humesha profile
   // owner ka role-color he dikhega, chahe visitor khud kisi bhi role ka ho.
   const profileTier = getProfileTier({
-    state_seat: display?.state_seat || { seat_id: seatId },
-    role: display?.role || display?.author_role,
-    subscription_type: display?.subscription_type || display?.author_subscription_type,
+    state_seat: latestIsPremium ? null : (display?.state_seat || { seat_id: seatId, seat_name: seatName }),
+    role: latestIsPremium ? 'premium' : (display?.role || display?.author_role),
+    subscription_type: latestIsPremium ? 'premium' : (display?.subscription_type || display?.author_subscription_type),
     subscription_plan: display?.subscription_plan,
     has_blue_tick: isVerified,
     is_subscribed: isSubscribedProfile,
   });
   const pillTheme = { bg: `${profileTier.accent}1F`, border: profileTier.accent, text: profileTier.accent };
+  // Role/seat wale user ka pill uske seat ka naam dikhata hai (jaise "State Bureau Chief"),
+  // baaki tiers me Common User / Premium User / Verified User.
+  const tierPillLabel = (['representative', 'executive', 'chief'].includes(profileTier.key) && seatName) ? seatName : profileTier.label;
+  // Referral code tab dikhta hai jab profile owner ne koi role / subscription / premium liya ho
+  // (yaani tier common se upar ho) — visitor chahe Common user ho ya kuch bhi.
+  const hasPaidAccess = profileTier.key !== 'common' || isSubscribedProfile;
+  const referralCode = hasPaidAccess ? rawReferralCode : '';
+  const memberIdText = String(display?.member_id || display?.memberId || '').trim()
+    || (display?.email || resolvedEmail ? generateMemberId(display?.email || resolvedEmail) : '');
   const resolvedProfilePhoto = useResolvedUri(safePhotoUri || null);
 
   // ── Sorted posts ────────────────────────────────────────────────────────────
@@ -608,6 +637,21 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     showToast('Profile link copied!', 'success');
   };
 
+  const handleShareProfile = async () => {
+    try {
+      await Share.share({
+        title: `${name} - RTI News`,
+        message: `${name} (RTI News)\nrtinews://profile?email=${resolvedEmail || ''}&name=${encodeURIComponent(name)}`,
+      });
+    } catch { showToast('Share failed.', 'error'); }
+  };
+
+  const handleCopyReferralCode = () => {
+    if (!referralCode) return;
+    Clipboard.setString(referralCode);
+    showToast('Referral code copied!', 'success');
+  };
+
   const handleReport = () => {
     setMenuVisible(false);
     Alert.alert('Report User', `Are you sure you want to report "${name}"?`, [
@@ -671,9 +715,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         setFollowStats((prev) => ({ ...prev, followers: Math.max(0, Number(prev.followers || 0) + (nextFollowing ? -1 : 1)) }));
         showToast(result?.message || 'Unable to update follow status.', 'error');
       } else {
-     if (result?.followersCount != null && Number.isFinite(Number(result.followersCount))) {
-          setFollowStats((prev) => ({ ...prev, followers: Number(result.followersCount) }));
-        }
+        // NOTE: follow API ke response ka followers_count yahan use nahi karte — wo
+        // stale/alag user ka aa sakta hai (isse count 1 se wapas 0 ho jata tha).
         showToast(nextFollowing ? `Following ${name}` : `Unfollowed ${name}`, 'success');
       }
     } catch (err) {
@@ -797,7 +840,9 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     const postDescription = stripHtml(p.description || p.body || p.content || p.summary || p.caption || p.excerpt || '');
     const postLocation = [p.taluka, p.district, p.state].filter(Boolean).join(', ');
     const postVideo = String(p.video || '').trim();
-    const postIsVerified = Boolean(p?.author_has_blue_tick || p?.has_blue_tick || p?.authorHasBlueTick || p?.createdByBlueTick || isVerified);
+    // Every post on this page belongs to this profile owner. Use the same
+    // live Premium Plan entitlement as the profile header.
+    const postIsVerified = isVerified;
 
     const imageCandidates = [
       ...(Array.isArray(p.images) ? p.images : []),
@@ -959,7 +1004,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                                         <TouchableOpacity key={item.email} style={styles.followUserRow} activeOpacity={0.8} onPress={() => { setFollowModalType(''); navigation.push('UserPublicProfile', { email: item.email, userId: item.id || item.user_id || undefined, author: item }); }}>
                       <ProfileAvatar uri={item.profile_image || ''} size={42} style={styles.followUserAvatar} />
                       <View style={styles.followUserInfo}>
-                        <Text style={styles.followUserName} numberOfLines={1}>{item.name || 'User'}</Text>
+                        <NameWithTick name={item.name || 'User'} user={item} style={styles.followUserName} />
                         <Text style={styles.followUserEmail} numberOfLines={1}>{item.email || ''}</Text>
                       </View>
                       <Feather name="chevron-right" size={18} color="#cbd5e1" />
@@ -1008,15 +1053,15 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         {sharedModals}
 
         {/* Top Bar */}
-        <View style={styles.topBar}>
-          <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
-            <Feather name="arrow-left" size={20} color="#0f172a" />
+        <ImageBackground source={PROFILE_BG_RED} resizeMode="cover" imageStyle={RED_HEADER_IMG} style={[styles.topBar, { backgroundColor: '#B91C1C', borderBottomColor: '#7F1D1D', overflow: 'hidden' }]}>
+          <TouchableOpacity style={[styles.backBtn, { backgroundColor: 'rgba(255,255,255,0.22)' }]} onPress={() => navigation.goBack()} activeOpacity={0.8}>
+            <Feather name="arrow-left" size={20} color="#FFFFFF" />
           </TouchableOpacity>
-          <Text style={styles.topBarTitle} numberOfLines={1}>{name}</Text>
-          <TouchableOpacity style={styles.menuBtn} onPress={() => setMenuVisible(true)} activeOpacity={0.8}>
-            <Feather name="more-vertical" size={18} color="#0f172a" />
+          <Text style={[styles.topBarTitle, { color: '#FFFFFF' }]} numberOfLines={1}>{name}</Text>
+          <TouchableOpacity style={[styles.menuBtn, { backgroundColor: 'rgba(255,255,255,0.22)' }]} onPress={() => setMenuVisible(true)} activeOpacity={0.8}>
+            <Feather name="more-vertical" size={18} color="#FFFFFF" />
           </TouchableOpacity>
-        </View>
+        </ImageBackground>
 
         <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
 
@@ -1103,8 +1148,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 ) : null}
             {referralCode ? (
   <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 6 }}>
-    <Feather name="gift" size={12} color={ORANGE} />
-    <Text style={{ fontSize: 12, fontWeight: '700', color: '#475569' }}>Referral Code: {referralCode}</Text>
+    <Feather name="gift" size={12} color={REFERRAL_RED} />
+    <Text style={{ fontSize: 12, fontWeight: '700', color: '#111111' }}>Referral Code: <Text style={{ color: REFERRAL_RED }}>{referralCode}</Text></Text>
   </View>
 ) : null}
           </View>
@@ -1236,15 +1281,15 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         {sharedModals}
 
         {/* ── Top Bar ── */}
-        <View style={webSt.topBar}>
-          <TouchableOpacity style={webSt.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
-            <Feather name="arrow-left" size={20} color="#0f172a" />
+                  <ImageBackground source={PROFILE_BG_RED} resizeMode="cover" imageStyle={RED_HEADER_IMG} style={[webSt.topBar, { backgroundColor: '#B91C1C', borderBottomColor: '#7F1D1D', overflow: 'hidden' }]}>
+          <TouchableOpacity style={[webSt.backBtn, { backgroundColor: 'rgba(255,255,255,0.22)' }]} onPress={() => navigation.goBack()} activeOpacity={0.8}>
+            <Feather name="arrow-left" size={20} color="#FFFFFF" />
           </TouchableOpacity>
-          <Text style={webSt.topBarTitle}>Profile</Text>
-          <TouchableOpacity style={webSt.menuBtn} onPress={() => setMenuVisible(true)} activeOpacity={0.8}>
-            <Feather name="more-vertical" size={18} color="#0f172a" />
+          <Text style={[webSt.topBarTitle, { color: '#FFFFFF' }]}>Profile</Text>
+          <TouchableOpacity style={[webSt.menuBtn, { backgroundColor: 'rgba(255,255,255,0.22)' }]} onPress={() => setMenuVisible(true)} activeOpacity={0.8}>
+            <Feather name="more-vertical" size={18} color="#FFFFFF" />
           </TouchableOpacity>
-        </View>
+        </ImageBackground>
 
         <ScrollView style={webSt.scroll} contentContainerStyle={webSt.scrollContent} showsVerticalScrollIndicator={false}>
           <View style={webSt.col}>
@@ -1333,8 +1378,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
             ) : null}
             {referralCode ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 6 }}>
-                <Feather name="gift" size={12} color={ORANGE} />
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#475569' }}>Referral Code: {referralCode}</Text>
+                <Feather name="gift" size={12} color={REFERRAL_RED} />
+                <Text style={{ fontSize: 12, fontWeight: '700', color: '#111111' }}>Referral Code: <Text style={{ color: REFERRAL_RED }}>{referralCode}</Text></Text>
               </View>
             ) : null}
 
@@ -1440,125 +1485,174 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
   // ══════════════════════════════════════════════════════════════════
   // NATIVE MOBILE LAYOUT (iOS / Android)
+  // Design: apni profile (ProfileScreen) jaisa — tier ka cover image,
+  // beech me avatar, white card me naam/stats/pill, aur Edit Profile ki
+  // jagah Follow + Share. Cover ka color profile OWNER ke role/tier se aata hai.
   // ══════════════════════════════════════════════════════════════════
+  const showShield = profileTier.key !== 'common';
+  const followedBg = '#E5E7EB';
+
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-    <View style={styles.root}>
+    <View style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       {sharedModals}
 
-      {/* Top Bar */}
-      <View style={styles.topBar}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
-          <Feather name="arrow-left" size={20} color="#0f172a" />
-        </TouchableOpacity>
-        <Text style={styles.topBarTitle}>Profile</Text>
-        <TouchableOpacity style={styles.menuBtn} onPress={() => setMenuVisible(true)} activeOpacity={0.8}>
-          <Feather name="more-vertical" size={18} color="#0f172a" />
-        </TouchableOpacity>
-      </View>
+      <ScrollView style={ProfileStyles.scrollView} contentContainerStyle={{ paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-
-        {/* ── Profile Header — Role Based Profile Look: profile OWNER ke tier
-             (Common/Premium/Verified/Representative/Executive/Chief) ka color
-             aur background yahan lagta hai, visitor ke apne role se koi farak
-             nahi padta ── */}
+        {/* ── Cover (tier image) + back / menu ── */}
         <ImageBackground
-          source={profileTier.bgImage}
+                  source={PROFILE_BG_RED}
           resizeMode="cover"
-          style={[styles.profileSection, { backgroundColor: 'transparent', paddingBottom: 16 }]}
+          style={ProfileStyles.greenHeader}
+          imageStyle={ProfileStyles.greenHeaderImage}
         >
-          <View style={styles.profileTopRow}>
-                       <TouchableOpacity style={[styles.avatarWrap, { borderColor: '#FFFFFF' }]} onPress={() => openImageModal(profileTier.key === 'common' ? '' : (resolvedProfilePhoto || safePhotoUri), name)} activeOpacity={0.85}>
-              <ProfileAvatar uri={resolvedProfilePhoto || safePhotoUri} size={82} style={styles.avatar} />
+          <View style={[ProfileStyles.greenHeaderTop, { paddingTop: insets.top + 8 }]}>
+            <TouchableOpacity style={ProfileStyles.greenHeaderIcon} onPress={() => navigation.goBack()} activeOpacity={0.8}>
+              <Feather name="arrow-left" size={20} color="#FFFFFF" />
             </TouchableOpacity>
-
-            <View style={styles.profileInfo}>
-              <View style={styles.nameRow}>
-                <Text style={[styles.name, { color: '#FFFFFF' }]} numberOfLines={2}>{name}</Text>
-                {isVerified ? <VerifiedBadge size={22} iconSize={12} /> : null}
-              </View>
-              <View style={{ alignSelf: 'flex-start', backgroundColor: profileTier.badgeBg, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 3, marginBottom: 8 }}>
-                <Text style={{ color: profileTier.badgeText, fontSize: 11, fontWeight: '700' }}>{profileTier.label}</Text>
-              </View>
-              <View style={styles.statsRow}>
-                <View style={styles.statBox}>
-                  <Text style={[styles.statValue, { color: '#FFFFFF' }]}>{sortedPosts.length}</Text>
-                  <Text style={[styles.statLabel, { color: 'rgba(255,255,255,0.85)' }]}>posts</Text>
-                </View>
-                <TouchableOpacity style={styles.statBox} onPress={() => setFollowModalType('followers')} activeOpacity={0.75}>
-                  <Text style={[styles.statValue, { color: '#FFFFFF' }]}>{followersCount > 999 ? `${(followersCount / 1000).toFixed(1)}k` : String(followersCount)}</Text>
-                  <Text style={[styles.statLabel, { color: 'rgba(255,255,255,0.85)' }]}>followers</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.statBox} onPress={() => setFollowModalType('following')} activeOpacity={0.75}>
-                  <Text style={[styles.statValue, { color: '#FFFFFF' }]}>{String(followingCount)}</Text>
-                  <Text style={[styles.statLabel, { color: 'rgba(255,255,255,0.85)' }]}>following</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+            <TouchableOpacity style={ProfileStyles.greenHeaderIcon} onPress={() => setMenuVisible(true)} activeOpacity={0.8}>
+              <Feather name="more-vertical" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
           </View>
-
-          {locationLine ? (
-            <View style={styles.locationLine}>
-              <Feather name="map-pin" size={13} color="#FFFFFF" />
-              <Text style={[styles.locationLineText, { color: 'rgba(255,255,255,0.85)' }]} numberOfLines={2}>{locationLine}</Text>
-            </View>
-          ) : null}
-                 {rolePillText ? (
-            <View style={[styles.rolePill, { backgroundColor: pillTheme.bg, borderColor: pillTheme.border }]}>
-              <Feather name="star" size={12} color={pillTheme.text} />
-              <Text style={[styles.rolePillText, { color: pillTheme.text }]} numberOfLines={1}>{rolePillText}</Text>
-            </View>
-          ) : null}
-          {seatName || seatId ? (
-            <View style={[styles.seatPill, { backgroundColor: pillTheme.bg, borderColor: pillTheme.border }]}>
-              <Feather name="award" size={12} color={pillTheme.text} />
-              <Text style={[styles.seatPillText, { color: pillTheme.text }]} numberOfLines={1}>{seatName || seatId}</Text>
-            </View>
-          ) : null}
-          {bio ? <Text style={[styles.bioInline, { marginTop: 6, color: 'rgba(255,255,255,0.92)' }]} numberOfLines={4}>{bio}</Text> : null}
         </ImageBackground>
 
-        {/* ── Action Buttons ── */}
-        <View style={styles.actionRow}>
-          <TouchableOpacity
-            style={[styles.subscribeBtn, !isFollowing && { backgroundColor: pillTheme.border }, isFollowing && { backgroundColor: '#e5e7eb', borderWidth: 1, borderColor: '#d1d5db' }, followLoading && { opacity: 0.7 }]}
-            onPress={handleFollow}
-            activeOpacity={0.85}
-            disabled={followLoading}
-          >
-            <Feather name={isFollowing ? 'user-check' : 'user-plus'} size={16} color={isFollowing ? '#475569' : '#ffffff'} />
-            <Text style={[styles.subscribeBtnText, isFollowing && { color: '#475569' }]}>
-              {followLoading ? '...' : isFollowing ? 'Following' : 'Follow'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.shareBtn} onPress={() => setMenuVisible(true)} activeOpacity={0.85}>
-            <Feather name="share-2" size={16} color={ORANGE} />
-            <Text style={styles.shareBtnText}>Share Profile</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* ── Tabs ── */}
-        <View style={styles.tabsRow}>
-          <View style={styles.tabsLeft}>
-            <TouchableOpacity style={[styles.tabBtn, activeTab === 'posts' && styles.tabBtnActive]} onPress={() => setActiveTab('posts')} activeOpacity={0.85}>
-              <Text style={[styles.tabText, activeTab === 'posts' && styles.tabTextActive]}>Posts</Text>
+        {/* ── Profile card ── */}
+        <View style={ProfileStyles.summaryCard}>
+          <View style={ProfileStyles.profileCardAvatarWrap}>
+            <TouchableOpacity
+              style={ProfileStyles.profileCardAvatarRing}
+              onPress={() => openImageModal(profileTier.key === 'common' ? '' : (resolvedProfilePhoto || safePhotoUri), name)}
+              activeOpacity={0.85}
+            >
+              <ProfileAvatar uri={resolvedProfilePhoto || safePhotoUri} size={100} style={ProfileStyles.profileCardAvatar} />
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.tabBtn, activeTab === 'activity' && styles.tabBtnActive]} onPress={() => setActiveTab('activity')} activeOpacity={0.85}>
-              <Text style={[styles.tabText, activeTab === 'activity' && styles.tabTextActive]}>Activity</Text>
+            {showShield ? (
+              <View style={ProfileStyles.roleShieldBadge} pointerEvents="none">
+                <MaterialCommunityIcons name="shield" size={40} color={profileTier.accent} />
+                <MaterialCommunityIcons name="crown" size={17} color="#FFD700" style={ProfileStyles.roleShieldCrown} />
+              </View>
+            ) : null}
+          </View>
+
+          <View style={ProfileStyles.profileCardBody}>
+            <View style={ProfileStyles.profileCardNameRow}>
+              <Text style={ProfileStyles.profileCardName} numberOfLines={2}>{name}</Text>
+              {isVerified ? <VerifiedBadge size={20} /> : null}
+            </View>
+            {memberIdText ? (
+              <Text style={ProfileStyles.profileCardUsername}>Member ID: {memberIdText}</Text>
+            ) : null}
+            {state || locationLine ? (
+              <View style={ProfileStyles.profileCardLocation}>
+                <MaterialIcons name="location-on" size={11} color="#555555" />
+                <Text style={ProfileStyles.profileCardLocationText}>{state ? `${state}, India` : locationLine}</Text>
+              </View>
+            ) : null}
+            {bio ? <Text style={ProfileStyles.profileCardBioText} numberOfLines={4}>{bio}</Text> : null}
+          </View>
+
+          <View style={ProfileStyles.profileStatsExact}>
+            <View style={ProfileStyles.profileStatExact}>
+              <Text style={ProfileStyles.profileStatNumberExact}>{sortedPosts.length}</Text>
+              <Text style={ProfileStyles.profileStatLabelExact}>Posts</Text>
+            </View>
+            <TouchableOpacity style={ProfileStyles.profileStatExact} onPress={() => setFollowModalType('followers')} activeOpacity={0.75}>
+              <Text style={ProfileStyles.profileStatNumberExact}>{followersCount > 999 ? `${(followersCount / 1000).toFixed(1)}k` : String(followersCount)}</Text>
+              <Text style={ProfileStyles.profileStatLabelExact}>Followers</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={ProfileStyles.profileStatExact} onPress={() => setFollowModalType('following')} activeOpacity={0.75}>
+              <Text style={ProfileStyles.profileStatNumberExact}>{String(followingCount)}</Text>
+              <Text style={ProfileStyles.profileStatLabelExact}>Following</Text>
             </TouchableOpacity>
           </View>
-          {activeTab === 'posts' && sortedPosts.length > 0 ? (
-            <View style={styles.gridToggleIcons}>
-              <TouchableOpacity onPress={() => setGridView(true)} activeOpacity={0.8}>
-                <Feather name="grid" size={18} color={gridView ? ORANGE : '#94a3b8'} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setGridView(false)} activeOpacity={0.8}>
-                <Feather name="list" size={18} color={!gridView ? ORANGE : '#94a3b8'} />
-              </TouchableOpacity>
-            </View>
-          ) : null}
+
+          <LinearGradient
+            colors={profileTier.gradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={ProfileStyles.premiumPillExact}
+          >
+            <Text style={ProfileStyles.premiumPillTextExact}>{tierPillLabel}</Text>
+          </LinearGradient>
+
+          {/* Edit Profile ki jagah Follow, add-person ki jagah Share */}
+          <View style={ProfileStyles.profileActionsExact}>
+            <TouchableOpacity
+              style={[ProfileStyles.editProfileExact, followLoading && { opacity: 0.7 }]}
+              onPress={handleFollow}
+              activeOpacity={0.85}
+              disabled={followLoading}
+            >
+              {isFollowing ? (
+                <View style={[ProfileStyles.editProfileGradient, { flexDirection: 'row', gap: 6, backgroundColor: followedBg }]}>
+                  <Feather name="user-check" size={15} color="#475569" />
+                  <Text style={[ProfileStyles.editProfileExactText, { color: '#475569' }]}>{followLoading ? '...' : 'Following'}</Text>
+                </View>
+              ) : (
+                <LinearGradient
+                  colors={profileTier.gradientDark}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={[ProfileStyles.editProfileGradient, { flexDirection: 'row', gap: 6 }]}
+                >
+                  <Feather name="user-plus" size={15} color="#FFFFFF" />
+                  <Text style={ProfileStyles.editProfileExactText}>{followLoading ? '...' : 'Follow'}</Text>
+                </LinearGradient>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[ProfileStyles.addPersonExact, { height: 40, width: 44, borderColor: profileTier.accent }]}
+              onPress={handleShareProfile}
+              activeOpacity={0.85}
+            >
+              <Feather name="share-2" size={16} color={profileTier.accent} />
+            </TouchableOpacity>
+          </View>
         </View>
+
+        {/* ── Referral code (sirf jab owner ne role/subscription liya ho) — code red, label black ── */}
+        {referralCode ? (
+          <View style={[ProfileStyles.metricRowCard, { marginTop: 12 }]}>
+            <View style={[ProfileStyles.metricIconWrap, { backgroundColor: '#FEF2F2' }]}>
+              <Feather name="gift" size={17} color={REFERRAL_RED} />
+            </View>
+            <View style={ProfileStyles.metricBody}>
+              <Text style={[ProfileStyles.metricLabel, { color: '#111111' }]}>Referral Code</Text>
+              <Text style={[ProfileStyles.metricValue, { color: REFERRAL_RED }]}>{referralCode}</Text>
+            </View>
+            <TouchableOpacity style={ProfileStyles.metricCopyBtn} onPress={handleCopyReferralCode} activeOpacity={0.8}>
+              <Text style={ProfileStyles.metricCopyBtnText}>Copy</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {/* ── Tabs: Posts (left) | Activity (right) ── */}
+        <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E5E7EB', marginTop: 12 }}>
+          {[{ key: 'posts', label: 'Posts' }, { key: 'activity', label: 'Activity' }].map((t) => {
+            const active = activeTab === t.key;
+            return (
+              <TouchableOpacity
+                key={t.key}
+                style={{ flex: 1, alignItems: 'center', paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: active ? profileTier.accent : 'transparent' }}
+                onPress={() => setActiveTab(t.key)}
+                activeOpacity={0.85}
+              >
+                <Text style={{ fontSize: 14, fontWeight: '700', color: active ? profileTier.accent : '#64748B' }}>{t.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {activeTab === 'posts' && sortedPosts.length > 0 ? (
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', alignItems: 'center', gap: 14, paddingHorizontal: 18, paddingVertical: 10 }}>
+            <TouchableOpacity onPress={() => setGridView(true)} activeOpacity={0.8}>
+              <Feather name="grid" size={18} color={gridView ? profileTier.accent : '#94a3b8'} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setGridView(false)} activeOpacity={0.8}>
+              <Feather name="list" size={18} color={!gridView ? profileTier.accent : '#94a3b8'} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {/* ── Tab Content ── */}
         {activeTab === 'activity' ? (
@@ -1571,7 +1665,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
               {sortedPosts.map((p) => renderGridThumb(p))}
             </View>
           ) : (
-            <View style={{ paddingTop: 10 }}>
+            <View style={{ paddingTop: 4 }}>
               {sortedPosts.map((p) => renderFeedCard(p))}
             </View>
           )
@@ -1583,6 +1677,5 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
       </ScrollView>
     </View>
-    </SafeAreaView>
   );
 }

@@ -1,7 +1,21 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { openExternalUrl } from '../utils/adRedirect';
+import VerifiedBadge from './VerifiedBadge';
+import { groupAdsByOwner } from '../utils/adGrouping';
+import UserStore from '../store/UserStore';
+import ProfileAvatar from './ProfileAvatar';
+
+// India ke Chief Editor ki user ID yahan daalo (backend/admin panel se dekh lo).
+const CHIEF_EDITOR_USER_ID = ''; // example: '12'
+
+const formatCount = (n) => {
+  const v = Number(n || 0);
+  if (v >= 1000000) return `${(v / 1000000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (v >= 1000) return `${(v / 1000).toFixed(1).replace(/\.0$/, '')}K`;
+  return String(v);
+};
 
 function SponsoredImage({ ad }) {
   const [failedToLoad, setFailedToLoad] = useState(false);
@@ -19,10 +33,60 @@ function SponsoredImage({ ad }) {
   return <Image source={{ uri: imageUri }} style={styles.sponsoredImage} resizeMode="cover" onError={() => setFailedToLoad(true)} />;
 }
 
+// Ek hi user ke 2+ ads: ek card ke andar prev/next se dekho (title, buttons sab ad ke saath badalte hain)
+function SponsoredAdGroup({ group = [], children }) {
+  const [slide, setSlide] = useState(0);
+  const total = group.length;
+  const safe = total ? Math.min(slide, total - 1) : 0;
+  return (
+    <View>
+      {total > 1 ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginBottom: 6 }}>
+          <TouchableOpacity onPress={() => setSlide((safe - 1 + total) % total)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Previous ad">
+            <Ionicons name="chevron-back-circle" size={22} color="#ea580c" />
+          </TouchableOpacity>
+          <Text style={{ fontSize: 12, fontWeight: '700', color: '#64748b' }}>{safe + 1} / {total}</Text>
+          <TouchableOpacity onPress={() => setSlide((safe + 1) % total)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Next ad">
+            <Ionicons name="chevron-forward-circle" size={22} color="#ea580c" />
+          </TouchableOpacity>
+        </View>
+      ) : null}
+      {children(group[safe])}
+    </View>
+  );
+}
+
 export default function RightUtilityPanel({
   navigation, trendingStories = [], onOpenDetails, ads = [], onOpenLeadForm,
   onViewMoreAds, onBackFromAds, showingAllAds = false, firstNewsStory = null,
 }) {
+  const [desk, setDesk] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!CHIEF_EDITOR_USER_ID) return;
+      try {
+        const profile = await UserStore.getPublicProfileById(CHIEF_EDITOR_USER_ID);
+        if (!profile || !alive) return;
+        const email = String(profile.email || '').trim().toLowerCase();
+        const follow = await UserStore.getFollowSummary(email, CHIEF_EDITOR_USER_ID).catch(() => null);
+        if (!alive) return;
+        setDesk({
+          id: CHIEF_EDITOR_USER_ID,
+          email,
+          name: profile.name || 'Chief Editor',
+          avatar: profile.avatar || profile.profile_image || '',
+          handle: profile.username || (email ? email.split('@')[0] : ''),
+          bio: profile.bio || profile.about || 'Chief Editor, RTI News Network',
+          posts: profile.posts_count ?? profile.news_count ?? (Array.isArray(profile.posts) ? profile.posts.length : 0),
+          followers: follow?.followersCount ?? profile.followers_count ?? 0,
+          following: follow?.followingCount ?? profile.following_count ?? 0,
+        });
+      } catch { /* ignore */ }
+    })();
+    return () => { alive = false; };
+  }, []);
+
   const latestUpdates = useMemo(() => {
     return [...trendingStories]
       .sort((a, b) => new Date(b?.date || 0) - new Date(a?.date || 0))
@@ -54,7 +118,10 @@ export default function RightUtilityPanel({
               <View style={styles.sponsoredHeader}>
                 <View style={styles.sponsoredAvatar}><Text style={{ color: '#fff', fontWeight: '800' }}>{(ad.owner_name || 'A')[0]}</Text></View>
                 <View>
-                  <Text style={styles.sponsoredName}>{ad.owner_name || 'Advertiser'}</Text>
+                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                    <Text style={styles.sponsoredName}>{ad.owner_name || 'Advertiser'}</Text>
+                    {(ad.owner_has_blue_tick || ad.verified) ? <VerifiedBadge size={14} /> : null}
+                  </View>
                   <Text style={styles.sponsoredSub}>Sponsored</Text>
                 </View>
               </View>
@@ -120,7 +187,8 @@ export default function RightUtilityPanel({
               </TouchableOpacity>
             ) : null}
           </View>
-          {ads.slice(0, 3).map((ad) => (
+          {groupAdsByOwner(ads).slice(0, 3).map((group) => (
+            <SponsoredAdGroup key={String(group[0].id)} group={group}>{(ad) => (
             <View key={ad.id} style={{ marginBottom: 18, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', paddingBottom: 14 }}>
               <View style={styles.sponsoredHeader}>
                 <View style={styles.sponsoredAvatar}><Text style={{ color: '#fff', fontWeight: '800' }}>{(ad.owner_name || 'A')[0]}</Text></View>
@@ -163,6 +231,7 @@ export default function RightUtilityPanel({
                 ) : null}
               </View>
             </View>
+          )}</SponsoredAdGroup>
           ))}
         </View>
       ) : null}
@@ -188,30 +257,36 @@ export default function RightUtilityPanel({
         ))}
       </View>
 
-      {/* ── RTI News Desk profile card ── */}
-      <View style={styles.card}>
-        <View style={styles.deskHeaderRow}>
-          <View style={styles.deskAvatar}>
-            <Ionicons name="shield-checkmark" size={18} color="#e11d48" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-              <Text style={styles.deskName}>RTI News Desk</Text>
-              <Ionicons name="checkmark-circle" size={13} color="#2563eb" />
+          {/* ── India Chief Editor profile card ── */}
+      {desk ? (
+        <View style={styles.card}>
+          <View style={styles.deskHeaderRow}>
+            <ProfileAvatar uri={desk.avatar} size={42} />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={styles.deskName} numberOfLines={1}>{desk.name}</Text>
+                <Ionicons name="checkmark-circle" size={13} color="#2563eb" />
+              </View>
+              {desk.handle ? <Text style={styles.deskHandle}>@{desk.handle}</Text> : null}
             </View>
-            <Text style={styles.deskHandle}>@rtinewsdesk</Text>
+            <TouchableOpacity
+              onPress={() => navigation?.navigate?.('UserPublicProfile', {
+                email: desk.email || undefined,
+                userId: desk.id,
+                author: { name: desk.name, profile_image: desk.avatar },
+              })}
+            >
+              <Text style={styles.viewProfileLink}>View Profile</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={() => navigation?.navigate?.('UserPublicProfile')}>
-            <Text style={styles.viewProfileLink}>View Profile</Text>
-          </TouchableOpacity>
+          <Text style={styles.deskDesc}>{desk.bio}</Text>
+          <View style={styles.deskStatsRow}>
+            <View style={styles.deskStat}><Text style={styles.deskStatNum}>{formatCount(desk.posts)}</Text><Text style={styles.deskStatLabel}>Posts</Text></View>
+            <View style={styles.deskStat}><Text style={styles.deskStatNum}>{formatCount(desk.followers)}</Text><Text style={styles.deskStatLabel}>Followers</Text></View>
+            <View style={styles.deskStat}><Text style={styles.deskStatNum}>{formatCount(desk.following)}</Text><Text style={styles.deskStatLabel}>Following</Text></View>
+          </View>
         </View>
-        <Text style={styles.deskDesc}>Official account of RTI News Network. Delivering accurate and unbiased news.</Text>
-        <View style={styles.deskStatsRow}>
-          <View style={styles.deskStat}><Text style={styles.deskStatNum}>12.5K</Text><Text style={styles.deskStatLabel}>Posts</Text></View>
-          <View style={styles.deskStat}><Text style={styles.deskStatNum}>85K</Text><Text style={styles.deskStatLabel}>Followers</Text></View>
-          <View style={styles.deskStat}><Text style={styles.deskStatNum}>120</Text><Text style={styles.deskStatLabel}>Following</Text></View>
-        </View>
-      </View>
+      ) : null}
     </View>
   );
 }

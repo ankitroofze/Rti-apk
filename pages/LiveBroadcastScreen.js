@@ -1,7 +1,8 @@
+import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import Constants from 'expo-constants';
 import { Share } from 'react-native';
-import { Image, Linking, PermissionsAndroid, Platform, ScrollView, Text, TextInput, TouchableOpacity, UIManager, View, useWindowDimensions } from 'react-native';
+import { AppState, Image, Linking, PermissionsAndroid, Platform, ScrollView, Text, TextInput, TouchableOpacity, UIManager, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -32,6 +33,10 @@ const toIndiaIsoString = (date) => {
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 const isExpoGo = Constants.appOwnership === 'expo';
 const hasNativePublisher = Platform.OS === 'android' && !isExpoGo;
+// Web par browser se RTMP push nahi ho sakta, lekin YouTube broadcast bana kar
+// RTMP URL + Stream Key de sakte hain (OBS / encoder me paste karne ke liye).
+const isWeb = Platform.OS === 'web';
+const canStartHere = hasNativePublisher || isWeb;
 
 // Camera + Microphone runtime permission request (Android 6+ requires this
 // even when the manifest already declares the permissions).
@@ -55,7 +60,7 @@ export default function LiveBroadcastScreen({ navigation }) {
   const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const { width: winWidth } = useWindowDimensions();
   const isTablet = winWidth >= 768;
-  const { showToast } = useToast();
+  const { showToast, showPopup } = useToast();
  const [isPublishing, setIsPublishing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [broadcastId, setBroadcastId] = useState(null);
@@ -65,6 +70,7 @@ export default function LiveBroadcastScreen({ navigation }) {
   const [isMicMuted, setIsMicMuted] = useState(false);
   const [isYoutubeConnected, setIsYoutubeConnected] = useState(false);
   const startRequestInFlight = useRef(false);
+  const awaitingYoutubeAuthRef = useRef(false);
   const broadcastIdRef = useRef(null);
   const endingBroadcastRef = useRef(false);
 
@@ -125,6 +131,26 @@ const [form, setForm] = useState({
     }, [])
   );
 
+  // YouTube login browser me hota hai. Wapas app me aane par screen dobara focus nahi hoti,
+  // isliye "Connect YouTube Account" purana dikhta rehta tha. App foreground me aate hi
+  // connection dobara check karte hain.
+  React.useEffect(() => {
+    const sub = AppState.addEventListener('change', async (state) => {
+      if (state !== 'active' || !awaitingYoutubeAuthRef.current) return;
+      awaitingYoutubeAuthRef.current = false;
+      const summary = await UserStore.getLiveStreamingSummary();
+      if (summary && !summary.error) {
+        setIsYoutubeConnected(true);
+        const user = summary.currentUser;
+        if (user?.email) UserStore.updateUser(user.email, { youtube_connected: true }).catch(() => {});
+        showToast('YouTube account connected.', 'success');
+      } else {
+        showToast(summary?.error || 'YouTube connection not completed. Please try again.', 'error');
+      }
+    });
+    return () => sub.remove();
+  }, [showToast]);
+
   // Restore the stream already running on YouTube when this screen is opened
   // again. This is view-only: it does not attempt to restart the local camera
   // or assume ownership of a broadcast started from another app/session.
@@ -166,8 +192,8 @@ const publishUrl = useMemo(() => {
     setForm((current) => ({ ...current, [key]: value }));
   };
 const handleStartLive = async () => {
-  if (isExpoGo || !hasNativePublisher) {
-    showToast('Start Live works only in a native Android build. Expo Go can watch live streams only.', 'error');
+  if (isExpoGo || !canStartHere) {
+    showToast('Start Live works only in a native Android build or on web. Expo Go can watch live streams only.', 'error');
     return;
   }
   if (!form.stream_title.trim()) {
@@ -182,6 +208,13 @@ const handleStartLive = async () => {
     showToast('Enter a valid scheduled start time.', 'error');
     return;
   }
+  // Screen khulte waqt start time "abhi + 1 min" set hota hai. YouTube login me der lagne par
+  // wo time nikal jata hai aur server create reject kar deta hai, isliye purana ho to naya set karo.
+  let scheduledStartTime = form.scheduled_start_time.trim();
+  if (Date.parse(scheduledStartTime) < Date.now() + 30 * 1000) {
+    scheduledStartTime = toIndiaIsoString(new Date(Date.now() + 60 * 1000));
+    updateField('scheduled_start_time', scheduledStartTime);
+  }
 
   const permissionGranted = await requestCameraAndMicPermission();
   if (!permissionGranted) {
@@ -192,16 +225,16 @@ setIsSaving(true);
   const result = await UserStore.createYoutubeLive(
     form.stream_title.trim(),
     form.privacy_status.trim(),
-    form.scheduled_start_time.trim(),
+    scheduledStartTime,
   );
   setIsSaving(false);
 
   if (!result.ok) {
     if (result.isAuth) {
-      showToast('Please connect your YouTube account first.', 'error');
+      showPopup(result.message || 'Please connect your YouTube account first.', 'error');
       return;
     }
-    showToast(result.message || 'Unable to create the live stream.', 'error');
+    showPopup(result.message || 'Unable to create the live stream.', 'error');
     return;
   }
 
@@ -209,7 +242,7 @@ setIsSaving(true);
 
   const createdBroadcastId = result.liveData?.broadcast_id;
   if (!createdBroadcastId) {
-    showToast('Live stream was created without a broadcast ID.', 'error');
+    showPopup('Live stream was created without a broadcast ID. Backend response: ' + JSON.stringify(result.liveData || {}).slice(0, 300), 'error');
     return;
   }
 
@@ -217,9 +250,31 @@ setIsSaving(true);
   broadcastIdRef.current = createdBroadcastId;
   updateField('ingest_url', result.liveData?.ingestion_address || '');
   updateField('stream_key', result.liveData?.stream_key || '');
-  setIsPublishing(true);
-  showToast('Live created. Connecting to YouTube...', 'success');
+  if (hasNativePublisher) {
+    setIsPublishing(true);
+    showToast('Live created. Connecting to YouTube...', 'success');
+  } else {
+    // Web: camera se direct stream nahi hoti — encoder (OBS) me URL + key daalna hoga
+    showPopup('YouTube live create ho gayi. Neeche "RTMP Ingest URL" aur "Stream Key" OBS (ya kisi encoder) me daalo, stream start karo, phir "Go Live on YouTube" dabao.', 'success');
+  }
 };
+
+  // Web only: encoder connect hone ke baad broadcast ko YouTube par live karo
+  const handleGoLiveWeb = async () => {
+    const id = broadcastIdRef.current;
+    if (!id || startRequestInFlight.current) return;
+    startRequestInFlight.current = true;
+    setIsSaving(true);
+    const result = await UserStore.confirmYoutubeLive(id);
+    setIsSaving(false);
+    startRequestInFlight.current = false;
+    if (result?.ok) {
+      setActiveWatchUrl(result.data?.data?.watch_url || result.data?.watch_url || '');
+      showToast('You are now LIVE on YouTube.', 'success');
+      return;
+    }
+    showPopup(result?.message || 'YouTube stream abhi inactive hai. Pehle OBS se stream start karo, 10-15 second ruko, phir dobara try karo.', 'error');
+  };
   const handleStopLive = async () => {
     setIsSaving(true);
     const result = broadcastId
@@ -240,10 +295,28 @@ setIsSaving(true);
 
     showToast('Live session stopped.', 'success');
   };
+  // Start Live button kyun disabled hai — screen par saaf dikhane ke liye
+  const startBlockReason = isExpoGo
+    ? 'Expo Go me Start Live nahi chalta. Native Android APK build chahiye.'
+    : !canStartHere
+      ? `Start Live sirf Android APK ya web par chalta hai (abhi platform: ${Platform.OS}).`
+      : isPublishing
+        ? 'Live pehle se chal rahi hai ya atak gayi hai. "Stop Live" dabao, phir dobara Start Live karo.'
+        : isSaving
+          ? 'Request chal rahi hai, thoda wait karo...'
+          : '';
+
   return (
-    <SafeAreaView style={LiveStreamingStyles.root}>
+    <SafeAreaView style={LiveStreamingStyles.root} edges={Platform.OS === 'android' ? ['left', 'right', 'bottom'] : ['top', 'left', 'right', 'bottom']}>
       {/* Top Bar with Back Arrow — matches AdvertiseScreen header style */}
-      <View style={LiveStreamingStyles.topBar}>
+      {Platform.OS === 'android' ? (
+<ModuleAndroidHeader title="Start Live" onBack={async () => {
+ await endLiveOnExit();
+ navigation.goBack();
+ }} />
+) : (
+<>
+<View style={LiveStreamingStyles.topBar}>
         <TouchableOpacity
           style={LiveStreamingStyles.backBtn}
           onPress={async () => {
@@ -256,11 +329,14 @@ setIsSaving(true);
         <Text style={[LiveStreamingStyles.topBarTitle, fontsLoaded && { fontFamily: 'Roboto_700Bold' }]}>Start Live</Text>
         <View style={LiveStreamingStyles.topBarSpacer} />
       </View>
+</>
+)}
 
       <ScrollView
         style={LiveStreamingStyles.scrollView}
         contentContainerStyle={[LiveStreamingStyles.scrollContent, isTablet && TABLET_CONTENT_WRAP]}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
         <View style={LiveStreamingStyles.heroCard}>
           <Text style={[LiveStreamingStyles.heroEyebrow, fontsLoaded && { fontFamily: 'Roboto_700Bold' }]}>Reporter Console</Text>
@@ -291,8 +367,12 @@ setIsSaving(true);
             <TouchableOpacity
               style={LiveStreamingStyles.playBtn}
               onPress={async () => {
+                awaitingYoutubeAuthRef.current = true;
                 const res = await UserStore.connectYoutubeAccount();
-                if (!res.ok) showToast(res.message || 'Unable to open YouTube authorization.', 'error');
+                if (!res.ok) {
+                  awaitingYoutubeAuthRef.current = false;
+                  showToast(res.message || 'Unable to open YouTube authorization.', 'error');
+                }
               }}
             >
               <Text style={LiveStreamingStyles.playBtnText}>Connect YouTube Account</Text>
@@ -330,7 +410,8 @@ setIsSaving(true);
           onConnectionSuccess={async () => {
     showToast('RTMP connection established.', 'success');
 
-    if (!broadcastId || startRequestInFlight.current) return;
+    const activeBroadcastId = broadcastIdRef.current;
+    if (!activeBroadcastId || startRequestInFlight.current) return;
 
     startRequestInFlight.current = true;
     setIsSaving(true);
@@ -338,7 +419,7 @@ setIsSaving(true);
     // Calling the broadcast transition repeatedly after a failure leaves it in an
     // invalid transition state, so this is intentionally a single request.
     await wait(10000);
-    const result = await UserStore.confirmYoutubeLive(broadcastId);
+    const result = await UserStore.confirmYoutubeLive(activeBroadcastId);
     setIsSaving(false);
 
     if (result?.ok) {
@@ -350,9 +431,14 @@ setIsSaving(true);
     startRequestInFlight.current = false;
     setIsPublishing(false);
     setActiveWatchUrl('');
-    showToast(result?.message || 'YouTube stream is still inactive. Please try again.', 'error');
+    showPopup(result?.message || 'YouTube stream is still inactive. Please try again.', 'error');
 
 }}
+                onConnectionFailed={(message) => {
+                  setIsPublishing(false);
+                  startRequestInFlight.current = false;
+                  showPopup(`RTMP connection failed${message ? `: ${message}` : '.'}`, 'error');
+                }}
               />
               <View pointerEvents="none" style={LiveStreamingStyles.publisherBrandOverlay}>
                 <View style={LiveStreamingStyles.publisherBrandBar}>
@@ -489,40 +575,60 @@ setIsSaving(true);
             <Text style={[LiveStreamingStyles.infoText, fontsLoaded && { fontFamily: 'Roboto_400Regular' }]}>Demo playback: {DEFAULT_PLAYBACK_URL}</Text>
           </View>
 
+          {isWeb && !broadcastId ? (
+            <Text style={{ color: '#475569', fontSize: 13, marginBottom: 10 }}>
+              Web par camera se direct live nahi hoti. "Create Live" dabao, phir RTMP URL + Stream Key OBS me daalo, stream start karo aur "Go Live on YouTube" dabao.
+            </Text>
+          ) : null}
+          {startBlockReason ? (
+            <Text style={{ color: '#dc2626', fontSize: 13, marginBottom: 10 }}>{startBlockReason}</Text>
+          ) : null}
+
           <View style={LiveStreamingStyles.actionRow}>
             <TouchableOpacity
               style={[
                 LiveStreamingStyles.playBtn,
-                (isSaving || isPublishing || isExpoGo || !hasNativePublisher) && LiveStreamingStyles.buttonDisabled,
+                (isSaving || isPublishing || isExpoGo || !canStartHere || (isWeb && Boolean(broadcastId))) && LiveStreamingStyles.buttonDisabled,
               ]}
               onPress={handleStartLive}
            disabled={
   isSaving ||
   isPublishing ||
   isExpoGo ||
-  !hasNativePublisher
+  !canStartHere ||
+  (isWeb && Boolean(broadcastId))
 }
             >
               <Feather name="radio" size={16} color="#fff" />
               <Text style={[LiveStreamingStyles.playBtnText, fontsLoaded && { fontFamily: 'Roboto_700Bold' }]}>
-                {isSaving && !isPublishing ? 'Starting...' : 'Start Live'}
+                {isSaving && !isPublishing ? 'Starting...' : (isWeb ? 'Create Live' : 'Start Live')}
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[
                 LiveStreamingStyles.stopBtn,
-                (!isPublishing || isSaving) && LiveStreamingStyles.buttonDisabled,
+                ((!isPublishing && !broadcastId) || isSaving) && LiveStreamingStyles.buttonDisabled,
               ]}
               onPress={handleStopLive}
-              disabled={!isPublishing || isSaving}
+              disabled={(!isPublishing && !broadcastId) || isSaving}
             >
               <Feather name="square" size={14} color="#fff" />
               <Text style={[LiveStreamingStyles.stopBtnText, fontsLoaded && { fontFamily: 'Roboto_700Bold' }]}>
-                {isSaving && isPublishing ? 'Stopping...' : 'Stop Live'}
+                {isSaving && (isPublishing || broadcastId) ? 'Stopping...' : 'Stop Live'}
               </Text>
             </TouchableOpacity>
           </View>
+          {isWeb && broadcastId && !activeWatchUrl ? (
+            <TouchableOpacity
+              style={[LiveStreamingStyles.playBtn, { marginTop: 12 }, isSaving && LiveStreamingStyles.buttonDisabled]}
+              onPress={handleGoLiveWeb}
+              disabled={isSaving}
+            >
+              <Feather name="radio" size={16} color="#fff" />
+              <Text style={LiveStreamingStyles.playBtnText}>{isSaving ? 'Please wait...' : 'Go Live on YouTube'}</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
       </ScrollView>
     </SafeAreaView>

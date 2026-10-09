@@ -1,5 +1,6 @@
 // ProfileScreen.js - Complete updated file with scroll fixes
 
+import NameWithTick from '../components/NameWithTick';
 import { Feather, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -49,6 +50,7 @@ import {
   hasDocumentSource,
   safeName,
   getProfileTier,
+  requirePremium,
 } from '../utils/profileHelpers';
 import { compressImageToBase64 } from '../utils/imageHandling';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -57,6 +59,10 @@ import { buildIdCardFrontAndBackHtml, buildAppointmentLetterHtml } from '../util
 
 // ── Web-only inline styles ─────────────────────────────────────────────────────
 const WEB_COL = 935;
+// ✅ Backend jab plan ka naam match nahi kar paata to 'Subscription Plan' placeholder aata hai —
+// usse asli plan naam mat samjho, tab 'Premium User' (tier label) dikhao.
+const realPlanName = (n) => { const v = String(n || '').trim(); return v && v.toLowerCase() !== 'subscription plan' ? v : ''; };
+
 const ORANGE = '#F97316';
 
 const w = {
@@ -381,7 +387,7 @@ function SavedProfileCardComponent({ profile, onOpenIdCard, onOpenAppointmentLet
     </View>
   );
 }
-export default function ProfileScreen({ navigation }) {
+export default function ProfileScreen({ navigation, route }) {
   
   useEffect(() => {
     // Android hardware back button
@@ -434,6 +440,7 @@ export default function ProfileScreen({ navigation }) {
   const [idCardSide, setIdCardSide] = useState('front');
   const [userPosts, setUserPosts] = useState([]);
    const [showSavedProfile, setShowSavedProfile] = useState(true);
+  const [activeMenu, setActiveMenu] = useState('posts'); // profile menu: jis item pe click kiya wo Edit Profile button ke color me dikhega
   const [postViewMode, setPostViewMode] = useState('grid');
   const [approvalNoticeDismissed, setApprovalNoticeDismissed] = useState(false); // NEW: approved/rejected banner ka cross button
     const loadCurrentUser = useCallback(async () => {
@@ -505,9 +512,9 @@ export default function ProfileScreen({ navigation }) {
       const synced = await UserStore.updateUser(user.email, {
         name: backendFullName || user.name,
         email: apiUser.email || user.email,
-        contact_number: apiUser.phone || user.contact_number,
-        phone_number: apiUser.phone || user.phone_number,
-        mobile_number: apiUser.phone || user.mobile_number,
+        contact_number: apiUser.phone !== undefined ? (apiUser.phone || '') : user.contact_number,
+        phone_number: apiUser.phone !== undefined ? (apiUser.phone || '') : user.phone_number,
+        mobile_number: apiUser.phone !== undefined ? (apiUser.phone || '') : user.mobile_number,
         bio: apiUser.bio ?? user.bio,
         pending_phone: apiUser.pending_phone ?? null,
         pending_bio: apiUser.pending_bio ?? null,
@@ -596,6 +603,13 @@ export default function ProfileScreen({ navigation }) {
   }, []);
 
   const openEdit = () => {
+    // Common user (koi subscription / role / blue tick nahi) profile edit nahi kar sakta —
+    // sabhi Edit entry points (Edit Profile button, camera badge, saved-profile card)
+    // isi function se guzarte hain, isliye gate yahin lagaya hai.
+    if (profileTier.key === 'common') {
+      showToast('Profile editing is available only after purchasing a subscription.', 'error');
+      return;
+    }
     // One state transition is shared by the web and native render branches.
     // Keeping Profile Details active prevents the post-view branch from
     // masking the edit form on Android/iOS.
@@ -633,7 +647,7 @@ export default function ProfileScreen({ navigation }) {
     'rural_reporter', '25',
   ];
   const hasDocumentSubscription = Boolean(documentProfile?.is_subscribed)
-    && DOCUMENT_ELIGIBLE_SEAT_IDS.includes(documentSeatId);
+    && [documentSeatId, String(documentProfile?.subscription_plan?.role_id_raw || '').split(',')[0].trim().toLowerCase()].some((v) => DOCUMENT_ELIGIBLE_SEAT_IDS.includes(v));
      // Backend numeric status bhejta hai: 1 = pending, 0 = approved, 2 = rejected
     const profileRequestStatus = { 1: 'pending', 0: 'approved', 2: 'rejected' }[Number(savedProfile.profile_update_status)] || null;
   const profileRequestSignature = `${savedProfile.profile_update_status ?? ''}|${savedProfile.pending_bio ?? ''}|${savedProfile.pending_phone ?? ''}|${savedProfile.pending_profile_image_url ?? ''}`;
@@ -683,7 +697,7 @@ export default function ProfileScreen({ navigation }) {
   const openFollowList = async (type) => {
     if (!isLoggedIn) return;
     setFollowModalType(type);
-    const followSummary = await UserStore.getFollowSummary(user.email);   // fresh API call click pe
+    const followSummary = await UserStore.getFollowSummary(savedProfile.email);   // fresh API call click pe
     setFollowLists((prev) => ({
       ...prev,
       followers: Array.isArray(followSummary?.followers) ? followSummary.followers : [],
@@ -748,7 +762,7 @@ const handlePickImage = async () => {
              // STAGE ONLY — koi API hit nahi yahan. Actual upload Save button (handleSave) par hoga.
         pendingImageUriRef.current = uri;
 
-        showToast('Image selected. Tap Save to submit.', 'info');
+        showToast('Image selected. Tap Admin Approval to submit.', 'info');
       }
     } catch (err) { showToast('Unable to pick image right now.', 'error'); }
     finally { setUploading(false); }
@@ -832,6 +846,7 @@ const handlePickImage = async () => {
     if (!hasChanges) { showToast('No changes to save.', 'info'); return; }
 
     setSaving(true);
+    const hasExistingImage = Boolean(savedProfile.profile_image);
 
     // NEW: image change ho to sabse pehle image hi upload karo — asli POST /profile
     // (ya /profile/image agar pehle se image hai) yahi Save button click par hit hota hai.
@@ -845,6 +860,7 @@ const handlePickImage = async () => {
         showToast(imgResult.message || 'Unable to upload image.', 'error');
         return;
       }
+      pendingImageUriRef.current = null; // image upload ho gayi — bio fail ho to retry par dobara upload na ho
 
              if (savedProfile.profile_image && imgResult.pendingImageUrl) {
         imageUpdatePayload = {
@@ -972,6 +988,9 @@ const handlePickImage = async () => {
    const displayProfile = isEditing ? form : savedProfile;
   const profileSeatId = String(displayProfile?.state_seat?.seat_id || '').trim();
   const displayHasBlueTick = Boolean(isLoggedIn && UserStore.hasBlueTick(displayProfile));
+  // TEMP DEBUG: tick kyu nahi aa raha — confirm hone ke baad ye line hata dena
+  console.log('[TICK-DEBUG]', JSON.stringify({ plan: displayProfile?.subscription_plan, is_subscribed: displayProfile?.is_subscribed, subscription_type: displayProfile?.subscription_type, role: displayProfile?.role, tick: displayHasBlueTick, referral: displayProfile?.referral_code }));
+  const hasPremiumSubscription = Boolean(isLoggedIn && UserStore.hasPremiumAccess(displayProfile));
   // Role Based Profile Look — 6-tier color theme (Common/Premium/Verified/
   // Representative/Executive/Chief). Subscription ya seat change hote he
   // pillTheme aur profileTier dono automatically naye role ke color me update
@@ -979,12 +998,23 @@ const handlePickImage = async () => {
   const profileTier = isLoggedIn
     ? getProfileTier({ ...displayProfile, has_blue_tick: displayHasBlueTick })
     : PROFILE_TIERS.common;
+   // Edit Profile button (gradientDark) ka main shade = menu ka active color
+   const menuActiveColor = (profileTier.gradientDark && profileTier.gradientDark[1]) || profileTier.accent;
+  // Settings > "Update account and profile details" se aaye to seedha Edit Profile form khule.
+  // Profile load hone ke baad (initializing false) ek hi baar chalega, phir param clear.
+  useEffect(() => {
+    if (!route?.params?.openEdit || initializing || !isLoggedIn) return;
+    navigation.setParams?.({ openEdit: undefined });
+    openEdit();
+  }, [route?.params?.openEdit, initializing, isLoggedIn]);
    const pillTheme = { bg: `${profileTier.accent}1F`, border: profileTier.accent, text: profileTier.accent };
   // ✅ FIX: purchased seat ka asli naam (Pratinidhi, PRO, etc.) generic tier
   // label ("Authorised Representative") se hamesha priority lega.
    const canChangePhoto = profileTier.key !== 'common';   // sirf Role / Premium / Verified wale photo badal sakte hain
     const profileSeatKeyLC = String(displayProfile?.state_seat?.seat_id || '').trim().toLowerCase();
-  const profileTierLabel = SEAT_ID_TO_TIER[profileSeatKeyLC] ? displayProfile?.state_seat?.seat_name : profileTier.label;
+  const profileTierLabel = SEAT_ID_TO_TIER[profileSeatKeyLC]
+    ? displayProfile?.state_seat?.seat_name
+    : ((profileTier.key === 'premium' && !displayHasBlueTick && realPlanName(displayProfile?.subscription_plan?.plan_name)) || profileTier.label);
   const referralCode = displayProfile.referral_code || generateReferralCode(displayProfile.email);
   const canSeeReferral = Boolean(isLoggedIn && UserStore.hasActiveSubscription(displayProfile));
   const rank = getRank(displayProfile.referral_count || 0);
@@ -1068,7 +1098,10 @@ const handlePickImage = async () => {
     <TouchableOpacity style={ProfileStyles.cancelButton} onPress={closeEdit}>
             <Text style={ProfileStyles.cancelButtonText}>Cancel</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={ProfileStyles.submitButtonWrap} onPress={handleSave} disabled={saving} activeOpacity={0.85}>
+          <TouchableOpacity style={ProfileStyles.submitButtonWrap} onPress={async () => {
+            try { await handleSave(); }
+            catch (e) { setSaving(false); showToast(e?.message || 'Something went wrong. Please try again.', 'error'); }
+          }} disabled={saving} activeOpacity={0.85}>
             <LinearGradient
               colors={profileTier.gradient}
               start={{ x: 0, y: 0 }}
@@ -1105,7 +1138,7 @@ const handlePickImage = async () => {
                 >
                   <Image source={item.profile_image ? { uri: item.profile_image } : DEFAULT_AVATAR} style={ProfileStyles.followUserAvatar} />
                   <View style={ProfileStyles.followUserInfo}>
-                    <Text style={ProfileStyles.followUserName} numberOfLines={1}>{item.name || 'User'}</Text>
+                    <NameWithTick name={item.name || 'User'} user={item} style={ProfileStyles.followUserName} />
                     <Text style={ProfileStyles.followUserEmail} numberOfLines={1}>{item.email || ''}</Text>
                   </View>
                   <Feather name="chevron-right" size={18} color="#BBBBBB" />
@@ -1511,6 +1544,10 @@ const handlePickImage = async () => {
   const renderRtiNewsWebProfile = () => {
     const accent = profileTier.accent;
     const gradient = profileTier.gradient;
+    // Yellow Premium artwork needs dark green copy for readable contrast.
+    // Ordinary/free profiles keep their original neutral grey copy.
+    const primaryProfileText = hasPremiumSubscription ? '#14532D' : '#111827';
+    const secondaryProfileText = hasPremiumSubscription ? '#3F6F57' : '#6B7280';
     const joinedRaw = savedProfile.created_at || savedProfile.createdAt || '';
     const joinedLabel = joinedRaw
       ? new Date(joinedRaw).toLocaleDateString('en-IN', { year: 'numeric', month: 'long', day: 'numeric' })
@@ -1555,8 +1592,7 @@ const handlePickImage = async () => {
     const NAV_ITEMS = [
       { key: 'profile', label: 'My Profile', icon: 'user', active: !showSavedProfile === false && true, onPress: () => setShowSavedProfile(true) },
       { key: 'posts', label: 'My Posts', icon: 'file-text', onPress: () => setShowSavedProfile(false) },
-      { key: 'saved', label: 'Saved Posts', icon: 'bookmark', onPress: () => showToast('Coming soon.', 'info') },
-      { key: 'wallet', label: 'Wallet', icon: 'credit-card', onPress: () => navigation.navigate('Wallet') },
+      { key: 'wallet', label: 'Wallet', icon: 'credit-card', onPress: () => navigation.navigate('Wallet', { returnTo: 'Profile' }) },
       { key: 'referral', label: 'Referral Program', icon: 'gift', onPress: () => navigation.navigate('Refer') },
     ];
 
@@ -1582,7 +1618,7 @@ const handlePickImage = async () => {
                            <TouchableOpacity style={w.tabBarItem} onPress={() => navigation.navigate('My Subscriptions')} activeOpacity={0.75}>
                 <Feather name="star" size={16} color={accent} />
                 <Text style={[w.navItemText, { color: accent, fontWeight: '700' }]}>
-                  {savedProfile?.subscription_plan?.plan_name || 'Premium'}
+                  {realPlanName(savedProfile?.subscription_plan?.plan_name) || 'Premium'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1611,20 +1647,29 @@ const handlePickImage = async () => {
 
                   <View style={w.profileInfoCol}>
                     <View style={w.nameRow}>
-                      <Text style={w.nameText}>{displayProfile.name || 'Your Name'}</Text>
+                      <Text style={[w.nameText, { color: primaryProfileText }]}>{displayProfile.name || 'Your Name'}</Text>
                       {displayHasBlueTick ? <VerifiedBadge size={16} /> : null}
                     </View>
                     {generateMemberId(displayProfile.email) ? (
-                      <Text style={w.memberIdText}>Member ID: {generateMemberId(displayProfile.email)}</Text>
+                      <Text style={[w.memberIdText, { color: secondaryProfileText }]}>Member ID: {generateMemberId(displayProfile.email)}</Text>
                     ) : null}
                                {displayProfile.state ? (
                       <View style={w.locationRow}>
-                        <Feather name="map-pin" size={12} color="#6b7280" />
-                        <Text style={w.locationText}>{displayProfile.state}, India</Text>
+                        <Feather name="map-pin" size={12} color={secondaryProfileText} />
+                        <Text style={[w.locationText, { color: secondaryProfileText }]}>{displayProfile.state}, India</Text>
                       </View>
                     ) : null}
                     {displayProfile.bio ? (
-                      <Text style={w.profileBioText}>{displayProfile.bio}</Text>
+                      <Text style={[w.profileBioText, { color: primaryProfileText }]}>{displayProfile.bio}</Text>
+                    ) : null}
+                    {canSeeReferral && referralCode ? (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                        <Text style={[w.memberIdText, { color: secondaryProfileText }]}>Referral Code:</Text>
+                        <Text style={[w.referralCodeCompact, { color: accent }]}>{referralCode}</Text>
+                        <TouchableOpacity onPress={handleCopyReferralCode} activeOpacity={0.7}>
+                          <Feather name="copy" size={14} color={accent} />
+                        </TouchableOpacity>
+                      </View>
                     ) : null}
                     <View style={[w.tierPill, { backgroundColor: `${accent}1F`, borderColor: accent }]}>
                                            <Text style={[w.tierPillText, { color: accent }]}>{profileTierLabel}</Text>
@@ -1660,13 +1705,6 @@ const handlePickImage = async () => {
                       <Text style={w.editProfileBtnText}>Edit Profile</Text>
                     </LinearGradient>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[w.addPersonBtn, { borderColor: accent }]}
-                    onPress={handleShareProfile}
-                    activeOpacity={0.8}
-                  >
-                    <Feather name="user-plus" size={16} color={accent} />
-                  </TouchableOpacity>
                 </View>
               </View>
 
@@ -1686,11 +1724,11 @@ const handlePickImage = async () => {
                     <Text style={w.emptyTitle}>No posts yet</Text>
                     <Text style={w.emptySub}>You haven't created any posts yet.</Text>
                     <TouchableOpacity
-                      style={[w.emptyBtn, { backgroundColor: accent }]}
+                      style={[w.emptyBtn, { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: accent }]}
                       onPress={() => navigation.navigate('Add News')}
                       activeOpacity={0.85}
                     >
-                      <Text style={w.emptyBtnText}>Create Post</Text>
+                      <Text style={[w.emptyBtnText, { color: '#111827' }]}>Create Post</Text>
                     </TouchableOpacity>
                   </View>
                 ) : (
@@ -1726,6 +1764,7 @@ const handlePickImage = async () => {
      avatarUri={canChangePhoto ? (displayProfile.profile_image || null) : null}
       avatarBgImage={profileTier.bgImage}
       avatarBgColor={profileTier.accent}
+      highContrast={hasPremiumSubscription}
       rightExtra={
         <TouchableOpacity
           onPress={handleOpenSettings}
@@ -1733,11 +1772,11 @@ const handlePickImage = async () => {
           style={{
             width: 34, height: 34, borderRadius: 17,
             alignItems: 'center', justifyContent: 'center',
-            backgroundColor: 'rgba(255,255,255,0.16)',
-            borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)',
+            backgroundColor: hasPremiumSubscription ? 'rgba(255,255,255,0.62)' : 'rgba(255,255,255,0.16)',
+            borderWidth: 1, borderColor: hasPremiumSubscription ? 'rgba(20,83,45,0.35)' : 'rgba(255,255,255,0.35)',
           }}
         >
-          <Feather name="settings" size={16} color="#ffffff" />
+          <Feather name="settings" size={16} color={hasPremiumSubscription ? '#14532D' : '#FFFFFF'} />
         </TouchableOpacity>
       }
     />
@@ -1887,9 +1926,6 @@ style={[ProfileStyles.avatarCameraBadge, !canChangePhoto && { display: 'none' }]
   </LinearGradient>
 </TouchableOpacity>
 
-                    <TouchableOpacity style={ProfileStyles.addPersonExact}>
-                      <Feather name="user-plus" size={15} color={profileTier.accent} />
-                    </TouchableOpacity>
                   </View>
                 </View>
               ) : (
@@ -1941,30 +1977,25 @@ style={[ProfileStyles.avatarCameraBadge, !canChangePhoto && { display: 'none' }]
                 </View>
               ) : (
                             <View style={ProfileStyles.profileMenuExact}>
-                  <TouchableOpacity style={ProfileStyles.profileMenuItemExact} onPress={() => setShowSavedProfile(false)} activeOpacity={0.75}>
-                    <Feather name="file-text" size={20} color="#263238" />
-                    <Text style={ProfileStyles.profileMenuTextExact}>My Posts</Text>
+                  <TouchableOpacity style={ProfileStyles.profileMenuItemExact} onPress={() => { setActiveMenu('posts'); setShowSavedProfile(false); }} activeOpacity={0.75}>
+                    <Feather name="file-text" size={20} color={activeMenu === 'posts' ? menuActiveColor : '#263238'} />
+                    <Text style={[ProfileStyles.profileMenuTextExact, activeMenu === 'posts' && { color: menuActiveColor, fontWeight: '700' }]}>My Posts</Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity style={ProfileStyles.profileMenuItemExact} onPress={() => showToast('Coming soon.', 'info')} activeOpacity={0.75}>
-                    <Feather name="bookmark" size={20} color="#263238" />
-                    <Text style={ProfileStyles.profileMenuTextExact}>Saved Posts</Text>
+                  <TouchableOpacity style={ProfileStyles.profileMenuItemExact} onPress={() => { setActiveMenu('wallet'); navigation.navigate('Wallet', { returnTo: 'Profile' }); }} activeOpacity={0.75}>
+                    <Feather name="credit-card" size={20} color={activeMenu === 'wallet' ? menuActiveColor : '#263238'} />
+                    <Text style={[ProfileStyles.profileMenuTextExact, activeMenu === 'wallet' && { color: menuActiveColor, fontWeight: '700' }]}>Wallet</Text>
                   </TouchableOpacity>
 
-                  <TouchableOpacity style={ProfileStyles.profileMenuItemExact} onPress={() => navigation.navigate('Wallet')} activeOpacity={0.75}>
-                    <Feather name="credit-card" size={20} color="#263238" />
-                    <Text style={ProfileStyles.profileMenuTextExact}>Wallet</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity style={[ProfileStyles.profileMenuItemExact, !canSeeReferral && { display: 'none' }]} onPress={() => navigation.navigate('Refer')} activeOpacity={0.75}>
-                    <Feather name="gift" size={20} color="#263238" />
-                    <Text style={ProfileStyles.profileMenuTextExact}>Referral Program</Text>
+                  <TouchableOpacity style={[ProfileStyles.profileMenuItemExact, !canSeeReferral && { display: 'none' }]} onPress={() => { setActiveMenu('referral'); navigation.navigate('Refer'); }} activeOpacity={0.75}>
+                    <Feather name="gift" size={20} color={activeMenu === 'referral' ? menuActiveColor : '#263238'} />
+                    <Text style={[ProfileStyles.profileMenuTextExact, activeMenu === 'referral' && { color: menuActiveColor, fontWeight: '700' }]}>Referral Program</Text>
                   </TouchableOpacity>
 
                                       <TouchableOpacity style={ProfileStyles.profileMenuItemExact} onPress={() => navigation.navigate('My Subscriptions')} activeOpacity={0.75}>
                     <Feather name="star" size={20} color={profileTier.accent} />
                     <Text style={[ProfileStyles.profileMenuTextExact, ProfileStyles.profileMenuPremiumTextExact, { color: profileTier.accent }]}>
-                      {savedProfile?.subscription_plan?.plan_name || 'Premium Features'}
+                      {realPlanName(savedProfile?.subscription_plan?.plan_name) || 'Premium Features'}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -2007,7 +2038,7 @@ style={[ProfileStyles.avatarCameraBadge, !canChangePhoto && { display: 'none' }]
       {followModal}
       {documentPreviewModal}
 
-           {Platform.OS === 'android' ? (
+           {Platform.OS !== 'web' ? (
         <View style={ProfileStyles.bottomShell}>
           <AppNavbar navigation={navigation} activeScreen="Profile" hideTopHeader={true} />
         </View>

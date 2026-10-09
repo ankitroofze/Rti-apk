@@ -1,3 +1,4 @@
+import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useCallback, useState } from 'react';
 import {
   Platform,
@@ -146,7 +147,11 @@ export default function NotificationsScreen({ navigation }) {
         {Platform.OS === 'web' && <View style={styles.statusBarSpacer} />}
 
         {/* Header */}
-        <View style={styles.customHeader}>
+        {Platform.OS === 'android' ? (
+<ModuleAndroidHeader title="Notifications" onBack={() => navigation.navigate('QuickMenu')} />
+) : (
+<>
+<View style={styles.customHeader}>
           <View
             style={[
               styles.headerInner,
@@ -167,6 +172,8 @@ export default function NotificationsScreen({ navigation }) {
             <View style={styles.headerGhost} />
           </View>
         </View>
+</>
+)}
 
         <ScrollView
           style={styles.scrollView}

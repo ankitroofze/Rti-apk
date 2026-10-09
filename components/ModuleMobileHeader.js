@@ -1,14 +1,24 @@
 // components/ModuleMobileHeader.js
+// Router: Web -> kuch nahi (web ka header Modulewebheader.js se aata hai)
+//         Android -> components/ModuleAndroidHeader.js (alag design)
+//         iOS -> neeche wala purana header (bilkul pehle jaisa)
 import React from 'react';
 import { Platform, StatusBar, View, Text, TouchableOpacity, ImageBackground } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
+import ModuleAndroidHeader from './ModuleAndroidHeader';
 
 const RED_IMAGE = require('../assets/images/profile-red.png');
 
 const HEADER_CONTENT_HEIGHT = 56;
 
-export default function ModuleMobileHeader({
+export default function ModuleMobileHeader(props) {
+  if (Platform.OS === 'web') return null;
+  if (Platform.OS === 'android') return <ModuleAndroidHeader {...props} />;
+  return <IosModuleHeader {...props} />;
+}
+
+function IosModuleHeader({
   title,
   subtitle,
   navigation,
@@ -18,8 +28,7 @@ export default function ModuleMobileHeader({
   bgImage,
 }) {
   const insets = useSafeAreaInsets();
-  if (Platform.OS === 'web') return null;
-  const safeTop = insets.top || (Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 44);
+  const safeTop = insets.top || 44;
 
   const barStyle = {
     width: '100%',
@@ -43,11 +52,7 @@ export default function ModuleMobileHeader({
 
   return (
     <>
-      {Platform.OS === 'android' ? (
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      ) : (
-        <StatusBar barStyle="light-content" />
-      )}
+      <StatusBar barStyle="light-content" />
       <ImageBackground
         source={bgImage || RED_IMAGE}
         resizeMode="cover"
@@ -80,8 +85,6 @@ const S = {
     position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
     width: '100%', height: '100%', resizeMode: 'cover',
   },
-  // Add News jaisa left-aligned module heading; background artwork poore
-  // header ke peeche cover hota hai.
   left:  { flexDirection: 'row', alignItems: 'center', width: 36 },
   right: { flexDirection: 'row', alignItems: 'center', gap: 10, width: 36, justifyContent: 'flex-end' },
   backBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },

@@ -51,7 +51,8 @@
       "bundler": "metro",
       "output": "single"
     },
-    "plugins": [
+"plugins": [
+      ["expo-camera", { "cameraPermission": "Allow camera to scan ID card QR codes" }],
           [
         "expo-splash-screen",
         {

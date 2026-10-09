@@ -39,8 +39,9 @@ if (Platform.OS !== 'web') {
   actions = richEditorLib.actions;
 }
 import VideoPreview from '../components/VideoPreview';
+import NewsLimitModal from '../components/NewsLimitModal';
 import WebRichEditor from '../components/WebRichEditor';
-import { useToast } from '../components/ui/ToastProvider';
+import { useToast, useBusy } from '../components/ui/ToastProvider';
 import { UserStore } from '../store/UserStore';
 import { storeWebUriToIdbMedia } from '../utils/webMediaStore';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -166,7 +167,7 @@ function SectionLabel({ number, title, hint, optional }) {
   return (
     <View style={st.wrap}>
       <Text style={st.title}>
-        {number}. <Text>{title}</Text>
+        {number ? `${number}. ` : ''}<Text>{title}</Text>
         {optional ? (
           <Text style={st.optional}> (optional)</Text>
         ) : (
@@ -349,6 +350,11 @@ export default function AddNewsScreen({ navigation, route }) {
   const plainToHtml = (text) => `<div>${escapeHtml(text).replace(/\n/g, '<br/>')}</div>`;
 
   const [saving, setSaving] = useState(false);
+  useBusy(saving);
+  // POST /news => 403 NEWS_LIMIT_REACHED par popup. Edit mode mein ye kabhi nahi dikhta.
+  const [limitModal, setLimitModal] = useState({ visible: false, message: '' });
+  // Free user ke liye "X free posts left" (backend `free_posts_remaining`). null => hide.
+  const [freePostsLeft, setFreePostsLeft] = useState(null);
   const [userName, setUserName] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
   const [isSubscribedUser, setIsSubscribedUser] = useState(false);
@@ -363,7 +369,8 @@ export default function AddNewsScreen({ navigation, route }) {
   const [roleType, setRoleType] = useState('');
   const [titleExpanded, setTitleExpanded] = useState(false);
   const [subtitleExpanded, setSubtitleExpanded] = useState(false);
-  const [mediaType, setMediaType] = useState('None');
+  const [postType, setPostType] = useState(Number(editItem?.type) === 2 ? 2 : 1); // 1 = News, 2 = Feed (Reel)
+  const [mediaType, setMediaType] = useState(Number(editItem?.type) === 2 ? 'Video' : 'None');
   const [images, setImages] = useState([]);
   const [video, setVideo] = useState(null);
   const [videoThumb, setVideoThumb] = useState(null);
@@ -401,6 +408,8 @@ const admin = user.role === 'admin';
         setUserName(user.name || 'User');
       setIsAdmin(admin);
       setIsSubscribedUser(hasSubscription);
+      const lastKnownFree = syncedUser?.free_news_credits ?? user.free_news_credits;
+      setFreePostsLeft(!admin && !hasSubscription && lastKnownFree != null && Number.isFinite(Number(lastKnownFree)) ? Number(lastKnownFree) : null);
       setLocationState(user.state || '');
       setLocationDistrict(user.district || '');
       setLocationTaluka(user.taluka || '');
@@ -426,7 +435,7 @@ const admin = user.role === 'admin';
     if (!savedDraft || !editorReady || isEditMode) return;
     setTitle(savedDraft.title || ''); setSubtitle(savedDraft.subtitle || '');
     setDescriptionText(savedDraft.descriptionText || ''); setReportType(savedDraft.reportType || '');
-    setRoleType(savedDraft.roleType || ''); setMediaType(savedDraft.mediaType || 'None');
+    setRoleType(savedDraft.roleType || ''); setMediaType(savedDraft.mediaType || 'None'); setPostType(Number(savedDraft.postType) === 2 ? 2 : 1);
     setImages(Array.isArray(savedDraft.images) ? savedDraft.images : []); setVideo(savedDraft.video || null);
     setVideoThumb(savedDraft.videoThumb || null); setAttachment(savedDraft.attachment || null);
     setSelectedState(savedDraft.selectedState || ''); videoOriginalUriRef.current = savedDraft.videoOriginalUri || null;
@@ -453,10 +462,14 @@ const admin = user.role === 'admin';
     setReportType(editItem.report_type || editItem.category || editItem.reportType || '');
     setRoleType(editItem.role_type || editItem.roleType || '');
     setSelectedState(editItem.state || '');
+    setPostType(Number(editItem.type) === 2 ? 2 : 1);
 
-    const existingMediaType = editItem.image ? 'Image' : editItem.video ? 'Video' : editItem.file ? 'File' : 'None';
+    const existingImages = Array.isArray(editItem.images)
+      ? editItem.images.filter(Boolean)
+      : (editItem.image ? [editItem.image] : []);
+    const existingMediaType = existingImages.length ? 'Image' : editItem.video ? 'Video' : editItem.file ? 'File' : 'None';
     setMediaType(existingMediaType);
-    if (editItem.image) setImages([editItem.image]);
+    setImages(existingImages);
     if (editItem.video) setVideo(editItem.video);
     if (editItem.file) setAttachment({ uri: editItem.file, name: editItem.file_name || 'attachment' });
 
@@ -582,8 +595,13 @@ const admin = user.role === 'admin';
       if (!imgPickResult.canceled && imgPickResult.assets?.length) {
         const processedImages = [];
         const maxImages = 5;
+        const remainingSlots = Math.max(0, maxImages - images.length);
+        if (!remainingSlots) {
+          showToast(`You can upload up to ${maxImages} images.`, 'info');
+          return;
+        }
 
-        for (let i = 0; i < Math.min(imgPickResult.assets.length, maxImages); i++) {
+        for (let i = 0; i < Math.min(imgPickResult.assets.length, remainingSlots); i++) {
           const asset = imgPickResult.assets[i];
           if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) {
             showToast(`Image ${i + 1} is too large (max 10MB). Skipping.`, 'warning');
@@ -595,8 +613,8 @@ const admin = user.role === 'admin';
         if (processedImages.length > 0) {
           setImages((prev) => [...prev, ...processedImages]);
           setTimeout(() => titleEditorRef.current?.focusContentEditor?.(), 180);
-          if (imgPickResult.assets.length > maxImages) {
-            showToast(`Only first ${maxImages} images added.`, 'info');
+          if (imgPickResult.assets.length > remainingSlots) {
+            showToast(`Only ${remainingSlots} more image${remainingSlots === 1 ? '' : 's'} added (maximum ${maxImages}).`, 'info');
           }
         }
       }
@@ -714,9 +732,11 @@ const admin = user.role === 'admin';
     if (!descriptionPlain) { showToast('Description is required.', 'error'); return; }
     if (!reportType) { showToast('Please select a report type.', 'error'); return; }
 
-    const stateValue = isSubscribedUser && locationState ? locationState : selectedState;
-    if (!stateValue) { showToast('Please select a state.', 'error'); return; }
+    // Location picker hata diya gaya hai — state ab user ki profile se automatically aati hai
+    // (optional; khali ho to bhi news post ho jayegi).
+    const stateValue = locationState || selectedState || '';
     if (mediaType === 'Image' && images.length === 0) { showToast('Please upload at least one image.', 'error'); return; }
+    if (postType === 2 && mediaType !== 'Video' && mediaType !== 'Image') { showToast('Feed needs a video or at least one image.', 'error'); return; }
     if (mediaType === 'Video' && !video) { showToast('Please upload a video.', 'error'); return; }
     if (mediaType === 'File' && !attachment) { showToast('Please upload a file.', 'error'); return; }
 
@@ -727,6 +747,9 @@ const admin = user.role === 'admin';
       setSaving(false);
       return;
     }
+
+    // ✅ Free limit ab sirf backend enforce karta hai (POST /news => 403 NEWS_LIMIT_REACHED).
+    // Yahan koi local pre-check nahi — edit (PUT /update-news/{id}) par koi limit hai hi nahi.
 
 
 
@@ -761,14 +784,16 @@ console.log("mediaUriToSend:", mediaUriToSend);
 console.log("Platform:", Platform.OS);
     // ── Call the real backend API (create vs update depending on mode) ──
     const apiPayload = {
+      type: postType,
       title: titlePlain,
-      subTitle: subtitlePlain,
+
       description: descriptionPlain,
       reportType: reportType,
       mediaType: mediaTypeNum,
       mediaUri: mediaUriToSend,
       mediaName: mediaNameToSend,
       mediaMime: mediaMimeToSend,
+      extraImages: mediaType === 'Image' ? images.slice(1) : [],
     };
 
     const apiResult = isEditMode
@@ -777,8 +802,21 @@ console.log("Platform:", Platform.OS);
 
     if (!apiResult.ok) {
       setSaving(false);
+      // Sirf CREATE par, sirf code === 'NEWS_LIMIT_REACHED' — generic toast nahi, popup.
+      if (!isEditMode && apiResult.limitReached) {
+        setLimitModal({ visible: true, message: apiResult.message });
+        return;
+      }
       showToast(apiResult.message || `Failed to ${isEditMode ? 'update' : 'submit'} news to server.`, 'error');
       return;
+    }
+
+    // ✅ Create success: free_posts_remaining (free user) / remaining_credits (subscriber) — dono null-safe.
+    // remaining_credits is screen par dikhte nahi, isliye sirf free count hint update hota hai.
+    if (!isEditMode) {
+      const nextFree = apiResult.freePostsRemaining; // number | null
+      setFreePostsLeft(nextFree);
+      UserStore.setNewsFreePostsRemaining(nextFree);
     }
 
     // ✅ EDIT MODE ends here — backend already has the updated record,
@@ -845,10 +883,11 @@ if (!backendNewsId) {
 
     const newsItem = {
       id: String(backendNewsId), 
+      type: postType,
       title: titlePlain,
-      subtitle: subtitlePlain,
+
       title_html: titleHtml,
-      subtitle_html: subtitleHtml,
+
       description: descriptionPlain,
       description_html: descriptionHtml,
       mediaType,
@@ -932,6 +971,20 @@ if (!backendNewsId) {
     }, 800);
   };
 
+  const closeLimitModal = () => setLimitModal((prev) => ({ ...prev, visible: false }));
+  const handleBuyRoleSubscription = () => {
+    closeLimitModal();
+    // Form draft already save hota hai, isliye kharidne ke baad data nahi jayega.
+    // returnTo => payment verify ke baad user wapas Add News par aata hai.
+    navigation.navigate('Subscription Plans', { returnTo: 'Add News' });
+  };
+
+  const freePostsHint = !isEditMode && !isAdmin && freePostsLeft !== null
+    ? (freePostsLeft > 0
+        ? `${freePostsLeft} free post${freePostsLeft === 1 ? '' : 's'} left`
+        : 'No free posts left')
+    : null;
+
   const submitLabel = saving
     ? (isEditMode ? 'Updating...' : 'Posting...')
     : isEditMode ? 'Update' : isAdmin ? 'Publish News' : 'Post';
@@ -939,10 +992,41 @@ if (!backendNewsId) {
   // Pick the style-sheet (web vs mobile) — content/structure below is shared.
   const T = isWeb ? ws : s;
 
+  // ── Post type (News / Feed) ──────────────────────────────────────────────────
+  const handlePostTypeChange = (next) => {
+    if (next === postType) return;
+    setPostType(next);
+    // Feed = video ya images. Media reset taaki purani image/file na jaye.
+    setImages([]); setVideo(null); setVideoThumb(null); setAttachment(null);
+    setMediaType(next === 2 ? 'Video' : 'None');
+  };
+  const postTypeSelector = (
+    <View style={T.chipsRow}>
+      {[{ v: 1, label: 'News', icon: 'file-text' }, { v: 2, label: 'Feed (Reel)', icon: 'film' }].map(({ v, label, icon }) => {
+        const sel = postType === v;
+        return (
+          <TouchableOpacity key={v} onPress={() => handlePostTypeChange(v)} activeOpacity={0.85}>
+            {sel ? (
+              <LinearGradient colors={C.gradientRed} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={T.chip}>
+                <Feather name={icon} size={13} color={C.white} />
+                <Text style={[T.chipText, T.chipTextOn]}>{label}</Text>
+              </LinearGradient>
+            ) : (
+              <View style={T.chip}>
+                <Feather name={icon} size={13} color={C.textSub} />
+                <Text style={T.chipText}>{label}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+
   // ── Media type chips (shared) ────────────────────────────────────────────────
   const mediaTypeChips = (
     <View style={T.chipsRow}>
-      {MEDIA_TYPES.map((type) => {
+      {(postType === 2 ? ['Video', 'Image'] : MEDIA_TYPES).map((type) => {
         const sel = mediaType === type;
         const iconName = type === 'Image' ? 'image' : type === 'Video' ? 'video' : type === 'File' ? 'paperclip' : 'slash';
         return (
@@ -1045,33 +1129,6 @@ if (!backendNewsId) {
     </View>
   ) : null;
 
-  const locationBlock = (isSubscribedUser && !isAdmin) ? (
-    <View style={T.lockCard}>
-      <View style={T.lockHeader}>
-        <View>
-          <Text style={T.lockTitle}>Location (Premium)</Text>
-          <Text style={T.lockSubtitle}>This is locked to your premium area.</Text>
-        </View>
-          <LinearGradient colors={C.gradientRed} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={T.lockBadge}>
-          <Text style={T.lockBadgeText}>LOCKED</Text>
-        </LinearGradient>
-      </View>
-      <Text style={T.lockText}>
-        {locationState || 'State not set'}
-        {locationDistrict ? `, ${locationDistrict}` : ''}
-        {locationTaluka ? `, ${locationTaluka}` : ''}
-      </Text>
-    </View>
-  ) : (
-    <TouchableOpacity style={T.select} onPress={() => setStatePickerVisible(true)}>
-      <Ionicons name="location-outline" size={15} color={C.primary} />
-      <Text style={[T.selectText, !selectedState && T.selectPlaceholder]}>
-        {selectedState || 'Select a state...'}
-      </Text>
-      <Feather name="chevron-down" size={14} color={C.textSub} />
-    </TouchableOpacity>
-  );
-
   // ── WEB LAYOUT ─────────────────────────────────────────────────────────────────
   if (isWeb) {
     return (
@@ -1086,6 +1143,12 @@ if (!backendNewsId) {
         <ScrollView style={ws.scroll} contentContainerStyle={ws.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="always">
           <View style={ws.innerWrap}>
 
+            {/* 0. Post type */}
+            <View style={ws.section}>
+              <SectionLabel title="Post As" />
+              {postTypeSelector}
+            </View>
+
             {/* 1. Title */}
             <View style={ws.section}>
               <SectionLabel number="1" title="Write News Title" />
@@ -1099,7 +1162,7 @@ if (!backendNewsId) {
               />
             </View>
 
-            {/* 2. Subtitle */}
+            {/* 2. Subtitle
             <View style={ws.section}>
               <SectionLabel number="2" title="Write Sub Title" optional />
               <Text style={ws.subLabel}>A short one-line summary below the headline.</Text>
@@ -1111,7 +1174,7 @@ if (!backendNewsId) {
                 onChangeText={(text) => { setSubtitle(text); subtitleHtmlRef.current = plainToHtml(text); }}
                 multiline
               />
-            </View>
+            </View> */}
 
             {/* 3. Description */}
             <View style={ws.section}>
@@ -1141,33 +1204,16 @@ if (!backendNewsId) {
               </TouchableOpacity>
             </View>
 
-            {/* 5. Role Type */}
+            {/* 5. Media Type */}
             <View style={ws.section}>
-              <SectionLabel number="5" title="Select Role Type" optional />
-              <TouchableOpacity style={ws.select} onPress={() => setRolePickerVisible(true)}>
-                <Feather name="users" size={14} color={C.primary} />
-                <Text style={[ws.selectText, !roleType && ws.selectPlaceholder]}>
-                  {roleType || 'Select role type...'}
-                </Text>
-                <Feather name="chevron-down" size={14} color={C.textSub} />
-              </TouchableOpacity>
-            </View>
-
-            {/* 6. Location */}
-            <View style={ws.section}>
-              <SectionLabel number="6" title="Select Location" />
-              {locationBlock}
-            </View>
-
-            {/* 7. Media Type */}
-            <View style={ws.section}>
-              <SectionLabel number="7" title="Select Media Type" optional />
+              <SectionLabel number="5" title="Select Media Type" optional />
               {mediaTypeChips}
               {imageUploadBlock}
               {videoUploadBlock}
               {fileUploadBlock}
             </View>
 
+            {freePostsHint ? <Text style={s.freeHint}>{freePostsHint}</Text> : null}
             <View style={ws.footerRow}>
               <TouchableOpacity style={ws.cancelBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
                 <Text style={ws.cancelBtnText}>Cancel</Text>
@@ -1187,17 +1233,6 @@ if (!backendNewsId) {
           </View>
         </ScrollView>
 
-        {(!isSubscribedUser || isAdmin) && (
-          <ListPickerModal
-            visible={statePickerVisible}
-            title="Select State"
-            options={INDIA_STATES}
-            selected={selectedState}
-            onSelect={setSelectedState}
-            onClose={() => setStatePickerVisible(false)}
-            searchable
-          />
-        )}
         <ListPickerModal
           visible={reportPickerVisible}
           title="Select Report Type"
@@ -1206,13 +1241,11 @@ if (!backendNewsId) {
           onSelect={setReportType}
           onClose={() => setReportPickerVisible(false)}
         />
-        <ListPickerModal
-          visible={rolePickerVisible}
-          title="Select Role Type"
-          options={ROLE_TYPES}
-          selected={roleType}
-          onSelect={setRoleType}
-          onClose={() => setRolePickerVisible(false)}
+        <NewsLimitModal
+          visible={limitModal.visible}
+          message={limitModal.message}
+          onBuy={handleBuyRoleSubscription}
+          onCancel={closeLimitModal}
         />
       </View>
     );
@@ -1247,6 +1280,12 @@ if (!backendNewsId) {
           keyboardDismissMode="none"
           showsVerticalScrollIndicator={false}
         >
+          {/* 0. Post type */}
+          <View style={s.section}>
+            <SectionLabel title="Post As" />
+            {postTypeSelector}
+          </View>
+
           {/* 1. Title */}
           <View style={s.section}>
             <View style={s.fieldHeaderRow}>
@@ -1281,7 +1320,7 @@ if (!backendNewsId) {
             ) : null}
           </View>
 
-          {/* 2. Subtitle */}
+          {/* 2. Subtitle
           <View style={s.section}>
             <View style={s.fieldHeaderRow}>
               <SectionLabel number="2" title="Write Sub Title" optional />
@@ -1314,11 +1353,11 @@ if (!backendNewsId) {
                 )}
               </View>
             ) : null}
-          </View>
+          </View> */}
 
           {/* 3. Description */}
           <View style={s.section}>
-            <SectionLabel number="3" title="Write Description For News" />
+<SectionLabel number="2" title="Write Description For News" />
             <Text style={s.subLabel}>Write the full report description.</Text>
                               {editorReady ? (
               <View style={s.editorBox}>
@@ -1362,33 +1401,16 @@ if (!backendNewsId) {
             </TouchableOpacity>
           </View>
 
-          {/* 5. Role Type
+          {/* 5. Media Type */}
           <View style={s.section}>
-            <SectionLabel number="5" title="Select Role Type" optional />
-            <TouchableOpacity style={s.select} onPress={() => setRolePickerVisible(true)}>
-              <Feather name="users" size={16} color={C.primary} />
-              <Text style={[s.selectText, !roleType && s.selectPlaceholder]}>
-                {roleType || 'Select role type...'}
-              </Text>
-              <Feather name="chevron-down" size={16} color={C.textSub} />
-            </TouchableOpacity>
-          </View> */}
-
-          {/* 6. Location */}
-          <View style={s.section}>
-            <SectionLabel number="6" title="Select Location" />
-            {locationBlock}
-          </View>
-
-          {/* 7. Media Type */}
-          <View style={s.section}>
-            <SectionLabel number="7" title="Select Media Type" optional />
+            <SectionLabel number="5" title="Select Media Type" optional />
             {mediaTypeChips}
             {imageUploadBlock}
             {videoUploadBlock}
             {fileUploadBlock}
           </View>
 
+          {freePostsHint ? <Text style={s.freeHint}>{freePostsHint}</Text> : null}
                   <TouchableOpacity
             style={saving && { opacity: 0.7 }}
             onPress={handleSubmit}
@@ -1403,17 +1425,6 @@ if (!backendNewsId) {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {(!isSubscribedUser || isAdmin) && (
-        <ListPickerModal
-          visible={statePickerVisible}
-          title="Select State"
-          options={INDIA_STATES}
-          selected={selectedState}
-          onSelect={setSelectedState}
-          onClose={() => setStatePickerVisible(false)}
-          searchable
-        />
-      )}
       <ListPickerModal
         visible={reportPickerVisible}
         title="Select Report Type"
@@ -1422,14 +1433,12 @@ if (!backendNewsId) {
         onSelect={setReportType}
         onClose={() => setReportPickerVisible(false)}
       />
-      {/* <ListPickerModal
-        visible={rolePickerVisible}
-        title="Select Role Type"
-        options={ROLE_TYPES}
-        selected={roleType}
-        onSelect={setRoleType}
-        onClose={() => setRolePickerVisible(false)}
-      /> */}
+      <NewsLimitModal
+        visible={limitModal.visible}
+        message={limitModal.message}
+        onBuy={handleBuyRoleSubscription}
+        onCancel={closeLimitModal}
+      />
      </View>
     </View>
   );
@@ -1525,6 +1534,7 @@ const sharedField = {
 
 // ── Mobile Styles ────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
+  freeHint: { fontSize: 12, fontFamily: FONT.medium, color: C.textSub, textAlign: 'center', marginBottom: 8 },
   ...sharedField,
 
   root: { flex: 1, backgroundColor: C.white },

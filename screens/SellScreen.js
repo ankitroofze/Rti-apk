@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
+import { Keyboard, findNodeHandle } from 'react-native';
 import {
   View,
   Text,
@@ -19,7 +20,10 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { UserStore } from '../store/UserStore';
-import { useToast } from '../components/ui/ToastProvider';
+import * as ToastKit from '../components/ui/ToastProvider';
+const { useToast } = ToastKit;
+// Purane/stale bundle me useBusy na mile to bhi screen crash na ho ("Property 'useBusy' doesn't exist")
+const useBusy = ToastKit.useBusy || (() => {});
 import { getDistricts } from '../pages/locationData';
 import { storeWebUriToIdbMedia } from '../utils/webMediaStore';
 
@@ -115,7 +119,7 @@ const getMediaItemsFromPickerResult = async (result = {}) => {
       : [result];
   const mediaAssets = (assets || [])
     .filter((asset) => asset && asset.uri)
-    .slice(0, 6);
+    .slice(0, 5);
   return Promise.all(mediaAssets.map(getMediaItemFromAsset));
 };
 
@@ -162,7 +166,8 @@ function useSellForm(navigation) {
   const [mediaItems, setMediaItems] = useState([]);
   const [mediaUri, setMediaUri] = useState('');
   const [mediaType, setMediaType] = useState('');
-  const [saving, setSaving] = useState(false);
+    const [saving, setSaving] = useState(false);
+  useBusy(saving);
   const [credits, setCredits] = useState(0);
   const [plans, setPlans] = useState(ECOME_CREDIT_PLANS);
   const [subscriptionExpired, setSubscriptionExpired] = useState(false);
@@ -176,6 +181,7 @@ function useSellForm(navigation) {
       const summary = await UserStore.getEcomeMarketplaceSummary({
         includeListings: false,
         includeEnquiries: false,
+        needPlans: true,
       });
       if (alive) {
         setCredits(summary.credits || 0);
@@ -184,7 +190,7 @@ function useSellForm(navigation) {
         }
         const locationChoices = getCityChoices(summary.currentUser || {});
         setCityChoices(locationChoices);
-        if (locationChoices[0]) setCity(locationChoices[0]);
+        // City user khud type karega (pehle profile ka poora address auto-fill hota tha)
         if (summary.expired) {
           setSubscriptionExpired(true);
           setShowSubscriptionAlert(true);
@@ -204,7 +210,7 @@ function useSellForm(navigation) {
       }
     }
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: false,
       quality: 0.7,
       base64: Platform.OS === 'web',
@@ -214,7 +220,7 @@ function useSellForm(navigation) {
     const items = await getMediaItemsFromPickerResult(result);
     if (!items.length) return;
     setMediaItems((prev) => {
-      const next = [...prev, ...items].slice(0, 6);
+      const next = [...prev, ...items].slice(0, 5);
       setMediaUri(next[0]?.uri || '');
       setMediaType(next[0]?.type || '');
       setTimeout(() => whatSellingInputRef.current?.focus(), 180);
@@ -258,6 +264,14 @@ function useSellForm(navigation) {
     }
     if (!mediaItems.length) {
       showToast('Please upload at least one product image.', 'error');
+      return;
+    }
+    if (!description.trim()) {
+      showToast('Please add a description.', 'error');
+      return;
+    }
+    if (!description.trim()) {
+      showToast('Please add a description.', 'error');
       return;
     }
     if (contact.trim() && !isValidIndianMobileNumber(contact)) {
@@ -363,13 +377,36 @@ function ConfirmPlanModal({ plan, onConfirm, onCancel }) {
 function EcomeSellMobile({ navigation }) {
   const insets = useSafeAreaInsets();
   const form = useSellForm(navigation);
+    const [kbHeight, setKbHeight] = useState(0);
+  const scrollRef = useRef(null);
+
+  const scrollToFocusedInput = () => {
+    setTimeout(() => {
+      const input = TextInput.State.currentlyFocusedInput?.();
+      const scrollNode = findNodeHandle(scrollRef.current);
+      if (!input || !scrollNode) return;
+      input.measureLayout(
+        scrollNode,
+        (_x, y) => scrollRef.current?.scrollTo({ y: Math.max(0, y - 140), animated: true }),
+        () => {}
+      );
+    }, 120);
+  };
+
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const s = Keyboard.addListener(showEvt, (e) => {
+      setKbHeight(e.endCoordinates?.height || 0);
+      scrollToFocusedInput();
+    });
+    const h = Keyboard.addListener(hideEvt, () => setKbHeight(0));
+    return () => { s.remove(); h.remove(); };
+  }, []);
 
   return (
-    <KeyboardAvoidingView
-      style={styles.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
+        <View style={styles.root}>
+       <StatusBar barStyle={Platform.OS === 'android' ? 'dark-content' : 'light-content'} backgroundColor="transparent" translucent />
 
       {form.showSubscriptionAlert && (
         <View style={styles.alertBox}>
@@ -386,7 +423,9 @@ function EcomeSellMobile({ navigation }) {
         </View>
       )}
 
-           <ImageBackground
+           {Platform.OS === 'android' ? null : (
+<>
+<ImageBackground
         source={require('../assets/images/profile-red.png')}
         resizeMode="cover"
         imageStyle={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%', resizeMode: 'cover' }}
@@ -400,10 +439,14 @@ function EcomeSellMobile({ navigation }) {
           <Text style={styles.headerSub}>Ecome (buy / sell)</Text>
         </View>
       </ImageBackground>
+</>
+)}
       <ScrollView
+        ref={scrollRef}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.formContainer, { paddingBottom: insets.bottom + 120 }]}
+        contentContainerStyle={[styles.formContainer, Platform.OS === 'android' && { paddingTop: insets.top + 22 }, { paddingBottom: insets.bottom + 120 + kbHeight }]}
         keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
       >
     
 
@@ -440,6 +483,9 @@ function EcomeSellMobile({ navigation }) {
 
         <Text style={styles.fieldLabel}>Price (₹)</Text>
         <TextInput style={styles.inputBox} placeholder="Enter price amount" placeholderTextColor={SHURU.placeholder} value={form.price} onChangeText={form.setPrice} keyboardType="numeric" />
+
+        <Text style={styles.fieldLabel}>City</Text>
+        <TextInput style={styles.inputBox} placeholder="Enter your city / town" placeholderTextColor={SHURU.placeholder} value={form.city} onChangeText={form.setCity} maxLength={60} autoCapitalize="words" />
 
         {/* 3. Media */}
         <Text style={styles.fieldLabel}>3. Select Photo or Video<Text style={styles.required}> *</Text></Text>
@@ -489,7 +535,7 @@ function EcomeSellMobile({ navigation }) {
         onConfirm={form.handleConfirmBuy}
         onCancel={() => form.setConfirmPlan(null)}
       />
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
@@ -563,6 +609,9 @@ function EcomeSellWeb({ navigation }) {
 
           <Text style={web.label}>Price (₹)</Text>
           <TextInput style={web.input} placeholder="Enter price amount" placeholderTextColor={SHURU.placeholder} value={form.price} onChangeText={form.setPrice} keyboardType="numeric" />
+
+          <Text style={web.label}>City</Text>
+          <TextInput style={web.input} placeholder="Enter your city / town" placeholderTextColor={SHURU.placeholder} value={form.city} onChangeText={form.setCity} maxLength={60} autoCapitalize="words" />
 
           <Text style={web.label}>3. Media <Text style={web.required}>*</Text></Text>
           <TouchableOpacity style={web.mediaBtn} onPress={form.openMediaPicker} activeOpacity={0.8}>

@@ -1,3 +1,4 @@
+import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -187,7 +188,15 @@ export default function MyListingsScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.root}>
-      <View style={{ height: IS_WEB ? 0 : insets.top, backgroundColor: '#fff' }} />
+      {Platform.OS === 'android' ? (
+<ModuleAndroidHeader title="My Listings" onBack={() => navigation.goBack()}
+  rightExtra={<TouchableOpacity style={styles.addBtn} onPress={() => navigation.navigate('Sell')} activeOpacity={0.8}>
+<Ionicons name="add" size={16} color="#fff" />
+<Text style={styles.addBtnText}>New</Text>
+</TouchableOpacity>} />
+) : (
+<>
+<View style={{ height: IS_WEB ? 0 : insets.top, backgroundColor: '#fff' }} />
 
       {/* ── Topbar — matches AdvertiseScreen header style ── */}
       <View style={styles.header}>
@@ -202,6 +211,8 @@ export default function MyListingsScreen({ navigation }) {
           <Text style={[styles.addBtnText, fontsLoaded && { fontFamily: FONT.bold }]}>{IS_WEB ? 'New listing' : 'New'}</Text>
         </TouchableOpacity>
       </View>
+</>
+)}
 
       {loading ? (
         <View style={styles.loadingWrap}>

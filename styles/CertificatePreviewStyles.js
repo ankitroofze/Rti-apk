@@ -283,7 +283,7 @@ awardeeName: {
   ───────────────────────────── */
   goldLatter: {
     position: 'absolute',
-    top: '57%',
+    top: '61%',
     right: '5%',
     width: '20%',
     height: '9%',
@@ -323,10 +323,10 @@ awardeeName: {
      USER PHOTO with gold frame
      Original image mein right-bottom area mein hai
   ───────────────────────────── */
-  photoWrapper: {
+    photoWrapper: {
   position: 'absolute',
   right: '4%',
-  top: '56%',
+  top: '60%',
   width: '31%',
   height: '20%',
 },

@@ -4,17 +4,10 @@
 // kitna pay kiya, kab shuru hua, kab khatam hoga — sab ek jagah.
 // Sabhi module cover karta hai: Role/Membership, Ads, E-Commerce, Quiz.
 //
-// ⚠️ Data-availability note: is app me abhi sirf Role/Membership
-// subscription ka poora transaction-by-transaction history backend
-// se aata hai (UserStore.getPaymentSummary → payment_history[]).
-// Ads / E-Commerce / Quiz ke liye sirf "abhi ka active plan" (current
-// snapshot: plan name, price, start date, end date) available hai,
-// unka purana transaction list backend me store nahi hota — isliye
-// unhe "Current Plans" section me dikhaya gaya hai, aur Role ka poora
-// transaction list "All Transactions" section me. Jis din Ads/Ecom/Quiz
-// ka bhi history API/field ban jaye, bas neeche wale buildTransactions()
-// function me unko bhi map kar dena — baaki UI automatically handle
-// kar lega.
+// Data source: GET /payment-history (user ki apni history, token se user
+// pehchana jaata hai). Module + status filter, date range aur pagination
+// backend se hi hota hai. Agar API fail ho jaye to purana local
+// payment_history (UserStore.getPaymentSummary) fallback ke taur pe dikhta hai.
 // ─────────────────────────────────────────────────────────────────
 import React, { useState, useCallback } from 'react';
 import {
@@ -37,10 +30,17 @@ import ModuleWebHeader from '../components/Modulewebheader';
 // ── Module meta — icon/color/label har subscription type ke liye ──
 const MODULES = {
   role:  { key: 'role',  label: 'Role / Membership', icon: 'award',        color: '#7C3AED', bg: '#F3E8FF' },
-  ads:   { key: 'ads',   label: 'Ads',               icon: 'megaphone',     color: '#EA580C', bg: '#FFF7ED' },
+  ads:   { key: 'ads',   label: 'Ads',               icon: 'volume-2',      color: '#EA580C', bg: '#FFF7ED' },
   ecom:  { key: 'ecom',  label: 'E-Commerce',        icon: 'shopping-bag',  color: '#2563EB', bg: '#EFF6FF' },
   quiz:  { key: 'quiz',  label: 'Quiz',              icon: 'help-circle',   color: '#16A34A', bg: '#F0FDF4' },
 };
+const STATUS_FILTERS = [
+  { key: 'all',     label: 'All Status' },
+  { key: 'paid',    label: 'Paid' },
+  { key: 'created', label: 'Pending' },
+  { key: 'failed',  label: 'Failed' },
+];
+const PER_PAGE = 20;
 const FILTERS = [
   { key: 'all',  label: 'All' },
   { key: 'role', label: 'Role' },
@@ -71,12 +71,16 @@ export default function PaymentHistoryScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState('all');
   const [currentPlans, setCurrentPlans] = useState([]); // [{module, plan_name, price, purchased_at, expires_at}]
-  const [transactions, setTransactions] = useState([]);  // role payment_history
+  const [transactions, setTransactions] = useState([]);  // API rows (ya fallback local rows)
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [meta, setMeta] = useState(null);
+  const [summary, setSummary] = useState(null);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [usingFallback, setUsingFallback] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
-  const load = useCallback(async () => {
+  const loadCurrentPlans = useCallback(async () => {
     const user = await UserStore.getCurrentUser();
-    const paymentSummary = await UserStore.getPaymentSummary();
-
     const plans = [];
     if (user?.subscription_plan?.plan_name) {
       plans.push({
@@ -114,55 +118,81 @@ export default function PaymentHistoryScreen({ navigation }) {
         expires_at: user?.quiz_subscription_expiry,
       });
     }
-
     setCurrentPlans(plans);
-    setTransactions(Array.isArray(paymentSummary?.payment_history) ? paymentSummary.payment_history : []);
+  }, []);
+
+  // Local (purana) payment_history ko API-row shape me convert karta hai — sirf fallback ke liye
+  const mapLocalTxn = (t, idx) => ({
+    payment_id: `local-${idx}`,
+    module: t.module || 'role',
+    plan: { title: t.plan_name || 'Subscription Plan' },
+    amount: t.amount,
+    status: (() => {
+      const st = String(t.status || '').toLowerCase();
+      if (['success', 'paid', 'completed'].includes(st)) return 'paid';
+      if (['failed', 'error'].includes(st)) return 'failed';
+      return 'created';
+    })(),
+    purchase_date: t.date,
+    start_date: null,
+    end_date: null,
+    validity_status: null,
+  });
+
+  const fetchPage = useCallback(async (page, moduleKey, stKey) => {
+    return UserStore.getPaymentHistory({
+      module: moduleKey,
+      status: stKey,
+      page,
+      per_page: PER_PAGE,
+    });
+  }, []);
+
+  const load = useCallback(async () => {
+    await loadCurrentPlans();
+    const res = await fetchPage(1, activeFilter, statusFilter);
+    if (res?.ok) {
+      setTransactions(res.items);
+      setMeta(res.meta);
+      setSummary(res.summary);
+      setUsingFallback(false);
+      setErrorMsg('');
+    } else {
+      // API fail -> local history dikhao, par user ko bata do
+      const paymentSummary = await UserStore.getPaymentSummary();
+      const local = Array.isArray(paymentSummary?.payment_history) ? paymentSummary.payment_history : [];
+      setTransactions(local.map(mapLocalTxn));
+      setMeta(null);
+      setSummary(null);
+      setUsingFallback(true);
+      setErrorMsg(res?.isAuth ? 'Session expired. Please login again.' : (res?.message || 'Payment history load nahi ho payi.'));
+    }
     setLoading(false);
     setRefreshing(false);
-  }, []);
+  }, [activeFilter, statusFilter, fetchPage, loadCurrentPlans]);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || usingFallback || !meta || meta.current_page >= meta.last_page) return;
+    setLoadingMore(true);
+    const res = await fetchPage(meta.current_page + 1, activeFilter, statusFilter);
+    if (res?.ok) {
+      setTransactions((prev) => [...prev, ...res.items]);
+      setMeta(res.meta);
+      setSummary(res.summary || summary);
+    }
+    setLoadingMore(false);
+  }, [loadingMore, usingFallback, meta, fetchPage, activeFilter, statusFilter, summary]);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const onRefresh = () => { setRefreshing(true); load(); };
 
    const filteredPlans = activeFilter === 'all' ? currentPlans : currentPlans.filter((p) => p.module === activeFilter);
-  // ✅ Ab Role/Ads/E-Commerce/Quiz — sabhi purchases payment_history me module-tagged aate hain
-  const filteredTxns = activeFilter === 'all' ? transactions : transactions.filter((t) => (t.module || 'role') === activeFilter);
-  // Agar backend se real transaction history nahi mili, to current active plan
-  // ki details ko hi ek table-row jaisa bana dete hain (jaisa screenshot me chahiye)
-  const buildTableRows = () => {
-    if (filteredTxns.length > 0) {
-      return filteredTxns.map((t) => {
-        const { date } = formatDateTime(t.date);
-        return {
-          plan: t.plan_name || 'Subscription Plan',
-          amount: t.amount,
-          started: date,
-          ends: '—',
-          status: String(t.status || 'Pending'),
-        };
-      });
-    }
-    // Fallback: current plans se rows banao
-    return filteredPlans.map((p) => {
-      const meta = MODULES[p.module] || MODULES.role;
-      const expired = isPlanExpired(p.expires_at);
-      const start = formatDateTime(p.purchased_at);
-      const end = formatDateTime(p.expires_at);
-      return {
-        plan: p.plan_name,
-        module: meta.label,
-        amount: p.price,
-        started: start.date,
-        ends: end.date,
-        status: expired ? 'Expired' : 'Active',
-      };
-    });
-  };
-  const statusBadgeStyle = (status) => {
-    const s = String(status || '').toLowerCase();
-    if (s === 'success' || s === 'paid' || s === 'completed') return [S.badgeSuccess, S.badgeSuccessText, 'Success'];
-    if (s === 'failed' || s === 'error') return [S.badgeFailed, S.badgeFailedText, 'Failed'];
+  // Payment status (API): created / paid / failed
+  const paymentBadge = (status) => {
+    const st = String(status || '').toLowerCase();
+    if (st === 'paid') return [S.badgeSuccess, S.badgeSuccessText, 'Paid'];
+    if (st === 'failed') return [S.badgeFailed, S.badgeFailedText, 'Failed'];
     return [S.badgePending, S.badgePendingText, 'Pending'];
   };
 
@@ -198,7 +228,7 @@ export default function PaymentHistoryScreen({ navigation }) {
               {FILTERS.map((f) => (
                 <TouchableOpacity
                   key={f.key}
-                  onPress={() => setActiveFilter(f.key)}
+                  onPress={() => { setLoading(true); setActiveFilter(f.key); }}
                   style={[S.filterChip, activeFilter === f.key && S.filterChipActive]}
                   activeOpacity={0.8}
                 >
@@ -254,50 +284,107 @@ export default function PaymentHistoryScreen({ navigation }) {
               })
             )}
 
-            {/* All Transactions (Role/Membership — poora history yahi available hai) */}
+            {/* All Transactions — GET /payment-history */}
             <Text style={S.sectionTitle}>All Transactions</Text>
 
-                       {(() => {
-              const rows = buildTableRows();
-              if (rows.length === 0) {
+            {/* Status filter */}
+            <View style={S.filterRow}>
+              {STATUS_FILTERS.map((f) => (
+                <TouchableOpacity
+                  key={f.key}
+                  onPress={() => { setLoading(true); setStatusFilter(f.key); }}
+                  style={[S.filterChip, statusFilter === f.key && S.filterChipActive]}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[S.filterChipText, statusFilter === f.key && S.filterChipTextActive]}>{f.label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {usingFallback && errorMsg ? (
+              <View style={S.noteBox}>
+                <Text style={S.noteText}>{errorMsg} Abhi phone me saved history dikh rahi hai.</Text>
+              </View>
+            ) : null}
+
+            {summary ? (
+              <Text style={[S.planCardMetaLabel, { marginBottom: 10 }]}>
+                {summary.total_records ?? 0} payment{Number(summary.total_records) === 1 ? '' : 's'} · Paid total ₹{Number(summary.paid_amount || 0).toLocaleString('en-IN')}
+              </Text>
+            ) : null}
+
+            {transactions.length === 0 ? (
+              <View style={S.emptyBox}>
+                <Feather name="file-text" size={28} color="#C7CBD4" />
+                <Text style={S.emptyText}>Abhi tak koi transaction record nahi mila.</Text>
+              </View>
+            ) : (
+              transactions.map((t, idx) => {
+                const meta2 = MODULES[t.module] || MODULES.role;
+                const [pillBg, pillTxt, pillLabel] = paymentBadge(t.status);
+                const purchased = formatDateTime(t.purchase_date || t.created_at);
+                const hasValidity = Boolean(t.validity_status);
+                const expired = t.validity_status === 'expired';
+                const startLabel = t.start_date ? formatDateTime(t.start_date).date : '—';
+                const endLabel = t.end_date
+                  ? formatDateTime(t.end_date).date
+                  : (hasValidity ? 'No expiry' : '—');
                 return (
-                  <View style={S.emptyBox}>
-                    <Feather name="file-text" size={28} color="#C7CBD4" />
-                    <Text style={S.emptyText}>Abhi tak koi transaction record nahi mila.</Text>
-                  </View>
-                );
-              }
-              return (
-                <View style={S.tableWrap}>
-                  <View style={S.tableHeaderRow}>
-                    <Text style={[S.tableHeaderCell, { flex: 1.6 }]}>Plan</Text>
-                    <Text style={[S.tableHeaderCell, { flex: 0.9 }]}>Amount</Text>
-                    <Text style={[S.tableHeaderCell, { flex: 1.1 }]}>Started</Text>
-                    <Text style={[S.tableHeaderCell, { flex: 1.1 }]}>Ends</Text>
-                    <Text style={[S.tableHeaderCell, { flex: 0.9, textAlign: 'right' }]}>Status</Text>
-                  </View>
-                  {rows.map((r, idx) => (
-                    <View key={idx} style={[S.tableDataRow, idx % 2 !== 0 && S.tableDataRowAlt]}>
-                      <Text style={[S.tableCellText, { flex: 1.6, fontWeight: '700', color: '#111111' }]} numberOfLines={1}>
-                        {r.plan}
-                      </Text>
-                      <Text style={[S.tableCellText, { flex: 0.9, color: '#EA580C', fontWeight: '700' }]}>
-                        {r.amount != null ? `₹${r.amount}` : '—'}
-                      </Text>
-                      <Text style={[S.tableCellText, { flex: 1.1 }]}>{r.started}</Text>
-                      <Text style={[S.tableCellText, { flex: 1.1 }]}>{r.ends}</Text>
-                      <View style={{ flex: 0.9, alignItems: 'flex-end' }}>
-                        <View style={[S.statusPill, r.status === 'Active' ? S.statusPillActive : r.status === 'Expired' ? S.statusPillExpired : S.badgePending]}>
-                          <Text style={[S.statusPillText, { color: r.status === 'Active' ? '#15803D' : r.status === 'Expired' ? '#B91C1C' : '#92400E' }]}>
-                            {r.status}
-                          </Text>
+                  <View key={String(t.payment_id ?? idx)} style={S.planCardRow}>
+                    <View style={[S.moduleIconWrap, { backgroundColor: meta2.bg }]}>
+                      <Feather name={meta2.icon} size={19} color={meta2.color} />
+                    </View>
+                    <View style={S.planCardBody}>
+                      <Text style={S.moduleLabel}>{t.module_label || meta2.label}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={S.planCardName} numberOfLines={1}>{t.plan?.title || 'Subscription Plan'}</Text>
+                        {t.amount != null ? <Text style={S.planCardPrice}>₹{t.amount}</Text> : null}
+                      </View>
+
+                      <View style={S.planCardMetaRow}>
+                        <View>
+                          <Text style={S.planCardMetaLabel}>Paid on</Text>
+                          <Text style={S.planCardMetaValue}>{purchased.date}{purchased.time ? ` · ${purchased.time}` : ''}</Text>
+                        </View>
+                        <View>
+                          <Text style={S.planCardMetaLabel}>Validity</Text>
+                         <><Text style={S.planCardMetaValue}>{startLabel}</Text><Text style={S.planCardMetaValue}>→ {endLabel}</Text></>
                         </View>
                       </View>
+
+                      <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
+                        <View style={[S.statusPill, pillBg]}>
+                          <Text style={[S.statusPillText, pillTxt]}>{pillLabel}</Text>
+                        </View>
+                        {hasValidity ? (
+                          <View style={[S.statusPill, expired ? S.statusPillExpired : S.statusPillActive]}>
+                            <Text style={[S.statusPillText, { color: expired ? '#B91C1C' : '#15803D' }]}>
+                              {expired ? 'Expired' : 'Active'}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      {t.status === 'failed' && t.failure_description ? (
+                        <Text style={[S.planCardMetaLabel, { marginTop: 6 }]} numberOfLines={2}>{t.failure_description}</Text>
+                      ) : null}
                     </View>
-                  ))}
-                </View>
-              );
-            })()}
+                  </View>
+                );
+              })
+            )}
+
+            {!usingFallback && meta && meta.current_page < meta.last_page ? (
+              <TouchableOpacity
+                onPress={loadMore}
+                disabled={loadingMore}
+                style={[S.filterChip, { alignSelf: 'center', marginTop: 8 }]}
+                activeOpacity={0.8}
+              >
+                {loadingMore
+                  ? <ActivityIndicator color="#dc2626" size="small" />
+                  : <Text style={S.filterChipText}>Load more</Text>}
+              </TouchableOpacity>
+            ) : null}
           </ScrollView>
         )}
       </View>

@@ -2,6 +2,7 @@
 // UI-only screen. Data below is MOCK data for layout/demo purposes.
 // TODO (next phase): replace MOCK_CHATS with API data (chat list endpoint) + socket for live updates.
 
+import NameWithTick from '../components/NameWithTick';
 import React, { useMemo, useState } from 'react';
 import {
   Platform,
@@ -99,7 +100,7 @@ function ChatRow({ item, onPress }) {
       <Avatar item={item} />
       <View style={styles.chatRowMain}>
         <View style={styles.chatRowTop}>
-          <Text style={styles.chatName} numberOfLines={1}>{item.name}</Text>
+          <NameWithTick name={item.name} user={item} style={styles.chatName} />
           <Text style={styles.chatTime}>{item.time}</Text>
         </View>
         <View style={styles.chatRowBottom}>

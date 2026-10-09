@@ -127,6 +127,8 @@ export function normalizeStoryItem(item, index = 0) {
     comments: Number(item.comments || 0),
     shares: Number(item.shares || 0),
     liked_by: Array.isArray(item.liked_by) ? item.liked_by : [],
+       liked_by_me: item.liked_by_me === undefined ? undefined : Boolean(item.liked_by_me),
+    latest_comments: Array.isArray(item.latest_comments) ? item.latest_comments.slice(0, 2) : [],
     bookmarked: Boolean(item.bookmarked),
     comments_list: Array.isArray(item.comments_list) ? item.comments_list : [],
   };

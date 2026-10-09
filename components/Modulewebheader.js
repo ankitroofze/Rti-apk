@@ -85,6 +85,7 @@ export default function ModuleWebHeader({
  avatarBgImage = null,  // optional — sirf Profile screen bhejti hai
   avatarBgColor = null,  // optional — sirf Profile screen bhejti hai
   rightExtra = null,
+  highContrast = false,
 }) {
   // ── Mobile par kuch render nahi — Android/iOS bilkul pehle jaisa ──
    // Profile circle: user ki apni photo (sirf Role/Premium/Verified ke liye) warna default avatar.png
@@ -114,6 +115,9 @@ export default function ModuleWebHeader({
     if (onBack) return onBack();
     go('QuickMenu');
   };
+  const readableColor = highContrast ? '#14532D' : '#FFFFFF';
+  const controlSurface = highContrast ? 'rgba(255,255,255,0.62)' : 'rgba(255,255,255,0.16)';
+  const controlBorder = highContrast ? 'rgba(20,83,45,0.35)' : 'rgba(255,255,255,0.35)';
 
   return (
     <ImageBackground
@@ -124,20 +128,20 @@ export default function ModuleWebHeader({
     >
       <View style={S.left}>
         {showBack ? (
-          <TouchableOpacity style={S.backBtn} onPress={handleBack} activeOpacity={0.8}>
-            <Feather name="arrow-left" size={15} color="#ffffff" />
-            <Text style={S.backTxt}>Back</Text>
+          <TouchableOpacity style={[S.backBtn, { backgroundColor: controlSurface }]} onPress={handleBack} activeOpacity={0.8}>
+            <Feather name="arrow-left" size={15} color={readableColor} />
+            <Text style={[S.backTxt, { color: readableColor }]}>Back</Text>
           </TouchableOpacity>
         ) : null}
-        <Text style={S.title} numberOfLines={1}>{title}</Text>
+        <Text style={[S.title, { color: readableColor }]} numberOfLines={1}>{title}</Text>
       </View>
 
       <View style={S.right}>
         {rightExtra}
 
         {/* Bell */}
-        <TouchableOpacity style={S.bellBtn} onPress={() => go('Notifications')} activeOpacity={0.8}>
-          <Feather name="bell" size={16} color="#ffffff" />
+        <TouchableOpacity style={[S.bellBtn, { backgroundColor: controlSurface, borderColor: controlBorder }]} onPress={() => go('Notifications')} activeOpacity={0.8}>
+          <Feather name="bell" size={16} color={readableColor} />
         </TouchableOpacity>
 
         {/* Profile — icon ke andar bhi red image */}

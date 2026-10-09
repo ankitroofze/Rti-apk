@@ -1,8 +1,8 @@
-import { Image, Platform, Text, View } from 'react-native';
-import QRCode from 'react-native-qrcode-svg';
+import { Image, Platform, Text, TouchableOpacity, View } from 'react-native';
+import IdCardQr from './IdCardQr';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
 import IdCardStyles from '../styles/IdCardStyles';
-import { buildVerificationUrl } from '../utils/verificationHelpers';
+import { useIdCardVerification, buildFallbackQrUrl, buildPageVerifyUrl, formatCardDate } from '../utils/idCardService';
 import { getIssueDate } from '../utils/profileHelpers';
 
 const CERT_LOGO = require('../assets/images/certificate_logo.jpg');
@@ -41,11 +41,13 @@ const ID_CARD_FONT_BLACK = Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Rob
 export default function AutoIdCardPreview({ profile }) {
   useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const rank = getRank(profile.referral_count || 0);
-  const memberId = profile.member_id || generateMemberId(profile.email);
   const seatName = String(profile?.state_seat?.seat_name || profile?.author_seat_name || '').trim();
   const designation = seatName || `${rank.label} - RTI News Member`;
   const issueDate = getIssueDate(profile);
-  const verificationUrl = buildVerificationUrl(profile);
+  const { idCard, loading, refresh } = useIdCardVerification(); // backend se: id_number + valid_until + qr_payload
+  // ID No + Valid Upto sirf /id-cards API se (fallback purana logic)
+  const memberId = idCard?.id_number || profile.member_id || generateMemberId(profile.email);
+  const validUpto = formatCardDate(idCard?.valid_until) || fmtValidUpto(issueDate);
 
   return (
     <View style={IdCardStyles.idCardShadowWrap}>
@@ -77,7 +79,11 @@ export default function AutoIdCardPreview({ profile }) {
           />
         </View>
         <View style={IdCardStyles.idCardQRBox}>
-          <QRCode value={verificationUrl} size={70} backgroundColor="#ffffff" color="#000000" />
+                <IdCardQr
+     payload={buildPageVerifyUrl(idCard?.qr_payload) || buildFallbackQrUrl(profile)}
+            fallbackValue=""
+            size={70}
+          />
         </View>
       </View>
 
@@ -111,8 +117,15 @@ export default function AutoIdCardPreview({ profile }) {
           <Text style={IdCardStyles.idCardKeyLight}>ID No:-</Text>
           <Text style={{ fontSize: 15, fontWeight: Platform.OS === 'web' ? '900' : 'normal', color: '#cc2200', fontFamily: ID_CARD_FONT_BLACK }}>{memberId}</Text>
          <Text style={{ fontSize: 15, color: '#15803d', fontWeight: Platform.OS === 'web' ? '900' : 'normal', marginLeft: 10, fontFamily: ID_CARD_FONT_BLACK }}>Valid Upto:</Text>
-          <Text style={{ fontSize: 13, color: '#cc2200', fontWeight: Platform.OS === 'web' ? '900' : 'normal', marginLeft: 3, fontFamily: ID_CARD_FONT_BLACK }}>{fmtValidUpto(issueDate)}</Text>
+          <Text style={{ fontSize: 13, color: '#cc2200', fontWeight: Platform.OS === 'web' ? '900' : 'normal', marginLeft: 3, fontFamily: ID_CARD_FONT_BLACK }}>{validUpto}</Text>
         </View>
+
+        {/* Verification URL — backend se aaya hua, as-is */}
+        {idCard?.verification_url ? (
+          <Text numberOfLines={1} style={{ fontSize: 8, color: '#1a3a8a', marginBottom: 4 }}>
+            Verify: {idCard.verification_url}
+          </Text>
+        ) : null}
 
       </View>
 

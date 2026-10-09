@@ -69,24 +69,9 @@ export default function PurchaseBlueTickScreen({ navigation, route }) {
     ).start();
   }, []);
 
-  const handleStartTrial = async () => {
-    setLoading(true);
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      const result = await UserStore.activateBlueTickForCurrentUser();
-      if (!result?.ok) {
-        throw new Error(result?.message || 'Blue tick activate nahi ho paya.');
-      }
-      setLoading(false);
-      setShowSuccess(true);
-      setTimeout(() => {
-        setShowSuccess(false);
-        navigation.goBack();
-      }, 3000);
-    } catch (error) {
-      setLoading(false);
-      Alert.alert('Error', String(error?.message || 'Please try again.'));
-    }
+  const handleStartTrial = () => {
+    // Blue tick is not separately activatable; verified Premium Plan payment is required.
+    navigation.replace('Subscription Plans');
   };
 
   const handleCloseSuccess = () => setShowSuccess(false);
@@ -243,7 +228,7 @@ export default function PurchaseBlueTickScreen({ navigation, route }) {
                   <ActivityIndicator color="#fff" size="small" />
                 ) : (
                   <>
-                    <Text style={s.ctaBtnText}>Start Trial Now</Text>
+                    <Text style={s.ctaBtnText}>Choose Premium Plan</Text>
                     <Ionicons name="arrow-forward-circle" size={20} color="#fff" style={{ marginLeft: 8 }} />
                   </>
                 )}

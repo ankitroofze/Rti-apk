@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
   StyleSheet, Image, Alert, Modal, Dimensions, Platform, StatusBar,
-  useWindowDimensions,
+  useWindowDimensions, KeyboardAvoidingView, Keyboard,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
@@ -559,7 +559,9 @@ const editAd = route?.params?.editAd || null;
     return () => { active = false; };
   }, [isEditing]);
 
-  const [photo, setPhoto] = useState(editAd?.photo || null);
+    const [photo, setPhoto] = useState(editAd?.photo || null);
+  const [extraPhotos, setExtraPhotos] = useState([]);
+    const [adVideo, setAdVideo] = useState(null);
   const [title, setTitle] = useState(editAd?.title || '');
 
   // ✅ FIX: preview ke "Call" button ke liye — jis number se user ne account
@@ -624,6 +626,21 @@ const editAd = route?.params?.editAd || null;
   const [showPreview, setShowPreview] = useState(false);
   const { width: windowWidth } = useWindowDimensions();
   const mobileScrollRef = useRef(null);
+  // ✅ Keyboard fix: keyboard khulne par input keyboard ke niche na chhupe
+  const [kbHeight, setKbHeight] = useState(0);
+  useEffect(() => {
+    if (Platform.OS === 'web') return undefined;
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvt, (e) => {
+      setKbHeight(e?.endCoordinates?.height || 0);
+      // focused input ko visible karne ke liye neeche scroll
+      setTimeout(() => mobileScrollRef.current?.scrollToEnd?.({ animated: true }), 120);
+    });
+    const hideSub = Keyboard.addListener(hideEvt, () => setKbHeight(0));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+
   const webScrollRef = useRef(null);
   const titleInputRef = useRef(null);
   const descriptionInputRef = useRef(null);
@@ -657,7 +674,7 @@ const editAd = route?.params?.editAd || null;
         const raw = await AsyncStorage.getItem(AD_DRAFT_KEY);
         if (!raw || !active) return;
         const draft = JSON.parse(raw);
-        setPhoto(draft.photo || null); setTitle(draft.title || '');
+        setPhoto(draft.photo || null); setExtraPhotos(Array.isArray(draft.extraPhotos) ? draft.extraPhotos : []); setAdVideo(draft.adVideo || null); setTitle(draft.title || '');
         setDescription(draft.description || ''); setSelectedRedirect(draft.selectedRedirect || 'whatsapp');
         setExtraValues(draft.extraValues || {}); setAllowCalls(draft.allowCalls !== false);
         setLeadFormFields(Array.isArray(draft.leadFormFields) ? draft.leadFormFields : []);
@@ -669,7 +686,7 @@ const editAd = route?.params?.editAd || null;
 
   const saveDraft = async () => {
     await AsyncStorage.setItem(AD_DRAFT_KEY, JSON.stringify({
-      photo, title, description, selectedRedirect, extraValues, allowCalls,
+      photo, extraPhotos, adVideo, title, description, selectedRedirect, extraValues, allowCalls,
       leadFormFields, leadFormSubmitAction,
     }));
   };
@@ -683,24 +700,114 @@ const editAd = route?.params?.editAd || null;
   const isWebSmall = Platform.OS === 'web' && webWidth < 920;
   const isWebCompact = Platform.OS === 'web' && webWidth < 720;
 
-  const handlePickPhoto = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Please allow access to your photo library.');
-      return;
+  // ✅ FIX: picker ke liye permission par depend mat karo.
+  // Web par permission hoti hi nahi (aur await ke baad file dialog browser block kar deta tha),
+  // Android 13+ par system photo picker bina permission ke chalta hai.
+  const ensureLibraryAccess = async () => {
+    if (Platform.OS === 'web') return true;
+    try {
+      const cur = await ImagePicker.getMediaLibraryPermissionsAsync();
+      if (cur?.granted || cur?.accessPrivileges === 'limited') return true;
+      if (Platform.OS === 'android' && Number(Platform.Version) >= 33) return true;
+      const req = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      return Boolean(req?.granted || req?.accessPrivileges === 'limited');
+    } catch (_) {
+      return true; // permission API fail ho to bhi picker khol ke dekho
     }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.85
-    });
-    if (!result.canceled) {
+  };
+  const pickerTypes = (kind) => (ImagePicker.MediaTypeOptions
+    ? (kind === 'video' ? ImagePicker.MediaTypeOptions.Videos : ImagePicker.MediaTypeOptions.Images)
+    : [kind === 'video' ? 'videos' : 'images']);
+
+  const handlePickPhoto = async () => {
+    try {
+      if (!(await ensureLibraryAccess())) {
+        Alert.alert('Permission needed', 'Please allow access to your photo library.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: pickerTypes('image'),
+        allowsMultipleSelection: true,
+        selectionLimit: 5,
+        quality: 0.5, // chhoti file = fast upload
+      });
+      if (result.canceled || !result.assets?.length) return;
       setPhoto(result.assets[0].uri);
+      setExtraPhotos(result.assets.slice(1, 5).map((a) => a.uri));
       setTimeout(() => {
         (Platform.OS === 'web' ? webScrollRef : mobileScrollRef).current?.scrollTo({ y: 360, animated: true });
         titleInputRef.current?.focus();
       }, 180);
+    } catch (e) {
+      console.error('[AdvertiseScreen.handlePickPhoto]', e);
+      Alert.alert('Photo error', 'Photo select nahi ho paayi. Please dobara try karein.');
     }
   };
+
+  const handlePickVideo = async () => {
+    try {
+      if (!(await ensureLibraryAccess())) {
+        Alert.alert('Permission needed', 'Please allow access to your media library.');
+        return;
+      }
+      // ✅ FIX: video par `quality` mat do — Android par ye re-encode trigger karke fail/hang karta tha
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: pickerTypes('video'),
+        allowsMultipleSelection: false,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      const MAX_MB = 50;
+      const size = asset.fileSize || asset.file?.size || 0; // web par fileSize nahi hota, file.size hota hai
+      if (size && size > MAX_MB * 1024 * 1024) {
+        Alert.alert('Video too large', `Please choose a video under ${MAX_MB} MB.`);
+        return;
+      }
+      setAdVideo(asset.uri);
+    } catch (e) {
+      console.error('[AdvertiseScreen.handlePickVideo]', e);
+      Alert.alert('Video error', 'Video select nahi ho paaya. Please dobara try karein.');
+    }
+  };
+
+  // Extra photos thumbnails (remove ✕ ke saath) + video button
+  const renderMediaExtras = () => (
+    <View style={{ marginBottom: 12, paddingHorizontal: 4 }}>
+      {extraPhotos.length > 0 ? (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+          {extraPhotos.map((u, i) => (
+            <View key={`${u}-${i}`} style={{ marginRight: 8, marginBottom: 8 }}>
+              <Image source={{ uri: u }} style={{ width: 70, height: 70, borderRadius: 8 }} />
+              <TouchableOpacity
+                onPress={() => setExtraPhotos((prev) => prev.filter((_, idx) => idx !== i))}
+                style={{ position: 'absolute', top: -6, right: -6, width: 20, height: 20, borderRadius: 10, backgroundColor: '#ef4444', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Ionicons name="close" size={13} color="#fff" />
+              </TouchableOpacity>
+            </View>
+          ))}
+        </View>
+      ) : null}
+      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+        <TouchableOpacity
+          onPress={handlePickVideo}
+          activeOpacity={0.85}
+          style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: ADV_RED, marginRight: 10 }}
+        >
+          <Ionicons name="videocam" size={16} color={ADV_RED} />
+          <Text style={{ color: ADV_RED, fontWeight: '700', marginLeft: 6 }}>{adVideo ? 'Change Video' : 'Add Video (mp4, max 50 MB)'}</Text>
+        </TouchableOpacity>
+        {adVideo ? (
+          <>
+            <Text style={{ color: '#16a34a', fontWeight: '700', marginRight: 10 }}>🎬 Video selected</Text>
+            <TouchableOpacity onPress={() => setAdVideo(null)}>
+              <Text style={{ color: '#ef4444', fontWeight: '700' }}>Remove</Text>
+            </TouchableOpacity>
+          </>
+        ) : null}
+      </View>
+    </View>
+  );
 
   const handleNext = async () => {
     if (!photo) {
@@ -796,6 +903,8 @@ const editAd = route?.params?.editAd || null;
     navigation.navigate('ChoosePlan', {
       adData: {
         photo,
+        images: [photo, ...extraPhotos].filter(Boolean),
+                video: adVideo,
         title,
         description,
         redirect: selectedRedirect,
@@ -921,7 +1030,7 @@ const editAd = route?.params?.editAd || null;
                 )}
               </TouchableOpacity>
             </View>
-
+{renderMediaExtras()}
             {/* 2. Title */}
             <View style={ws.section}>
               <SectionLabel number="2" title="Write Advertisement Title" />
@@ -1021,7 +1130,10 @@ const editAd = route?.params?.editAd || null;
 
   // ── MOBILE LAYOUT ─────────────────────────────────────────────────────────────
   return (
-    <View style={s.root}>
+    <KeyboardAvoidingView
+      style={s.root}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <View style={[s.header, adv.header]}>
       <Image source={HEADER_BG_IMAGE} style={adv.headerImg} resizeMode="cover" />
         <TouchableOpacity onPress={() => navigation.goBack()} style={s.backRow} activeOpacity={0.6}>
@@ -1030,7 +1142,7 @@ const editAd = route?.params?.editAd || null;
        <Text style={[s.headerTitle, { color: '#fff' }]}>Fill advertisement information below</Text>
       </View>
 
-      <ScrollView ref={mobileScrollRef} style={s.scroll} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="none">
+      <ScrollView ref={mobileScrollRef} style={s.scroll} contentContainerStyle={[s.scrollContent, Platform.OS === 'android' && kbHeight > 0 && { paddingBottom: kbHeight + 48 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="none">
         <View style={s.videoWrapper}>
           <VideoView player={tutorialPlayer} style={s.video} nativeControls contentFit="cover" />
           <View style={s.videoTag}>
@@ -1060,7 +1172,13 @@ const editAd = route?.params?.editAd || null;
             )}
           </TouchableOpacity>
         </View>
-
+{extraPhotos.length > 0 ? (
+  <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12, paddingHorizontal: 4 }}>
+    {extraPhotos.map((u, i) => (
+      <Image key={`${u}-${i}`} source={{ uri: u }} style={{ width: 70, height: 70, borderRadius: 8, marginRight: 8, marginBottom: 8 }} />
+    ))}
+  </View>
+) : null}
         {/* 2. Title */}
         <View style={s.section}>
           <SectionLabel number="2" title="Write Advertisement Title" />
@@ -1153,7 +1271,7 @@ const editAd = route?.params?.editAd || null;
         whatsappNumber={extraValues.lead_form_whatsapp || ''}
         setWhatsappNumber={(v) => setExtraValues((p) => ({ ...p, lead_form_whatsapp: normalizeIndianMobileNumber(v) }))}
       />
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

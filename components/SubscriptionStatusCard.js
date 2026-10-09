@@ -54,6 +54,9 @@ export default function SubscriptionStatusCard({
   onBuyPress,
   buyButtonLabel = 'Subscribe',
   roles,
+  duration,
+  credits,
+  features,
   themeImage,
   textColor,
 }) {
@@ -96,7 +99,20 @@ export default function SubscriptionStatusCard({
           {price !== undefined && price !== null ? (
             <Text style={[styles.price, { color: dynamicMuted }]}>₹{price}</Text>
           ) : null}
-{countLabel ? <Text style={[styles.countLabel, isThemed && { color: '#ffffff' }]}>{countLabel}</Text> : null}
+          {duration ? <Text style={[styles.detailLine, { color: dynamicMuted }]}>{duration}</Text> : null}
+          {credits > 0 ? <Text style={[styles.countLabel, isThemed && { color: '#ffffff' }]}>{credits} credits included</Text> : null}
+          {countLabel ? <Text style={[styles.countLabel, isThemed && { color: '#ffffff' }]}>{countLabel}</Text> : null}
+          {Array.isArray(features) && features.length > 0 ? (
+            <View style={styles.benefitsWrap}>
+              <Text style={[styles.metaLabel, { color: dynamicMuted }]}>Benefits</Text>
+              {features.filter(Boolean).map((feature, index) => (
+                <View key={`${feature}-${index}`} style={styles.benefitRow}>
+                  <Feather name="check" size={13} color={isThemed ? '#ffffff' : C.green} />
+                  <Text style={[styles.benefitText, { color: dynamicText }]}>{feature}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
           {Array.isArray(roles) && roles.length > 0 ? (
             <View style={styles.rolesWrap}>
               <Text style={[styles.metaLabel, { color: dynamicMuted }]}>Roles</Text>
@@ -127,7 +143,7 @@ export default function SubscriptionStatusCard({
         </>
       ) : (
         <Text style={styles.emptyText}>
-          You don't have an active subscription right now. Subscribe to unlock this feature.
+          You don&apos;t have an active subscription right now. Subscribe to unlock this feature.
         </Text>
       )}
 
@@ -172,7 +188,11 @@ const styles = StyleSheet.create({
 
   planName: { fontSize: 20, fontWeight: '600', color: C.textDark, marginBottom: 2, fontFamily: FONT.medium },
   price: { fontSize: 14, color: C.textMid, marginBottom: 6, fontFamily: FONT.regular },
+  detailLine: { fontSize: 13, marginBottom: 6, fontFamily: FONT.regular },
   countLabel: { fontSize: 13, color: C.green, fontWeight: '600', marginBottom: 10, fontFamily: FONT.medium },
+  benefitsWrap: { marginBottom: 10 },
+  benefitRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 5 },
+  benefitText: { flex: 1, fontSize: 13, lineHeight: 18, fontFamily: FONT.regular },
 
    rolesWrap: { marginBottom: 10 },
   rolesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 4 },

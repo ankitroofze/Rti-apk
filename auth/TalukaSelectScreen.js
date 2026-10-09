@@ -166,7 +166,7 @@ export default function TalukaSelectScreen({ navigation, route }) {
   useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold });
   const { login } = useAuth();
   const { showPopup } = useToast();
-  const { selectedState, selectedDistrict, fromPremium, needsCreateUser } = route.params || {};
+  const { selectedState, selectedDistrict, fromPremium, needsCreateUser, needsLogin } = route.params || {};
 
   const [taluka, setTaluka] = useState('');
   const [talukaModal, setTalukaModal] = useState(false);
@@ -207,6 +207,7 @@ export default function TalukaSelectScreen({ navigation, route }) {
       selectedTaluka: talukaValue,
       fromPremium,
       needsCreateUser: false, // account/taluka already saved neeche — VillageSelect sirf update karega
+      needsLogin: !!needsCreateUser || !!needsLogin, // login() Village ke end me hoga
     });
   };
 
@@ -227,6 +228,7 @@ export default function TalukaSelectScreen({ navigation, route }) {
 
 
   const handleComplete = async () => {
+        console.log('PENDING AT TALUKA:', await UserStore.getPendingRegistration(), 'needsCreateUser:', needsCreateUser);
     if (!taluka.trim()) {
       showPopup('Please select or enter your taluka', 'error');
       return;
@@ -262,7 +264,7 @@ export default function TalukaSelectScreen({ navigation, route }) {
       }
 
       await UserStore.setCurrentUser(pending.email);
-      login();
+      // ✅ login() yahan nahi — Village screen ke end me hoga, warna VillageSelect navigation fail hota hai
           await UserStore.completeLocationSetup(pending.email, selectedState, selectedDistrict, talukaValue);
       await UserStore.clearPendingRegistration();
 
@@ -329,6 +331,7 @@ export default function TalukaSelectScreen({ navigation, route }) {
     if (!user) { allowLeaveRef.current = true; navigation.replace('Login'); return; }
 
     await UserStore.completeLocationSetup(user.email, selectedState, selectedDistrict, '');
+    if (needsLogin) login();
     goToHome(user.name);
   };
 

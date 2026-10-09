@@ -1,4 +1,5 @@
 ﻿import { Ionicons } from '@expo/vector-icons';
+import { readReferralCodeFromUrl } from '../utils/Referralservice';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { AuthAPI } from './ClientAPI/AuthApi';
@@ -173,7 +174,8 @@ export default function RegisterScreen({ navigation }) {
   const [mobile, setMobile] = useState('');
   const [email, setEmail] = useState('');
     const [referralCode, setReferralCode] = useState('');
-  const [bio, setBio] = useState('');
+  // Referral link (?ref=CODE) se aaya to code prefill karo — sirf padhna, banana nahi
+  useEffect(() => { readReferralCodeFromUrl().then((c) => { if (c) setReferralCode((prev) => prev || c); }); }, []);
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -295,7 +297,7 @@ export default function RegisterScreen({ navigation }) {
 
   const handleSendOTP = async () => {
     if (otpSending) return;
-    if (!emailOk) { setEmailTouched(true); showToast('Valid email address daalo', 'error'); return; }
+    if (!emailOk) { setEmailTouched(true); showToast('Please enter a valid email address.', 'error'); return; }
     setOtpSending(true);
     try {
       const result = await AuthAPI.requestRegisterOTP({ email: normalizedEmail });
@@ -317,14 +319,14 @@ export default function RegisterScreen({ navigation }) {
 
   const handleRegister = async () => {
     if (submitting) return;
-    if (!isStep1Valid) { showToast('First and Last name daalo', 'error'); return; }
-    if (!mobileOk) { setMobileTouched(true); showToast('Valid 10-digit mobile number daalo', 'error'); return; }
-    if (!normalizedEmail) { setEmailTouched(true); showToast('Email address daalo', 'error'); return; }
-    if (!emailOk) { setEmailTouched(true); showToast('Valid email address daalo', 'error'); return; }
-    if (!emailVerified || verifiedEmail !== normalizedEmail || !verifiedOtp) { showToast('Email verify karo pehle', 'error'); return; }
-    if (!passwordStrong) { setPasswordTouched(true); showToast('Strong password use karo', 'error'); return; }
-    if (password !== confirm) { showToast('Passwords match nahi kar rahe', 'error'); return; }
-    if (!termsAccepted) { setTermsTouched(true); showToast('Terms & Conditions accept karo', 'error'); return; }
+    if (!isStep1Valid) { showToast('Please enter your first and last name', 'error'); return; }
+    if (!mobileOk) { setMobileTouched(true); showToast('Please enter a valid 10-digit mobile number', 'error'); return; }
+    if (!normalizedEmail) { setEmailTouched(true); showToast('Please enter your email address', 'error'); return; }
+    if (!emailOk) { setEmailTouched(true); showToast('Please enter a valid email address', 'error'); return; }
+    if (!emailVerified || verifiedEmail !== normalizedEmail || !verifiedOtp) { showToast('Please verify your email first', 'error'); return; }
+    if (!passwordStrong) { setPasswordTouched(true); showToast('Please enter a strong password', 'error'); return; }
+    if (password !== confirm) { showToast('Passwords do not match', 'error'); return; }
+    if (!termsAccepted) { setTermsTouched(true); showToast('Please accept the Terms & Conditions', 'error'); return; }
 
     setSubmitting(true);
     try {
@@ -339,7 +341,6 @@ export default function RegisterScreen({ navigation }) {
         password,
         referralCode: referralCode.trim(),
         profileImage: profileImage || '',
-        bio: bio.trim(),
         otp: verifiedOtp,
       });
 
@@ -360,7 +361,6 @@ export default function RegisterScreen({ navigation }) {
         referral_code_used: referralCode.trim() || null,
         password,
         profile_image: profileImage || '',
-        bio: bio.trim(),
       });
 
       if (!ok) {
@@ -368,6 +368,7 @@ export default function RegisterScreen({ navigation }) {
         navigation.navigate('Login');
         return;
       }
+            console.log('PENDING AFTER REGISTER:', await UserStore.getPendingRegistration());
       navigation.navigate('StateSelect', { fromPremium: false, needsCreateUser: true });
     } catch {
       showToast('Registration failed. Please try again.', 'error');
@@ -466,10 +467,10 @@ export default function RegisterScreen({ navigation }) {
                     disabled={!isStep1Valid}
                     activeOpacity={0.85}
                   >
-                    <View style={styles.submitBtn}>
+                                      <LinearGradient colors={['#ffffff', '#f8fafc', '#f1f5f9']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.submitBtn}>
                       <Text style={styles.submitBtnText}>Next</Text>
                       <Ionicons name="arrow-forward" size={18} color="#B91C1C" />
-                    </View>
+                    </LinearGradient>
                   </TouchableOpacity>
                 </>
               ) : (
@@ -492,7 +493,7 @@ export default function RegisterScreen({ navigation }) {
                       />
                       {mobileShowError ? <Ionicons name="close-circle" size={16} color="#ff4444" /> : null}
                     </View>
-                    {mobileShowError && <Text style={styles.errorText}>Valid 10-digit Indian mobile number daalo (6-9 se shuru)</Text>}
+                    {mobileShowError && <Text style={styles.errorText}>Enter a valid 10-digit Indian mobile number (must start with 6-9)</Text>}
                   </View>
 
                   {/* Email + OTP */}
@@ -523,7 +524,7 @@ export default function RegisterScreen({ navigation }) {
                       ) : null}
                     </View>
                     {emailTouched && !emailOk && normalizedEmail.length > 0 &&
-                      <Text style={styles.errorText}>Valid email daalo, e.g. you@example.com</Text>}
+                      <Text style={styles.errorText}>Enter a valid email, e.g. you@example.com</Text>}
                     {emailOk && !emailVerified && <Text style={localStyles.otpHint}>{'👆 Press "Send OTP" to verify your email'}</Text>}
                   </View>
 
@@ -587,22 +588,6 @@ export default function RegisterScreen({ navigation }) {
                     )}
                   </View>
 
-                  {/* Bio */}
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.inputLabel}>Bio</Text>
-                    <View style={styles.inputWrap}>
-                      <Ionicons name="document-text-outline" size={16} color="#AAAAAA" />
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Thodi si apne baare me batao (optional)"
-                        placeholderTextColor="#CCCCCC"
-                        value={bio}
-                        onChangeText={setBio}
-                        multiline
-                      />
-                    </View>
-                  </View>
-
                   {/* Confirm Password */}
                   <View style={styles.inputGroup}>
                     <Text style={styles.inputLabel}>Confirm Password <Text style={styles.required}>*</Text></Text>
@@ -652,10 +637,10 @@ export default function RegisterScreen({ navigation }) {
                     disabled={!isStep2Valid || submitting}
                     activeOpacity={0.85}
                   >
-                    <View style={styles.submitBtn}>
+                    <LinearGradient colors={['#ffffff', '#f8fafc', '#f1f5f9']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.submitBtn}>
                       <Text style={styles.submitBtnText}>{submitting ? 'Creating account...' : 'Create Account'}</Text>
                       <Ionicons name="arrow-forward" size={18} color="#B91C1C" />
-                    </View>
+                    </LinearGradient>
                   </TouchableOpacity>
 
                   {emailOk && !emailVerified &&

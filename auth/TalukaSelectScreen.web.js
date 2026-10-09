@@ -64,7 +64,7 @@ export default function TalukaSelectScreen({ navigation, route }) {
   const showImagePanel = width >= 900;
   const { login } = useAuth();
   const { showPopup } = useToast();
-  const { selectedState, selectedDistrict, fromPremium, needsCreateUser } = route.params || {};
+    const { selectedState, selectedDistrict, fromPremium, needsCreateUser, needsLogin } = route.params || {};
 
   const [taluka, setTaluka] = useState('');
   const [talukaModal, setTalukaModal] = useState(false);
@@ -89,6 +89,7 @@ export default function TalukaSelectScreen({ navigation, route }) {
       selectedTaluka: talukaValue,
       fromPremium,
       needsCreateUser: false,
+      needsLogin: !!needsCreateUser || !!needsLogin, // login() Village ke end me hoga
     });
   };
 
@@ -134,7 +135,7 @@ export default function TalukaSelectScreen({ navigation, route }) {
       }
 
       await UserStore.setCurrentUser(pending.email);
-      login();
+      // ✅ login() yahan nahi — Village screen ke end me hoga, warna VillageSelect navigation fail hota hai
       await UserStore.completeLocationSetup(pending.email, selectedState, selectedDistrict, talukaValue);
       await UserStore.clearPendingRegistration();
         syncRegistrationLocation(talukaValue);
@@ -185,6 +186,7 @@ export default function TalukaSelectScreen({ navigation, route }) {
     const user = await UserStore.getCurrentUser();
     if (!user) { navigation.replace('Login'); return; }
     await UserStore.completeLocationSetup(user.email, selectedState, selectedDistrict, '');
+    if (needsLogin) login();
     goToHome(user.name);
   };
 

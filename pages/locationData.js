@@ -35,11 +35,11 @@ function resolveStateName(stateName) {
   return match || raw;
 }
 
-export const INDIAN_STATES = LGD.states || [];
+export const INDIAN_STATES = (LGD.states || []).filter((x) => !/[\u0900-\u097F]/.test(x));
 
 export const getDistricts = (stateName) => {
   const state = resolveStateName(stateName);
-  return (LGD.districtsByState?.[state] || []).slice();
+return (LGD.districtsByState?.[state] || []).filter((x) => !/[\u0900-\u097F]/.test(x));
 };
 
 export const getTalukas = (stateName, districtName) => {
@@ -56,7 +56,7 @@ export const getTalukas = (stateName, districtName) => {
   const district = Object.keys(districtMap).find((d) => normalizeKey(d) === districtKey);
   if (!district) return [];
 
-  return (districtMap[district] || []).slice();
+ return (districtMap[district] || []).filter((x) => !/[\u0900-\u097F]/.test(x));
 };
 
 // Sheher ke areas (LGD village CSV me nahi hote) — yaha manually add kar sakte ho
@@ -127,5 +127,5 @@ const getLgdVillages = (stateName, districtName, talukaName) => {
   const taluka = Object.keys(talukaMap).find((t) => normalizeKey(t) === talukaKey);
   if (!taluka) return [];
 
-  return (talukaMap[taluka] || []).slice();
+return (talukaMap[taluka] || []).filter((x) => !/[\u0900-\u097F]/.test(x));
 };

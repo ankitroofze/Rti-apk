@@ -1,7 +1,8 @@
+import NameWithTick from '../components/NameWithTick';
 import React, { useCallback, useState, useEffect } from 'react';
 import {
   Image, ImageBackground, KeyboardAvoidingView, Linking, Modal, Platform, ScrollView, Share,
-  StatusBar, Text, TextInput, TouchableOpacity, View, Alert, BackHandler, StyleSheet
+  StatusBar, Text, TextInput, TouchableOpacity, View, Alert, BackHandler, StyleSheet, useWindowDimensions
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -22,6 +23,7 @@ import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_9
 import { getProfileTier } from '../utils/profileHelpers';
 import { MODULE_HEADER_HEIGHT_WEB } from '../constants/subscriptionThemes';
 import ModuleWebHeader from '../components/Modulewebheader';
+import MediaGallery from '../components/MediaGallery';
 import ModuleMobileHeader from '../components/ModuleMobileHeader';
 // ── Design tokens — matched to the Advertise / Add News screens ────────────────
 const C = {
@@ -275,7 +277,7 @@ function FeedCommentItem({
   return (
     <View style={[styles.commentItem, isReply && styles.commentReplyItem]}>
       <View style={styles.commentTopRow}>
-        <Text style={styles.commentAuthor}>{comment.author || 'User'}</Text>
+        <NameWithTick name={comment.author || 'User'} show={Boolean(comment.author_has_blue_tick)} style={styles.commentAuthor} badgeSize={12} />
         <Text style={styles.commentDate}>{comment.date || ''}{comment.edited_at ? ' • Edited' : ''}</Text>
       </View>
 
@@ -453,13 +455,7 @@ const EditNewsModal = ({ visible, newsItem, onClose, onUpdate, showToast }) => {
               value={formData.title}
               onChangeText={(text) => setFormData({ ...formData, title: text })}
             />
-            <TextInput
-              style={styles.editInput}
-              placeholder="Subtitle"
-              placeholderTextColor={C.neutral400}
-              value={formData.subtitle}
-              onChangeText={(text) => setFormData({ ...formData, subtitle: text })}
-            />
+
             <TextInput
               style={styles.editInputMultiline}
               placeholder="Description"
@@ -518,6 +514,7 @@ export default function NewsFeedScreen({ navigation }) {
   });
 
   const { showToast } = useToast();
+  const { width: windowWidth } = useWindowDimensions();
   const { language } = useLanguage();
   const successMessage = '';
   const [loading, setLoading] = useState(true);
@@ -737,9 +734,22 @@ const syncFeed = useCallback(async (focusItemId = null) => {
     catch { showToast('Unable to open file.', 'error'); }
   };
 const handleLike = async (item) => {
-  const result = await UserStore.updateNewsFeedItem(item.id, 'like');
-  if (!result.ok) { showToast(result.message, 'error'); return; }
-  await UserStore.refreshNewsCounts(item.id);
+  const currentEmail = String(newsData.currentUser?.email || '').trim().toLowerCase();
+  const wasLiked = Boolean(item.liked_by_me || (currentEmail && Array.isArray(item.liked_by) && item.liked_by.includes(currentEmail)));
+  // Render immediately on Android and web; the server response then confirms it.
+  setNewsData((prev) => ({
+    ...prev,
+    items: (prev.items || []).map((entry) => entry.id === item.id ? {
+      ...entry,
+      liked_by_me: !wasLiked,
+      likes: Math.max(0, Number(entry.likes || 0) + (wasLiked ? -1 : 1)),
+      liked_by: currentEmail
+        ? (wasLiked ? (entry.liked_by || []).filter((email) => email !== currentEmail) : [...new Set([...(entry.liked_by || []), currentEmail])])
+        : entry.liked_by,
+    } : entry),
+  }));
+  const result = await UserStore.updateNewsFeedItem(item.id, 'like', { liked: wasLiked });
+  if (!result.ok) { loadNewsFeed(); showToast(result.message, 'error'); return; }
   loadNewsFeed();
 };
 
@@ -1325,11 +1335,13 @@ const handleLike = async (item) => {
                   </TouchableOpacity>
                   <Text style={styles.authorName}>{item.author_name || 'RTI News'}</Text>
                   {Boolean(
-                    item.author_has_blue_tick ||
-                    item.has_blue_tick ||
-                    item.authorHasBlueTick ||
-                    item.createdByBlueTick ||
-                    (currentUserEmail && String(item.createdBy || item.created_by || '').trim().toLowerCase() === currentUserEmail && currentUserHasBlueTick)
+                    (currentUserEmail &&
+                      String(item.createdBy || item.created_by || '').trim().toLowerCase() === currentUserEmail &&
+                      currentUserHasBlueTick) ||
+                    UserStore.hasBlueTick({
+                      subscription_plan: item.author_subscription_plan,
+                      is_subscribed: item.author_is_subscriber || item.author_is_premium,
+                    })
                   ) ? (
                     <VerifiedBadge size={18} iconSize={10} style={styles.authorBadge} />
                   ) : null}
@@ -1342,7 +1354,13 @@ const handleLike = async (item) => {
                       ),
                       is_subscribed: Boolean(item.author_is_subscriber || item.author_is_premium),
                     });
-                    const label = item.author_seat_name || (itemTier.key !== 'common' ? itemTier.label : '');
+                    const planForRole = item.author_subscription_plan || null;
+                    const planRoleLabel = (planForRole?.role_names?.length
+                      ? planForRole.role_names
+                      : String(UserStore.getSeatRoleNameForPlanRoleId(planForRole?.role_id_raw || planForRole?.role_id || '') || '').split(', ')
+                    ).filter(Boolean).join(', ');
+                    // Seat name (Car Nicobar) hata diya. Plan ka role name dikhega.
+                    const label = planRoleLabel || (itemTier.key !== 'common' ? itemTier.label : '');
                     if (!label) return null;
                     return (
                       <>
@@ -1417,11 +1435,12 @@ const handleLike = async (item) => {
                     {item.images.length === 1 ? (
                       <ResolvedImage uri={item.images[0]} style={styles.mediaSingleImage} resizeMode="cover" />
                     ) : (
-                      <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                        {item.images.map((img, idx) => (
-                          <ResolvedImage key={`${item.id}-img-${idx}`} uri={img} style={styles.mediaThumb} resizeMode="cover" />
-                        ))}
-                      </ScrollView>
+                      <MediaGallery
+                        images={item.images}
+                        width={Math.max(220, Math.min(windowWidth - 42, 720))}
+                        maxHeight={260}
+                        radius={10}
+                      />
                     )}
                   </View>
                 ) : null}
@@ -1448,7 +1467,8 @@ const handleLike = async (item) => {
         
                 <View style={styles.actionRow}>
                   {(() => {
-                    const liked = newsData.currentUser?.email && Array.isArray(item.liked_by) && item.liked_by.includes(newsData.currentUser.email);
+                    const currentEmail = String(newsData.currentUser?.email || '').trim().toLowerCase();
+                    const liked = Boolean(item.liked_by_me || (currentEmail && Array.isArray(item.liked_by) && item.liked_by.includes(currentEmail)));
                     return (
                       <TouchableOpacity style={[styles.actionIconButton, liked && styles.actionIconButtonActive]} onPress={() => handleLike(item)}>
                         <Feather name="heart" size={15} color={liked ? C.white : C.textSub} />

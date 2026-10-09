@@ -64,7 +64,7 @@ export default function VillageSelectScreen({ navigation, route }) {
   const showImagePanel = width >= 900;
   const { login } = useAuth();
   const { showPopup } = useToast();
-  const { selectedState, selectedDistrict, selectedTaluka, fromPremium, needsCreateUser } = route.params || {};
+  const { selectedState, selectedDistrict, selectedTaluka, fromPremium, needsCreateUser, needsLogin } = route.params || {};
 
   const [village, setVillage] = useState('');
   const [villageModal, setVillageModal] = useState(false);
@@ -73,7 +73,7 @@ export default function VillageSelectScreen({ navigation, route }) {
 
   const handleClose = () => {
     allowLeaveRef.current = true;
-    navigation.replace('TalukaSelect', { selectedState, selectedDistrict, fromPremium, needsCreateUser });
+    navigation.replace('TalukaSelect', { selectedState, selectedDistrict, fromPremium, needsCreateUser, needsLogin });
   };
 
   const villageList = selectedTaluka ? getVillages(selectedState, selectedDistrict, selectedTaluka) : [];
@@ -134,6 +134,7 @@ export default function VillageSelectScreen({ navigation, route }) {
     const result = await UserStore.completeLocationSetup(user.email, selectedState, selectedDistrict, selectedTaluka, villageValue);
     if (!result) { showPopup('Failed to save location. Please try again.', 'error'); return; }
     AuthAPI.updateState({ state: selectedState, district: selectedDistrict, taluka: selectedTaluka, village: villageValue }).catch(() => {});
+    if (needsLogin) login();
     goToHome(user.name);
   };
 
@@ -169,6 +170,7 @@ export default function VillageSelectScreen({ navigation, route }) {
     const user = await UserStore.getCurrentUser();
     if (!user) { navigation.replace('Login'); return; }
     await UserStore.completeLocationSetup(user.email, selectedState, selectedDistrict, selectedTaluka, '');
+    if (needsLogin) login();
     goToHome(user.name);
   };
 

@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, ScrollView, TouchableOpacity,
+  View, ScrollView, TouchableOpacity,
   StyleSheet, Platform, StatusBar, Alert,
   useWindowDimensions, Image,
 } from 'react-native';
@@ -8,14 +8,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { UserStore } from '../store/UserStore';
 import { useToast } from '../components/ui/ToastProvider';
+import Text from '../components/RobotoText';
 
 // ── Design Tokens ───
 const C = {
-  orange:       '#F97316',
-  orangeLight:  '#FFF7ED',
-  orangeMid:    '#FED7AA',
-  orangeBorder: '#FFE8D6',
-  orangeDark:   '#C2410C',
+  orange:       '#b91c1c',
+  orangeLight:  '#FEF2F2',
+  orangeMid:    '#FECACA',
+  orangeBorder: '#FEE2E2',
+  orangeDark:   '#991B1B',
   green:        '#16a34a',
   greenLight:   '#f0fdf4',
   greenBorder:  '#bbf7d0',
@@ -35,7 +36,7 @@ const SAFE_TOP = Platform.OS === 'android'
 // ── Credit Meter ───────────────────────────────────────────────────────────────
 function CreditMeter({ credits, total = 20 }) {
   const pct = Math.min(100, Math.round((credits / total) * 100));
-  const color = credits === 0 ? C.red : credits <= 3 ? '#f59e0b' : C.orange;
+  const color = credits === 0 ? C.red : credits <= 3 ? '#dc2626' : C.orange;
   return (
     <View style={cm.wrap}>
       <View style={cm.topRow}>
@@ -136,19 +137,36 @@ function AdCard({ ad, onEdit, onDelete, isWeb }) {
   const updatedDate = ad.updated_at
     ? new Date(ad.updated_at).toLocaleDateString('en-IN')
     : null;
+  // ✅ NEW: start / end date (DD-MM-YYYY) — web jaisa Android me bhi dikhega
+  const fmtAdDate = (v) => {
+    const m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
+  };
+  const startLabel = fmtAdDate(ad.start_date);
+  const endLabel = fmtAdDate(ad.end_date);
+  const imageUrls = Array.from(new Set([
+    ad.photo,
+    ad.image,
+    ...(Array.isArray(ad.images) ? ad.images.map((item) => typeof item === 'string' ? item : (item?.url || item?.image_url || item?.image || '')) : []),
+  ].filter(Boolean)));
+  const coverImage = imageUrls[0] || '';
 
   return (
     <View style={[ac.card, isWeb && ac.cardWeb]}>
       {/* Top row */}
       <View style={ac.topRow}>
         <View style={ac.photoWrap}>
-          {ad.photo ? (
-            <Image source={{ uri: ad.photo }} style={ac.photo} resizeMode="cover" />
+          {coverImage ? (
+            <Image source={{ uri: coverImage }} style={ac.photo} resizeMode="cover" />
           ) : (
             <View style={ac.photoPlaceholder}>
               <Ionicons name="image-outline" size={22} color={C.textSub} />
             </View>
           )}
+          {imageUrls.length > 1 ? (
+            <View style={ac.mediaCount}><Text style={ac.mediaCountText}>+{imageUrls.length - 1}</Text></View>
+          ) : null}
+          {ad.video ? <View style={ac.videoBadge}><Ionicons name="videocam" size={11} color="#fff" /></View> : null}
         </View>
         <View style={ac.info}>
           <Text style={ac.title} numberOfLines={2}>{ad.title || 'Untitled Ad'}</Text>
@@ -159,6 +177,14 @@ function AdCard({ ad, onEdit, onDelete, isWeb }) {
               {updatedDate ? `Edited ${updatedDate}` : `Posted ${date}`}
             </Text>
           </View>
+          {(startLabel || endLabel) ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
+              <Ionicons name="calendar-outline" size={12} color={C.orange} />
+              <Text style={[ac.date, { marginLeft: 4, color: C.orangeDark, fontWeight: '700' }]}>
+                {startLabel ? `Start: ${startLabel}` : ''}{startLabel && endLabel ? '  •  ' : ''}{endLabel ? `End: ${endLabel}` : ''}
+              </Text>
+            </View>
+          ) : null}
         </View>
       </View>
 
@@ -195,8 +221,11 @@ const ac = StyleSheet.create({
   },
   cardWeb: { marginBottom: 0 },
   topRow:  { flexDirection: 'row', gap: 12, marginBottom: 10 },
-  photoWrap: { flexShrink: 0 },
+  photoWrap: { flexShrink: 0, position: 'relative' },
   photo:    { width: 72, height: 72, borderRadius: 12 },
+  mediaCount: { position: 'absolute', right: 3, bottom: 3, minWidth: 22, height: 18, paddingHorizontal: 4, borderRadius: 9, backgroundColor: 'rgba(0,0,0,0.68)', alignItems: 'center', justifyContent: 'center' },
+  mediaCountText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  videoBadge: { position: 'absolute', left: 3, top: 3, width: 20, height: 18, borderRadius: 9, backgroundColor: 'rgba(0,0,0,0.68)', alignItems: 'center', justifyContent: 'center' },
   photoPlaceholder: {
     width: 72, height: 72, borderRadius: 12,
     backgroundColor: C.orangeLight, alignItems: 'center', justifyContent: 'center',
@@ -339,14 +368,14 @@ export default function MyAdsScreen({ navigation }) {
         {/* Top Bar */}
         <View style={[ws.topBar, isCompactWeb && ws.topBarCompact]}>
           <View style={[ws.topLeft, isCompactWeb && ws.topLeftCompact]}>
-            <Ionicons name="home" size={14} color="#888888" />
+            <Ionicons name="home" size={14} color="#ffffff" />
             <Text style={ws.bcSep}>›</Text>
             <Text style={ws.bcStep}>Dashboard</Text>
             <Text style={ws.bcSep}>›</Text>
             <Text style={ws.bcCur}>My Ads</Text>
           </View>
           <TouchableOpacity style={[ws.backBtn, isCompactWeb && ws.backBtnCompact]} onPress={() => navigation.navigate('Settings')} activeOpacity={0.8}>
-            <Ionicons name="arrow-back" size={13} color={C.orangeDark} />
+            <Ionicons name="arrow-back" size={13} color="#ffffff" />
             <Text style={ws.backBtnText}>Back to menu</Text>
           </TouchableOpacity>
         </View>
@@ -471,7 +500,7 @@ export default function MyAdsScreen({ navigation }) {
       {/* Header */}
       <View style={s.header}>
         <TouchableOpacity onPress={() => navigation.navigate('Settings')} style={s.backBtn} activeOpacity={0.7}>
-          <Ionicons name="arrow-back" size={20} color={C.orange} />
+          <Ionicons name="arrow-back" size={20} color="#ffffff" />
         </TouchableOpacity>
         <Text style={s.headerTitle}>My Advertisements</Text>
         <TouchableOpacity
@@ -479,8 +508,8 @@ export default function MyAdsScreen({ navigation }) {
           onPress={() => navigation.navigate('AdPlans', { returnTo: 'MyAds' })}
           activeOpacity={0.8}
         >
-          <Ionicons name="flash" size={14} color={C.orange} />
-          <Text style={s.headerBuyText}>Buy Credits</Text>
+          <Ionicons name="flash" size={14} color="#ffffff" />
+         <Text style={s.headerBuyText}>Buy More Credits</Text>
         </TouchableOpacity>
       </View>
 
@@ -493,9 +522,9 @@ export default function MyAdsScreen({ navigation }) {
         {adPlan && (
           <View style={s.planCard}>
             <View style={s.planLeft}>
-              <Text style={s.planLabel}>Active Plan</Text>
+             <Text style={s.planLabel}>Current Plan</Text>
               <Text style={s.planName}>{adPlan.plan_name}</Text>
-              <Text style={s.planMeta}>₹{adPlan.price} · {adPlan.credits} credits · 56 days</Text>
+              <Text style={s.planMeta}>{adPlan.credits} credits purchased · ₹{adPlan.price}{adPlan.purchased_at ? ' · Purchased ' + new Date(adPlan.purchased_at).toLocaleDateString('en-IN') : ''}</Text>
             </View>
             <TouchableOpacity
               style={s.upgradePill}
@@ -509,7 +538,7 @@ export default function MyAdsScreen({ navigation }) {
 
         {/* Ads List */}
         <View style={s.adsSection}>
-          <Text style={s.sectionTitle}>Your Ads ({ads.length})</Text>
+        <Text style={s.sectionTitle}>Your Ads · {ads.length} advertisements posted</Text>
           {loading ? (
             <Text style={s.loadingText}>Loading...</Text>
           ) : ads.length === 0 ? (
@@ -559,16 +588,16 @@ const s = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center',
     paddingTop: SAFE_TOP, paddingBottom: 14, paddingHorizontal: 16,
-    backgroundColor: C.white,
-    borderBottomWidth: 1, borderBottomColor: C.border,
+    backgroundColor: '#b91c1c',
+    borderBottomWidth: 1, borderBottomColor: '#991b1b',
     elevation: 3,
     shadowColor: C.orange, shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.07, shadowRadius: 6,
   },
-  backBtn:       { padding: 8, borderRadius: 10, backgroundColor: C.orangeLight, marginRight: 10 },
-  headerTitle:   { flex: 1, fontSize: 17, fontWeight: '800', color: C.text },
-  headerBuyBtn:  { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: C.orangeLight, borderRadius: 10, borderWidth: 1, borderColor: C.orangeBorder },
-  headerBuyText: { fontSize: 12, fontWeight: '700', color: C.orange },
+  backBtn:       { padding: 8, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.16)', marginRight: 10 },
+  headerTitle:   { flex: 1, fontSize: 17, fontWeight: '800', color: '#ffffff' },
+  headerBuyBtn:  { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 12, paddingVertical: 7, backgroundColor: 'rgba(255,255,255,0.16)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
+  headerBuyText: { fontSize: 12, fontWeight: '700', color: '#ffffff' },
 
   scroll:        { flex: 1 },
   scrollContent: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 120 },
@@ -611,13 +640,13 @@ const s = StyleSheet.create({
 const ws = StyleSheet.create({
   root:        { flex: 1, backgroundColor: C.bg, minHeight: '100vh' },
 
-  topBar:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 32, paddingVertical: 14, backgroundColor: C.white, borderBottomWidth: 1, borderBottomColor: C.border },
+  topBar:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 32, paddingVertical: 14, backgroundColor: '#b91c1c', borderBottomWidth: 1, borderBottomColor: '#991b1b' },
   topLeft:     { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  bcSep:       { fontSize: 15, color: '#CCCCCC', marginHorizontal: 4 },
-  bcStep:      { fontSize: 13, color: '#888888' },
-  bcCur:       { fontSize: 13, fontWeight: '600', color: C.text },
-  backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: C.orangeLight, borderWidth: 1, borderColor: C.orangeBorder, borderRadius: 8 },
-  backBtnText: { fontSize: 13, fontWeight: '600', color: C.orangeDark },
+  bcSep:       { fontSize: 15, color: 'rgba(255,255,255,0.7)', marginHorizontal: 4 },
+  bcStep:      { fontSize: 13, color: 'rgba(255,255,255,0.85)' },
+  bcCur:       { fontSize: 13, fontWeight: '600', color: '#ffffff' },
+  backBtn:     { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: 'rgba(255,255,255,0.16)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)', borderRadius: 8 },
+  backBtnText: { fontSize: 13, fontWeight: '600', color: '#ffffff' },
 
   scroll:        { flex: 1 },
   scrollContent: { paddingHorizontal: 32, paddingTop: 28, paddingBottom: 60, alignItems: 'center' },

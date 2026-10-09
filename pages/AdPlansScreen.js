@@ -107,6 +107,10 @@ const doBuy = useCallback(async (plan) => {
 
         if (verifyResult?.ok) {
           setCurrentCredits(verifyResult.credits || 0);
+          try {
+            const fresh = await UserStore.getAdCreditsSummary();
+            if (fresh) { setCurrentCredits(fresh.credits || 0); setAdSub(fresh.ad_subscription || null); }
+          } catch (e) { /* ignore */ }
           showPopup(`🎉 ${plan.credits} credits add ho gaye! Total: ${verifyResult.credits}`, 'success');
           setTimeout(() => {
             try {

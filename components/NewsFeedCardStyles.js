@@ -107,6 +107,9 @@ storyAuthorTextWrap: {
 storyFollowBtnWrap: {
     borderRadius: 999,
     overflow: 'hidden',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
   },
  storyFollowBtn: {
     flexDirection: 'row',
@@ -127,7 +130,7 @@ storyFollowBtnWrap: {
     opacity: 0.65,
   },
     storyFollowBtnText: {
-    color: '#ffffff',
+    color: '#dc2626',
     fontSize: 14,
     fontWeight: '600', // ✅ Weight 600
    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
@@ -172,11 +175,11 @@ storyFollowBtnWrap: {
   },
 
   // ── Meta row ──
-  storyAuthorMetaRow: {
+   storyAuthorMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 13,
-    flexWrap: 'wrap',
+    gap: Platform.OS === 'android' ? 8 : 13,
+    flexWrap: Platform.OS === 'android' ? 'nowrap' : 'wrap',
   },
   storyMetaPill: {
     flexDirection: 'row',
@@ -290,7 +293,7 @@ storyFollowBtnWrap: {
 
   topStoryRibbon: {
     position: 'absolute',
-    top: 12,
+    top: 74,
     left: 0,
     backgroundColor: '#e11d48',
     paddingHorizontal: 12,
@@ -308,7 +311,7 @@ storyFollowBtnWrap: {
 
   storyCategoryChip: {
     position: 'absolute',
-    bottom: 10,
+    bottom: 42,
     left: 10,
     borderRadius: 6, // ✅ Border radius 6px
     paddingHorizontal: 10,
@@ -324,7 +327,7 @@ storyFollowBtnWrap: {
   // ── Ad Lead Strip ──
   adLeadStrip: {
     position: 'absolute',
-    bottom: 10,
+    bottom: 42,
     right: 10,
     flexDirection: 'row',
     gap: 8,
@@ -347,7 +350,7 @@ storyFollowBtnWrap: {
   },
   adCallOnlyStrip: {
     position: 'absolute',
-    bottom: 10,
+    bottom: 42,
     right: 10,
     flexDirection: 'row',
     alignItems: 'center',
@@ -408,7 +411,7 @@ storyFollowBtnWrap: {
   },
   videoPlayingIndicator: {
     position: 'absolute',
-    bottom: 12,
+    bottom: 44,
     right: 12,
     width: 32,
     height: 32,
@@ -455,7 +458,7 @@ storyFollowBtnWrap: {
   },
   videoDurationBadge: {
     position: 'absolute',
-    bottom: 10,
+    bottom: 42,
     left: 10,
     backgroundColor: 'rgba(0,0,0,0.6)',
     borderRadius: 4,
@@ -470,7 +473,7 @@ storyFollowBtnWrap: {
   },
   storyExpandBtn: {
     position: 'absolute',
-    bottom: 10,
+    bottom: 42,
     right: 10,
     width: 28,
     height: 28,
@@ -812,6 +815,11 @@ storyFollowBtnWrap: {
     backgroundColor: 'rgba(15, 23, 42, 0.35)',
     justifyContent: 'flex-end',
   },
+  // Web dropdown ke liye transparent backdrop (dim nahi)
+  storyMoreMenuBackdropWeb: {
+    flex: 1,
+    backgroundColor: 'transparent',
+  },
   storyMoreMenuSheet: {
     width: '100%',
     borderTopLeftRadius: 16,
@@ -1110,6 +1118,16 @@ storyFollowBtnWrap: {
     color: '#0f172a',
     fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
   },
+   commentPreviewWrap: { paddingHorizontal: 14, paddingTop: 8, paddingBottom: 4 },
+  commentPreviewViewAll: { fontSize: 12.5, color: '#64748b', fontWeight: '600', marginBottom: 6 },
+  commentPreviewRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6 },
+  commentPreviewAvatar: { width: 22, height: 22, borderRadius: 11, marginRight: 8, backgroundColor: '#e2e8f0' },
+  commentPreviewAvatarFallback: { alignItems: 'center', justifyContent: 'center' },
+  commentPreviewAvatarText: { fontSize: 11, fontWeight: '700', color: '#475569' },
+  commentPreviewText: { flex: 1, fontSize: 13, color: '#334155', lineHeight: 18 },
+  commentPreviewAuthor: { fontWeight: '700', color: '#0f172a' },
+  commentLoadMoreBtn: { alignSelf: 'center', paddingVertical: 8, paddingHorizontal: 14 },
+  commentLoadMoreText: { fontSize: 12.5, fontWeight: '700', color: '#f97316' },
   adAdvertiserSubLabel: {
     fontSize: 11.5,
     color: '#94a3b8',

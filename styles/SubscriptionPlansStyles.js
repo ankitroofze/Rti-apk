@@ -282,6 +282,8 @@ const SubscriptionPlansStyles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4,
     backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 999, paddingVertical: 11, paddingHorizontal: 10,
   marginTop: 8, alignSelf: 'stretch',
+    // ✅ Web par button poori card width na le — chhota rahe. Android/iOS same as before.
+    ...(Platform.OS === 'web' ? { alignSelf: 'flex-start', width: 200, maxWidth: '100%' } : null),
   },
   selectPlanBtnActive: { backgroundColor: '#ffffff' },
 selectPlanBtnText: { color: '#b91c1c', fontSize: 13, fontWeight: '800', fontFamily: FONT.bold, flexShrink: 1, textAlign: 'center' },

@@ -74,6 +74,7 @@ export default function OtpModal({ visible, email, onClose, onVerified, purpose 
 
   const otp = digits.join('');
 
+
   const handleVerify = async () => {
     if (otp.length < OTP_LENGTH || loading) return;
     setLoading(true);
@@ -117,6 +118,8 @@ export default function OtpModal({ visible, email, onClose, onVerified, purpose 
         <Text style={otpStyles.subtitle}>OTP has been sent to:</Text>
         <Text style={otpStyles.sentTo}>📧 {email}</Text>
         <Text style={[otpStyles.subtitle, local.validText]}>Valid for {OTP_VALID_MINUTES} minutes</Text>
+
+
 
         <View style={[otpStyles.digitRow, local.digitRow]}>
           {digits.map((digit, index) => (
@@ -175,6 +178,7 @@ export default function OtpModal({ visible, email, onClose, onVerified, purpose 
 }
 
 const local = StyleSheet.create({
+
   validText: { marginBottom: 16 },
   // chhoti screen par 6 boxes fit ho jaayein
   digitRow: { gap: 8, width: '100%', justifyContent: 'center' },

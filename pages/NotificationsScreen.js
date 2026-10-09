@@ -1,3 +1,4 @@
+import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useCallback, useMemo, useState } from 'react';
 import {
   Platform,
@@ -133,7 +134,10 @@ export default function NotificationsScreen({ navigation }) {
         {Platform.OS === 'web' ? (
           <ModuleWebHeader title="Notifications" navigation={navigation} />
         ) : (
-          <ImageBackground
+          Platform.OS === 'android' ? (
+<ModuleAndroidHeader title="Notifications" onBack={() => navigation.navigate('QuickMenu')} />
+) : (
+<ImageBackground
             source={require('../assets/images/profile-red.png')}
             resizeMode="cover"
             style={{ width: '100%', alignSelf: 'stretch', flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingBottom: 14, paddingTop: insets.top + 8 }}
@@ -143,6 +147,7 @@ export default function NotificationsScreen({ navigation }) {
             </TouchableOpacity>
             <Text style={{ fontSize: 15, color: '#fff' }}>Notifications</Text>
           </ImageBackground>
+)
         )}
 
         <ScrollView

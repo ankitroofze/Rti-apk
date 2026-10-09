@@ -1,3 +1,4 @@
+import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useState } from 'react';
 import {
   Platform,
@@ -142,10 +143,14 @@ console.log('QUIZ RESULT DATA:', JSON.stringify(result));
   );
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+    <SafeAreaView style={{ flex: 1 }} edges={Platform.OS === 'android' ? [] : ['top']}>
     <View style={QuizResultStyles.root}>
       {/* Custom Header with Back Button */}
-      <View style={QuizResultStyles.customHeader}>
+      {Platform.OS === 'android' ? (
+<ModuleAndroidHeader title="Quiz Result" onBack={() => navigation.goBack()} />
+) : (
+<>
+<View style={QuizResultStyles.customHeader}>
         <TouchableOpacity
           style={QuizResultStyles.backButton}
           onPress={() => navigation.goBack()}
@@ -156,6 +161,8 @@ console.log('QUIZ RESULT DATA:', JSON.stringify(result));
         <Text style={QuizResultStyles.headerTitle}>Quiz Result</Text>
         <View style={QuizResultStyles.headerPlaceholder} />
       </View>
+</>
+)}
 
       <ScrollView
         contentContainerStyle={QuizResultStyles.scrollContent}
@@ -227,7 +234,7 @@ console.log('QUIZ RESULT DATA:', JSON.stringify(result));
             <Feather name="info" size={16} color="#dc2626" />
             <Text style={QuizResultStyles.failMessageText}>
               {isPass
-                ? 'Certificate sirf Exam type ke liye issue hota hai. Practice/Training me certificate nahi milta.'
+                ?'Certificates are issued only for Exam type. No certificate is given for Practice or Training.'
                 : 'Certificate is only issued for passing scores. Please retake the exam.'}
             </Text>
           </View>

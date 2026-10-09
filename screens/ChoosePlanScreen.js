@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Image,
   StyleSheet, Modal, FlatList, TextInput, Alert,
-  Platform, StatusBar, useWindowDimensions,
+  Platform, StatusBar, useWindowDimensions, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { INDIAN_STATES, getDistricts } from '../pages/locationData';
@@ -219,7 +219,16 @@ const { width: winWidth } = useWindowDimensions();
 const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
 
   const [selState,    setSelState]    = useState('');
-  const [selDistrict, setSelDistrict] = useState('');
+    const [selDistrict, setSelDistrict] = useState('');
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const me = await UserStore.getCurrentUser();
+        setSelState(me?.state || '');
+        setSelDistrict(me?.district || '');
+      } catch (e) {}
+    })();
+  }, []);
   const [stateModal,  setStateModal]  = useState(false);
   const [distModal,   setDistModal]   = useState(false);
   const [promoteScope, setPromoteScope] = useState('district');
@@ -227,6 +236,7 @@ const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
   const [duration, setDuration]         = useState('');
   const [showSuccess, setShowSuccess]   = useState(false);
   const [successMessage, setSuccessMessage] = useState('');
+  const [posting, setPosting] = useState(false);
 
   const formatDateStr = (d) =>
     `${String(d.getDate()).padStart(2,'0')}-${String(d.getMonth()+1).padStart(2,'0')}-${d.getFullYear()}`;
@@ -275,52 +285,61 @@ const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
     setTimeout(() => setShowSuccess(false), 3000);
   };
 
-  const handleBuy = async () => {
-    if (!selState)    { Alert.alert('Required', 'Please select your state.'); return; }
-    if (!selDistrict) { Alert.alert('Required', 'Please select your city/district.'); return; }
+   const handleBuy = async () => {
+    // Double tap se duplicate ad post na ho
+    if (posting) return;
+
     // Promotion scope, placement and duration are temporarily disabled in the UI.
     // Keep safe defaults so posting an ad continues to work without those inputs.
     const promotionScope = promoteScope || 'district';
     const selectedPlacement = placement || 'home';
 
- // ── Save ad to UserStore ──
-    if (adData && adData.title) {
-      const postResult = await UserStore.useAdCredit('post', {
-        title:       adData.title,
-        description: adData.description,
-        photo:       adData.photo,
-        redirect:    adData.redirect,
-        adsSubId:    adData.adsSubId || (selectedPlacement === 'full' ? 1 : 2),
-        redirection: adData.redirection || adData.redirect || 'profile',
-        extraValues:  adData.extraValues,
-        allowCalls:   adData.allowCalls,
-        scope:       promotionScope,
-        placement:   selectedPlacement,
-        duration:    duration,
-        durationDays: daysMap[duration] || 30,
-        startDate:   toInputDateValue(selectedDate),
-        state:       selState,
-        district:    selDistrict,
-      });
-      if (!postResult?.ok) {
-        Alert.alert('Unable to post advertisement', postResult?.message || 'Please try again.');
+    setPosting(true);
+    try {
+      // ── Save ad to UserStore ──
+      if (adData && adData.title) {
+        const postResult = await UserStore.useAdCredit('post', {
+          title:       adData.title,
+          description: adData.description,
+          photo:       adData.photo,
+          images:      adData.images || [],
+          video:       adData.video || '',
+          redirect:    adData.redirect,
+          adsSubId:    adData.adsSubId || (selectedPlacement === 'full' ? 1 : 2),
+          redirection: adData.redirection || adData.redirect || 'profile',
+          extraValues:  adData.extraValues,
+          allowCalls:   adData.allowCalls,
+          scope:       promotionScope,
+          placement:   selectedPlacement,
+          duration:    duration,
+          durationDays: daysMap[duration] || 30,
+          startDate:   toInputDateValue(selectedDate),
+          state:       selState,
+          district:    selDistrict,
+        });
+        if (!postResult?.ok) {
+          Alert.alert('Unable to post advertisement', postResult?.message || 'Please try again.');
+          return;
+        }
+        // draft clear karne ke liye wait nahi karna — background me hone do
+        AsyncStorage.removeItem('rti-advertisement-draft').catch(() => {});
+      }
+
+      if (promotionScope === 'district') {
+        showSuccessToast(`🎉 Free Promotion Activated! Your ad is now promoted in ${selDistrict} for FREE!`);
+        setTimeout(() => navigation.navigate('MyAds'), 1000);
         return;
       }
-      await AsyncStorage.removeItem('rti-advertisement-draft');
+
+      const scopeLabel     = promotionScope === 'state' ? selState : 'All of India';
+      const placementLabel = selectedPlacement === 'full' ? 'Full Page' : 'Home Page';
+      const durationLabel  = DURATION_PLANS.find(p => p.id === duration)?.label || duration;
+
+      showSuccessToast(`✅ Promotion Activated! Your ad is now live on ${scopeLabel} — ${placementLabel} for ${durationLabel}.`);
+      setTimeout(() => navigation.navigate('MyAds'), 1000);
+    } finally {
+      setPosting(false);
     }
-
-    if (promotionScope === 'district') {
-      showSuccessToast(`🎉 Free Promotion Activated! Your ad is now promoted in ${selDistrict} for FREE!`);
-      setTimeout(() => navigation.navigate('MyAds'), 3000);
-      return;
-    }
-
-    const scopeLabel     = promotionScope === 'state' ? selState : 'All of India';
-    const placementLabel = selectedPlacement === 'full' ? 'Full Page' : 'Home Page';
-    const durationLabel  = DURATION_PLANS.find(p => p.id === duration)?.label || duration;
-
-    showSuccessToast(`✅ Promotion Activated! Your ad is now live on ${scopeLabel} — ${placementLabel} for ${durationLabel}.`);
-    setTimeout(() => navigation.navigate('MyAds'), 3000);
   };
 
   if (Platform.OS === 'web') {
@@ -376,8 +395,8 @@ const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
                   </View>
                 </View>
 
-                {/* Step 1: Location */}
-                <View style={ws.card}>
+                              {/* Step 1: Location */}
+                <View style={[ws.card, { display: 'none' }]}>
                   <View style={ws.stepRow}>
                     <View style={ws.stepBadge}><Text style={ws.stepNum}>1</Text></View>
                     <Text style={ws.stepTitle}>Select your location</Text>
@@ -649,8 +668,8 @@ const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
           </View>
         </View>
 
-        {/* ── Step 1: Location ── */}
-        <View style={s.section}>
+              {/* ── Step 1: Location ── */}
+        <View style={[s.section, { display: 'none' }]}>
           <StepHeader number="1" label="Select your location" />
 
           <Text style={s.fieldLabel}>State <Text style={s.req}>*</Text></Text>
@@ -826,13 +845,23 @@ const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
               : '₹N/A'}
           </Text>
         </View>
-        <TouchableOpacity
-          style={s.buyBtn}
+           <TouchableOpacity
+          style={[s.buyBtn, posting && { opacity: 0.7 }]}
           onPress={handleBuy}
+          disabled={posting}
           activeOpacity={0.85}
         >
-          <Text style={s.buyBtnText}>Post Advertisement</Text>
-          <Ionicons name="chevron-forward" size={18} color="#fff" />
+          {posting ? (
+            <>
+              <ActivityIndicator size="small" color="#fff" />
+              <Text style={s.buyBtnText}>Posting...</Text>
+            </>
+          ) : (
+            <>
+              <Text style={s.buyBtnText}>Post Advertisement</Text>
+              <Ionicons name="chevron-forward" size={18} color="#fff" />
+            </>
+          )}
         </TouchableOpacity>
       </View>
 

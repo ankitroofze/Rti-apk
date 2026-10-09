@@ -1,3 +1,4 @@
+import NameWithTick from '../components/NameWithTick';
 import React, { useCallback, useState, useMemo } from 'react';
 import { ScrollView, Text, View, TouchableOpacity, TextInput, Platform, useWindowDimensions, StatusBar, StyleSheet, ImageBackground } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -380,10 +381,7 @@ export default function MyNetworkScreen({ navigation }) {
                   </View>
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <View style={w.unameRow}>
-                      <Text style={w.uname} numberOfLines={1}>{row.name}</Text>
-                      {UserStore.hasActiveSubscription(row) && (
-                        <PremiumBadge size={13} />
-                      )}
+                      <NameWithTick name={row.name} show={UserStore.hasBlueTick(row)} style={w.uname} badgeSize={14} />
                     </View>
                     <Text style={w.uemail} numberOfLines={1}>{row.user_id}</Text>
                   </View>
@@ -646,12 +644,7 @@ export default function MyNetworkScreen({ navigation }) {
                   <View key={`${row.user_id}-${index}`} style={rowStyle}>
                     <View style={colUser}>
                       <View style={MyNetworkStyles.rowTitleWrap}>
-                        <Text style={MyNetworkStyles.rowTitle} numberOfLines={1}>
-                          {row.name}
-                        </Text>
-                        {UserStore.hasActiveSubscription(row) ? (
-                          <PremiumBadge size={14} style={MyNetworkStyles.rowBadge} />
-                        ) : null}
+                        <NameWithTick name={row.name} show={UserStore.hasBlueTick(row)} style={MyNetworkStyles.rowTitle} badgeSize={14} />
                       </View>
                       <Text style={MyNetworkStyles.rowSubText} numberOfLines={1}>
                         {row.user_id}

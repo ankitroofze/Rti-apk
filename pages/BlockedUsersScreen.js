@@ -1,3 +1,4 @@
+import NameWithTick from '../components/NameWithTick';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator, FlatList, Modal, StyleSheet, Text, TouchableOpacity, TouchableWithoutFeedback, View,
@@ -133,7 +134,7 @@ const { showToast, showPopup } = useToast();
       <View style={s.row}>
         <ProfileAvatar uri={item.profile_image} size={44} style={s.avatar} />
         <View style={s.info}>
-          <Text style={s.name} numberOfLines={1}>{item.name || 'User'}</Text>
+          <NameWithTick name={item.name || 'User'} user={item} style={s.name} />
           {item.email ? <Text style={s.email} numberOfLines={1}>{item.email}</Text> : null}
         </View>
         <TouchableOpacity

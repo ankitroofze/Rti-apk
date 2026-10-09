@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { ScrollView, Text, View, TouchableOpacity, Platform, useWindowDimensions, StatusBar, StyleSheet, ImageBackground } from 'react-native';
+import { ScrollView, Text, View, TouchableOpacity, Platform, useWindowDimensions, StatusBar, StyleSheet, ImageBackground, BackHandler } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -445,8 +445,21 @@ heroCard: {
   promoBtnTxt: { color: '#fff', fontWeight: '700', fontSize: 13, fontFamily: F_BOLD },
 });
 
-export default function WalletScreen({ navigation }) {
+export default function WalletScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
+  // Jahan se Wallet khola gaya wahi back par khule: 'Profile' / 'QuickMenu' / 'Settings'
+  const returnTo = route?.params?.returnTo || 'QuickMenu';
+  const goBackToOrigin = useCallback(() => {
+    if (returnTo === 'Settings') navigation.navigate('Settings');
+    else if (returnTo === 'Profile') navigation.navigate('Profile');
+    else navigation.navigate('QuickMenu');
+  }, [navigation, returnTo]);
+  // Android hardware back button bhi usi screen par le jaaye
+  useFocusEffect(useCallback(() => {
+    if (Platform.OS !== 'android') return undefined;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => { goBackToOrigin(); return true; });
+    return () => sub.remove();
+  }, [goBackToOrigin]));
   const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const [sidebarVisible, setSidebarVisible] = useState(false);
   const [loading, setLoading]               = useState(true);
@@ -735,7 +748,7 @@ export default function WalletScreen({ navigation }) {
      <ModuleMobileHeader
       title="Wallet"
       navigation={navigation}
-      onBack={() => navigation.navigate('QuickMenu')}
+      onBack={goBackToOrigin}
     />
       <ScrollView
         style={m.scrollView}

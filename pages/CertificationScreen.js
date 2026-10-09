@@ -1,3 +1,4 @@
+import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
@@ -13,7 +14,7 @@ import { Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useToast } from '../components/ui/ToastProvider';
+import { useToast, useBusy } from '../components/ui/ToastProvider';
 import Text from '../components/RobotoText';
 import CertificationStyles from '../styles/CertificationStyles';
 import { UserStore } from '../store/UserStore';
@@ -93,6 +94,7 @@ export default function CertificationScreen({ navigation }) {
   const { showToast } = useToast();
   const insets = useSafeAreaInsets();
 const [loading, setLoading] = useState(false);
+useBusy(loading);
   const [certData, setCertData] = useState({
     currentUser:    null,
     items:          [],
@@ -254,6 +256,9 @@ const handleAttemptQuiz = useCallback((item) => {
   /* ✅ Web header — design ek hi jagah (components/ModuleWebHeader.js) se aata hai */
   <ModuleWebHeader title="Certification" navigation={navigation} />
 ) : (
+Platform.OS === 'android' ? (
+<ModuleAndroidHeader title="Certification" onBack={() => navigation.navigate('QuickMenu')} />
+) : (
 <View
   style={{
     width: '100%',
@@ -278,6 +283,7 @@ const handleAttemptQuiz = useCallback((item) => {
   </TouchableOpacity>
   <Text style={{ fontSize: 15, color: '#fff', fontFamily: 'Roboto_400Regular' }}>Certification</Text>
 </View>
+)
 )}
       <ScrollView
         style={CertificationStyles.scrollView}

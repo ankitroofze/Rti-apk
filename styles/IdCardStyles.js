@@ -20,10 +20,11 @@ const IdCardStyles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 8,
   },
-  idCardPreview: {
+   idCardPreview: {
     borderRadius: 16,
     overflow: 'hidden',
     backgroundColor: '#ffffff',
+    minHeight: 590, // back card (360 x 590) ke barabar
   },
   // ── HEADER ──
   idCardHeader: {
@@ -34,7 +35,7 @@ const IdCardStyles = StyleSheet.create({
     alignItems: 'center',
   },
       idCardHeaderTitle: {
-    fontSize: 26,
+    fontSize: 23,
     fontWeight: Platform.OS === 'web' ? '800' : 'normal',
     color: '#fff',
     textAlign: 'center',
@@ -54,11 +55,11 @@ const IdCardStyles = StyleSheet.create({
     marginleft: 37,
   },
   idCardHeaderNetwork: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: Platform.OS === 'web' ? '900' : 'normal',
     color: '#1a1a1a',
-    lineHeight: 28,
-      marginRight: 67,
+    lineHeight: 26,
+    marginRight: 40,
     fontFamily: ID_CARD_FONT_BLACK,
   },
     idCardHeaderSub: {
@@ -143,6 +144,7 @@ backgroundColor: '#ffffff',
 
   // ── DETAILS ──
   idCardDetails: {
+    flexGrow: 1, // bachi hui jagah details bhar lega, banner neeche hi rahega
     paddingHorizontal: 14,
     paddingVertical: 8,
     backgroundColor: '#ffffff',

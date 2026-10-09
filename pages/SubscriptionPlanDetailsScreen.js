@@ -21,8 +21,9 @@
 //   Role plans shape : { plan_id, plan_name, price, duration, original_price, features, role_id_raw }
 //   Generic shape    : { id, name, duration, price, originalPrice, features }
 // ─────────────────────────────────────────────────────────────────
+import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React from 'react';
-import { ScrollView, Text, View, TouchableOpacity, ImageBackground, StyleSheet } from 'react-native';
+import { Platform, ScrollView, Text, View, TouchableOpacity, ImageBackground, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import S from '../styles/SubscriptionPlansStyles';
@@ -73,7 +74,11 @@ export default function SubscriptionPlanDetailsScreen({ navigation, route }) {
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['left', 'right', 'bottom']}>
       <View style={S.root}>
-        <ImageBackground source={HEADER_BG_IMAGE} style={S.headerImageWrap} resizeMode="cover">
+        {Platform.OS === 'android' ? (
+<ModuleAndroidHeader title={headerTitle} onBack={() => navigation.goBack()} />
+) : (
+<>
+<ImageBackground source={HEADER_BG_IMAGE} style={S.headerImageWrap} resizeMode="cover">
           <TouchableOpacity onPress={() => navigation.goBack()} style={S.headerBackBtn}>
             <Feather name="arrow-left" size={20} color="#ffffff" />
             <Text style={S.headerBackBtnText}>Back</Text>
@@ -81,6 +86,8 @@ export default function SubscriptionPlanDetailsScreen({ navigation, route }) {
           <Text style={S.headerTitle} numberOfLines={1}>{headerTitle}</Text>
           <View style={{ width: 60 }} />
         </ImageBackground>
+</>
+)}
 
         <ScrollView
           contentContainerStyle={[S.scrollContent, !isActive ? { paddingBottom: 140 } : null]}

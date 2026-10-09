@@ -17,6 +17,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts, Roboto_400Regular, Roboto_700Bold } from '@expo-google-fonts/roboto';
 import { UserStore } from '../store/UserStore';
+import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import ModuleWebHeader from '../components/Modulewebheader';
 
 const notify = (title, message) => {
@@ -63,7 +64,6 @@ export default function CommerceAdsCenterScreen({ navigation }) {
     myListings: 0,
     receivedEnquiries: 0,
     sentEnquiries: 0,
-    credits: 0,
   });
   const [loading, setLoading] = useState(true);
 
@@ -76,7 +76,7 @@ export default function CommerceAdsCenterScreen({ navigation }) {
 
   // Decide columns based on available width so cards never look tiny in the middle
   const usableWidth = contentWidth - horizontalPadding * 2;
-  const statColumns = usableWidth > 760 ? 4 : usableWidth > 460 ? 2 : 1;
+  const statColumns = usableWidth > 600 ? 3 : usableWidth > 460 ? 2 : 1;
   const actionColumns = usableWidth > 760 ? 3 : usableWidth > 460 ? 2 : 1;
 
   const statCardWidth = (usableWidth - gap * (statColumns - 1)) / statColumns;
@@ -88,34 +88,41 @@ export default function CommerceAdsCenterScreen({ navigation }) {
       const currentUser = await UserStore.getCurrentUser();
       setUser(currentUser || null);
 
-      const summary = await UserStore.getEcomeMarketplaceSummary();
       const currentEmail = String(currentUser?.email || '').trim().toLowerCase();
+
+      // 1) My Listings — jitne products maine add kiye (My Listings screen jaisa hi logic)
+      const summary = await UserStore.getEcomeMarketplaceSummary();
       const listings = Array.isArray(summary?.listings) ? summary.listings : [];
-      const enquiries = Array.isArray(summary?.enquiries) ? summary.enquiries : [];
-
       const myListings = listings.filter(
-        (item) => String(item.createdBy || '').trim().toLowerCase() === currentEmail
+        (item) =>
+          String(item.createdBy || item.owner_email || '').trim().toLowerCase() === currentEmail
       ).length;
 
-      const receivedEnquiries = enquiries.filter((enquiry) => {
-        return listings.some(
-          (listing) =>
-            String(listing.id) === String(enquiry.product_id) &&
-            String(listing.createdBy || '').trim().toLowerCase() === currentEmail
-        );
-      }).length;
+      // 2) Sent Enquiries — maine jitne logo ko enquiry bheji (/ecom-enquiries)
+      let sentEnquiries = 0;
+      try {
+        const sentRes = await AuthAPI.getEcomEnquiries();
+        if (sentRes?.ok) sentEnquiries = Array.isArray(sentRes.enquiries) ? sentRes.enquiries.length : 0;
+      } catch (e) {
+        console.warn('Sent enquiries count failed:', e);
+      }
 
-      const sentEnquiries = enquiries.filter(
-        (enquiry) =>
-          String(enquiry.buyer_email || '').trim().toLowerCase() === currentEmail
-      ).length;
+      // 3) Received Enquiries — mujhe jitni enquiry aayi (/ecom-enquiries/received, paginated)
+      let receivedEnquiries = 0;
+      try {
+        let cursor = null;
+        for (let page = 0; page < 30; page += 1) {
+          const recvRes = await AuthAPI.getReceivedEcomEnquiries({ cursor, perPage: 100 });
+          if (!recvRes?.ok) break;
+          receivedEnquiries += Array.isArray(recvRes.enquiries) ? recvRes.enquiries.length : 0;
+          if (!recvRes.hasMore || !recvRes.nextCursor) break;
+          cursor = recvRes.nextCursor;
+        }
+      } catch (e) {
+        console.warn('Received enquiries count failed:', e);
+      }
 
-      setStats({
-        myListings,
-        receivedEnquiries,
-        sentEnquiries,
-        credits: summary?.credits || 0,
-      });
+      setStats({ myListings, receivedEnquiries, sentEnquiries });
     } catch (error) {
       console.error('Commerce hub load error:', error);
       notify('Load failed', 'Unable to load commerce dashboard.');
@@ -209,14 +216,6 @@ export default function CommerceAdsCenterScreen({ navigation }) {
               color="#10b981"
               cardWidth={statCardWidth}
               onPress={() => navigation.navigate('MyEnquiries')}
-            />
-            <StatCard
-              icon="cash"
-              label="Credits"
-              value={stats.credits}
-              color="#8b5cf6"
-              cardWidth={statCardWidth}
-              onPress={() => navigation.navigate('Sell')}
             />
           </View>
 

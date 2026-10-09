@@ -50,8 +50,8 @@ export default function EcomSubscriptionScreen({ navigation, route }) {
   const redirectTo = route?.params?.redirectTo || 'Sell';
   const redirectParams = route?.params?.redirectParams || undefined;
 
-  const [plans, setPlans] = useState(PLANS);
-  const [selectedPlan, setSelectedPlan] = useState(PLANS[1].id);
+  const [plans, setPlans] = useState([]);
+  const [selectedPlan, setSelectedPlan] = useState(null);
   const [loading, setLoading] = useState(false);
 const [plansLoading, setPlansLoading] = useState(true);
   const [processingPlanId, setProcessingPlanId] = useState(null);
@@ -82,8 +82,13 @@ const [plansLoading, setPlansLoading] = useState(true);
   }, []);
 
   const doSubscribe = useCallback(async (plan) => {
-    setProcessingPlanId(plan?.id ?? null);
-    if (!plan) return;
+      if (!plan) return;
+    // ✅ backend ki asli plan id integer hoti hai; static/string id par order mat banao
+    if (!Number.isInteger(Number(plan.id))) {
+      showPopup('Plans abhi load nahi hue. Please screen refresh karke dobara try karein.', 'error');
+      return;
+    }
+    setProcessingPlanId(plan.id);
     setLoading(true);
     try {
       const orderRes = await UserStore.createEcomOrder({ planId: plan.id });
@@ -108,6 +113,8 @@ const [plansLoading, setPlansLoading] = useState(true);
             return;
           }
 
+          // ✅ FIX: status card ko turant naye credits se update karo
+          setExistingCredits(Number(verifyRes.credits || 0));
           showPopup('E-Commerce Subscription activated! You can now post listings on Sell.', 'success');
           navigation.replace(redirectTo, redirectParams);
         },

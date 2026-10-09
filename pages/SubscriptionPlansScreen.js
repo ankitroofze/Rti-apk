@@ -1,4 +1,5 @@
-import React, { useCallback, useState } from 'react';
+import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ScrollView,
   Text,
@@ -734,6 +735,9 @@ function WebLayout({ subscriptionData, loading, handleBuyPlan, navigation, compa
               isActive={Boolean(subscriptionData.activePlan) && (!subscriptionData.activePlan?.expires_at || new Date(subscriptionData.activePlan.expires_at) >= new Date())}
               planName={subscriptionData.activePlan?.plan_name}
               price={subscriptionData.activePlan?.price}
+              duration={subscriptionData.activePlan?.duration}
+              credits={subscriptionData.activePlan?.credits}
+              features={subscriptionData.activePlan?.features}
               purchasedAt={subscriptionData.activePlan?.purchased_at}
 expiresAt={subscriptionData.activePlan?.expires_at}
               roles={subscriptionData.activePlan?.role_names}
@@ -790,6 +794,7 @@ export default function SubscriptionPlansScreen({ navigation, route }) {
   const { showPopup } = useToast();
 
     const [loading, setLoading]               = useState(true);
+  const [activeReady, setActiveReady]         = useState(false); // active plan card ke liye (plans ka wait nahi)
   const [seatSummary, setSeatSummary]       = useState(null);
   const [selectedSeatId, setSelectedSeatId] = useState('');
   const [pendingPlan, setPendingPlan]       = useState(null);
@@ -832,22 +837,44 @@ export default function SubscriptionPlansScreen({ navigation, route }) {
     return isMyActivePlan || (matchState && matchDistrict && matchTaluka && matchVillage);
   });
   const returnTo = route?.params?.returnTo || 'Subscription Plans';
+   const firstLoadDone = useRef(false);
+  const payingRef = useRef(false); // Pay Now double-tap / back ke baad turant dobara tap se 2 orders na bane
+  const lastSyncAt = useRef(0); // backend sync ka last time (focus par har baar sync na ho, par stale bhi na rahe)
   const loadPlans = useCallback(async () => {
-    setLoading(true);
+    // full-screen loader sirf pehli baar; filter badalne par silent refresh
+    const isFirstLoad = !firstLoadDone.current;
+    if (isFirstLoad) {
+      setLoading(true);
+      // ✅ FAST: pehle local saved data se Active plan card turant dikha do,
+      // network (sync + plans list) ka wait mat karo
+      const quick = await UserStore.getActivePlanQuick();
+      if (quick) {
+        setSubscriptionData((prev) => ({ ...prev, ...quick, plans: prev.plans?.length ? prev.plans : quick.plans }));
+        setActiveReady(true);
+      }
+    }
     const [data, seatData] = await Promise.all([
-      UserStore.getSubscriptionSummary(),
+      UserStore.getSubscriptionSummary({
+        state: filterState,
+        district: filterDistrict,
+        taluka: filterTaluka,
+        village: filterVillage,
+      }, { skipSync: !isFirstLoad && (Date.now() - lastSyncAt.current) < 60000 }),
       UserStore.getStateSeatSummary(),
     ]);
+    firstLoadDone.current = true;
+    if (isFirstLoad || (Date.now() - lastSyncAt.current) >= 60000) lastSyncAt.current = Date.now();
     setLoading(false);
+    setActiveReady(true);
     if (!data) { navigation.replace('Login'); return; }
     setSubscriptionData(data);
     setSeatSummary(seatData || null);
     const seatId = seatData?.current_seat?.seat_id || '';
     setSelectedSeatId((prev) => prev || seatId);
-  }, [navigation]);
+  }, [navigation, filterState, filterDistrict, filterTaluka, filterVillage]);
 
   useFocusEffect(useCallback(() => { loadPlans(); }, [loadPlans]));
-const stateName    = seatSummary?.state || subscriptionData.currentUser?.state || '';
+const stateName    = filterState || seatSummary?.state || subscriptionData.currentUser?.state || '';
 const activeSeatId = seatSummary?.current_seat?.seat_id || '';
 // ✅ NEW: seat sirf State se nahi, plan ke apne District/Taluka/Village se bhi
 // lock ho sakti hai — pendingPlan (jis plan ko user kharidne wala hai) se hi
@@ -874,8 +901,12 @@ const soldKeyFor = (plan) => {
 };
 // Premium par seat lock nahi — wo kabhi Sold nahi hota. Active plan bhi Sold nahi dikhega.
 const isPlanSold = (plan) => {
-  if (!plan || UserStore.isPremiumPlan(plan)) return false;
+  if (!plan) return false;
+  // ✅ Premium plan kabhi Sold nahi dikhega (seat lock nahi hota) — backend is_sold bheje tab bhi nahi
+  if (UserStore.isPremiumPlan(plan)) return false;
+  // Apna active plan Sold nahi dikhega ("Currently active" dikhega)
   if (subscriptionData.activePlan?.plan_id === plan.plan_id) return false;
+  // Baaki saare role plans: backend ka is_sold ya 409 seat_unavailable ke baad local sold key
   return Boolean(plan.is_sold) || soldKeys.includes(soldKeyFor(plan));
 };
 const markPlanSold = (plan) => {
@@ -885,6 +916,15 @@ const markPlanSold = (plan) => {
 
 // 👇 YAHAN ADD KARO (navigateToPayment ki jagah)
 const startSubscriptionPayment = async (plan, seatRoleId) => {
+  if (payingRef.current) return; // pichla order/checkout abhi chal raha hai
+  payingRef.current = true;
+  try {
+    await runSubscriptionPayment(plan, seatRoleId);
+  } finally {
+    payingRef.current = false;
+  }
+};
+const runSubscriptionPayment = async (plan, seatRoleId) => {
   // ✅ FIX: pendingPlan (outer state) ek render peeche reh sakta hai kyunki
   // setPendingPlan() async hai — isliye location seedha `plan` argument se
   // nikalo, taaki hamesha wahi plan ki apni district/taluka/village jaaye
@@ -927,6 +967,9 @@ const startSubscriptionPayment = async (plan, seatRoleId) => {
       });
 
       if (verifyResult?.ok) {
+        // ✅ FIX: turant fresh data load karo (sync skip nahi) taaki Active plan card / "Currently active" abhi dikhe
+        lastSyncAt.current = 0;
+        try { await loadPlans(); } catch (e) { /* ignore */ }
         showPopup(`🎉 ${plan.plan_name} activated!`, 'success');
         setTimeout(() => navigation.navigate(returnTo), 1500);
       } else {
@@ -937,13 +980,23 @@ const startSubscriptionPayment = async (plan, seatRoleId) => {
     },
     onFailed: async (errorInfo) => {
       // ✅ 'role' pass karo -> POST /role-subscriptions/payment/failed (seat turant free)
-      await UserStore.markPaymentFailed(
+      // Back/cancel par seat release na ho to retry par "seat taken" aata hai, isliye ek baar dobara try karte hain
+      const release = () => UserStore.markPaymentFailed(
         errorInfo.razorpay_order_id,
         errorInfo.error_code,
         errorInfo.error_description,
         'role'
       );
-      showPopup(errorInfo.error_description || 'Payment failed.', 'error');
+      const res = await release();
+      if (!res?.ok) {
+        await new Promise((r) => setTimeout(r, 1500));
+        await release();
+      }
+      // Back dabane par "failed" nahi, simple cancel message
+      showPopup(
+        errorInfo.cancelled ? 'Payment cancelled. You can try again anytime.' : (errorInfo.error_description || 'Payment failed.'),
+        'error'
+      );
     },
   });
 };
@@ -1057,7 +1110,10 @@ const handleBuyPlan = (plan) => {
         /* ✅ Web header — design ek hi jagah (components/ModuleWebHeader.js) se aata hai */
         <ModuleWebHeader title="Upgrade Your Role" navigation={navigation} />
       ) : (
-         <ImageBackground
+         Platform.OS === 'android' ? (
+<ModuleAndroidHeader title="Upgrade Your Role" onBack={() => navigation.navigate('QuickMenu')} />
+) : (
+<ImageBackground
         source={HEADER_BG_IMAGE}
         style={S.headerImageWrap}
         imageStyle={S.headerImageInner}
@@ -1070,6 +1126,7 @@ const handleBuyPlan = (plan) => {
         <Text style={S.headerTitle}>Upgrade Your Role</Text>
         <View style={{ width: 60 }} />
       </ImageBackground>
+)
       )}
 
       <ScrollView
@@ -1087,13 +1144,16 @@ const handleBuyPlan = (plan) => {
           </Text>
         </View>
 
-      {!loading ? (
+      {activeReady ? (
            <View style={{ width: '100%', maxWidth: 560, marginBottom: 16, alignSelf: 'center' }}>
             <SubscriptionStatusCard
               isActive={Boolean(subscriptionData.activePlan) && (!subscriptionData.activePlan?.expires_at || new Date(subscriptionData.activePlan.expires_at) >= new Date())}
               roles={subscriptionData.activePlan?.role_names}
               planName={subscriptionData.activePlan?.plan_name}
               price={subscriptionData.activePlan?.price}
+              duration={subscriptionData.activePlan?.duration}
+              credits={subscriptionData.activePlan?.credits}
+              features={subscriptionData.activePlan?.features}
               purchasedAt={subscriptionData.activePlan?.purchased_at}
               expiresAt={subscriptionData.activePlan?.expires_at}
                             themeImage={getNativeThemeImage(activePlanTheme)}

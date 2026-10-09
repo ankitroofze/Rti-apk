@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
+import { readReferralCodeFromUrl } from '../utils/Referralservice';
 import * as ImagePicker from 'expo-image-picker';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Animated,
   Image,
@@ -113,7 +114,8 @@ export default function RegisterScreen({ navigation }) {
   const [mobile, setMobile] = useState('');
   const [email, setEmail] = useState('');
   const [referralCode, setReferralCode] = useState('');
-  const [bio, setBio] = useState('');
+  // Referral link (?ref=CODE) se aaya to code prefill karo — sirf padhna, banana nahi
+  useEffect(() => { readReferralCodeFromUrl().then((c) => { if (c) setReferralCode((prev) => prev || c); }); }, []);
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -279,7 +281,6 @@ export default function RegisterScreen({ navigation }) {
         password,
         referralCode: referralCode.trim(),
         profileImage: profileImage || '',
-        bio: bio.trim(),
         otp: verifiedOtp,
       });
 
@@ -300,7 +301,6 @@ export default function RegisterScreen({ navigation }) {
         referral_code_used: referralCode.trim() || null,
         password,
         profile_image: profileImage || '',
-        bio: bio.trim(),
       });
 
       if (!ok) {
@@ -517,21 +517,6 @@ export default function RegisterScreen({ navigation }) {
                       ))}
                     </View>
                   )}
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={[styles.inputLabel, webStyles.darkLabel]}>Bio</Text>
-                  <View style={styles.inputWrap}>
-                    <Ionicons name="document-text-outline" size={16} color="#AAAAAA" />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Tell us a bit about yourself (optional)"
-                      placeholderTextColor="#CCCCCC"
-                      value={bio}
-                      onChangeText={setBio}
-                      multiline
-                    />
-                  </View>
                 </View>
 
                 <View style={styles.inputGroup}>

@@ -1,6 +1,6 @@
 // utils/razorpayCheckout.js
 import { Platform } from 'react-native';
-import RazorpayCheckout from 'react-native-razorpay';
+const RazorpayCheckout = Platform.OS === 'web' ? null : require('react-native-razorpay').default;
 let scriptLoadingPromise = null;
 
 /**
@@ -41,7 +41,67 @@ export const loadRazorpayScript = () => {
  *   onVerified(razorpayResponse) -> called jab payment success hokar Razorpay se response mile
  *   onFailed(errorInfo)          -> called jab payment fail ho ya user cancel kare
  */
+// Native SDK error aksar JSON string hota hai ('{"error":{"code":"BAD_REQUEST_ERROR","description":"Payment processing cancelled by user"}}')
+// aur back dabane par code 0 aata hai. Isse clean message + cancelled flag nikalte hain.
+const EMPTY_DESC = /^(undefined|null|\s*)$/i;
+
+// err kisi bhi shape me aa sakta hai: object, JSON string, ya nested { error: {...} } — sabko ek flat object me badalte hain
+const flattenNativeError = (err) => {
+  const out = {};
+  const visit = (node, depth = 0) => {
+    if (node == null || depth > 4) return;
+    if (typeof node === 'string') {
+      const t = node.trim();
+      if (t.startsWith('{')) {
+        try { visit(JSON.parse(t), depth + 1); return; } catch { /* plain string */ }
+      }
+      if (!out.text && !EMPTY_DESC.test(t)) out.text = t;
+      return;
+    }
+    if (typeof node !== 'object') return;
+    if (out.code == null && node.code != null) out.code = node.code;
+    ['source', 'step', 'reason'].forEach((k) => { if (!out[k] && node[k]) out[k] = String(node[k]); });
+    if (typeof node.description === 'string' && !EMPTY_DESC.test(node.description) && !node.description.trim().startsWith('{')) {
+      if (!out.text) out.text = node.description.trim();
+    } else {
+      visit(node.description, depth + 1);
+    }
+    visit(node.error, depth + 1);
+    if (typeof node.message === 'string') visit(node.message, depth + 1);
+  };
+  visit(err);
+  return out;
+};
+
+const parseNativeError = (err) => {
+  const f = flattenNativeError(err);
+  // Back dabane par Razorpay kabhi "cancel" text nahi bhejta — kabhi code 0/2, kabhi
+  // {source:'customer', step:'payment_authentication', description:'undefined'}.
+  const cancelled =
+    Number(f.code) === 0 ||
+    Number(f.code) === 2 ||
+    String(f.code) === 'PAYMENT_CANCELLED' ||
+    /cancel/i.test(`${f.text || ''} ${f.reason || ''}`) ||
+    (f.source === 'customer' && !f.text);
+  return {
+    cancelled,
+    error_code: cancelled ? 'PAYMENT_CANCELLED' : (f.code ?? 'PAYMENT_FAILED'),
+    // Raw JSON kabhi user ko mat dikhao
+    error_description: cancelled ? 'Payment cancelled by user' : (f.text || 'Payment failed. Please try again.'),
+  };
+};
+
 export const openRazorpayCheckout = async (orderData, planType, { onVerified, onFailed } = {}) => {
+  // A successful web checkout also closes its modal. Do not mistake that
+  // dismiss event for a cancellation and release an already-paid seat.
+  let paymentCompleted = false;
+  let failureReported = false;
+  const reportFailure = async (errorInfo) => {
+    if (paymentCompleted || failureReported) return;
+    failureReported = true;
+    await onFailed?.(errorInfo);
+  };
+
   // ✅ Android / iOS — native Razorpay SDK
   if (Platform.OS !== 'web') {
     const options = {
@@ -57,13 +117,16 @@ export const openRazorpayCheckout = async (orderData, planType, { onVerified, on
     try {
       const response = await RazorpayCheckout.open(options);
       // native SDK response: { razorpay_payment_id, razorpay_order_id, razorpay_signature }
+      paymentCompleted = true;
       await onVerified?.(response);
     } catch (err) {
       // native SDK error: { code, description }
-      onFailed?.({
+      const parsed = parseNativeError(err);
+      await reportFailure({
         razorpay_order_id: orderData?.order_id,
-        error_code: err?.code || 'PAYMENT_FAILED',
-        error_description: err?.description || 'Payment failed.',
+        error_code: parsed.error_code,
+        error_description: parsed.error_description,
+        cancelled: parsed.cancelled,
       });
     }
     return;
@@ -72,7 +135,7 @@ export const openRazorpayCheckout = async (orderData, planType, { onVerified, on
   try {
     await loadRazorpayScript();
   } catch (err) {
-    onFailed?.({
+    await reportFailure({
       razorpay_order_id: orderData?.order_id,
       error_code: 'SCRIPT_LOAD_FAILED',
       error_description: err?.message || 'Razorpay script load nahi ho paya.',
@@ -88,14 +151,16 @@ export const openRazorpayCheckout = async (orderData, planType, { onVerified, on
     name: 'RTI',
     description: `${planType} subscription`,
     handler: async function (response) {
+      paymentCompleted = true;
       await onVerified?.(response);
     },
     modal: {
       ondismiss: async function () {
-        onFailed?.({
+        await reportFailure({
           razorpay_order_id: orderData.order_id,
           error_code: 'PAYMENT_CANCELLED',
           error_description: 'Payment cancelled by user',
+          cancelled: true,
         });
       },
     },
@@ -105,7 +170,7 @@ export const openRazorpayCheckout = async (orderData, planType, { onVerified, on
   const razorpay = new window.Razorpay(options);
 
   razorpay.on('payment.failed', async function (response) {
-    onFailed?.({
+    await reportFailure({
       razorpay_order_id: orderData.order_id,
       error_code: response.error?.code || 'PAYMENT_FAILED',
       error_description: response.error?.description || 'Payment failed',

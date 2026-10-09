@@ -15,6 +15,7 @@
 // wagera ka logic har screen apna khud rakhta hai aur props/callbacks
 // ke through isko values deta hai.
 // ─────────────────────────────────────────────────────────────────
+import ModuleAndroidHeader from './ModuleAndroidHeader';
 import React from 'react';
 import {
   View,
@@ -24,6 +25,7 @@ import {
   ImageBackground,
   StatusBar,
   Modal,
+  Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -82,7 +84,11 @@ export default function SubscriptionPlanPurchase({
            <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
       {/* Header — same image background used on every subscription screen */}
-      <ImageBackground source={HEADER_BG_IMAGE} style={S.headerImageWrap} resizeMode="cover">
+      {Platform.OS === 'android' ? (
+<ModuleAndroidHeader title={headerTitle} onBack={() => navigation.goBack()} />
+) : (
+<>
+<ImageBackground source={HEADER_BG_IMAGE} style={S.headerImageWrap} resizeMode="cover">
         <TouchableOpacity onPress={() => navigation.goBack()} style={S.headerBackBtn}>
           <Feather name="arrow-left" size={20} color="#ffffff" />
           <Text style={S.headerBackBtnText}>Back</Text>
@@ -90,6 +96,8 @@ export default function SubscriptionPlanPurchase({
         <Text style={S.headerTitle} numberOfLines={1}>{headerTitle}</Text>
         <View style={{ width: 60 }} />
       </ImageBackground>
+</>
+)}
 
       <ScrollView
         contentContainerStyle={[S.scrollContent, showPayBar ? { paddingBottom: 200 } : null]}
@@ -103,7 +111,7 @@ export default function SubscriptionPlanPurchase({
 
         {/* Current subscription status — same card used on My Subscriptions pages */}
         {statusCard && !loading ? (
-          <View style={{ width: '100%', maxWidth: 560, marginBottom: 16 }}>
+          <View style={[{ width: '100%', maxWidth: 560, marginBottom: 16 }, Platform.OS === 'web' ? { alignSelf: 'center', alignItems: 'center' } : null]}>
             <SubscriptionStatusCard
               isActive={Boolean(statusCard.isActive)}
               planName={statusCard.planName}

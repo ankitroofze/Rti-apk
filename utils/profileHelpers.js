@@ -9,14 +9,22 @@ export function getProfileTier(profileLike = {}) {
   // A purchased role may reach the UI before its optional `state_seat` object.
   // Resolve all backend role fields as well, so Chief never flashes as Common
   // (grey) and every profile surface uses the same colour immediately.
+  // seat_id ke saath seat_name bhi check hota hai ("State Bureau Chief" ->
+  // "state_bureau_chief"), kyunki kisi aur user ka public profile kholne par
+  // kabhi kabhi API seat_id nahi sirf seat_name bhejti hai — pehle tab profile
+  // grey "Common User" dikhta tha jabki user ke paas role hota tha.
   const tierCandidate = [
     profileLike?.state_seat?.seat_id,
     profileLike?.seat_id,
+    profileLike?.state_seat?.seat_name,
+    profileLike?.seat_name,
     profileLike?.role,
     profileLike?.subscription_type,
-    profileLike?.subscription_plan?.role,
+        profileLike?.subscription_plan?.role,
+    String(profileLike?.subscription_plan?.role_id_raw || '').split(',')[0],
+
   ]
-    .map((value) => String(value || '').trim().toLowerCase())
+    .map((value) => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''))
     .find((value) => Boolean(SEAT_ID_TO_TIER[value]));
   const seatTierKey = tierCandidate ? SEAT_ID_TO_TIER[tierCandidate] : null;
   if (seatTierKey && PROFILE_TIERS[seatTierKey]) return PROFILE_TIERS[seatTierKey];

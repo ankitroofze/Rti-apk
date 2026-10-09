@@ -1,5 +1,6 @@
 // pages/MyAdSubscriptionScreen.js
 // Dikhata hai ki user ka Ads subscription active hai ya nahi.
+import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useState, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, StatusBar, Platform, ImageBackground } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -44,7 +45,10 @@ export default function MyAdSubscriptionScreen({ navigation }) {
 
       {/* Native header — same red image header jo Subscription Plans screen me hai */}
       {Platform.OS !== 'web' && (
-        <ImageBackground source={HEADER_BG_IMAGE} style={styles.headerImageWrap} imageStyle={styles.headerImageInner} resizeMode="cover">
+        Platform.OS === 'android' ? (
+<ModuleAndroidHeader title="My Ads Subscription" onBack={() => navigation.goBack()} />
+) : (
+<ImageBackground source={HEADER_BG_IMAGE} style={styles.headerImageWrap} imageStyle={styles.headerImageInner} resizeMode="cover">
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerBackBtn}>
             <Feather name="arrow-left" size={20} color="#ffffff" />
             <Text style={styles.headerBackBtnText}>Back</Text>
@@ -52,6 +56,7 @@ export default function MyAdSubscriptionScreen({ navigation }) {
           <Text style={styles.headerTitle}>My Ads Subscription</Text>
           <View style={{ width: 60 }} />
         </ImageBackground>
+)
       )}
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>

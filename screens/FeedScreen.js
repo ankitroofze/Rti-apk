@@ -1,3 +1,4 @@
+import NameWithTick from '../components/NameWithTick';
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
@@ -11,6 +12,7 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import AppNavbar from '../components/AppNavbar';
+import NewsLimitModal from '../components/NewsLimitModal';
 import ProfileAvatar from '../components/ProfileAvatar';
 import VerifiedBadge from '../components/VerifiedBadge';
 import WebLayout from '../components/WebLayout';
@@ -101,6 +103,7 @@ function normalizeFeedComment(comment = {}, fallbackId = 'cmt-temp', profileByEm
     user: String(comment.user || comment.author || 'User'),
     author: String(comment.author || comment.user || 'User'),
     author_email: authorEmail,
+    author_has_blue_tick: Boolean(comment.author_has_blue_tick || comment.has_blue_tick),
     author_profile_image: authorAvatar,
     avatar: authorAvatar,
     text: String(comment.text || ''),
@@ -586,6 +589,13 @@ function feedPostFromAdItem(ad = {}) {
   const title = String(ad.title || 'Sponsored Advertisement').trim();
   const description = String(ad.description || '').trim();
   const location = [ad.district, ad.state].filter(Boolean).join(', ') || 'Sponsored';
+  const images = Array.from(new Set([
+    ad.photo,
+    ad.image,
+    ...(Array.isArray(ad.images) ? ad.images.map((item) => typeof item === 'string' ? item : (item?.url || item?.image_url || item?.image || '')) : []),
+  ].filter(Boolean)));
+  const video = String(ad.video || ad.video_url || '').trim();
+  const cover = images[0] || '';
 
   return {
     id: String(ad.feed_id || `ad-feed-${ad.id || Date.now()}`),
@@ -598,10 +608,12 @@ function feedPostFromAdItem(ad = {}) {
     role: 'Sponsored',
     location,
     time: String(ad.updated_at || ad.created_at || ''),
-    type: 'image',
-    media: String(ad.photo || ''),
-    thumbnail: String(ad.photo || ''),
-    image: String(ad.photo || ''),
+    type: video ? 'video' : 'image',
+    media: video || cover,
+    video: video || null,
+    images,
+    thumbnail: cover,
+    image: cover,
     headline: title,
     caption: description,
     fullDescription: description || title,
@@ -873,7 +885,7 @@ function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditC
                   />
                   <View style={styles.commentBubble}>
                     <View style={styles.commentTopRow}>
-                      <Text style={styles.commentUser}>{c.user}</Text>
+                      <NameWithTick name={c.user} show={Boolean(c.author_has_blue_tick)} style={styles.commentUser} badgeSize={13} />
                       <Text style={styles.commentDate}>{c.date || ''}{c.edited_at ? ' • Edited' : ''}</Text>
                     </View>
 
@@ -993,7 +1005,7 @@ function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditC
                                 />
                                 <View style={{ flex: 1 }}>
                                   <View style={styles.commentTopRow}>
-                                    <Text style={styles.commentAuthor}>{reply.author || 'User'}</Text>
+                                    <NameWithTick name={reply.author || 'User'} show={Boolean(reply.author_has_blue_tick)} style={styles.commentAuthor} badgeSize={12} />
                                     <Text style={styles.commentDate}>{reply.date || ''}{reply.edited_at ? ' • Edited' : ''}</Text>
                                   </View>
 
@@ -1402,7 +1414,7 @@ return t || '';
     } else {
       safePause(player);
       setPaused(true);
-      setShowPoster(true);
+      // poster wapas mat lagao — warna ▶ icon chhup jaata hai aur frame hat jaata hai
     }
   }, [canPlayVideo, isAd, onAdPress, paused, player, playerReady, safePost]);
 
@@ -1597,6 +1609,7 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
 export default function FeedScreen({ navigation }) {
   const [posts, setPosts]               = useState([]);
   const [uploadVisible, setUploadVisible] = useState(false);
+  const [newsLimitModal, setNewsLimitModal] = useState({ visible: false, message: '' });
   const [commentPost, setCommentPost]   = useState(null);
   const [sharePost, setSharePost]       = useState(null);
   const [descPost, setDescPost]         = useState(null);
@@ -1872,8 +1885,11 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
   const currentEmail = String(currentUser.email || currentUserEmail || '').trim().toLowerCase();
   const mediaTypeMap = { None: 0, Image: 1, Video: 2, File: 3 };
 
+  // ✅ Free limit ab sirf backend enforce karta hai (403 NEWS_LIMIT_REACHED) — local pre-check hata diya.
+
   // ✅ FIX: pehle backend pe asli news banao, tabhi like/comment/view kaam karenge
   const apiResult = await AuthAPI.createNews({
+    type: 2, // Feed (Reel)
     title: headline || 'My RTI Story',
     subTitle: '',
     description: caption,
@@ -1885,9 +1901,17 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
   });
 
   if (!apiResult.ok) {
+    if (apiResult.limitReached) {
+      setUploadVisible(false);
+      setNewsLimitModal({ visible: true, message: apiResult.message });
+      return;
+    }
     Alert.alert('Save failed', apiResult.message || 'Unable to save this reel. Please try again.');
     return;
   }
+
+  // free_posts_remaining (number | null) — backend ki last-known value cache karo (null-safe)
+  UserStore.setNewsFreePostsRemaining(apiResult.freePostsRemaining);
 
   const backendNewsId = apiResult?.news?.id ?? apiResult?.data?.id ?? apiResult?.data?.news?.id;
   if (!backendNewsId) {
@@ -1984,7 +2008,7 @@ const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
             : null;
           const summaryValue = reelsSummary?.items?.length
             ? reelsSummary
-            : await UserStore.getNewsFeedSummary();
+            : await UserStore.getNewsFeedSummary({ type: 2 });
           const userProfileValue = summaryValue?.currentUser || await UserStore.getCurrentUser();
           if (!active) return;
 
@@ -2176,6 +2200,15 @@ viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
       </View>
 
       <UploadModal visible={uploadVisible} onClose={() => setUploadVisible(false)} onPost={handleNewPost} />
+      <NewsLimitModal
+        visible={newsLimitModal.visible}
+        message={newsLimitModal.message}
+        onBuy={() => {
+          setNewsLimitModal((prev) => ({ ...prev, visible: false }));
+          navigation.navigate('Subscription Plans', { returnTo: 'Feed' });
+        }}
+        onCancel={() => setNewsLimitModal((prev) => ({ ...prev, visible: false }))}
+      />
 
       {activeCommentData ? (
         <CommentsModal

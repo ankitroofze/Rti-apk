@@ -1,7 +1,8 @@
 // pages/MyQuizSubscriptionScreen.js
 // Dikhata hai ki user ka Quiz/Certification subscription active hai ya nahi.
+import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useState, useCallback } from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, StatusBar } from 'react-native';
+import { Platform, View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, StatusBar } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -34,11 +35,17 @@ export default function MyQuizSubscriptionScreen({ navigation }) {
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor="#F3F4F6" />
-      <View style={{ height: insets.top, backgroundColor: '#fff' }} />
+      {Platform.OS === 'android' ? (
+<ModuleAndroidHeader title="My Quiz Subscription" onBack={() => navigation.goBack()} />
+) : (
+<>
+<View style={{ height: insets.top, backgroundColor: '#fff' }} />
       <TouchableOpacity style={styles.backRow} onPress={() => navigation.goBack()} activeOpacity={0.75}>
         <Feather name="arrow-left" size={20} color="#F97316" />
         <Text style={styles.backText}>Back</Text>
       </TouchableOpacity>
+</>
+)}
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>My Quiz Subscription</Text>

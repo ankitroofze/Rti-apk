@@ -166,7 +166,7 @@ export default function VillageSelectScreen({ navigation, route }) {
   useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold });
   const { login } = useAuth();
   const { showPopup } = useToast();
-  const { selectedState, selectedDistrict, selectedTaluka, fromPremium, needsCreateUser } = route.params || {};
+  const { selectedState, selectedDistrict, selectedTaluka, fromPremium, needsCreateUser, needsLogin } = route.params || {};
 
   const [village, setVillage] = useState('');
   const [villageModal, setVillageModal] = useState(false);
@@ -186,7 +186,7 @@ export default function VillageSelectScreen({ navigation, route }) {
   const handleClose = () => {
     allowLeaveRef.current = true;
     navigation.replace('TalukaSelect', {
-      selectedState, selectedDistrict, fromPremium, needsCreateUser,
+      selectedState, selectedDistrict, fromPremium, needsCreateUser, needsLogin,
     });
   };
 
@@ -275,6 +275,7 @@ export default function VillageSelectScreen({ navigation, route }) {
       village:  villageValue,
     }).catch(() => {});
 
+    if (needsLogin) login();
     goToHome(user.name);
   };
 
@@ -319,6 +320,7 @@ export default function VillageSelectScreen({ navigation, route }) {
     if (!user) { allowLeaveRef.current = true; navigation.replace('Login'); return; }
 
     await UserStore.completeLocationSetup(user.email, selectedState, selectedDistrict, selectedTaluka, '');
+    if (needsLogin) login();
     goToHome(user.name);
   };
 

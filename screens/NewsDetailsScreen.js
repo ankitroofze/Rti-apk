@@ -22,11 +22,13 @@ import AppFooter from '../components/AppFooter';
 import ProfileAvatar from '../components/ProfileAvatar';
 import VerifiedBadge from '../components/VerifiedBadge';
 import WebLayout from '../components/WebLayout';
+import LeftEcomSidebar from '../components/LeftEcomSidebar';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { UserStore } from '../store/UserStore';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
 import { safePause, safePlay } from '../utils/videoPlayerSafe';
+import MediaGallery from '../components/MediaGallery';
 
 const IS_WEB = Platform.OS === 'web';
 
@@ -432,6 +434,13 @@ export default function NewsDetailsScreen({ route, navigation }) {
     navigation?.navigate?.('NewsDetails', { article: story });
   }, [navigation]);
 
+  // Left sidebar (Trending Topics) sirf {title} deta hai — full story dhoondh ke open karo
+  const handleOpenSidebarTopic = useCallback((topic) => {
+    if (!topic) return;
+    const full = trendingStories.find((s) => s?.title === topic?.title) || topic;
+    navigation?.navigate?.('NewsDetails', { article: full });
+  }, [navigation, trendingStories]);
+
   const routeArticle = route?.params?.article || null;
   const initialArticle = useMemo(() => normalizeArticle(routeArticle), [routeArticle]);
 
@@ -553,9 +562,11 @@ export default function NewsDetailsScreen({ route, navigation }) {
           '',
       });
       const likedByCurrentUser = Boolean(
-        user?.email
+        matchedItem.liked_by_me || (
+          user?.email
           && Array.isArray(matchedItem.liked_by)
           && matchedItem.liked_by.includes(String(user.email).trim().toLowerCase())
+        )
       );
 
       setArticle(mergedArticle);
@@ -714,8 +725,11 @@ export default function NewsDetailsScreen({ route, navigation }) {
   }, [article.author_email, article.createdBy, currentUserEmail, followLoading, isFollowingAuthor, refreshAuthorFollowState]);
 
   const handleLike = useCallback(async () => {
+    const wasLiked = isLiked;
+    setIsLiked(!wasLiked);
+    setLikeCount((count) => Math.max(0, Number(count || 0) + (wasLiked ? -1 : 1)));
     const result = await UserStore.updateNewsFeedItem(article.id, 'like', { liked: isLiked });
-    if (!result?.ok) { Alert.alert('Error', result?.message || 'Could not update like'); return; }
+    if (!result?.ok) { setIsLiked(wasLiked); setLikeCount((count) => Math.max(0, Number(count || 0) + (wasLiked ? 1 : -1))); Alert.alert('Error', result?.message || 'Could not update like'); return; }
     await loadArticleDetails();
   }, [article.id, isLiked, loadArticleDetails]);
 
@@ -913,6 +927,15 @@ export default function NewsDetailsScreen({ route, navigation }) {
       >
         <View style={styles.pageBodyShell}>
           <View style={[styles.pageBodyInner, isCompactLayout && styles.pageBodyInnerCompact]}>
+            {!isCompactLayout ? (
+              <View style={styles.leftSidebar}>
+                <LeftEcomSidebar
+                  navigation={navigation}
+                  stories={trendingStories}
+                  onOpenDetails={handleOpenSidebarTopic}
+                />
+              </View>
+            ) : null}
             <View style={styles.storyColumn}>
                    <View style={[styles.storyCardShell, isCompactLayout && styles.storyCardShellCompact]}>
                 <TouchableOpacity
@@ -938,11 +961,18 @@ export default function NewsDetailsScreen({ route, navigation }) {
                         {article.author_has_blue_tick ? <VerifiedBadge size={20} /> : null}
                       </View>
                       <Text style={styles.storyAuthorRoleText}>
-                        {article.author_seat_name || article.author_role_label || 'Reporter'}
+                        {(() => {
+                          const planForRole = article.author_subscription_plan || null;
+                          const planRoleLabel = (planForRole?.role_names?.length
+                            ? planForRole.role_names
+                            : String(UserStore.getSeatRoleNameForPlanRoleId(planForRole?.role_id_raw || planForRole?.role_id || '') || '').split(', ')
+                          ).filter(Boolean).join(', ');
+                          return planRoleLabel || article.author_role_label || 'Reporter';
+                        })()}
                       </Text>
                     </View>
                   </View>
-                  {String(article.createdBy || article.author_email || '').trim().toLowerCase() !== currentUserEmail ? (
+                 {false ? (
                     <TouchableOpacity
                       style={[styles.followAuthorButton, isFollowingAuthor && styles.followAuthorButtonActive, followLoading && styles.followAuthorButtonDisabled]}
                       onPress={handleToggleFollowAuthor}
@@ -960,9 +990,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
                   {article.title}
                 </Text>
 
-                {article.subtitle && article.subtitle !== article.excerpt ? (
-                  <Text style={styles.storySubtitleText}>{article.subtitle}</Text>
-                ) : null}
+
 
                 {article.excerpt ? (
                   <Text style={styles.storyExcerptText}>{article.excerpt}</Text>
@@ -973,10 +1001,12 @@ export default function NewsDetailsScreen({ route, navigation }) {
                     <Ionicons name="calendar-outline" size={17} color="#94a3b8" />
                                    <Text style={styles.storyMetaPillText}>{formatArticleDate(article.date)}</Text>
                   </View>
-                  <View style={styles.storyMetaPill}>
-                    <Ionicons name="time-outline" size={17} color="#94a3b8" />
-                    <Text style={styles.storyMetaPillText}>{article.publishedAgo}</Text>
-                  </View>
+                  {article.category ? (
+                    <View style={styles.storyMetaPill}>
+                      <Ionicons name="pricetag-outline" size={17} color="#94a3b8" />
+                      <Text style={styles.storyMetaPillText} numberOfLines={1}>{article.category}</Text>
+                    </View>
+                  ) : null}
                   {locationLabel ? (
                     <View style={styles.storyMetaPill}>
                       <Ionicons name="pin-outline" size={17} color="#94a3b8" />
@@ -1015,6 +1045,13 @@ export default function NewsDetailsScreen({ route, navigation }) {
                         </View>
                       ) : null}
                     </TouchableOpacity>
+                  ) : article.images.length > 1 ? (
+                    <MediaGallery
+                      images={article.images}
+                      width={Math.max(1, responsiveWidth - (isCompactLayout ? 32 : 64))}
+                      maxHeight={220}
+                      radius={5}
+                    />
                   ) : heroImageSource ? (
                     <Image source={heroImageSource} style={styles.storyHeroImage} resizeMode="cover" />
                   ) : (
@@ -1085,7 +1122,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
                   ) : null}
                 </View>
 
-                {article.images.length > 1 ? (
+                {false ? (
                   <View style={styles.storyBodySection}>
                     <Text style={styles.storyBodyTitle}>Gallery</Text>
                     <ScrollView horizontal showsHorizontalScrollIndicator={false}>
@@ -1267,24 +1304,25 @@ function GalleryImage({ rawUri }) {
 }
 
 const styles = StyleSheet.create({
-    screenShell: { flex: 1, backgroundColor: '#f1f5f9' },
+    screenShell: { flex: 1, backgroundColor: IS_WEB ? '#f1f5f9' : '#ffffff' },
   pageScrollView: { flex: 1 },
-  pageScrollContent: { paddingTop: 0, paddingBottom: 80, flexGrow: 1 },
+  pageScrollContent: { paddingTop: 0, paddingBottom: IS_WEB ? 0 : 80, flexGrow: 1 },
   pageScrollContentWithMobileNav: { paddingBottom: 110 },
-    pageBodyShell: { paddingTop: 0, marginTop: -1, backgroundColor: '#f1f5f9', flexGrow: 1 },
+    pageBodyShell: { paddingTop: 0, marginTop: -1, backgroundColor: IS_WEB ? '#f1f5f9' : '#ffffff', flexGrow: 1 },
    pageBodyInner: {
-    maxWidth: 1160,
+    maxWidth: 1360,
     width: '100%',
     alignSelf: 'center',
     flexDirection: IS_WEB ? 'row' : 'column',
     alignItems: 'flex-start',
-    gap: 24,
-    paddingTop: 18,
-    paddingHorizontal: 16,
+       gap: 24,
+    paddingTop: IS_WEB ? 18 : 0,
+    paddingHorizontal: IS_WEB ? 16 : 0,
   },
   pageBodyInnerCompact: { flexDirection: 'column' },
-    storyColumn: { flex: 1, width: '100%', maxWidth: 700 },
+    storyColumn: { flex: 1, width: '100%', maxWidth: 700, minWidth: 0 },
   trendingSidebar: { width: 340, flexShrink: 0 },
+  leftSidebar: { width: 300, flexShrink: 0 },
   utilityRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1326,7 +1364,9 @@ const styles = StyleSheet.create({
       default: { elevation: 2, shadowColor: '#0f172a', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3 },
     }),
   },
-  storyCardShellCompact: { padding: 16, borderRadius: 10 },
+  storyCardShellCompact: IS_WEB
+    ? { padding: 16, borderRadius: 10 }
+    : { padding: 16, borderRadius: 0, borderWidth: 0, elevation: 0, shadowOpacity: 0 },
   storyAuthorRow: { marginBottom: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
   storyAuthorIdentity: { flex: 1, flexDirection: 'row', alignItems: 'center' },
   storyAuthorAvatarButton: { marginRight: 12, cursor: Platform.OS === 'web' ? 'zoom-in' : 'default' },

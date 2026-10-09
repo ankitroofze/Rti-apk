@@ -45,6 +45,7 @@ import CertificationScreen from '../pages/CertificationScreen';
 import MySubscriptionsScreen from '../pages/MySubscriptionsScreen';
 import NotificationsScreen from '../pages/NotificationsScreen';
 import EcomeScreen from './EcomeScreen';
+import MyEnquiriesScreen from '../pages/MyEnquiriesScreen';
 
 // Font Family
 const FONT_FAMILY = Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto';
@@ -314,13 +315,14 @@ const MENU_SECTIONS = [
       { label: 'e-Paper', icon: 'document-text-outline', screen: 'e-Paper', iconStyle: 'indigo' },
       { label: 'Live Streaming', icon: 'radio-outline', screen: 'Live Streaming', iconStyle: 'red', badge: 'LIVE', badgeColor: '#16a34a' },
       { label: 'Certification', icon: 'ribbon-outline', screen: 'Certification', iconStyle: 'cyan' },
-      { label: 'Notifications', icon: 'notifications-outline', screen: 'Notifications', iconStyle: 'green', badge: '3', badgeColor: '#e11d48' },
+      { label: 'Notifications', icon: 'notifications-outline', screen: 'Notifications', iconStyle: 'green', badge: '0', badgeColor: '#e11d48' },
     ],
   },
   {
     title: 'Marketplace',
     items: [
-      { label: 'Ecome (buy / sell)', icon: 'leaf-outline', screen: 'Ecome', iconStyle: 'farmGreen' },
+    { label: 'Ecome (buy / sell)', icon: 'leaf-outline', screen: 'Ecome', iconStyle: 'farmGreen' },
+      { label: 'Ecom Enquiries', icon: 'chatbubbles-outline', screen: 'MyEnquiries', iconStyle: 'orange' },
     ],
   },
   {
@@ -388,8 +390,9 @@ const CARD_DESCS = {
   'e-Paper': 'Read the digital edition',
   'Live Streaming': 'Go live or watch broadcasts',
   'Certification': 'Earn & showcase credentials',
-  'Notifications': '3 unread alerts waiting',
+ 'Notifications': '0 unread alerts waiting',
   'Ecome (buy / sell)': 'Buy, sell or rent e-commerce resources',
+  'Ecom Enquiries': 'Received & sent enquiries',
   'Logout': 'Sign out of your account',
 };
 
@@ -407,7 +410,8 @@ const WEB_MODULES = [
   { label: 'Live Streaming', icon: 'radio-outline', screen: 'Live Streaming', iconStyle: 'red', component: LiveStreamingScreen },
   { label: 'Certification', icon: 'ribbon-outline', screen: 'Certification', iconStyle: 'cyan', component: CertificationScreen },
   { label: 'Notifications', icon: 'notifications-outline', screen: 'Notifications', iconStyle: 'green', component: NotificationsScreen },
-  { label: 'Ecome (buy / sell)', icon: 'leaf-outline', screen: 'Ecome', iconStyle: 'farmGreen', component: EcomeScreen },
+{ label: 'Ecome (buy / sell)', icon: 'leaf-outline', screen: 'Ecome', iconStyle: 'farmGreen', component: EcomeScreen },
+  { label: 'Ecom Enquiries', icon: 'chatbubbles-outline', screen: 'MyEnquiries', iconStyle: 'orange', component: MyEnquiriesScreen },
   { label: 'Logout', icon: 'log-out-outline', screen: '__logout__', iconStyle: 'rose', isDestructive: true },
 ];
 
@@ -589,7 +593,7 @@ function QuickMenuWeb({ navigation }) {
               { label: 'Wallet', value: '₹4,820', sub: '↑ 12% this month', subColor: '#16a34a' },
               { label: 'Network', value: '1,340', sub: 'connections' },
               { label: 'Articles', value: '58', sub: 'published' },
-              { label: 'Alerts', value: '3', sub: 'unread', subColor: '#e11d48' },
+           { label: 'Alerts', value: '0', sub: 'unread', subColor: '#e11d48' },
             ].map((s) => {
               const statMeta = {
                 Wallet: { icon: 'wallet-outline', tone: 'wallet', color: '#ea580c' },
@@ -669,7 +673,8 @@ function QuickMenuMobile({ navigation }) {
       navigation.navigate('Home');
       return;
     }
-    navigation.navigate(item.screen);
+    // Wallet se back karne par wapas Quick Menu par aaye
+    navigation.navigate(item.screen, item.screen === 'Wallet' ? { returnTo: 'QuickMenu' } : undefined);
   };
 
   return (

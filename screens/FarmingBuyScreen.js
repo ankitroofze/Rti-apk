@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -426,12 +427,18 @@ export default function FarmingBuyScreen({ navigation }) {
 
   const loadListings = useCallback(async () => {
     setLoading(true);
-    const summary = await UserStore.getEcomeMarketplaceSummary();
+    const summary = await UserStore.getEcomeMarketplaceSummary({ skipBlockedUsers: false });
     setListings(Array.isArray(summary?.listings) ? summary.listings : []);
     setLoading(false);
   }, []);
 
-  useFocusEffect(useCallback(() => { loadListings(); }, [loadListings]));
+  const lastLoadRef = useRef(0);
+  useFocusEffect(useCallback(() => {
+    // 30 sec ke andar dobara focus ho to reload mat karo
+    if (Date.now() - lastLoadRef.current < 30000 && listings.length) return;
+    lastLoadRef.current = Date.now();
+    loadListings();
+  }, [loadListings, listings.length]));
 
   const categories = useMemo(() => {
     const fromData = Array.from(
@@ -495,7 +502,7 @@ export default function FarmingBuyScreen({ navigation }) {
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <View style={{ height: insets.top, backgroundColor: '#fff' }} />
+      {Platform.OS !== 'android' && <View style={{ height: insets.top, backgroundColor: '#fff' }} />}
 
       <View style={isWideWeb ? styles.pageRow : { flex: 1 }}>
       <View style={{ flex: 1 }}>
@@ -512,28 +519,10 @@ export default function FarmingBuyScreen({ navigation }) {
           </TouchableOpacity>
         }
       />
-      {Platform.OS !== 'web' && (
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn} activeOpacity={0.75}>
-              <Ionicons name="chevron-back" size={22} color="#334155" />
-            </TouchableOpacity>
-            <View style={styles.brandRow}>
-              <View style={styles.brandIcon}>
-                <Ionicons name="bag-handle" size={16} color="#fff" />
-              </View>
-              <Text style={styles.headerTitle}>Ecome Marketplace</Text>
-            </View>
-          </View>
-
-          <View style={styles.headerRight}>
-            <TouchableOpacity onPress={() => navigation.navigate('Sell')} style={styles.sellBtn} activeOpacity={0.85}>
-              <Ionicons name="add" size={18} color="#fff" />
-              <Text style={styles.sellBtnText}>Sell</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
+      {Platform.OS !== 'web' ? (
+<ModuleAndroidHeader title="Ecome Marketplace" onBack={() => navigation.goBack()} />
+) : null}
+{/* White native header removed — red ModuleAndroidHeader hi use hota hai */}
       {/* Search row — kept on its own line under the header so search functionality isn't lost
       <View style={styles.searchRow}>
         <View style={[styles.searchWrap, isWideWeb && styles.searchWrapWide]}>
@@ -761,6 +750,12 @@ export default function FarmingBuyScreen({ navigation }) {
                       ) : null}
                       <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
                       <Text style={styles.cardDesc} numberOfLines={2}>{item.description || 'No description added.'}</Text>
+                      {item.city ? (
+                        <View style={styles.cardCityRow}>
+                          <Ionicons name="location-outline" size={13} color="#64748b" />
+                          <Text style={styles.cardCityText} numberOfLines={1}>{item.city}</Text>
+                        </View>
+                      ) : null}
                       <Text style={styles.cardPrice}>{money(item.price)}</Text>
                       <View style={styles.cardBottomRow}>
                         <TouchableOpacity
@@ -856,6 +851,7 @@ export default function FarmingBuyScreen({ navigation }) {
                       </View>
                     ) : null}
                     <View style={styles.modalInfoGrid}>
+                      <InfoRow icon="location-outline" label="City" value={selectedProduct.city} />
                       <InfoRow icon="person-outline" label="Seller" value={selectedProduct.owner_name || selectedProduct.author_name} />
                       <InfoRow icon="call-outline" label="Contact" value={selectedProduct.contact} />
                       <InfoRow icon="time-outline" label="Listed" value={selectedProduct.createdAt ? getRelativeTime(selectedProduct.createdAt) : null} />
@@ -1372,6 +1368,14 @@ heroBannerImage: {
     fontSize: 11.5,
     color: '#94a3b8',
     marginTop: 3,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+  },
+  cardCityRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+  cardCityText: {
+    flex: 1,
+    marginLeft: 3,
+    fontSize: 12,
+    color: '#64748b',
     fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
   },
   cardPrice: {
