@@ -210,7 +210,7 @@ const ProductMedia = ({ item, onOpen }) => {
   );
 };
 
-const ProductGallery = ({ item, selectedIndex = 0, onSelectIndex }) => {
+const ProductGallery = ({ item, selectedIndex = 0, onSelectIndex, compact = false }) => {
   const mediaItems = getMediaItems(item);
   const activeIndex = Math.min(
     Math.max(Number(selectedIndex) || 0, 0),
@@ -230,7 +230,7 @@ const ProductGallery = ({ item, selectedIndex = 0, onSelectIndex }) => {
 
   return (
     <View style={styles.gallery}>
-      <View style={styles.galleryItem}>
+      <View style={compact ? styles.galleryItemCompact : styles.galleryItem}>
         {isActiveImage ? (
           <ResolvedMediaImage uri={activeMedia.uri} style={styles.modalProductImage} resizeMode="cover" />
         ) : (
@@ -405,6 +405,7 @@ export default function FarmingBuyScreen({ navigation }) {
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
     const isWideWeb = isWeb && width >= 900;
+    const isWideModal = isWeb && width >= 760;
   const [sidebarVisible, setSidebarVisible] = useState(false);
 
   const [loading, setLoading] = useState(true);
@@ -799,7 +800,7 @@ export default function FarmingBuyScreen({ navigation }) {
         onRequestClose={() => setSelectedProduct(null)}
       >
         <Pressable style={styles.modalBackdrop} onPress={() => setSelectedProduct(null)}>
-          <Pressable style={styles.detailSheet} onPress={() => {}}>
+          <Pressable style={[styles.detailSheet, isWideModal && styles.detailSheetWide]} onPress={() => {}}>
             {selectedProduct ? (
               <>
                 <TouchableOpacity
@@ -809,13 +810,18 @@ export default function FarmingBuyScreen({ navigation }) {
                 >
                   <Ionicons name="close" size={18} color="#64748b" />
                 </TouchableOpacity>
-                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
-                  <ProductGallery
-                    item={selectedProduct}
-                    selectedIndex={selectedImageIndex}
-                    onSelectIndex={setSelectedImageIndex}
-                  />
-                  <View style={styles.modalProductInfo}>
+                {isWideModal ? (
+                  <View style={styles.modalWideRow}>
+                    <View style={styles.modalWideLeft}>
+                      <ProductGallery
+                        item={selectedProduct}
+                        selectedIndex={selectedImageIndex}
+                        onSelectIndex={setSelectedImageIndex}
+                        compact
+                      />
+                    </View>
+                    <View style={styles.modalWideRight}>
+                  <View style={isWideModal ? styles.modalProductInfoWide : styles.modalProductInfo}>
                     <View style={styles.modalTitlePriceRow}>
                       <Text style={styles.modalProductTitle}>{selectedProduct.title || 'Untitled Product'}</Text>
                       <View style={styles.modalPriceBadge}>
@@ -847,7 +853,7 @@ export default function FarmingBuyScreen({ navigation }) {
                     {selectedProduct.description ? (
                       <View style={styles.modalDescSection}>
                         <Text style={styles.modalSectionLabel}>Description</Text>
-                        <Text style={styles.modalDescText}>{selectedProduct.description}</Text>
+                        <Text style={styles.modalDescText} numberOfLines={isWideModal ? 4 : undefined}>{selectedProduct.description}</Text>
                       </View>
                     ) : null}
                     <View style={styles.modalInfoGrid}>
@@ -871,7 +877,73 @@ export default function FarmingBuyScreen({ navigation }) {
                       <Text style={styles.modalActionText}>Send Enquiry</Text>
                     </TouchableOpacity>
                   </View>
-                </ScrollView>
+                    </View>
+                  </View>
+                ) : (
+                  <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+                  <ProductGallery
+                    item={selectedProduct}
+                    selectedIndex={selectedImageIndex}
+                    onSelectIndex={setSelectedImageIndex}
+                  />
+                  <View style={isWideModal ? styles.modalProductInfoWide : styles.modalProductInfo}>
+                    <View style={styles.modalTitlePriceRow}>
+                      <Text style={styles.modalProductTitle}>{selectedProduct.title || 'Untitled Product'}</Text>
+                      <View style={styles.modalPriceBadge}>
+                        <Text style={styles.modalPriceText}>{money(selectedProduct.price)}</Text>
+                      </View>
+                    </View>
+                    <View style={styles.modalMetaChipsRow}>
+                      {selectedProduct.sector ? (
+                        <View style={styles.metaChip}>
+                          <Ionicons name="grid-outline" size={12} color="#0369a1" />
+                          <Text style={styles.metaChipText}>
+                            {selectedProduct.sector.charAt(0).toUpperCase() + selectedProduct.sector.slice(1).toLowerCase()}
+                          </Text>
+                        </View>
+                      ) : null}
+                      {selectedProduct.city ? (
+                        <View style={styles.metaChip}>
+                          <Ionicons name="location-outline" size={12} color="#0369a1" />
+                          <Text style={styles.metaChipText}>{selectedProduct.city}</Text>
+                        </View>
+                      ) : null}
+                      {selectedProduct.quantity ? (
+                        <View style={styles.metaChip}>
+                          <Ionicons name="layers-outline" size={12} color="#0369a1" />
+                          <Text style={styles.metaChipText}>Qty: {selectedProduct.quantity}</Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    {selectedProduct.description ? (
+                      <View style={styles.modalDescSection}>
+                        <Text style={styles.modalSectionLabel}>Description</Text>
+                        <Text style={styles.modalDescText} numberOfLines={isWideModal ? 4 : undefined}>{selectedProduct.description}</Text>
+                      </View>
+                    ) : null}
+                    <View style={styles.modalInfoGrid}>
+                      <InfoRow icon="location-outline" label="City" value={selectedProduct.city} />
+                      <InfoRow icon="person-outline" label="Seller" value={selectedProduct.owner_name || selectedProduct.author_name} />
+                      <InfoRow icon="call-outline" label="Contact" value={selectedProduct.contact} />
+                      <InfoRow icon="time-outline" label="Listed" value={selectedProduct.createdAt ? getRelativeTime(selectedProduct.createdAt) : null} />
+                    </View>
+                    <View style={styles.modalActions}>
+                      <TouchableOpacity style={styles.modalCallBtn} onPress={() => handleCall(selectedProduct.contact)} activeOpacity={0.85}>
+                        <Ionicons name="call" size={18} color="#dc2626" />
+                        <Text style={[styles.modalActionText, { color: '#dc2626' }]}>Call Seller</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.modalWhatsappBtn} onPress={() => handleWhatsApp(selectedProduct)} activeOpacity={0.85}>
+                        <Ionicons name="logo-whatsapp" size={18} color="#fff" />
+                        <Text style={styles.modalActionText}>WhatsApp</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <TouchableOpacity style={styles.modalEnquiryBtn} onPress={() => openEnquiry(selectedProduct)} activeOpacity={0.85}>
+                      <Ionicons name="send" size={18} color="#fff" />
+                      <Text style={styles.modalActionText}>Send Enquiry</Text>
+                    </TouchableOpacity>
+                  </View>
+                  </ScrollView>
+                )}
               </>
             ) : null}
           </Pressable>
@@ -893,7 +965,24 @@ export default function FarmingBuyScreen({ navigation }) {
   );
 }
 
-const styles = StyleSheet.create({
+// iOS pe bhi Android jaisa Roboto: 'System' font ko weight ke hisaab se loaded Roboto variant se badalta hai
+const withRobotoOnIOS = (obj) => {
+  if (Platform.OS !== 'ios') return obj;
+  const out = {};
+  Object.keys(obj).forEach((k) => {
+    const st = obj[k];
+    if (st && typeof st === 'object' && st.fontFamily === 'System') {
+      const w = String(st.fontWeight || '400');
+      const family = (w === 'bold' || Number(w) >= 700) ? 'Roboto_700Bold' : (Number(w) >= 500 ? 'Roboto_500Medium' : 'Roboto_400Regular');
+      out[k] = { ...st, fontFamily: family, fontWeight: 'normal' };
+    } else {
+      out[k] = st;
+    }
+  });
+  return out;
+};
+
+const styles = StyleSheet.create(withRobotoOnIOS({
   root: { flex: 1, backgroundColor: '#f8fafc' },
   header: {
     flexDirection: 'row',
@@ -1061,7 +1150,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 14,
     flexDirection: 'row',
-    flexWrap: Platform.OS === 'android' ? 'wrap' : 'nowrap',
+    flexWrap: Platform.OS === 'web' ? 'nowrap' : 'wrap',
   },
   chip: {
     flexDirection: 'row',
@@ -1476,18 +1565,24 @@ heroBannerImage: {
   },
   modalCloseBtn: {
     position: 'absolute',
-    top: 12,
-    right: 14,
+    top: 6,
+    right: 8,
     zIndex: 10,
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: '#e2e8f0',
     alignItems: 'center',
     justifyContent: 'center',
   },
+  detailSheetWide: { maxWidth: 880, maxHeight: '92%' },
+  modalWideRow: { flexDirection: 'row', alignItems: 'stretch' },
+  modalWideLeft: { width: '46%', backgroundColor: '#f0fdf4' },
+  modalWideRight: { flex: 1, backgroundColor: '#fff', justifyContent: 'center' },
+  modalProductInfoWide: { backgroundColor: '#fff', padding: 18, paddingTop: 38 },
+  galleryItemCompact: { width: '100%', aspectRatio: 1, backgroundColor: '#f0fdf4', overflow: 'hidden' },
   gallery: { width: '100%', backgroundColor: '#f0fdf4' },
   galleryItem: { width: '100%', aspectRatio: 4 / 3 },
   modalProductImage: { width: '100%', height: '100%', backgroundColor: '#dcfce7' },
@@ -1768,4 +1863,4 @@ heroBannerImage: {
     fontWeight: '900',
     fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
   },
-});
+}));

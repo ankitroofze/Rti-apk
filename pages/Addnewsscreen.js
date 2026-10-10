@@ -301,6 +301,10 @@ const ms = StyleSheet.create({
   itemTextActive: { color: C.primary, fontFamily: FONT.bold },
 });
 
+const MAX_VIDEO_MB = 10;
+const MAX_VIDEO_BYTES = MAX_VIDEO_MB * 1024 * 1024;
+const VIDEO_TOO_LARGE_MSG = `Video size is too large. Please post a video of ${MAX_VIDEO_MB}MB or less.`;
+
 export default function AddNewsScreen({ navigation, route }) {
   const [fontsLoaded] = useFonts({
     Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black,
@@ -470,7 +474,7 @@ const admin = user.role === 'admin';
     const existingMediaType = existingImages.length ? 'Image' : editItem.video ? 'Video' : editItem.file ? 'File' : 'None';
     setMediaType(existingMediaType);
     setImages(existingImages);
-    if (editItem.video) setVideo(editItem.video);
+    if (editItem.video) setVideo(typeof editItem.video === 'string' ? editItem.video : (editItem.video.uri || null));
     if (editItem.file) setAttachment({ uri: editItem.file, name: editItem.file_name || 'attachment' });
 
     titleHtmlRef.current = plainToHtml(existingTitle);
@@ -644,8 +648,8 @@ const admin = user.role === 'admin';
           return;
         }
 
-        if (asset.size && asset.size > 50 * 1024 * 1024) {
-          showToast('Video is too large (max 50MB).', 'error');
+        if (asset.size && asset.size > MAX_VIDEO_BYTES) {
+          showToast(VIDEO_TOO_LARGE_MSG, 'error');
           return;
         }
 
@@ -678,8 +682,8 @@ const admin = user.role === 'admin';
       if (!nativeResult.canceled && nativeResult.assets?.[0]) {
         const asset = nativeResult.assets[0];
 
-        if (asset.fileSize && asset.fileSize > 50 * 1024 * 1024) {
-          showToast('Video is too large (max 50MB).', 'error');
+        if (asset.fileSize && asset.fileSize > MAX_VIDEO_BYTES) {
+          showToast(VIDEO_TOO_LARGE_MSG, 'error');
           return;
         }
 
@@ -829,110 +833,9 @@ console.log("Platform:", Platform.OS);
     }
 
 
-    const backendNewsId = apiResult?.news?.id ?? apiResult?.data?.id ?? apiResult?.data?.news?.id;
-if (!backendNewsId) {
-  setSaving(false);
-  showToast('News created but ID missing from server response.', 'error');
-  return;
-}
-
-
- 
- 
-    // ✅ FIX: backend already uploaded the media and returned a real, shareable URL.
-    // Use that instead of a browser/device-local reference (idb-media:/file://)
-    // which only works on the device that created the post.
-    const backendNewsRecord = apiResult?.news || apiResult?.data?.news || apiResult?.data || {};
-    console.log('[AddNews] backendNewsRecord (check field name here):', backendNewsRecord);
-
-    const backendMediaUrl = String(
-      backendNewsRecord.media_url || backendNewsRecord.media || backendNewsRecord.image_url ||
-      backendNewsRecord.image || backendNewsRecord.file_url || backendNewsRecord.path || ''
-    ).trim();
-
-    const savedImages = mediaType === 'Image'
-      ? await Promise.all(
-        (Array.isArray(images) ? images : []).map((uri, idx) => (
-          // Sirf pehli image hi backend ko bheji gayi thi (mediaUriToSend = images[0]),
-          // isliye sirf usi ke liye real server URL milega. Baaki images abhi bhi
-          // local-only rahengi jab tak backend multi-image upload support na kare.
-          idx === 0 && backendMediaUrl
-            ? backendMediaUrl
-            : (Platform.OS === 'web'
-                ? storeWebUriToIdbMedia(uri, { prefix: 'image', mimeType: 'image/jpeg' })
-                : persistToUploadsDir({ uri, subdir: 'images', fallbackExt: 'jpg' }))
-        ))
-      )
-      : [];
-
-    const savedVideo = mediaType === 'Video' && video
-      ? (backendMediaUrl || (
-        Platform.OS === 'web'
-          ? await storeWebUriToIdbMedia(video, { prefix: 'video', mimeType: 'video/mp4' })
-          : await persistToUploadsDir({ uri: video, subdir: 'videos', fallbackExt: 'mp4' })
-      ))
-      : null;
-
-    const savedVideoThumb = mediaType === 'Video' && videoThumb
-      ? (
-        Platform.OS === 'web'
-          ? await storeWebUriToIdbMedia(videoThumb, { prefix: 'image', mimeType: 'image/jpeg' })
-          : await persistToUploadsDir({ uri: videoThumb, subdir: 'images', fallbackExt: 'jpg' })
-      )
-      : '';
-
-    const newsItem = {
-      id: String(backendNewsId), 
-      type: postType,
-      title: titlePlain,
-
-      title_html: titleHtml,
-
-      description: descriptionPlain,
-      description_html: descriptionHtml,
-      mediaType,
-      images: savedImages,
-      video: savedVideo,
-      image: mediaType === 'Video' ? savedVideoThumb :
-             mediaType === 'Image' && savedImages.length > 0 ? savedImages[0] : '',
-      thumbnail: mediaType === 'Video' ? savedVideoThumb :
-             mediaType === 'Image' && savedImages.length > 0 ? savedImages[0] : '',
-      file: mediaType === 'File' ? attachment : null,
-      report_type: reportType,
-      role_type: roleType,
-      category: reportType || stateValue || 'General',
-      language: String(language || '').trim().toLowerCase(),
-      state: stateValue,
-      district: isSubscribedUser ? locationDistrict : '',
-      taluka: isSubscribedUser ? locationTaluka : '',
-      status: user.role === 'admin' ? 'approved' : 'pending',
-      createdBy: user.email,
-      author_name: user.name || 'User',
-            author_profile_image: isRemoteImageUrl(user.profile_image) ? user.profile_image : '',
-      author_has_blue_tick: UserStore.hasBlueTick(user),
-      author_is_premium: UserStore.hasPremiumAccess(user),
-      author_is_subscriber: UserStore.hasActiveSubscription(user),
-      author_role: user.role || 'free',
-      author_role_label: user.role_label || '',
-      author_seat_id: user.state_seat?.seat_id || '',
-      author_seat_name: user.state_seat?.seat_name || '',
-      createdAt: new Date().toISOString(),
-      date: new Date().toLocaleDateString('en-IN'),
-      views: 0,
-      shares: 0,
-      likes: 0,
-      comments: 0,
-      liked_by: [],
-    };
-
-    const allNews = [...(user.news || []), newsItem];
-    const updated = await UserStore.updateUser(user.email, { news: allNews });
+    // ✅ Post sirf SERVER par bani hai. Local `user.news` me koi copy save nahi hoti —
+    // feed hamesha server (GET /news) se hi data lega.
     setSaving(false);
-
-    if (!updated) {
-      showToast('Failed to save. Try again.', 'error');
-      return;
-    }
 
     await AsyncStorage.removeItem(`${NEWS_DRAFT_PREFIX}${String(user.email || '').toLowerCase()}`);
 
@@ -965,7 +868,8 @@ if (!backendNewsId) {
       navigation.dispatch(
         CommonActions.reset({
           index: 0,
-          routes: [{ name: 'News Feed' }],
+          // Feed (Reel) post => seedha Feed section, News post => News Feed
+          routes: [{ name: postType === 2 ? 'Feed' : 'News Feed' }],
         })
       );
     }, 800);
@@ -1084,7 +988,7 @@ if (!backendNewsId) {
 
   const videoUploadBlock = mediaType === 'Video' ? (
     <View style={T.mediaBlock}>
-      <Text style={T.subLabel}>Upload one video (15s to 1 minute, max 50MB).</Text>
+      <Text style={T.subLabel}>Upload one video (15s to 1 minute, max 10MB).</Text>
       {video ? (
         <View style={T.videoPreviewWrap}>
           <VideoPreview uri={video} style={T.videoPreview} contentFit="cover" />
@@ -1178,8 +1082,7 @@ if (!backendNewsId) {
 
             {/* 3. Description */}
             <View style={ws.section}>
-              <SectionLabel number="3" title="Write Description For News" />
-              <Text style={ws.subLabel}>Write the full report here. Be clear, concise and factual.</Text>
+              <SectionLabel number="2" title="Write Description For News" />
               <TextInput
                 style={ws.inputMulti}
                 placeholder="Enter description..."
@@ -1194,7 +1097,7 @@ if (!backendNewsId) {
 
             {/* 4. Report Type */}
             <View style={ws.section}>
-              <SectionLabel number="4" title="Select Report Type" />
+              <SectionLabel number="3" title="Select Report Type" />
                           <TouchableOpacity style={ws.select} onPress={() => setReportPickerVisible(true)}>
                 <Feather name="tag" size={14} color={C.textSub} />
                 <Text style={[ws.selectText, !reportType && ws.selectPlaceholder]}>
@@ -1206,7 +1109,7 @@ if (!backendNewsId) {
 
             {/* 5. Media Type */}
             <View style={ws.section}>
-              <SectionLabel number="5" title="Select Media Type" optional />
+              <SectionLabel number="4" title="Select Media Type" optional />
               {mediaTypeChips}
               {imageUploadBlock}
               {videoUploadBlock}
@@ -1391,7 +1294,7 @@ if (!backendNewsId) {
 
           {/* 4. Report Type */}
           <View style={s.section}>
-            <SectionLabel number="4" title="Select Report Type" />
+            <SectionLabel number="3" title="Select Report Type" />
                         <TouchableOpacity style={s.select} onPress={() => setReportPickerVisible(true)}>
               <Feather name="tag" size={16} color={C.textSub} />
               <Text style={[s.selectText, !reportType && s.selectPlaceholder]}>
@@ -1403,7 +1306,7 @@ if (!backendNewsId) {
 
           {/* 5. Media Type */}
           <View style={s.section}>
-            <SectionLabel number="5" title="Select Media Type" optional />
+            <SectionLabel number="4" title="Select Media Type" optional />
             {mediaTypeChips}
             {imageUploadBlock}
             {videoUploadBlock}

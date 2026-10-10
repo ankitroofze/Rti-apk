@@ -572,6 +572,7 @@ const defaultWalletTransactions = [
 // ];
 
 
+const PENDING_ROLE_PAYMENT_KEY = 'pending_role_payment_v1';
 let cachedBackendPlans = [];
 let roleLookupPlans = []; // bina user-filter wali poori plans list (active plan ka naam/price/roles dhoondhne ke liye)
 
@@ -720,7 +721,7 @@ const buildCommentTreeFromApi = (rawList = [], { sort = true, me = null } = {}) 
     const parentKey = `cmt-${c.parent_comment_id}`;
     const parent = topMap.get(parentKey);
     if (parent) parent.replies.push({ ...c });
-    else topLevel.push({ ...c, replies: [] }); // orphan reply, top-level dikha do
+    else if (__DEV__) console.log('[COMMENTS-ORPHAN-REPLY-SKIPPED]', c.id, c.parent_comment_id); // reply ko top-level comment mat banao, replies /comments/{id}/replies se aate hain
   });
 
    if (sort) {
@@ -1038,9 +1039,17 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
     return String(x.url || x.image_url || x.media_url || x.image || x.path || x.file || x.src || '').trim();
   };
   const collectedImages = [];
+  const seenImageKeys = new Set();
+  // Same photo kabhi media_url me aur kabhi images[] me alag URL form (query/host) se aati hai —
+  // isliye file name se dedupe karo, warna 2 photo post karne par 3 dikhti hain.
+  const imageKeyOf = (u) => String(u).split('#')[0].split('?')[0].split('/').pop().toLowerCase();
   const pushImage = (x) => {
     const u = resolveMediaUrl(imageUrlOf(x));
-    if (u && !collectedImages.includes(u)) collectedImages.push(u);
+    if (!u) return;
+    const key = imageKeyOf(u) || u;
+    if (seenImageKeys.has(key)) return;
+    seenImageKeys.add(key);
+    collectedImages.push(u);
   };
   if (mediaType === 'Image') {
     pushImage(mediaUrl);
@@ -1595,21 +1604,42 @@ const hasPremiumAccess = (user = {}) => {
   return isPremiumPlan(user.subscription_plan) || String(user.subscription_type || '').toLowerCase() === 'premium';
 };
 
+// Expiry value kabhi date-only ("2026-12-31") aata hai, kabhi full datetime
+// ("2026-12-31T10:00:00Z" / "2026-12-31 10:00:00"). Date-only ko din ke END tak valid maano,
+// datetime ko exact time par. Pehle sab par "T23:59:59" jod diya jaata tha — datetime par
+// date invalid ho jaati thi aur plan kabhi expire hua nahi maana jaata tha.
+const parseExpiryMs = (value) => {
+  if (value === undefined || value === null || value === '') return NaN;
+  const str = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return new Date(`${str}T23:59:59`).getTime();
+  return new Date(str.includes(' ') && !str.includes('T') ? str.replace(' ', 'T') : str).getTime();
+};
+const isExpiredValue = (value) => {
+  const t = parseExpiryMs(value);
+  return Number.isFinite(t) && Date.now() > t;
+};
+
 const hasActiveSubscription = (user = {}) => {
   if (!user) return false;
   const plan = getRoleSubscriptionPlan(user);
   const expiresAt = plan?.expires_at || plan?.expiry || plan?.end_date;
-  if (expiresAt) {
-    const expiresTime = new Date(`${expiresAt}T23:59:59`).getTime();
-    if (!Number.isNaN(expiresTime) && Date.now() > expiresTime) return false;
-  }
+  if (expiresAt && isExpiredValue(expiresAt)) return false;
   if (user.is_subscribed !== undefined) return Boolean(user.is_subscribed);
   // Public profile/news responses may provide the active plan but omit the
   // private `is_subscribed` flag. Respect an active server plan in that case.
   const planStatus = String(plan?.status || plan?.subscription_status || '').trim().toLowerCase();
   if (plan && !['cancelled', 'canceled', 'expired', 'inactive', 'failed'].includes(planStatus)) return true;
+  // Legacy fallback: sirf RECENT ROLE payment ko maano (ads/ecom/quiz payment ya bahut purani
+  // payment se user hamesha "subscribed" nahi banna chahiye).
   const history = Array.isArray(user.payment_history) ? user.payment_history : [];
-  if (history.some((h) => String(h.status || '').toLowerCase() === 'success')) return true;
+  const yearAgo = Date.now() - 366 * 24 * 60 * 60 * 1000;
+  if (history.some((h) => {
+    if (String(h.status || '').toLowerCase() !== 'success') return false;
+    const mod = String(h.module || 'role').toLowerCase();
+    if (mod !== 'role') return false;
+    const t = new Date(h.date || 0).getTime();
+    return Number.isFinite(t) && t >= yearAgo;
+  })) return true;
   return false;
 };
 // Quiz subscription ab sirf expiry-date se nahi, balki bache hue "quiz count" se bhi
@@ -2545,6 +2575,8 @@ consumeQuizAttempt: async () => {
      hasBlueTick: (user) => hasBlueTick(user),
    hasBlueTickFeatures: (user) => hasBlueTickFeatures(user),
   isPremiumPlan: (plan) => isPremiumPlan(plan),
+  // true agar expiry (date ya datetime) nikal chuki ho
+  isExpired: (value) => isExpiredValue(value),
   getRoleFromPlanId,
   getRoleLabel,
     getSeatIdsForRoleId: (roleIdRaw) =>
@@ -3027,18 +3059,31 @@ consumeQuizAttempt: async () => {
           return a.name.localeCompare(b.name);
         });
 
+        // Apni khud ki row network list / member count me nahi aani chahiye — sirf mere referred members.
+        // (Commission total me apna commission phir bhi gina jaata hai, isliye total alag nikaal rahe hain.)
+      const memberRows = rows.filter((r) => !r.isCurrentUser);
+      let localCommissionTotal = rows.reduce((sum, r) => sum + (Number(r.commission) || 0), 0);
+      let backendCommission = null; // server ka total (sabhi devices par same)
+      const selfEmail = String(currentUser.email || '').trim().toLowerCase();
+      const selfMobile = String(currentUser.mobile || currentUser.phone || '').replace(/\D/g, '').slice(-10);
         // ✅ Backend se wo log jinhone MERA referral code use kiya (dusre device ke bhi)
-      let mergedRows = rows;
+      let mergedRows = memberRows;
       try {
         const refRes = await AuthAPI.getReferrals();
         if (refRes?.ok) {
           const root = refRes.data?.data || refRes.data || {};
+          const rawBackendCommission = root.total_commission ?? root.commission;
+          if (rawBackendCommission !== undefined && rawBackendCommission !== null && Number.isFinite(Number(rawBackendCommission))) {
+            backendCommission = Number(rawBackendCommission);
+          }
           const apiUsers = Array.isArray(root.referred_users) ? root.referred_users
             : Array.isArray(root.referrals) ? root.referrals
             : Array.isArray(root.users) ? root.users : [];
           const truthy = (v) => v === true || v === 1 || v === '1' || String(v || '').toLowerCase() === 'active';
           const seen = new Set();
-          rows.forEach((r) => {
+          if (selfEmail) seen.add(selfEmail);
+          if (selfMobile) seen.add(selfMobile);
+          memberRows.forEach((r) => {
             const id = String(r.user_id || '').trim().toLowerCase();
             const mob = String(r.mobile || '').replace(/\D/g, '').slice(-10);
             if (id) seen.add(id);
@@ -3075,7 +3120,8 @@ consumeQuizAttempt: async () => {
             });
           });
           extra.sort((a, b) => a.name.localeCompare(b.name));
-          mergedRows = [...rows, ...extra];
+          mergedRows = [...memberRows, ...extra];
+          localCommissionTotal += extra.reduce((sum, r) => sum + (Number(r.commission) || 0), 0);
         }
       } catch (e) {
         console.warn('[getMyNetwork] backend referred_users failed:', e);
@@ -3086,6 +3132,8 @@ consumeQuizAttempt: async () => {
         totalMembers:  mergedRows.length,
         linkedMembers: mergedRows.filter((r) => r.level !== '-' && !r.isCurrentUser).length,
         rows: mergedRows,
+        // Total commission: server ka total (phone/web sync) aur is device ka local total — jo bada ho wo.
+        total_commission: Math.max(Number(backendCommission) || 0, localCommissionTotal),
       };
     } catch { return null; }
   },
@@ -3098,8 +3146,16 @@ consumeQuizAttempt: async () => {
       if (!walletRes.ok || !walletRes.wallet) return null;
       const w = walletRes.wallet;
       const transactions = normalizeWalletTransactions(txnRes.ok ? txnRes.transactions : []);
+      // Network tab ka "Total Commission" (sabhi levels ka) wahi total wallet me bhi dikhane ke liye
+      let expectedCommission = 0;
+      try {
+        const network = await UserStore.getMyNetwork();
+        expectedCommission = Number(network?.total_commission) || 0;
+      } catch { expectedCommission = 0; }
       return {
-        total_balance: w.withdrawable_balance || 0,
+        expected_commission: expectedCommission,
+        // Total Balance = wallet ka paisa + network commission (dono ka total)
+        total_balance: (Number(w.withdrawable_balance) || 0) + expectedCommission,
         total_credit:  w.total_earned || 0,
         total_debit:   Math.max((w.total_earned || 0) - (w.withdrawable_balance || 0) - (w.pending_commission || 0), 0),
         transactions,
@@ -3733,35 +3789,47 @@ syncRoleSubscriptionV3: async (existingUser) => {
 
    // opts.skipSync = true => backend sync chhod do (filter badalne par baar baar sync ki zaroorat nahi)
    getSubscriptionSummary: async (loc = {}, opts = {}) => {
-    try {
-    const baseUser = await UserStore.getCurrentUser();
-    const user = opts.skipSync ? baseUser : await UserStore.syncSubscriptionFromBackend(baseUser);
-      if (!user) return null;
+    // null SIRF tab jab user sach me logged-out ho. Network / server error par ab null nahi
+    // aata (pehle null milte hi screen Login par bhej deti thi), balki cached data + loadFailed.
+    let baseUser = null;
+    try { baseUser = await UserStore.getCurrentUser(); } catch { baseUser = null; }
+    if (!baseUser) return null;
 
-      // ✅ FIX: dummy array ki jagah ab real plans backend se fetch honge
-      // ✅ is_sold har baar fresh chahiye (location/hold ke hisaab se badalta hai) — cache skip
-      let plans = [];
-      {
-       const plansRes = await AuthAPI.getRoleSubscriptionPlans(user.id, loc);
-        if (plansRes.ok && Array.isArray(plansRes.plans)) {
-          plans = plansRes.plans.map(normalizeBackendPlan);
-          cachedBackendPlans = plans; // ✅ cache kar liya taaki baar baar fetch na ho
-        } else {
-                  console.warn('[getSubscriptionSummary] Plans fetch failed:', plansRes.message);
-          plans = cachedBackendPlans;
-        }
+    const buildResult = (user, plans, extra = {}) => ({
+      currentUser: user,
+      activePlan:  UserStore.buildActivePlan(user, plans),
+      plans,
+      currentRole:      user.role || 'free',
+      currentRoleLabel: getRoleLabel(user.role || 'free'),
+      ...extra,
+    });
+
+    try {
+      let user = baseUser;
+      if (!opts.skipSync) {
+        try { user = (await UserStore.syncSubscriptionFromBackend(baseUser)) || baseUser; } catch { user = baseUser; }
       }
 
-           // ✅ Ab har user ko sabhi states/districts/talukas ke plans dikhenge —
+      // ✅ is_sold har baar fresh chahiye (location/hold ke hisaab se badalta hai) — cache skip
+      let plans = [];
+      let loadFailed = false;
+      const plansRes = await AuthAPI.getRoleSubscriptionPlans(user.id, loc);
+      if (plansRes.ok && Array.isArray(plansRes.plans)) {
+        plans = plansRes.plans.map(normalizeBackendPlan);
+        cachedBackendPlans = plans; // ✅ cache kar liya taaki baar baar fetch na ho
+      } else {
+        console.warn('[getSubscriptionSummary] Plans fetch failed:', plansRes.message);
+        plans = cachedBackendPlans;
+        loadFailed = true;
+      }
+
+      // ✅ Ab har user ko sabhi states/districts/talukas ke plans dikhenge —
       // user kisi bhi location ka subscription browse aur purchase kar sakta hai.
-      return {
-        currentUser: user,
-activePlan:  UserStore.buildActivePlan(user, plans),
-        plans: plans,
-        currentRole:      user.role || 'free',
-        currentRoleLabel: getRoleLabel(user.role || 'free'),
-      };
-    } catch { return null; }
+      return buildResult(user, plans, loadFailed ? { loadFailed: true, loadError: plansRes.message || '' } : {});
+    } catch (err) {
+      console.warn('[getSubscriptionSummary] failed:', err?.message || err);
+      return buildResult(baseUser, cachedBackendPlans, { loadFailed: true, loadError: 'Unable to refresh plans.' });
+    }
   },
   
   getPaymentSummary: async () => {
@@ -3791,44 +3859,44 @@ activePlan:  UserStore.buildActivePlan(user, plans),
     } catch { return null; }
   },
 
-createPaymentOrder: async ({ plan_id, seat_state, seat_district = '', seat_taluka = '', seat_village = '', seat_role_id }) => {
+createPaymentOrder: async ({ plan_id, seat_state, seat_district = '', seat_taluka = '', seat_village = '', seat_role_id, plan: passedPlan = null }) => {
   try {
-    console.log('[DEBUG createPaymentOrder] called with:', { plan_id, seat_state, seat_district, seat_taluka, seat_village, seat_role_id });
     const user = await UserStore.getCurrentUser();
-    if (!user) { console.log('[DEBUG createPaymentOrder] BLOCKED: no user'); return null; }
+    if (!user) return { error: true, isAuth: true, message: 'Please login again.' };
 
     const backendPlanId = getBackendPlanId(plan_id);
-    if (!backendPlanId) { console.log('[DEBUG createPaymentOrder] BLOCKED: bad plan_id ->', plan_id); return null; }
+    if (!backendPlanId) {
+      return { error: true, message: 'This plan is not available right now. Please refresh and try again.' };
+    }
 
-    // You need an AuthAPI method that hits your backend's
-    // "create role-subscription razorpay order" endpoint,
-    // mirroring createAdSubscriptionOrder / createEcomSubscriptionOrder.
-   const seatMeta = getStateSeatRole(seat_role_id);
-   console.log('[DEBUG createPaymentOrder] seatMeta ->', seatMeta, 'seat_role_id ->', seat_role_id);
-   // ✅ FIX: pehle sirf seat ka naam (string) backend ko jaata tha, jisse
-   // backend yeh pata hi nahi laga sakta tha ki yeh seat kis district/
-   // taluka/village ke liye lock karni hai — ab full location + designation
-   // id bhi bhej rahe hain taaki backend par seat-uniqueness check ho sake.
-   // ✅ Premium plan par seat lock nahi hota — sirf plan_id jaayega
-   const planForOrder = cachedBackendPlans.find((p) => p.plan_id === plan_id);
-   const orderResult = await AuthAPI.purchaseRoleSubscription({
-     planId: backendPlanId,
-     isPremium: isPremiumPlan(planForOrder),
-     state: seat_state || '',
-     district: seat_district || '',
-     taluka: seat_taluka || '',
-     village: seat_village || '',
-   });
-   console.log('[DEBUG createPaymentOrder] orderResult ->', orderResult);
-      // ✅ 409 seat_unavailable yahin ruk jaata hai — Razorpay checkout khulega hi nahi
-      if (!orderResult?.ok) {
-        return {
-          error: true,
-          seatUnavailable: Boolean(orderResult?.seatUnavailable),
-          message: orderResult?.message || 'Unable to create order.',
-        };
-      }
-    const activePlan = cachedBackendPlans.find((p) => p.plan_id === plan_id) || defaultActiveSubscription;
+    const seatMeta = getStateSeatRole(seat_role_id);
+    // ✅ Clicked plan screen se seedha aata hai (cache khaali/purana ho sakta hai) — pehle yahi use karo,
+    // warna premium plan galti se seat-lock wala plan maana ja sakta tha.
+    const planForOrder = passedPlan || cachedBackendPlans.find((p) => p.plan_id === plan_id);
+    // ✅ Full location + designation bhejte hain taaki backend seat-uniqueness check kar sake.
+    // ✅ Premium plan par seat lock nahi hota — sirf plan_id jaayega
+    const orderResult = await AuthAPI.purchaseRoleSubscription({
+      planId: backendPlanId,
+      isPremium: isPremiumPlan(planForOrder),
+      state: seat_state || '',
+      district: seat_district || '',
+      taluka: seat_taluka || '',
+      village: seat_village || '',
+    });
+    // ✅ 409 seat_unavailable yahin ruk jaata hai — Razorpay checkout khulega hi nahi
+    if (!orderResult?.ok) {
+      return {
+        error: true,
+        seatUnavailable: Boolean(orderResult?.seatUnavailable),
+        isNetwork: Boolean(orderResult?.isNetwork),
+        isAuth: Boolean(orderResult?.isAuth),
+        message: orderResult?.message || 'Unable to create order.',
+      };
+    }
+    if (!orderResult.razorpay?.order_id) {
+      return { error: true, message: 'Payment could not be started. Please try again.' };
+    }
+    const activePlan = planForOrder || defaultActiveSubscription;
 
     return {
       order_id:     orderResult.razorpay.order_id,
@@ -3845,7 +3913,10 @@ createPaymentOrder: async ({ plan_id, seat_state, seat_district = '', seat_taluk
       razorpay:     orderResult.razorpay, // { key, order_id, amount, currency }
       seat:         orderResult.seat || null, // reserved_until yahan milega (Premium par null)
     };
-  } catch { return null; }
+  } catch (err) {
+    console.warn('[UserStore.createPaymentOrder] failed:', err?.message || err);
+    return { error: true, isNetwork: true, message: 'Unable to create order. Please check your internet connection and try again.' };
+  }
 },
 
 // ✅ NEW: payment fail / cancel — reserved seat turant release karne ke liye.
@@ -3875,10 +3946,14 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
         razorpay_order_id, razorpay_payment_id, razorpay_signature,
       });
       if (!verifyRes?.ok) {
-        // ✅ seatUnavailable aage pass karo (409) taaki screen us plan ko Sold mark kar sake
+        // ✅ seatUnavailable aage pass karo (409) taaki screen us plan ko Sold mark kar sake.
+        // isNetwork / status bhi pass karo taaki caller decide kare: retry (network/5xx) ya final fail (4xx).
         return {
           ok: false,
           seatUnavailable: Boolean(verifyRes?.seatUnavailable),
+          isNetwork: Boolean(verifyRes?.isNetwork),
+          isAuth: Boolean(verifyRes?.isAuth),
+          status: verifyRes?.status,
           message: verifyRes?.message || 'Payment verification failed.',
         };
       }
@@ -3920,18 +3995,7 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
       // is_subscribed turant TRUE karo, backend ke GET /my-role-subscriptions ka
       // wait mat karo (uska delay hi "purchase kar liya phir bhi dobara maang raha
       // hai" wale bug ki asli wajah tha)
-          const rolePayment = {
-        order_id:   razorpay_order_id || `ORD_ROLE_${Date.now()}`,
-        payment_id: razorpay_payment_id || `PAY_ROLE_${Date.now()}`,
-        amount:     Number(activePlan.price || 0),
-        status:     'success',
-        date:       today,
-        plan_id:    activePlan.plan_id,
-        plan_name:  activePlan.plan_name,
-        module:     'role',
-        signature:  razorpay_signature || '',
-      };
-
+      // ℹ️ Payment history ab local me nahi likhi jaati — server ki GET /payment-history hi source hai.
       let updatedUser = await UserStore.updateUser(user.email, {
         subscription_plan: activePlan,
         subscription_type: newRole,
@@ -3941,7 +4005,6 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
         // Role subscription ke baad free-limit hint stale ho jaata hai — clear karo.
         // (Backend har POST par live check karta hai, isliye extra flag nahi.)
         free_news_credits: null,
-        payment_history: [...normalizePaymentHistory(user.payment_history), rolePayment],
       });
       // ✅ NEW: plan ke role_id (1-6) ko seat me map karke automatically assign karo —
       // koi manual seat-selection modal nahi chahiye, purchase hi seat de dega
@@ -3967,8 +4030,59 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
       return { ok: true, role_label: getRoleLabel(newRole), user: updatedUser };
     } catch (err) {
       console.error('[UserStore.verifyPayment] Error:', err);
-      return { ok: false, message: 'Something went wrong during verification.' };
+      // Local processing me error (server verify ho chuka ho sakta hai) — retry safe hai (verify idempotent hona chahiye)
+      return { ok: false, isNetwork: true, message: 'Something went wrong during verification.' };
     }
+  },
+
+  // ───────────────────────────────────────────────────────────────
+  // ✅ Pending role payment — paise kat gaye par verify fail hua to yeh record bachta hai
+  // aur next screen-open par automatically dobara verify hota hai.
+  // ───────────────────────────────────────────────────────────────
+  savePendingRolePayment: async (info) => {
+    try {
+      const user = await UserStore.getCurrentUser();
+      if (!user?.email) return false;
+      await AsyncStorage.setItem(PENDING_ROLE_PAYMENT_KEY, JSON.stringify({
+        ...info, email: String(user.email).toLowerCase(), saved_at: Date.now(),
+      }));
+      return true;
+    } catch { return false; }
+  },
+  getPendingRolePayment: async () => {
+    try {
+      const raw = await AsyncStorage.getItem(PENDING_ROLE_PAYMENT_KEY);
+      if (!raw) return null;
+      const info = JSON.parse(raw);
+      const user = await UserStore.getCurrentUser();
+      if (!info || !user?.email || String(info.email || '') !== String(user.email).toLowerCase()) return null;
+      return info;
+    } catch { return null; }
+  },
+  clearPendingRolePayment: async () => {
+    try { await AsyncStorage.removeItem(PENDING_ROLE_PAYMENT_KEY); } catch { /* ignore */ }
+  },
+  // network / 5xx par thodi der ruk ke dobara try; 4xx / 409 par turant final result
+  verifyPaymentWithRetry: async (params, { retries = 3, delayMs = 1500 } = {}) => {
+    let res = null;
+    for (let i = 0; i <= retries; i += 1) {
+      res = await UserStore.verifyPayment(params);
+      if (res?.ok || res?.seatUnavailable || res?.isAuth) return res;
+      const retryable = Boolean(res?.isNetwork) || Number(res?.status) >= 500;
+      if (!retryable || i === retries) return res;
+      await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
+    }
+    return res;
+  },
+  // Screen khulne par: agar pichla payment verify nahi hua tha to ab karo.
+  // Return: null (kuch pending nahi) | { ok, message, plan_name, pending } 
+  retryPendingRolePayment: async () => {
+    const pending = await UserStore.getPendingRolePayment();
+    if (!pending?.params) return null;
+    const res = await UserStore.verifyPaymentWithRetry(pending.params, { retries: 1, delayMs: 1000 });
+    const retryable = !res?.ok && !res?.seatUnavailable && !res?.isAuth && (Boolean(res?.isNetwork) || Number(res?.status) >= 500);
+    if (!retryable) await UserStore.clearPendingRolePayment(); // success ya final reject — dobara try nahi
+    return { ok: Boolean(res?.ok), seatUnavailable: Boolean(res?.seatUnavailable), stillPending: retryable, message: res?.message || '', plan_name: pending.plan_name || '' };
   },
   // verifyPayment: async ({ payment_id, order_id, signature, plan_id, seat_state, seat_role_id }) => {
   //   let allocationsBefore = null;
@@ -4389,10 +4503,11 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
           author_seat_name: String(item.author_seat_name || item.authorSeatName || user.state_seat?.seat_name || '').trim(),
         });
 
+        // Feed section me sirf Feed/Reel posts (type 2) aayengi — News (type 1) yahan nahi.
         const rawItems = [
           ...(Array.isArray(user.news) ? user.news : []),
           ...(Array.isArray(user.news_feed) ? user.news_feed : []),
-        ].map(injectAuthor);
+        ].filter((item) => Number(item?.type) === 2).map(injectAuthor);
 
         return rawItems;
       });
@@ -4923,13 +5038,33 @@ const db = await getEngagementDb();
       if (!apiResult.ok) {
         return { currentUser: user, items: [], liveCount: 0, upcomingCount: 0, endedCount: 0, error: apiResult.message };
       }
+      // Map YouTube / backend lifecycle values -> 'live' | 'upcoming' | 'ended'
+      const toStatus = (raw) => {
+        const v = String(raw || 'live').toLowerCase();
+        if (['live', 'testing', 'livestarting', 'active'].includes(v)) return 'live';
+        if (['upcoming', 'ready', 'created', 'scheduled', 'pending'].includes(v)) return 'upcoming';
+        if (['ended', 'complete', 'completed', 'revoked', 'finished', 'stopped'].includes(v)) return 'ended';
+        return 'live';
+      };
       const streams = apiResult.items.map((stream, index) => ({
-        id: stream.watch_url || `youtube-live-${index}`,
-        stream_title: stream.title || 'RTI Live',
+        id: stream.watch_url || stream.broadcast_id || stream.id || `youtube-live-${index}`,
+        stream_title: stream.title || stream.stream_title || 'RTI Live',
         stream_url: stream.watch_url || '',
-        status: 'live',
+        status: toStatus(stream.status || stream.lifeCycleStatus || stream.life_cycle_status || stream.broadcast_status),
       }));
-      return { currentUser: user, items: streams, liveCount: streams.length, upcomingCount: 0, endedCount: 0 };
+      // Counts always come from the API: use its own counts if it sends them, else count API items by status.
+      const c = apiResult.counts || {};
+      const pick = (...keys) => {
+        for (const k of keys) {
+          if (c[k] !== undefined && c[k] !== null && !Number.isNaN(Number(c[k]))) return Number(c[k]);
+        }
+        return null;
+      };
+      const countOf = (st) => streams.filter((x) => x.status === st).length;
+      const liveCount = pick('live', 'live_count', 'liveCount') ?? countOf('live');
+      const upcomingCount = pick('upcoming', 'upcoming_count', 'upcomingCount') ?? countOf('upcoming');
+      const endedCount = pick('ended', 'ended_count', 'endedCount', 'complete', 'completed') ?? countOf('ended');
+      return { currentUser: user, items: streams, liveCount, upcomingCount, endedCount };
     } catch { return null; }
   },
 

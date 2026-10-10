@@ -188,7 +188,7 @@ export default function MyListingsScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.root}>
-      {Platform.OS === 'android' ? (
+      {Platform.OS !== 'web' ? (
 <ModuleAndroidHeader title="My Listings" onBack={() => navigation.goBack()}
   rightExtra={<TouchableOpacity style={styles.addBtn} onPress={() => navigation.navigate('Sell')} activeOpacity={0.8}>
 <Ionicons name="add" size={16} color="#fff" />

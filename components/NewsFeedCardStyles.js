@@ -55,7 +55,7 @@ storyAuthorRow: {
     alignItems: 'center', // ✅ Center aligned
     paddingHorizontal: CARD_H_PAD,
     marginBottom: 12,
-    ...(Platform.OS === 'android' && { flexWrap: 'wrap' }),
+    ...(Platform.OS !== 'web' && { flexWrap: 'wrap' }),
     gap: 6,
   },
   storyAuthorAvatar: {
@@ -178,8 +178,8 @@ storyFollowBtnWrap: {
    storyAuthorMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Platform.OS === 'android' ? 8 : 13,
-    flexWrap: Platform.OS === 'android' ? 'nowrap' : 'wrap',
+    gap: Platform.OS === 'web' ? 13 : 8,
+    flexWrap: Platform.OS === 'web' ? 'wrap' : 'nowrap',
   },
   storyMetaPill: {
     flexDirection: 'row',

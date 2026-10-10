@@ -148,6 +148,8 @@ const styles = StyleSheet.create({
     backgroundColor: C.white,
     borderRadius: 16,
     padding: 22,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
   listHeaderRow: {
     flexDirection: 'row',

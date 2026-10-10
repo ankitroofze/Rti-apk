@@ -61,7 +61,7 @@ export default function SubscriptionStatusCard({
   textColor,
 }) {
   // ✅ jab active plan ka theme mila ho, tabhi color/image apply hoga — warna purana plain white card
-    const isThemed = Boolean(isActive && themeImage) && Platform.OS !== 'android';
+    const isThemed = Boolean(isActive && themeImage) && Platform.OS === 'web';
   const dynamicText = isThemed ? (textColor || '#ffffff') : C.textDark;
   const dynamicMuted = isThemed ? 'rgba(255,255,255,0.8)' : C.textMuted;
 

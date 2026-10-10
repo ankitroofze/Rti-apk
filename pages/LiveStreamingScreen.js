@@ -148,7 +148,7 @@ export default function LiveStreamingScreen({ navigation }) {
   /* ✅ Web header — design ek hi jagah (components/ModuleWebHeader.js) se aata hai */
   <ModuleWebHeader title="Live Streaming" navigation={navigation} />
 ) : (
-Platform.OS === 'android' ? (
+Platform.OS !== 'web' ? (
 <ModuleAndroidHeader title="Live Streaming" onBack={() => navigation.navigate('QuickMenu')} />
 ) : (
 <ImageBackground

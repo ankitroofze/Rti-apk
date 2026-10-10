@@ -172,7 +172,7 @@ export default function SellerEnquiryDashboardScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.root}>
-      {Platform.OS === 'android' ? (
+      {Platform.OS !== 'web' ? (
 <ModuleAndroidHeader title="Enquiries Received" onBack={() => navigation?.goBack?.()}
   rightExtra={<TouchableOpacity onPress={loadData} activeOpacity={0.8} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
 <Ionicons name="refresh-outline" size={20} color="#fff" />

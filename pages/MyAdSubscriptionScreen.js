@@ -45,7 +45,7 @@ export default function MyAdSubscriptionScreen({ navigation }) {
 
       {/* Native header — same red image header jo Subscription Plans screen me hai */}
       {Platform.OS !== 'web' && (
-        Platform.OS === 'android' ? (
+        Platform.OS !== 'web' ? (
 <ModuleAndroidHeader title="My Ads Subscription" onBack={() => navigation.goBack()} />
 ) : (
 <ImageBackground source={HEADER_BG_IMAGE} style={styles.headerImageWrap} imageStyle={styles.headerImageInner} resizeMode="cover">

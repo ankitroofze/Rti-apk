@@ -56,6 +56,45 @@ function SponsoredAdGroup({ group = [], children }) {
   );
 }
 
+// Advertiser ka header: profile image + naam + Sponsored. Click karne par uske profile par jata hai.
+function SponsoredHeader({ ad, navigation }) {
+  const name = ad.owner_name || 'Advertiser';
+  const handlePress = async () => {
+    const email = String(ad.owner_email || '').trim().toLowerCase();
+    const userId = ad.owner_id || null;
+    if (!email && !userId) return;
+    try {
+      const me = await UserStore.getCurrentUser();
+      const myEmail = String(me?.email || '').trim().toLowerCase();
+      const isMe = (myEmail && email && myEmail === email) || (me?.id && userId && String(me.id) === String(userId));
+      if (isMe) { navigation?.navigate?.('Profile'); return; }
+    } catch { /* ignore */ }
+    navigation?.navigate?.('UserPublicProfile', {
+      email,
+      userId,
+      author: {
+        name,
+        email,
+        profile_image: ad.owner_profile_image || '',
+        avatar: ad.owner_profile_image || '',
+        has_blue_tick: Boolean(ad.owner_has_blue_tick),
+      },
+    });
+  };
+  return (
+    <TouchableOpacity style={styles.sponsoredHeader} activeOpacity={0.75} onPress={handlePress}>
+      <ProfileAvatar uri={ad.owner_profile_image} size={36} />
+      <View style={{ flex: 1 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Text style={styles.sponsoredName} numberOfLines={1}>{name}</Text>
+          {(ad.owner_has_blue_tick || ad.verified) ? <VerifiedBadge size={14} /> : null}
+        </View>
+        <Text style={styles.sponsoredSub}>Sponsored</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 export default function RightUtilityPanel({
   navigation, trendingStories = [], onOpenDetails, ads = [], onOpenLeadForm,
   onViewMoreAds, onBackFromAds, showingAllAds = false, firstNewsStory = null,
@@ -115,16 +154,7 @@ export default function RightUtilityPanel({
                 idx === ads.length - 1 && styles.sponsoredAdBlockLast,
               ]}
             >
-              <View style={styles.sponsoredHeader}>
-                <View style={styles.sponsoredAvatar}><Text style={{ color: '#fff', fontWeight: '800' }}>{(ad.owner_name || 'A')[0]}</Text></View>
-                <View>
-                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                    <Text style={styles.sponsoredName}>{ad.owner_name || 'Advertiser'}</Text>
-                    {(ad.owner_has_blue_tick || ad.verified) ? <VerifiedBadge size={14} /> : null}
-                  </View>
-                  <Text style={styles.sponsoredSub}>Sponsored</Text>
-                </View>
-              </View>
+              <SponsoredHeader ad={ad} navigation={navigation} />
               <Text style={styles.sponsoredHeadline}>{ad.title}</Text>
               {ad.description ? (
                 <TouchableOpacity onPress={() => onOpenDetails?.(ad)} activeOpacity={0.7}>
@@ -190,13 +220,7 @@ export default function RightUtilityPanel({
           {groupAdsByOwner(ads).slice(0, 3).map((group) => (
             <SponsoredAdGroup key={String(group[0].id)} group={group}>{(ad) => (
             <View key={ad.id} style={{ marginBottom: 18, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', paddingBottom: 14 }}>
-              <View style={styles.sponsoredHeader}>
-                <View style={styles.sponsoredAvatar}><Text style={{ color: '#fff', fontWeight: '800' }}>{(ad.owner_name || 'A')[0]}</Text></View>
-                <View>
-                  <Text style={styles.sponsoredName}>{ad.owner_name || 'Advertiser'}</Text>
-                  <Text style={styles.sponsoredSub}>Sponsored</Text>
-                </View>
-              </View>
+              <SponsoredHeader ad={ad} navigation={navigation} />
               <Text style={styles.sponsoredHeadline}>{ad.title}</Text>
               {ad.description ? (
                 <TouchableOpacity onPress={() => onOpenDetails?.(ad)} activeOpacity={0.7}>

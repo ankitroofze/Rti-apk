@@ -88,22 +88,52 @@ if (!userId || !quizTypeId) {
   // Start countdown once quiz has loaded — backend ka time_in_min minutes me hota hai.
   useEffect(() => {
     if (starting || timerDeadline) return;
-    const minutes = Number(quiz?.time_in_min) || 0;
-    if (minutes > 0) setTimeLeft(minutes * 60);
+    const minutes = getAttemptDurationMinutes(null, quiz);
+    if (minutes > 0) {
+      // FIX: pehle yahan sirf timeLeft set hota tha, deadline nahi — isliye countdown
+      // effect (jo deadline maangta hai) kabhi chalta hi nahi tha aur time 10:00 pe atka rehta tha.
+      const deadline = Date.now() + (minutes * 60 * 1000);
+      setTimerDeadline(deadline);
+      setTimeLeft(Math.ceil((deadline - Date.now()) / 1000));
+    }
   }, [starting, timerDeadline]);
 
+  // FIX (asli reason): pehle yahan setTimeout(250ms) + setTimeLeft(...) tha. Pehle 250ms me
+  // seconds same rehte the (600 -> 600), React same value pe re-render nahi karta, to effect
+  // dobara chalta hi nahi tha aur timer pehle second ke baad ruk jata tha.
+  // Ab ek setInterval hai jo deadline se har 500ms me time nikalta hai — hamesha chalta rahega.
+  const submitRef = useRef(null);
+  const allowExitRef = useRef(false);
+  // Latest values for the back-handler (listener ek hi baar register hota hai)
+  const liveRef = useRef({});
+  liveRef.current = { started: Boolean(attemptId) || (!starting && questions.length > 0) };
+
+  // Quiz start hone ke baad back (header arrow / Android back / gesture / browser back) allowed nahi.
+  // Back dabane par jitne questions attempt kiye hain utne auto-submit ho jaate hain.
   useEffect(() => {
-    if (timeLeft === null || !timerDeadline) return;
-    if (timeLeft <= 0) {
-      submitAttempt(); // time up — auto submit jo bhi answer diya hai
-      return;
-    }
-    const t = setTimeout(
-      () => setTimeLeft(Math.max(0, Math.ceil((timerDeadline - Date.now()) / 1000))),
-      250
-    );
-    return () => clearTimeout(t);
-  }, [timeLeft, timerDeadline]);
+    const unsubscribe = navigation.addListener('beforeRemove', (e) => {
+      if (allowExitRef.current || !liveRef.current.started) return; // quiz start nahi hua / submit ho chuka
+      e.preventDefault();
+      if (submissionStartedRef.current) return; // submit already chal raha hai
+      showToast('Quiz submitted automatically with the answers you attempted.', 'info');
+      submitRef.current?.();
+    });
+    return unsubscribe;
+  }, [navigation]);
+  useEffect(() => {
+    if (!timerDeadline) return;
+    const tick = () => {
+      const left = Math.max(0, Math.ceil((timerDeadline - Date.now()) / 1000));
+      setTimeLeft(left);
+      if (left <= 0) {
+        clearInterval(id);
+        submitRef.current?.(); // time up — auto submit jo bhi answer diya hai
+      }
+    };
+    const id = setInterval(tick, 500);
+    tick();
+    return () => clearInterval(id);
+  }, [timerDeadline]);
 
   const formatTime = (s) => {
     const m = Math.floor(s / 60).toString().padStart(2, '0');
@@ -149,7 +179,7 @@ if (!userId || !quizTypeId) {
         question_id: Number(question.id || question.question_id),
         // Backend's correct_answer is a letter (A/B/C/D) — submit the letter, not the option text.
         selected_answer: selectedAnswers[index],
-      }));
+      })).filter((a) => a.selected_answer); // sirf wahi jo attempt kiye (back/time-up par bhi)
      const submitted = await AuthAPI.submitQuiz({ attemptId, answers });
       console.log('SUBMITTED RAW:', JSON.stringify(submitted));
       if (submitted.ok) {
@@ -197,6 +227,7 @@ if (!userId || !quizTypeId) {
     // ghata do. (Legacy/unlimited users ke liye ye no-op rahega — see consumeQuizAttempt.)
     UserStore.consumeQuizAttempt();
 
+  allowExitRef.current = true;
   navigation.replace('QuizResult', {
       result: {
         id:                     quiz.id,
@@ -219,6 +250,8 @@ if (!userId || !quizTypeId) {
   };
 
   const handleSubmitPress = () => submitAttempt();
+
+  submitRef.current = submitAttempt;
 
   return (
     <SafeAreaView style={AttemptQuizStyles.root}>

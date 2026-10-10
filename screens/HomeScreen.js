@@ -1208,7 +1208,7 @@ const handleOpenLeadForm = useCallback((story) => {
 />
       {/* <RotatingSponsoredAd ads={allAdsList} onPress={handleSponsoredAdPress} /> */}
 
-            {(Platform.OS === 'android' || IS_WEB) && viewMode !== 'states' ? (
+            {(Platform.OS === 'android' || Platform.OS === 'ios' || IS_WEB) && viewMode !== 'states' ? (
         <HomePromoPopup ads={homePromoAds} onPress={handleSponsoredAdPress} />
       ) : null}
     </View>
@@ -1282,25 +1282,25 @@ const styles = StyleSheet.create({
   sectionSearchRowCompact: { flexDirection: 'column', alignItems: 'stretch' },
   sectionSearchField: {
     flex: 1,
-    minHeight: Platform.OS === 'android' ? 36 : 42,
+    minHeight: Platform.OS === 'web' ? 42 : 36,
     borderRadius: 999,
     backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: '#dbe3ee',
-    paddingHorizontal: Platform.OS === 'android' ? 12 : 14,
+    paddingHorizontal: Platform.OS === 'web' ? 14 : 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
     sectionSearchInput: {
     flex: 1,
-    fontSize: Platform.OS === 'android' ? 12 : 13,
+    fontSize: Platform.OS === 'web' ? 13 : 12,
     color: '#0f172a',
     fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
     ...Platform.select({ web: { outlineStyle: 'none' } }),
   },
   sectionResetButton: {
-    minHeight: Platform.OS === 'android' ? 36 : 42,
+    minHeight: Platform.OS === 'web' ? 42 : 36,
     borderRadius: 999,
     paddingHorizontal: 14,
     backgroundColor: '#fff7ed',

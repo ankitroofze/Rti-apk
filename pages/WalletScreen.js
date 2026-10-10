@@ -467,7 +467,7 @@ export default function WalletScreen({ navigation, route }) {
   const [currentPage, setCurrentPage]       = useState(1);
 
   const [summary, setSummary] = useState({
-    total_balance: 0, total_credit: 0, total_debit: 0, transactions: [],
+    total_balance: 0, total_credit: 0, total_debit: 0, expected_commission: 0, transactions: [],
   });
 
   const moduleName = 'Wallet';
@@ -547,7 +547,7 @@ export default function WalletScreen({ navigation, route }) {
                 </View>
                 <Text style={w.heroLbl}>Total Balance</Text>
                 <Text style={w.heroAmt}>₹{summary.total_balance.toLocaleString()}</Text>
-                <Text style={w.heroHint}>Available balance in your wallet</Text>
+                <Text style={w.heroHint}>Wallet balance + commission</Text>
               </View>
 
               <View style={w.statCard}>
@@ -580,6 +580,22 @@ export default function WalletScreen({ navigation, route }) {
                 <Text style={w.statTitle}>Total Debit</Text>
                 <Text style={w.statVal}>₹{summary.total_debit.toLocaleString()}</Text>
                 <Text style={w.statLbl}>Amount spent</Text>
+              </View>
+
+              <View style={w.statCard}>
+                <View style={{position:'absolute',bottom:-46,right:-34,width:150,height:150,borderRadius:75,backgroundColor:'rgba(124,58,237,0.07)'}}/>
+                <View style={{position:'absolute',bottom:-66,right:-54,width:180,height:180,borderRadius:90,backgroundColor:'rgba(124,58,237,0.10)'}}/>
+                <View style={w.statTop}>
+                  <View style={w.statIconCredit}>
+                    <Feather name="users" size={17} color="#7C3AED" />
+                  </View>
+                  <View style={w.statBadgeCredit}>
+                    <Text style={w.statBadgeCreditTxt}>Network</Text>
+                  </View>
+                </View>
+                <Text style={w.statTitle}>Total Commission</Text>
+                <Text style={w.statVal}>₹{(summary.expected_commission || 0).toLocaleString()}</Text>
+                <Text style={w.statLbl}>Expected from your network</Text>
               </View>
             </View>
 
@@ -776,7 +792,7 @@ export default function WalletScreen({ navigation, route }) {
           </View>
           <Text style={m.statLbl}>Total Balance</Text>
           <Text style={m.statVal}>₹{summary.total_balance.toLocaleString()}</Text>
-          <Text style={m.statHint}>Available balance in your wallet</Text>
+          <Text style={m.statHint}>Wallet balance + commission</Text>
         </View>
 
         <View style={m.statCard}>
@@ -805,6 +821,20 @@ export default function WalletScreen({ navigation, route }) {
           <Text style={m.statTitle}>Total Debit</Text>
           <Text style={m.statVal}>₹{summary.total_debit.toLocaleString()}</Text>
           <Text style={m.statHint}>Amount spent</Text>
+        </View>
+
+        <View style={m.statCard}>
+          <View style={m.statTop}>
+            <View style={m.statIconWrapGreen}>
+              <Feather name="users" size={16} color="#7C3AED" />
+            </View>
+            <View style={m.statBadgeCredit}>
+              <Text style={m.statBadgeCreditTxt}>Network</Text>
+            </View>
+          </View>
+          <Text style={m.statTitle}>Total Commission</Text>
+          <Text style={m.statVal}>₹{(summary.expected_commission || 0).toLocaleString()}</Text>
+          <Text style={m.statHint}>Expected from your network</Text>
         </View>
 
         {/* ── PAYMENT HISTORY PROMO CARD (web jaisa) ── */}

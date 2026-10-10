@@ -68,9 +68,9 @@ const MyNetworkStyles = StyleSheet.create({
     flexDirection: 'row', gap: 10, marginBottom: 12,
   },
   metricCard: {
-    flex: 1, borderRadius: 3,
+    flex: 1, borderRadius: 16,
     paddingVertical: 16, paddingHorizontal: 14,
-    borderWidth: 1, borderColor: '#E0E0E0',
+    borderWidth: 1, borderColor: '#EDE8E1',
   },
   metricPrimary:   { backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#E0E0E0' },
   metricAccent:    { backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#E0E0E0' },
@@ -80,8 +80,8 @@ const MyNetworkStyles = StyleSheet.create({
   // ─── Main Card ───────────────────────────────────────────────────────────
   card: {
     backgroundColor: '#ffffff',
-    borderRadius: 3, padding: 16, marginBottom: 12,
-    borderWidth: 1, borderColor: '#E0E0E0',
+    borderRadius: 16, padding: 16, marginBottom: 12,
+    borderWidth: 1, borderColor: '#EDE8E1',
   },
   sectionTitle: {
     fontSize: 17, fontWeight: '800', color: '#111111', marginBottom: 14,
@@ -113,7 +113,7 @@ const MyNetworkStyles = StyleSheet.create({
   // ─── Table ───────────────────────────────────────────────────────────────
   tableWrap: {
     borderWidth: 1, borderColor: '#E0E0E0',
-    borderRadius: 3, overflow: 'hidden',
+    borderRadius: 16, overflow: 'hidden',
     marginBottom: 14, backgroundColor: '#ffffff',
   },
   tableHeader: {

@@ -115,7 +115,7 @@ const handleDownload = (item) => {
       {Platform.OS === 'web' ? (
         <ModuleWebHeader title="My Attempts" navigation={navigation} />
       ) : (
-        Platform.OS === 'android' ? (
+        Platform.OS !== 'web' ? (
 <ModuleAndroidHeader title="My Attempts" onBack={() => navigation.goBack()} />
 ) : (
 <View

@@ -276,7 +276,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     let active = true;
     (async () => {
            setLoading(true);
-      const user = userId
+      let user = userId
         ? await UserStore.getPublicProfileById(userId)
         : (resolvedEmail ? await UserStore.getUser(resolvedEmail) : null);
       if (!active) return;
@@ -306,6 +306,12 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         // ✅ NEW: agar backend se is post/author ka numeric id nahi mila (author_id null tha),
         // to follow/followers list se mile id se profile.id backfill kardo — isse Block/Report
         // jaise actions ke liye targetId resolve ho jaayega.
+        if (active && !userId && summary?.resolvedId && !(Array.isArray(user?.posts) && user.posts.length)) {
+          try {
+            const full = await UserStore.getPublicProfileById(summary.resolvedId);
+            if (full && active) { user = { ...(user || {}), ...full }; setProfile(user); }
+          } catch { /* ignore */ }
+        }
         if (active && !user?.id && summary?.resolvedId) {
           setProfile((prev) => (prev ? { ...prev, id: summary.resolvedId } : { id: summary.resolvedId }));
         }
@@ -321,7 +327,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       const effectiveEmail = String(resolvedEmail || user?.email || '').trim().toLowerCase();
       const effectiveId = String(userId ?? user?.id ?? '').trim();
 
-      const summary = (resolvedEmail || authorName)
+      // userId pata ho to posts GET /profile/{id} se aa chuke hain; viewer ka /my-news yahan galat hai.
+      const summary = (!effectiveId && (resolvedEmail || authorName))
         ? await UserStore.getNewsFeedSummary({ skipBlockedUsers: true })
         : null;
       const fromFeed = Array.isArray(summary?.items)
@@ -366,9 +373,9 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       const merged = [...fromFeed, ...fromProfile, ...profileAds]
         .filter(Boolean)
         .filter((it, index, arr) => {
-          const id = it?.id;
+          const id = it?.id != null ? String(it.id) : '';
           if (!id) return arr.findIndex((x) => x === it) === index;
-          return arr.findIndex((x) => x?.id === id) === index;
+          return arr.findIndex((x) => x?.id != null && String(x.id) === id) === index;
         });
 
             setPosts(merged);
@@ -482,6 +489,12 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     };
     return [...src].sort((a, b) => sortValue(b) - sortValue(a));
   }, [posts]);
+
+  // Posts count: backend ka total (agar bheje) aur loaded posts me se jo bada ho.
+  const postsCount = (() => {
+    const backend = getNumericCount(display?.posts_count ?? display?.news_count ?? display?.total_posts ?? 0);
+    return Math.max(sortedPosts.length, Number.isFinite(backend) ? backend : 0);
+  })();
 
   // ── Post helpers ────────────────────────────────────────────────────────────
 
@@ -718,6 +731,18 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         // NOTE: follow API ke response ka followers_count yahan use nahi karte — wo
         // stale/alag user ka aa sakta hai (isse count 1 se wapas 0 ho jata tha).
         showToast(nextFollowing ? `Following ${name}` : `Unfollowed ${name}`, 'success');
+        // Followers list me apna naam turant add/remove (pehle list purani rehti thi)
+        try {
+          const me = await UserStore.getCurrentUser();
+          const meId = me?.id ?? me?.user_id ?? null;
+          const meEmail = String(me?.email || '').trim().toLowerCase();
+          const meItem = { id: meId, email: meEmail, name: me?.name || 'User', profile_image: me?.profile_image || '' };
+          const isMe = (u) => Boolean((meId != null && u?.id != null && String(u.id) === String(meId)) || (meEmail && String(u?.email || '').toLowerCase() === meEmail));
+          setFollowLists((prev) => {
+            const rest = (prev.followers || []).filter((u) => !isMe(u));
+            return { ...prev, followers: nextFollowing ? [meItem, ...rest] : rest };
+          });
+        } catch { /* ignore */ }
       }
     } catch (err) {
       setIsFollowing(!nextFollowing);
@@ -1001,7 +1026,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
               <ScrollView style={styles.followModalList} contentContainerStyle={styles.followModalListContent}>
                 {(followLists[followModalType] || []).length ? (
                   (followLists[followModalType] || []).map((item) => (
-                                        <TouchableOpacity key={item.email} style={styles.followUserRow} activeOpacity={0.8} onPress={() => { setFollowModalType(''); navigation.push('UserPublicProfile', { email: item.email, userId: item.id || item.user_id || undefined, author: item }); }}>
+                                        <TouchableOpacity key={String(item.id ?? item.user_id ?? item.email)} style={styles.followUserRow} activeOpacity={0.8} onPress={() => { setFollowModalType(''); navigation.push('UserPublicProfile', { email: item.email, userId: item.id || item.user_id || undefined, author: item }); }}>
                       <ProfileAvatar uri={item.profile_image || ''} size={42} style={styles.followUserAvatar} />
                       <View style={styles.followUserInfo}>
                         <NameWithTick name={item.name || 'User'} user={item} style={styles.followUserName} />
@@ -1086,7 +1111,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                 </View>
                 <View style={styles.statsRow}>
                   <View style={styles.statBox}>
-                    <Text style={styles.statValue}>{sortedPosts.length}</Text>
+                    <Text style={styles.statValue}>{postsCount}</Text>
                     <Text style={styles.statLabel}>posts</Text>
                   </View>
                   <TouchableOpacity style={styles.statBox} onPress={() => setFollowModalType('followers')} activeOpacity={0.75}>
@@ -1332,7 +1357,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                 {/* Row 2: posts · followers · following */}
                 <View style={webSt.statsRow}>
                   <View style={webSt.statItem}>
-                    <Text style={webSt.statNum}>{sortedPosts.length}</Text>
+                    <Text style={webSt.statNum}>{postsCount}</Text>
                     <Text style={webSt.statLabel}> posts</Text>
                   </View>
                   <TouchableOpacity style={webSt.statItem} onPress={() => setFollowModalType('followers')} activeOpacity={0.75}>
@@ -1552,7 +1577,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
           <View style={ProfileStyles.profileStatsExact}>
             <View style={ProfileStyles.profileStatExact}>
-              <Text style={ProfileStyles.profileStatNumberExact}>{sortedPosts.length}</Text>
+              <Text style={ProfileStyles.profileStatNumberExact}>{postsCount}</Text>
               <Text style={ProfileStyles.profileStatLabelExact}>Posts</Text>
             </View>
             <TouchableOpacity style={ProfileStyles.profileStatExact} onPress={() => setFollowModalType('followers')} activeOpacity={0.75}>

@@ -84,7 +84,7 @@ export default function SubscriptionPlanPurchase({
            <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
       {/* Header — same image background used on every subscription screen */}
-      {Platform.OS === 'android' ? (
+      {Platform.OS !== 'web' ? (
 <ModuleAndroidHeader title={headerTitle} onBack={() => navigation.goBack()} />
 ) : (
 <>

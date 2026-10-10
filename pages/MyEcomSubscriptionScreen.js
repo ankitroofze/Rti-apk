@@ -34,7 +34,7 @@ const load = useCallback(async () => {
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor="#F3F4F6" />
-      {Platform.OS === 'android' ? (
+      {Platform.OS !== 'web' ? (
 <ModuleAndroidHeader title="My Ecom Subscription" onBack={() => navigation.goBack()} />
 ) : (
 <>

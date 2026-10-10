@@ -566,7 +566,7 @@ export default function CertificatePreviewScreen({ navigation, route }) {
   return (
     <View style={styles.root}>
       {/* Back Button Header */}
-      {Platform.OS === 'android' ? (
+      {Platform.OS !== 'web' ? (
 <ModuleAndroidHeader title="Certificate Preview" onBack={() => (navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Certification'))} />
 ) : (
 <>
@@ -589,7 +589,7 @@ export default function CertificatePreviewScreen({ navigation, route }) {
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}
       >
-        {Platform.OS !== 'android' && <StatusBar barStyle="dark-content" backgroundColor="#f5e6c8" />}
+        {Platform.OS === 'web' && <StatusBar barStyle="dark-content" backgroundColor="#f5e6c8" />}
 
         <View
           style={styles.templateCard}

@@ -286,6 +286,40 @@ const authedJSON = async (method, endpoint, body = null) => {
 // ─────────────────────────────────────────────────────────
 // AUTH API
 // ─────────────────────────────────────────────────────────
+// ── News upload helpers (video size / timeout) ──────────────────────────
+const NEWS_VIDEO_MAX_MB = 10;
+const NEWS_UPLOAD_TIMEOUT_MS = 120000; // 2 min
+const NEWS_VIDEO_TOO_LARGE_MSG = `Video size is too large. Please post a video of ${NEWS_VIDEO_MAX_MB}MB or less.`;
+
+const fetchWithTimeout = async (url, options = {}, timeoutMs = NEWS_UPLOAD_TIMEOUT_MS) => {
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    return await fetch(url, controller ? { ...options, signal: controller.signal } : options);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
+
+const newsUploadErrorResult = (err, mediaType) => {
+  const isVideo = Number(mediaType) === 2;
+  const timedOut = err?.name === 'AbortError';
+  if (isVideo) {
+    return {
+      ok: false,
+      isNetwork: true,
+      message: timedOut
+        ? `Upload timed out. Your video may be too large. Please post a video of ${NEWS_VIDEO_MAX_MB}MB or less.`
+        : `Video upload failed. Your video may be too large or your internet is slow. Please post a video of ${NEWS_VIDEO_MAX_MB}MB or less.`,
+    };
+  }
+  return {
+    ok: false,
+    isNetwork: true,
+    message: timedOut ? 'Upload timed out. Please check your internet and try again.' : 'Network error. Please check your internet connection.',
+  };
+};
+
 export const AuthAPI = {
 
   /**
@@ -1019,7 +1053,7 @@ export const AuthAPI = {
         };
       }
       if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
-      return { ok: false, message: data?.message || `Payment verification failed (${status}).` };
+      return { ok: false, status, message: data?.message || `Payment verification failed (${status}).` };
     } catch (err) {
       console.error('[AuthAPI.verifyRoleSubscriptionPayment] Error:', err);
       return { ok: false, isNetwork: true, message: 'Network error during verification.' };
@@ -1081,13 +1115,11 @@ getRoleSubscriptionPlans: async (userId, loc = {}) => {
         // ✅ FIX: agar user_id ke saath list khaali aayi, to bina user_id dobara try karo
         if ((!rawList || rawList.length === 0) && endpoint.includes('user_id=')) {
           const retry = await getJSON('/role-subscription-plans', token);
-          console.log('[AuthAPI.getRoleSubscriptionPlans] retry raw ->', retry.status, retry.data);
           if (retry.status === 200 || retry.status === 201) {
             rawList = pickList(retry.data);
           }
         }
 
-        console.log('[AuthAPI.getRoleSubscriptionPlans] final count ->', rawList?.length, rawList?.[0]);
         return { ok: true, plans: rawList || [] };
       }
       if (status === 401) return { ok: false, isAuth: true, message: 'Session expired. Please login again.' };
@@ -1690,7 +1722,7 @@ if (status === 200 || status === 201) {
         }
       }
 
-      const res = await fetch(`${BASE_URL}/news`, {
+      const res = await fetchWithTimeout(`${BASE_URL}/news`, {
         method: 'POST',
         headers: {
           Accept: 'application/json',
@@ -1719,6 +1751,7 @@ if (status === 200 || status === 201) {
           remainingCredits: toNumOrNull(json?.remaining_credits),
         };
       }
+      if (res.status === 413) return { ok: false, message: Number(mediaType) === 2 ? NEWS_VIDEO_TOO_LARGE_MSG : 'File size is too large. Please upload a smaller file.' };
       if (res.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
       // ✅ Free limit khatam — generic error nahi, screen popup dikhayegi.
       // 403 ke baaki cases (alag code) neeche generic handling se hi jaayenge.
@@ -1738,7 +1771,7 @@ if (status === 200 || status === 201) {
       return { ok: false, message: json?.message || `Server error (${res.status}).` };
     } catch (err) {
       console.error('[AuthAPI.createNews] Error:', err);
-      return { ok: false, isNetwork: true, message: 'Network error.' };
+      return newsUploadErrorResult(err, mediaType);
     }
   },
 
@@ -2161,7 +2194,7 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
         }
       }
 
-      const res = await fetch(`${BASE_URL}/news/${newsId}`, {
+      const res = await fetchWithTimeout(`${BASE_URL}/news/${newsId}`, {
         method: 'POST', // _method override PUT ke liye
         headers: {
           Accept: 'application/json',
@@ -2170,11 +2203,12 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
         body: formData,
       });
 
-      const json = await res.json();
+      const json = await res.json().catch(() => null);
 
       if (res.status === 200 || res.status === 201) {
         return { ok: true, data: json, news: json?.news || json?.data || json };
       }
+      if (res.status === 413) return { ok: false, message: Number(mediaType) === 2 ? NEWS_VIDEO_TOO_LARGE_MSG : 'File size is too large. Please upload a smaller file.' };
       if (res.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
       if (res.status === 404) return { ok: false, message: 'News not found.' };
       if (res.status === 422) {
@@ -2185,7 +2219,7 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
       return { ok: false, message: json?.message || `Server error (${res.status}).` };
     } catch (err) {
       console.error('[AuthAPI.updateNews] Error:', err);
-      return { ok: false, isNetwork: true, message: 'Network error.' };
+      return newsUploadErrorResult(err, mediaType);
     }
   },
 
@@ -2925,10 +2959,19 @@ getYoutubeLiveList: async () => {
     const { status, data } = await getJSON('/youtube/live/list', token);
     if (status === 200 || status === 201) {
       const liveData = data?.data;
-      return {
-        ok: true,
-        items: Array.isArray(liveData) ? liveData : (liveData?.watch_url ? [liveData] : []),
-      };
+      // Backend may return a plain array, a single object, or an object wrapping the list
+      // ({ items|broadcasts|streams: [...], counts|summary|stats: { live, upcoming, ended } }).
+      const listFromObj = liveData && !Array.isArray(liveData)
+        ? (liveData.items || liveData.broadcasts || liveData.streams || liveData.list)
+        : null;
+      const items = Array.isArray(liveData)
+        ? liveData
+        : Array.isArray(listFromObj)
+          ? listFromObj
+          : (liveData?.watch_url ? [liveData] : []);
+      const rawCounts = data?.counts || data?.summary || data?.stats
+        || liveData?.counts || liveData?.summary || liveData?.stats || null;
+      return { ok: true, items, counts: rawCounts };
     }
     if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
     return { ok: false, message: data?.message || `Server error (${status}).` };

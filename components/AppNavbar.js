@@ -1047,6 +1047,7 @@ const styles = StyleSheet.create({
     width: 38,
     height: 38,
     borderRadius: 19,
+    marginHorizontal: 6, // bell thoda andar (kinare se door)
     backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',

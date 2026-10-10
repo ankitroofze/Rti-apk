@@ -59,6 +59,7 @@ const S = {
 
   bellBtn: {
     width: 34, height: 34, borderRadius: 17,
+    marginHorizontal: 4, // bell thoda andar
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: 'rgba(255,255,255,0.16)',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)',

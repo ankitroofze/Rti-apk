@@ -104,8 +104,8 @@ const w = {
   metricsRow: { flexDirection: 'row', gap: 14, marginBottom: 24 },
   mc: {
     flex: 1, backgroundColor: '#ffffff',
-    borderRadius: 6, padding: 20,
-    borderWidth: 1, borderColor: '#E0E0E0',
+    borderRadius: 16, padding: 20,
+    borderWidth: 1, borderColor: '#EDE8E1',
     overflow: 'hidden',
   },
   mcBar:    { position: 'absolute', top: 0, left: 0, right: 0, height: 3, backgroundColor: '#E0E0E0' },
@@ -152,8 +152,8 @@ const w = {
 
   // ── Table card ────────────────────────────────────────────────────────────
   tableCard: {
-    backgroundColor: '#ffffff', borderRadius: 6,
-    borderWidth: 1, borderColor: '#E0E0E0',
+    backgroundColor: '#ffffff', borderRadius: 16,
+    borderWidth: 1, borderColor: '#EDE8E1',
     overflow: 'hidden',
   },
   tcHead: {
@@ -176,6 +176,7 @@ const w = {
   },
   searchInput: { flex: 1, fontSize: 13, color: '#111111', fontWeight: '500', paddingVertical: 0, fontFamily: 'Roboto, sans-serif' },
   pill: {
+    marginLeft: 'auto',
     flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#E0E0E0',
     borderRadius: 3, paddingHorizontal: 12, paddingVertical: 5,
@@ -361,7 +362,6 @@ export default function MyNetworkScreen({ navigation }) {
             <Text style={[w.hc, w.colRef]}>Referred by</Text>
             <Text style={[w.hc, w.colLevel]}>Level</Text>
             <Text style={[w.hc, w.colCommission]}>Commission</Text>
-            <Text style={[w.hc, w.colAction]}>View</Text>
           </View>
 
           {/* Rows */}
@@ -409,17 +409,7 @@ export default function MyNetworkScreen({ navigation }) {
                     ₹{row.commission?.toLocaleString() ?? '0'}
                   </Text>
                 </View>
-
-                {/* Action */}
-                <View style={w.colAction}>
-                  <TouchableOpacity
-                    style={w.eyeBtn}
-                    onPress={() => navigation.navigate('ViewMember', { member: row })}
-                  >
-                    <Feather name="eye" size={13} color="#888888" />
-                  </TouchableOpacity>
-                </View>
-              </View>
+</View>
             );
           })}
 
@@ -552,7 +542,7 @@ export default function MyNetworkScreen({ navigation }) {
                 </View>
               </View>
               <Text style={w.mcVal}>
-                ₹{(allRows.reduce((s, r) => s + (r.commission || 0), 0)).toLocaleString()}
+                ₹{(networkData?.total_commission ?? allRows.reduce((s, r) => s + (r.commission || 0), 0)).toLocaleString()}
               </Text>
               <Text style={w.mcLbl}>Total commission</Text>
             </View>
@@ -630,7 +620,6 @@ export default function MyNetworkScreen({ navigation }) {
                 <Text style={[MyNetworkStyles.headerCell, colReferred]}>Referred By</Text>
                 <Text style={[MyNetworkStyles.headerCell, colLevel]}>Level</Text>
                 <Text style={[MyNetworkStyles.headerCell, colCommission]}>Commission</Text>
-                <Text style={[MyNetworkStyles.headerCell, colAction]}>Action</Text>
               </View>
 
               {pagedRows.map((row, index) => {
@@ -672,14 +661,6 @@ export default function MyNetworkScreen({ navigation }) {
                       <Text style={MyNetworkStyles.commissionText}>
                         ₹{row.commission?.toLocaleString() ?? '0'}
                       </Text>
-                    </View>
-                    <View style={colAction}>
-                      <TouchableOpacity
-                        style={MyNetworkStyles.viewBtn}
-                        onPress={() => navigation.navigate('ViewMember', { member: row })}
-                      >
-                        <Feather name="eye" size={14} color={PINK} />
-                      </TouchableOpacity>
                     </View>
                   </View>
                 );

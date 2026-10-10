@@ -91,7 +91,7 @@ const parseNativeError = (err) => {
   };
 };
 
-export const openRazorpayCheckout = async (orderData, planType, { onVerified, onFailed } = {}) => {
+export const openRazorpayCheckout = async (orderData, planType, { onVerified, onFailed, onVerifyError } = {}) => {
   // A successful web checkout also closes its modal. Do not mistake that
   // dismiss event for a cancellation and release an already-paid seat.
   let paymentCompleted = false;
@@ -99,7 +99,24 @@ export const openRazorpayCheckout = async (orderData, planType, { onVerified, on
   const reportFailure = async (errorInfo) => {
     if (paymentCompleted || failureReported) return;
     failureReported = true;
-    await onFailed?.(errorInfo);
+    try {
+      await onFailed?.(errorInfo);
+    } catch (err) {
+      console.error('[openRazorpayCheckout] onFailed error:', err);
+    }
+  };
+
+  // Payment ho chuka hai, lekin verify step me koi error aaya (network / server / code bug).
+  // Isse "cancel/failed" na maane — paise kat chuke hain. Caller ko batao taaki wo retry /
+  // pending-payment flow chala sake. Pehle yeh error chup-chaap nigal liya jaata tha.
+  const runVerified = async (response) => {
+    paymentCompleted = true;
+    try {
+      await onVerified?.(response);
+    } catch (err) {
+      console.error('[openRazorpayCheckout] onVerified error:', err);
+      try { await onVerifyError?.(err, response); } catch (e2) { console.error('[openRazorpayCheckout] onVerifyError error:', e2); }
+    }
   };
 
   // ✅ Android / iOS — native Razorpay SDK
@@ -114,11 +131,10 @@ export const openRazorpayCheckout = async (orderData, planType, { onVerified, on
       theme: { color: '#2563EB' },
     };
 
+    let response;
     try {
-      const response = await RazorpayCheckout.open(options);
+      response = await RazorpayCheckout.open(options);
       // native SDK response: { razorpay_payment_id, razorpay_order_id, razorpay_signature }
-      paymentCompleted = true;
-      await onVerified?.(response);
     } catch (err) {
       // native SDK error: { code, description }
       const parsed = parseNativeError(err);
@@ -128,7 +144,10 @@ export const openRazorpayCheckout = async (orderData, planType, { onVerified, on
         error_description: parsed.error_description,
         cancelled: parsed.cancelled,
       });
+      return;
     }
+    // open() success — verify alag se chalta hai, uska error "payment failed" nahi maana jaata
+    await runVerified(response);
     return;
   }
 
@@ -143,39 +162,58 @@ export const openRazorpayCheckout = async (orderData, planType, { onVerified, on
     return;
   }
 
-  const options = {
-    key: orderData.key,
-    amount: orderData.amount,
-    currency: orderData.currency,
-    order_id: orderData.order_id,
-    name: 'RTI',
-    description: `${planType} subscription`,
-    handler: async function (response) {
-      paymentCompleted = true;
-      await onVerified?.(response);
-    },
-    modal: {
-      ondismiss: async function () {
+  // ✅ Web par yeh function ab tab tak return nahi karta jab tak checkout band na ho
+  // (payment done / dismiss). Pehle `razorpay.open()` ke turant baad return ho jaata tha,
+  // isliye caller ka "payment chal raha hai" guard turant hat jaata tha aur double-tap par
+  // 2 orders ban sakte the.
+  await new Promise((resolve) => {
+    let settled = false;
+    const settle = () => { if (!settled) { settled = true; resolve(); } };
+
+    const options = {
+      key: orderData.key,
+      amount: orderData.amount,
+      currency: orderData.currency,
+      order_id: orderData.order_id,
+      name: 'RTI',
+      description: `${planType} subscription`,
+      handler: async function (response) {
+        await runVerified(response);
+        settle();
+      },
+      modal: {
+        ondismiss: async function () {
+          await reportFailure({
+            razorpay_order_id: orderData.order_id,
+            error_code: 'PAYMENT_CANCELLED',
+            error_description: 'Payment cancelled by user',
+            cancelled: true,
+          });
+          settle();
+        },
+      },
+      theme: { color: '#2563EB' },
+    };
+
+    try {
+      const razorpay = new window.Razorpay(options);
+
+      razorpay.on('payment.failed', async function (response) {
         await reportFailure({
           razorpay_order_id: orderData.order_id,
-          error_code: 'PAYMENT_CANCELLED',
-          error_description: 'Payment cancelled by user',
-          cancelled: true,
+          error_code: response.error?.code || 'PAYMENT_FAILED',
+          error_description: response.error?.description || 'Payment failed',
         });
-      },
-    },
-    theme: { color: '#2563EB' },
-  };
+        // modal abhi khula hai (user retry kar sakta hai) — settle dismiss/handler par hoga
+      });
 
-  const razorpay = new window.Razorpay(options);
-
-  razorpay.on('payment.failed', async function (response) {
-    await reportFailure({
-      razorpay_order_id: orderData.order_id,
-      error_code: response.error?.code || 'PAYMENT_FAILED',
-      error_description: response.error?.description || 'Payment failed',
-    });
+      razorpay.open();
+    } catch (err) {
+      reportFailure({
+        razorpay_order_id: orderData?.order_id,
+        error_code: 'CHECKOUT_OPEN_FAILED',
+        error_description: err?.message || 'Unable to open payment window.',
+      }).finally(settle);
+    }
   });
-
-  razorpay.open();
 };

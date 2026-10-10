@@ -530,6 +530,7 @@ export default function NewsFeedScreen({ navigation }) {
   const [expandedItems, setExpandedItems] = useState({});
   const [filterPanelVisible, setFilterPanelVisible] = useState(false);
   const [editModalVisible, setEditModalVisible] = useState(false);
+  const [feedMediaWidth, setFeedMediaWidth] = useState(0);
   const [editingNewsItem, setEditingNewsItem] = useState(null);
 
   const [filterState, setFilterState] = useState('All');
@@ -633,10 +634,12 @@ const syncFeed = useCallback(async (focusItemId = null) => {
     setLoading(true);
     // ✅ FIX: /my-role-subscriptions ab News Feed khulte waqt yahan sync hoga
     UserStore.syncSubscriptionFromBackend().catch(() => {});
-    const data = await UserStore.getNewsFeedSummary(focusItemId ? { focusItemId } : undefined);
+    // News Feed me sirf News (type 1) dikhegi — Feed/Reel (type 2) posts Feed section me jaate hain.
+    const data = await UserStore.getNewsFeedSummary(focusItemId ? { focusItemId } : { type: 1 });
     setLoading(false);
     if (!data) { navigation.replace('Login'); return null; }
-    const filteredItems = applyLocationFilter(data.items, data.currentUser);
+    const newsOnlyItems = (Array.isArray(data.items) ? data.items : []).filter((item) => Number(item?.type) !== 2);
+    const filteredItems = applyLocationFilter(newsOnlyItems, data.currentUser);
     const totalViews = filteredItems.reduce((sum, item) => sum + (Number(item.views) || 0), 0);
     const totalShares = filteredItems.reduce((sum, item) => sum + (Number(item.shares) || 0), 0);
     const payload = { ...data, items: filteredItems, totalViews, totalShares };
@@ -1306,9 +1309,13 @@ const handleLike = async (item) => {
                   </TouchableOpacity>
                 </View>
 
-                {(item.state || item.district || item.taluka) ? (
+                {(() => {
+                  const cat = String(item.category || '').trim().toLowerCase();
+                  const isCat = (v) => { const t = String(v || '').trim().toLowerCase(); return !t || t === cat || t === 'breaking news'; };
+                  return !isCat(item.state) || !isCat(item.district) || !isCat(item.taluka);
+                })() ? (
                   <View style={styles.locationTagRow}>
-                    {item.state ? (
+                    {item.state && String(item.state).trim().toLowerCase() !== 'breaking news' && String(item.state).trim().toLowerCase() !== String(item.category || '').trim().toLowerCase() ? (
                       <LinearGradient colors={['#450A0A', '#B91C1C', '#7F1D1D']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.locationTag}>
                         <Feather name="map-pin" size={10} color={C.white} />
                         <Text style={styles.locationTagText}>{item.state}</Text>
@@ -1431,15 +1438,21 @@ const handleLike = async (item) => {
                 )}
 
                             {item.images?.length ? (
-                  <View style={styles.mediaPreviewWrap}>
+                  <View
+                    style={styles.mediaPreviewWrap}
+                    onLayout={(e) => {
+                      const w = Math.round(e.nativeEvent.layout.width);
+                      if (w && w !== feedMediaWidth) setFeedMediaWidth(w);
+                    }}
+                  >
                     {item.images.length === 1 ? (
                       <ResolvedImage uri={item.images[0]} style={styles.mediaSingleImage} resizeMode="cover" />
                     ) : (
                       <MediaGallery
                         images={item.images}
-                        width={Math.max(220, Math.min(windowWidth - 42, 720))}
+                        width={feedMediaWidth || Math.max(220, Math.min(windowWidth - 42, 720))}
                         maxHeight={260}
-                        radius={10}
+                        fit="cover"
                       />
                     )}
                   </View>
@@ -1483,10 +1496,6 @@ const handleLike = async (item) => {
                   <TouchableOpacity style={styles.actionIconButton} onPress={() => handleShare(item)}>
                     <Feather name="share-2" size={15} color={C.textSub} />
                     <Text style={styles.actionIconText}>{item.shares}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.actionIconButton, item.bookmarked && styles.actionIconButtonActive]} onPress={() => handleBookmark(item)}>
-                    <Feather name="bookmark" size={15} color={item.bookmarked ? C.white : C.textSub} />
-                    <Text style={[styles.actionIconText, item.bookmarked && styles.actionIconTextActive]}>Save</Text>
                   </TouchableOpacity>
                          </View>
               </View>
@@ -1631,7 +1640,7 @@ const styles = StyleSheet.create({
     headerTitle: { fontSize: 22, fontFamily: FONT.bold, color: '#ffffff' },
    headerAddButton: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: 'transparent' },
     scrollView: { flex: 1 },
-  mediaSingleImage: { width: '100%', height: 200, borderRadius: 10, backgroundColor: '#EEF0F3' },
+  mediaSingleImage: { width: '100%', aspectRatio: 16 / 9, borderRadius: 0, backgroundColor: '#EEF0F3' },
   scrollContent: { paddingBottom: 40, ...(Platform.OS === 'web' ? { alignItems: 'center' } : null) },
 
   // 👇 NEW: web par content ko header jitni hi maxWidth (720) mein center karta hai,
@@ -1713,7 +1722,7 @@ actionRow: { flexDirection: 'row', gap: 8, marginTop: 4, width: '100%' },
 actionIconButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, borderWidth: 1, borderColor: C.border, borderRadius: 100, paddingHorizontal: 12, paddingVertical: 7 },
    authorRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 },
    authorRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 },
-  authorAvatarBtn: {},
+  authorAvatarBtn: { marginRight: 12 },
     authorAvatar: { borderRadius: 17 },
   authorLabel: { fontSize: 11, fontFamily: FONT.regular, color: C.textSub },
    authorName: { fontSize: 15, fontFamily: FONT.bold, color: C.textBody },

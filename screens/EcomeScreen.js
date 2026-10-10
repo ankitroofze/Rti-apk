@@ -252,7 +252,7 @@ function EcomeMobile({ navigation }) {
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      {Platform.OS === 'android' ? (
+      {Platform.OS !== 'web' ? (
 <ModuleAndroidHeader title="Ecome (buy / sell)" subtitle="Buy, sell or rent e-commerce resources" onBack={() => navigation.goBack()} />
 ) : (
 <>

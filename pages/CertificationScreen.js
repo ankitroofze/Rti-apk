@@ -256,7 +256,7 @@ const handleAttemptQuiz = useCallback((item) => {
   /* ✅ Web header — design ek hi jagah (components/ModuleWebHeader.js) se aata hai */
   <ModuleWebHeader title="Certification" navigation={navigation} />
 ) : (
-Platform.OS === 'android' ? (
+(Platform.OS === 'android' || Platform.OS === 'ios') ? (
 <ModuleAndroidHeader title="Certification" onBack={() => navigation.navigate('QuickMenu')} />
 ) : (
 <View
@@ -353,8 +353,8 @@ Platform.OS === 'android' ? (
                     {/* Metrics */}
         <View style={{ width: '100%', maxWidth: 1100, alignSelf: 'center', flexDirection: 'row', gap: 10, marginBottom: 16 }}>
           <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FDF3F3', borderWidth: 1, borderColor: '#EDE8E1', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 10, overflow: 'hidden' }}>
-            <View style={{ width: Platform.OS === 'android' ? 32 : 36, height: Platform.OS === 'android' ? 32 : 36, borderRadius: Platform.OS === 'android' ? 16 : 18, backgroundColor: '#FBC7C7', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Feather name="file-text" size={Platform.OS === 'android' ? 14 : 16} color="#dc2626" />
+            <View style={{ width: Platform.OS === 'web' ? 36 : 32, height: Platform.OS === 'web' ? 36 : 32, borderRadius: Platform.OS === 'web' ? 18 : 16, backgroundColor: '#FBC7C7', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Feather name="file-text" size={Platform.OS === 'web' ? 16 : 14} color="#dc2626" />
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={{ fontSize: 18, fontWeight: '800', color: '#111111' }}>{certData.totalAttempts}</Text>
@@ -363,8 +363,8 @@ Platform.OS === 'android' ? (
           </View>
 
           <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F1FAF4', borderWidth: 1, borderColor: '#EDE8E1', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 10, overflow: 'hidden' }}>
-            <View style={{ width: Platform.OS === 'android' ? 32 : 36, height: Platform.OS === 'android' ? 32 : 36, borderRadius: Platform.OS === 'android' ? 16 : 18, backgroundColor: '#A7E3BE', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Feather name="check" size={Platform.OS === 'android' ? 14 : 16} color="#15803D" />
+            <View style={{ width: Platform.OS === 'web' ? 36 : 32, height: Platform.OS === 'web' ? 36 : 32, borderRadius: Platform.OS === 'web' ? 18 : 16, backgroundColor: '#A7E3BE', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Feather name="check" size={Platform.OS === 'web' ? 16 : 14} color="#15803D" />
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={{ fontSize: 18, fontWeight: '800', color: '#111111' }}>{certData.passedCount}</Text>
@@ -373,8 +373,8 @@ Platform.OS === 'android' ? (
           </View>
 
           <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F1F6FE', borderWidth: 1, borderColor: '#EDE8E1', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 10, overflow: 'hidden' }}>
-            <View style={{ width: Platform.OS === 'android' ? 32 : 36, height: Platform.OS === 'android' ? 32 : 36, borderRadius: Platform.OS === 'android' ? 16 : 18, backgroundColor: '#AFC9F5', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Feather name="download" size={Platform.OS === 'android' ? 14 : 16} color="#1D4ED8" />
+            <View style={{ width: Platform.OS === 'web' ? 36 : 32, height: Platform.OS === 'web' ? 36 : 32, borderRadius: Platform.OS === 'web' ? 18 : 16, backgroundColor: '#AFC9F5', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Feather name="download" size={Platform.OS === 'web' ? 16 : 14} color="#1D4ED8" />
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={{ fontSize: 18, fontWeight: '800', color: '#111111' }}>{certData.totalDownloads}</Text>
@@ -397,7 +397,7 @@ Platform.OS === 'android' ? (
 
           {/* Subject + Test Type + Difficulty */}
               <View style={{ width: '100%', maxWidth: 1100, alignSelf: 'center', backgroundColor: '#ffffff', borderRadius: 14, borderWidth: 1, borderColor: '#EDE8E1', padding: 20, marginBottom: 16, zIndex: 20, elevation: Platform.OS === 'android' ? 20 : 0 }}>
-                   <View style={{ flexDirection: Platform.OS === 'android' ? 'column' : 'row', gap: 16, zIndex: 30, elevation: Platform.OS === 'android' ? 20 : 0 }}>
+                   <View style={{ flexDirection: Platform.OS === 'web' ? 'row' : 'column', gap: 16, zIndex: 30, elevation: Platform.OS === 'android' ? 20 : 0 }}>
             <DropdownField
               label="Subject"
               value={subject}

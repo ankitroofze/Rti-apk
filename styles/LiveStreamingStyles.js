@@ -591,7 +591,7 @@ const LiveStreamingStyles = StyleSheet.create({
     backgroundColor: '#b91c1c',
     borderBottomWidth: 0.5,
     borderBottomColor: '#7f1d1d',
-    minHeight: Platform.OS === 'android' ? 44 : 40,
+    minHeight: Platform.OS === 'web' ? 40 : 44,
   },
   backBtn: {
     width: 28, // 👈 aur chhota kiya (pehle 32 tha)

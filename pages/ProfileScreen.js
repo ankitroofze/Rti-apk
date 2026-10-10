@@ -189,7 +189,7 @@ const w = {
   // Glossy Active View Button
   postViewBtnActive: { backgroundColor: ORANGE, borderTopWidth: 1.5, borderTopColor: 'rgba(255, 255, 255, 0.55)', borderWidth: 1, borderColor: 'rgba(0, 0, 0, 0.08)', shadowColor: ORANGE, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 5, elevation: 3 },
   postGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 3 },
-  postGridItem: { width: 'calc(33.333% - 2px)', aspectRatio: 1, overflow: 'hidden', backgroundColor: '#f1f5f9' },
+  postGridItem: { width: 'calc(20% - 3px)', aspectRatio: 1, overflow: 'hidden', backgroundColor: '#f1f5f9' },
   postGridThumb: { width: '100%', height: '100%', overflow: 'hidden', backgroundColor: '#f1f5f9' },
   postGridImage: { width: '100%', height: '100%' },
   
@@ -563,15 +563,20 @@ export default function ProfileScreen({ navigation, route }) {
     setUserPosts(userPostsData);
 
     if (revisionAtStart === followRevisionRef.current) {
-      setProfileStats({
-        posts: mergedPostKeys.size,
-        followers: Number(followSummary?.followersCount ?? 0),
-        following: Number(followSummary?.followingCount ?? 0),
-      });
-      setFollowLists({
-        followers: Array.isArray(followSummary?.followers) ? followSummary.followers : [],
-        following: Array.isArray(followSummary?.following) ? followSummary.following : [],
-      });
+      // FIX: follow API fail/null aaye to counts 0 mat karo — purane counts rakho.
+      if (followSummary && followSummary.followersCount != null && followSummary.followingCount != null) {
+        setProfileStats({
+          posts: mergedPostKeys.size,
+          followers: Number(followSummary.followersCount),
+          following: Number(followSummary.followingCount),
+        });
+        setFollowLists({
+          followers: Array.isArray(followSummary.followers) ? followSummary.followers : [],
+          following: Array.isArray(followSummary.following) ? followSummary.following : [],
+        });
+      } else {
+        setProfileStats((prev) => ({ ...prev, posts: mergedPostKeys.size }));
+      }
     } else {
       setProfileStats((prev) => ({ ...prev, posts: mergedPostKeys.size }));
     }
@@ -1679,7 +1684,7 @@ const handlePickImage = async () => {
                   {!isWebNarrow ? (
                     <View style={w.statsBox}>
                       <View style={w.statItem}>
-                        <Text style={w.statNum}>{profileStats.posts}</Text>
+                        <Text style={w.statNum}>{userPosts.length}</Text>
                         <Text style={w.statLabel}>Posts</Text>
                       </View>
                       <View style={w.statItem}>
@@ -1889,7 +1894,7 @@ style={[ProfileStyles.avatarCameraBadge, !canChangePhoto && { display: 'none' }]
 
                   <View style={ProfileStyles.profileStatsExact}>
                     <View style={ProfileStyles.profileStatExact}>
-                      <Text style={ProfileStyles.profileStatNumberExact}>{profileStats.posts}</Text>
+                      <Text style={ProfileStyles.profileStatNumberExact}>{userPosts.length}</Text>
                       <Text style={ProfileStyles.profileStatLabelExact}>Posts</Text>
                     </View>
 
@@ -1943,7 +1948,7 @@ style={[ProfileStyles.avatarCameraBadge, !canChangePhoto && { display: 'none' }]
                       </View>
                       <View style={ProfileStyles.statsRow}>
                         <View style={ProfileStyles.statItem}>
-                          <Text style={ProfileStyles.statValue}>{profileStats.posts}</Text>
+                          <Text style={ProfileStyles.statValue}>{userPosts.length}</Text>
                           <Text style={ProfileStyles.statLabel}>posts</Text>
                         </View>
                         <View style={ProfileStyles.statItem}>

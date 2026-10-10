@@ -14,8 +14,9 @@ function VideoSlide({ uri, width }) {
 }
 
 // images = [url, url...], video = 'url' (optional). Swipe + auto-slide (Android, iOS, web)
-export default function MediaGallery({ images = [], video = '', width, maxHeight = 420, onPressImage, radius = 0 }) {
+export default function MediaGallery({ images = [], video = '', width, maxHeight = 420, onPressImage, radius = 0, fit = 'contain' }) {
   const [page, setPage] = useState(0);
+  const [failedUris, setFailedUris] = useState([]);
   const scrollRef = useRef(null);
   const pageRef = useRef(0);
   const touchingRef = useRef(false);
@@ -25,16 +26,21 @@ export default function MediaGallery({ images = [], video = '', width, maxHeight
     const seen = new Set();
     (images || []).forEach((u) => {
       const s = String(u || '').trim();
-      if (s && !seen.has(s)) { seen.add(s); list.push({ type: 'image', uri: s }); }
+      // jo image load nahi hui (khali slide) use gallery se hata do
+      if (s && !seen.has(s) && !failedUris.includes(s)) { seen.add(s); list.push({ type: 'image', uri: s }); }
     });
     const v = String(video || '').trim();
     if (v) list.push({ type: 'video', uri: v });
     return list;
-  }, [images, video]);
+  }, [images, video, failedUris]);
 
   const count = slides.length;
   const hasVideoSlide = slides.some((x) => x.type === 'video');
-  const frameHeight = hasVideoSlide ? Math.max(maxHeight, Math.round((width || 0) * 9 / 16)) : maxHeight;
+  const coverMode = fit === 'cover';
+  // cover mode: frame hamesha 16:9 (video jaisa) — image poora fill karti hai, chhoti nahi dikhti
+  const frameHeight = coverMode
+    ? Math.round((width || 0) * 9 / 16)
+    : (hasVideoSlide ? Math.max(maxHeight, Math.round((width || 0) * 9 / 16)) : maxHeight);
   const slidesKey = slides.map((s) => s.uri).join('|');
 
   const goTo = useCallback((i) => {
@@ -107,7 +113,14 @@ export default function MediaGallery({ images = [], video = '', width, maxHeight
                 <VideoSlide uri={s.uri} width={width} />
               ) : (
                 <TouchableOpacity activeOpacity={0.92} disabled={!onPressImage} onPress={onPressImage}>
-                  <AutoFitAdImage uri={s.uri} maxWidth={width} maxHeight={maxHeight} radius={radius} />
+                  <AutoFitAdImage
+                    uri={s.uri}
+                    maxWidth={width}
+                    maxHeight={coverMode ? frameHeight : maxHeight}
+                    radius={coverMode ? 0 : radius}
+                    fill={coverMode}
+                    onError={() => setFailedUris((prev) => (prev.includes(s.uri) ? prev : [...prev, s.uri]))}
+                  />
                 </TouchableOpacity>
               )}
             </View>

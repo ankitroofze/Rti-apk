@@ -6,6 +6,8 @@
 //  Route params (optional): { tab: 'received' | 'sent', ecomId: 3 }
 // ═══════════════════════════════════════════════════════════════════════════
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
+import ModuleWebHeader from '../components/Modulewebheader';
+import ModuleMobileHeader from '../components/ModuleMobileHeader';
 import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -33,7 +35,7 @@ import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 
 const IS_WEB = Platform.OS === 'web';
 const FONT = { regular: 'Roboto_400Regular', medium: 'Roboto_500Medium', bold: 'Roboto_700Bold', black: 'Roboto_900Black' };
-const ORANGE = '#ea580c';
+const ORANGE = '#b91c1c';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 const notify = (title, msg) => (IS_WEB ? alert(`${title}\n${msg}`) : Alert.alert(title, msg));
@@ -74,7 +76,7 @@ const initialsOf = (name) =>
 
 // ⚠️ status 1/2 ka exact matlab backend se confirm karke labels badal lena
 const STATUS_MAP = {
-  1: { bg: '#fff7ed', text: '#ea580c', icon: 'information-circle', label: 'Open' },
+  1: { bg: '#FEF2F2', text: '#b91c1c', icon: 'information-circle', label: 'Open' },
   2: { bg: '#f1f5f9', text: '#475569', icon: 'checkmark-done-circle', label: 'Closed' },
 };
 const getStatus = (s) => STATUS_MAP[Number(s)] || STATUS_MAP[1];
@@ -84,8 +86,8 @@ const Thumb = ({ uri, size = 64, radius = 12 }) =>
   uri ? (
     <Image source={{ uri }} style={{ width: size, height: size, borderRadius: radius, backgroundColor: '#f1f5f9' }} />
   ) : (
-    <View style={{ width: size, height: size, borderRadius: radius, backgroundColor: '#fff7ed', alignItems: 'center', justifyContent: 'center' }}>
-      <Ionicons name="image-outline" size={size * 0.38} color="#fdba74" />
+    <View style={{ width: size, height: size, borderRadius: radius, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' }}>
+      <Ionicons name="image-outline" size={size * 0.38} color="#FCA5A5" />
     </View>
   );
 
@@ -93,7 +95,7 @@ const Avatar = ({ person, size = 34 }) => {
   const uri = person?.profile_image_url;
   if (uri) return <Image source={{ uri }} style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: '#f1f5f9' }} />;
   return (
-    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: '#ffedd5', alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: '#FEE2E2', alignItems: 'center', justifyContent: 'center' }}>
       <Text style={{ fontSize: size * 0.36, color: ORANGE, fontFamily: FONT.bold }}>{initialsOf(person?.name)}</Text>
     </View>
   );
@@ -198,7 +200,7 @@ const EnquiryCard = ({ item, mode, onOpen, onCall, onWhatsApp }) => {
 
         {/* chips */}
         <View style={s.chipsRow}>
-          <Chip icon="layers-outline" text={`Qty: ${item.qty || '—'}`} tint={ORANGE} bg="#fff7ed" border="#fed7aa" />
+          <Chip icon="layers-outline" text={`Qty: ${item.qty || '—'}`} tint={ORANGE} bg="#FEF2F2" border="#FECACA" />
           <Chip icon="calendar-outline" text={fmtDate(item.created_at)} />
         </View>
 
@@ -224,6 +226,9 @@ const EnquiryCard = ({ item, mode, onOpen, onCall, onWhatsApp }) => {
 
 // ─── Detail modal ─────────────────────────────────────────────────────────────
 const DetailModal = ({ visible, item, mode, onClose, onCall, onWhatsApp, onEmail }) => {
+  const { width: winW } = useWindowDimensions();
+  // Wide screens: 2-column layout so everything fits without any scrolling.
+  const wide = IS_WEB && winW >= 760;
   if (!item) return null;
   const st = getStatus(item.status);
   const ecom = ecomOf(item);
@@ -234,8 +239,8 @@ const DetailModal = ({ visible, item, mode, onClose, onCall, onWhatsApp, onEmail
   return (
     <Modal visible={visible} transparent animationType={IS_WEB ? 'fade' : 'slide'} onRequestClose={onClose}>
       <Pressable style={m.backdrop} onPress={onClose}>
-        <Pressable style={m.sheet} onPress={() => {}}>
-          <View style={m.handle} />
+        <Pressable style={[m.sheet, wide && m.sheetWide]} onPress={() => {}}>
+          {!wide && <View style={m.handle} />}
           <View style={m.header}>
             <View style={{ flex: 1 }}>
               <Text style={m.title}>Enquiry #{item.id}</Text>
@@ -246,48 +251,73 @@ const DetailModal = ({ visible, item, mode, onClose, onCall, onWhatsApp, onEmail
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={m.body}>
-            <View style={[m.statusBanner, { backgroundColor: st.bg }]}>
-              <Ionicons name={st.icon} size={18} color={st.text} />
-              <Text style={[m.statusText, { color: st.text }]}>Status: {st.label}</Text>
-              {isRemoved(item) && <Text style={[m.statusText, { color: '#dc2626', marginLeft: 'auto' }]}>Ecom removed</Text>}
-            </View>
-
-            {images.length > 0 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
-                {images.map((uri) => (
-                  <Image key={uri} source={{ uri }} style={m.gallery} />
-                ))}
-              </ScrollView>
-            )}
-
-            <View style={m.card}>
-              <Text style={m.cardTitle}>Ecom / Product</Text>
-              <Row label="Name" value={ecomName(item)} />
-              <Row label="Category" value={ecom.category} />
-              <Row label="Price" value={money(ecom.price)} highlight />
-              <Row label="Available" value={ecom.quantity != null ? String(ecom.quantity) : ''} />
-              <Row label="City" value={ecom.city} />
-              {ecom.description ? <Row label="About" value={ecom.description} multiline /> : null}
-            </View>
-
-            <View style={m.card}>
-              <Text style={m.cardTitle}>{isReceived ? 'Enquiry sender' : 'Your enquiry'}</Text>
-              <Row label="Name" value={enquirerName(item)} />
-              <Row label="Email" value={item.email} />
-              <Row label="Contact" value={item.contact} />
-              <Row label="Quantity" value={item.qty} />
-              {item.message ? <Row label="Message" value={item.message} multiline /> : null}
-              <Row label="Date" value={fmtDate(item.created_at)} />
-            </View>
-
-            {!isReceived && (
+          {(() => {
+            const statusEl = (
+              <View style={[m.statusBanner, { backgroundColor: st.bg }]}>
+                <Ionicons name={st.icon} size={18} color={st.text} />
+                <Text style={[m.statusText, { color: st.text }]}>Status: {st.label}</Text>
+                {isRemoved(item) && <Text style={[m.statusText, { color: '#dc2626', marginLeft: 'auto' }]}>Ecom removed</Text>}
+              </View>
+            );
+            const imagesEl = images.length > 0 ? (
+              wide ? (
+                <View style={m.galleryRow}>
+                  {images.slice(0, 3).map((uri) => (
+                    <Image key={uri} source={{ uri }} style={m.galleryWide} resizeMode="cover" />
+                  ))}
+                </View>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
+                  {images.map((uri) => (
+                    <Image key={uri} source={{ uri }} style={m.gallery} />
+                  ))}
+                </ScrollView>
+              )
+            ) : null;
+            const ecomCard = (
+              <View style={m.card}>
+                <Text style={m.cardTitle}>Ecom / Product</Text>
+                <Row label="Name" value={ecomName(item)} />
+                <Row label="Category" value={ecom.category} />
+                <Row label="Price" value={money(ecom.price)} highlight />
+                <Row label="Available" value={ecom.quantity != null ? String(ecom.quantity) : ''} />
+                <Row label="City" value={ecom.city} />
+                {ecom.description ? <Row label="About" value={ecom.description} multiline /> : null}
+              </View>
+            );
+            const senderCard = (
+              <View style={m.card}>
+                <Text style={m.cardTitle}>{isReceived ? 'Enquiry sender' : 'Your enquiry'}</Text>
+                <Row label="Name" value={enquirerName(item)} />
+                <Row label="Email" value={item.email} />
+                <Row label="Contact" value={item.contact} />
+                <Row label="Quantity" value={item.qty} />
+                {item.message ? <Row label="Message" value={item.message} multiline /> : null}
+                <Row label="Date" value={fmtDate(item.created_at)} />
+              </View>
+            );
+            const sellerCard = !isReceived ? (
               <View style={m.card}>
                 <Text style={m.cardTitle}>Seller contact</Text>
                 <Row label="Phone" value={sellerContact(item)} />
               </View>
-            )}
-          </ScrollView>
+            ) : null;
+
+            if (wide) {
+              // No scroll: left = status + images + product, right = enquiry + seller
+              return (
+                <View style={m.bodyWide}>
+                  <View style={m.colWide}>{statusEl}{imagesEl}{ecomCard}</View>
+                  <View style={m.colWide}>{senderCard}{sellerCard}</View>
+                </View>
+              );
+            }
+            return (
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={m.body}>
+                {statusEl}{imagesEl}{ecomCard}{senderCard}{sellerCard}
+              </ScrollView>
+            );
+          })()}
 
           <View style={m.actions}>
             <TouchableOpacity style={[m.actBtn, { backgroundColor: '#0f172a' }]} onPress={() => onCall(phone)} activeOpacity={0.85}>
@@ -417,33 +447,27 @@ export default function MyEnquiriesScreen({ navigation, route }) {
   const loading = isReceived ? recvLoading : sentLoading;
   const error = isReceived ? recvError : sentError;
 
-  const header = (
-    <>
-      {Platform.OS === 'android' ? (
-        <ModuleAndroidHeader
-          title="Enquiries"
-          onBack={() => navigation?.goBack?.()}
-          rightExtra={
-            <TouchableOpacity onPress={onRefresh} activeOpacity={0.8} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="refresh-outline" size={20} color="#fff" />
-            </TouchableOpacity>
-          }
-        />
-      ) : (
-        <>
-          <View style={{ height: IS_WEB ? 0 : insets.top, backgroundColor: '#ffffff' }} />
-          <View style={s.header}>
-            <TouchableOpacity style={s.backBtn} onPress={() => navigation?.goBack?.()} activeOpacity={0.8}>
-              <Ionicons name="arrow-back" size={22} color="#000" />
-            </TouchableOpacity>
-            <Text style={[s.headerTitle, fontsLoaded && { fontFamily: FONT.bold }]}>Enquiries</Text>
-            <TouchableOpacity style={s.refreshBtn} onPress={onRefresh} activeOpacity={0.8}>
-              <Ionicons name="refresh-outline" size={18} color={ORANGE} />
-            </TouchableOpacity>
-          </View>
-        </>
-      )}
-    </>
+  // Red (profile-red) header — web, Android aur iOS teeno me same
+  const refreshButton = (
+    <TouchableOpacity onPress={onRefresh} activeOpacity={0.8} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
+      <Ionicons name="refresh-outline" size={20} color="#fff" />
+    </TouchableOpacity>
+  );
+
+  const header = IS_WEB ? (
+    <ModuleWebHeader
+      title="Enquiries"
+      navigation={navigation}
+      onBack={() => navigation?.goBack?.()}
+      rightExtra={refreshButton}
+    />
+  ) : (
+    <ModuleMobileHeader
+      title="Enquiries"
+      navigation={navigation}
+      onBack={() => navigation?.goBack?.()}
+      rightExtra={refreshButton}
+    />
   );
 
   const listHeader = (
@@ -483,7 +507,7 @@ export default function MyEnquiriesScreen({ navigation, route }) {
   ) : (
     <View style={s.emptyBox}>
       <View style={s.emptyIconWrap}>
-        <Ionicons name={isReceived ? 'mail-open-outline' : 'paper-plane-outline'} size={30} color="#fdba74" />
+        <Ionicons name={isReceived ? 'mail-open-outline' : 'paper-plane-outline'} size={30} color="#FCA5A5" />
       </View>
       <Text style={s.emptyTitle}>{isReceived ? 'No enquiries received yet' : 'You have not sent any enquiries yet'}</Text>
       <Text style={s.emptySub}>
@@ -547,8 +571,8 @@ const s = StyleSheet.create({
   segCount: { minWidth: 20, paddingHorizontal: 6, height: 18, borderRadius: 9, backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' },
   segCountText: { fontSize: 10, color: '#475569', fontWeight: '700' , fontFamily: FONT.bold },
 
-  filterBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fed7aa', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 12 },
-  filterText: { fontSize: 12, color: '#9a3412' , fontFamily: FONT.regular },
+  filterBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 12 },
+  filterText: { fontSize: 12, color: '#991B1B' , fontFamily: FONT.regular },
 
   card: { flexDirection: 'row', backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 16, marginBottom: 12, overflow: 'hidden' },
   cardAccent: { width: 4 },
@@ -585,7 +609,7 @@ const s = StyleSheet.create({
   centerBox: { alignItems: 'center', paddingVertical: 60, gap: 12 },
   centerText: { fontSize: 13, color: '#94a3b8' , fontFamily: FONT.regular },
   emptyBox: { alignItems: 'center', backgroundColor: '#fff', borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', paddingVertical: 48, marginTop: 4 },
-  emptyIconWrap: { width: 64, height: 64, borderRadius: 20, backgroundColor: '#fff7ed', alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
+  emptyIconWrap: { width: 64, height: 64, borderRadius: 20, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center', marginBottom: 14 },
   emptyTitle: { fontSize: 15, fontWeight: '700', color: '#0f172a', fontFamily: FONT.bold, textAlign: 'center', paddingHorizontal: 24 },
   emptySub: { fontSize: 12, color: '#64748b', marginTop: 6, textAlign: 'center', paddingHorizontal: 32 , fontFamily: FONT.regular },
   retryBtn: { marginTop: 16, backgroundColor: ORANGE, borderRadius: 10, paddingHorizontal: 22, paddingVertical: 9 },
@@ -595,6 +619,11 @@ const s = StyleSheet.create({
 const m = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: 'rgba(15,23,42,0.55)', justifyContent: IS_WEB ? 'center' : 'flex-end', alignItems: IS_WEB ? 'center' : 'stretch', padding: IS_WEB ? 24 : 0 },
   sheet: { backgroundColor: '#fff', borderTopLeftRadius: 24, borderTopRightRadius: 24, borderBottomLeftRadius: IS_WEB ? 24 : 0, borderBottomRightRadius: IS_WEB ? 24 : 0, maxHeight: '90%', width: IS_WEB ? 520 : '100%', paddingBottom: IS_WEB ? 0 : 12 },
+  sheetWide: { width: 860, maxHeight: '94%', overflow: 'hidden' },
+  bodyWide: { flexDirection: 'row', gap: 14, padding: 16, paddingBottom: 4, alignItems: 'flex-start' },
+  colWide: { flex: 1 },
+  galleryRow: { flexDirection: 'row', gap: 8, marginBottom: 12 },
+  galleryWide: { flex: 1, height: 96, borderRadius: 12, backgroundColor: '#f1f5f9' },
   handle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#e2e8f0', marginTop: 10 },
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 18, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
   title: { fontSize: 16, fontWeight: '700', color: '#0f172a', fontFamily: FONT.bold },

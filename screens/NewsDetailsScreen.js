@@ -223,6 +223,32 @@ function useResolvedImageUri(rawUri) {
   return resolved;
 }
 
+// Gallery ki saari images resolve karo (web pe 'idb-media:' links seedha load nahi hote)
+function useResolvedImageUris(list) {
+  const key = (list || []).join('|');
+  const [out, setOut] = useState(() => (list || []).filter((u) => u && !isIdbMediaUri(u)));
+  useEffect(() => {
+    let alive = true;
+    const created = [];
+    (async () => {
+      const res = await Promise.all((list || []).map(async (u) => {
+        if (!u) return null;
+        if (!isIdbMediaUri(u)) return u;
+        const next = await resolveIdbMediaUriToObjectUrl(u);
+        if (next) created.push(next);
+        return next || null;
+      }));
+      if (!alive) { created.forEach((x) => { try { URL.revokeObjectURL(x); } catch {} }); return; }
+      setOut(res.filter(Boolean));
+    })();
+    return () => {
+      alive = false;
+      created.forEach((x) => { try { URL.revokeObjectURL(x); } catch {} });
+    };
+  }, [key]);
+  return out;
+}
+
 function CommentThreadItem({
   comment,
   currentUserEmail,
@@ -466,6 +492,11 @@ export default function NewsDetailsScreen({ route, navigation }) {
   const [showFullBody, setShowFullBody] = useState(false);
 
   const resolvedHeroImage = useResolvedImageUri(article.image);
+  const resolvedGalleryImages = useResolvedImageUris(article.images);
+  // Gallery ki width = image box ki asli width (pehle poori window width li ja rahi thi)
+  const [heroWrapWidth, setHeroWrapWidth] = useState(0);
+  // Fixed 16:9 frame (max 420) — image/gallery/video sab isi frame me poore fill hote hain
+  const heroFrameHeight = heroWrapWidth ? Math.min(420, Math.round(heroWrapWidth * 9 / 16)) : 220;
   const resolvedAuthorImage = useResolvedImageUri(authorProfileImageUri || article.author_profile_image);
 
   const currentUserEmail = useMemo(
@@ -1015,7 +1046,19 @@ export default function NewsDetailsScreen({ route, navigation }) {
                   ) : null}
                 </View>
 
-                <View style={[styles.storyHeroImageWrap, isCompactLayout && styles.storyHeroImageWrapCompact]}>
+                <View
+                  style={[
+                    styles.storyHeroImageWrap,
+                    isCompactLayout && styles.storyHeroImageWrapCompact,
+                    (!canPlayVideo && article.images.length > 1)
+                      ? { height: heroFrameHeight + 26, backgroundColor: 'transparent' }
+                      : { height: heroFrameHeight },
+                  ]}
+                  onLayout={(e) => {
+                    const w = Math.round(e.nativeEvent.layout.width);
+                    if (w > 0 && w !== heroWrapWidth) setHeroWrapWidth(w);
+                  }}
+                >
                   {canPlayVideo ? (
                     <TouchableOpacity style={styles.videoContainer} activeOpacity={1} onPress={handleVideoPress}>
                       <VideoView
@@ -1047,9 +1090,10 @@ export default function NewsDetailsScreen({ route, navigation }) {
                     </TouchableOpacity>
                   ) : article.images.length > 1 ? (
                     <MediaGallery
-                      images={article.images}
-                      width={Math.max(1, responsiveWidth - (isCompactLayout ? 32 : 64))}
-                      maxHeight={220}
+                      images={resolvedGalleryImages}
+                      width={Math.max(1, heroWrapWidth || Math.min(responsiveWidth - (isCompactLayout ? 32 : 64), 668))}
+                      fit="cover"
+                      maxHeight={heroFrameHeight}
                       radius={5}
                     />
                   ) : heroImageSource ? (

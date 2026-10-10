@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import {
   View, Text, Image, TouchableOpacity, StyleSheet,
   Platform, Share, TextInput, KeyboardAvoidingView, Alert, Clipboard, ScrollView, Linking,
-  Modal, TouchableWithoutFeedback,
+  Modal, TouchableWithoutFeedback, ActivityIndicator,
 } from 'react-native';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
 import ProfileAvatar from './ProfileAvatar';
@@ -334,7 +334,7 @@ function InlineReadMore({ text, style, onPress }) {
   const [expanded, setExpanded] = useState(false);
   const [isTruncated, setIsTruncated] = useState(false);
   const safeText = String(text || '').trim();
-  const isAndroid = Platform.OS === 'android';
+  const isAndroid = Platform.OS === 'android' || Platform.OS === 'ios'; // iOS bhi Android jaisa (Show more toggle hidden, poora text press)
   const shouldShowToggle = !isAndroid && (isTruncated || safeText.length > 180);
 
   useEffect(() => {
@@ -1379,7 +1379,7 @@ const handleLike = async () => {
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-           <View ref={cardRef} style={[styles.storyCardShell, Platform.OS === 'android' && styles.androidStoryCardShell, altShade && styles.storyCardShellAlt]}>
+           <View ref={cardRef} style={[styles.storyCardShell, Platform.OS !== 'web' && styles.androidStoryCardShell, altShade && styles.storyCardShellAlt]}>
 
         {/* ── Ad Top Box ── */}
         <View style={styles.adTopBox}>
@@ -1547,7 +1547,7 @@ const handleLike = async () => {
               images={story.images}
               width={mediaWidth}
               maxHeight={240}
-              radius={6}
+              fit="cover"
               onPressImage={handleImagePress}
             />
           ) : (
@@ -1561,9 +1561,12 @@ const handleLike = async () => {
               <Text style={styles.topStoryRibbonText}>TOP STORY</Text>
             </View>
           ) : null}
-          <TouchableOpacity style={[styles.storyCategoryChip, { backgroundColor: `${categoryColor}CC` }]} onPress={() => isAdStory ? handleAdPress() : onOpenCategory(story)} activeOpacity={0.84}>
-            <Text style={styles.storyCategoryChipText}>{isAdStory ? 'Sponsored' : getLocalizedCategoryLabel(story.category, commonCopy)}</Text>
-          </TouchableOpacity>
+          {/* Orange category tag (Breaking News etc.) hata diya — sirf ads par 'Sponsored' dikhega */}
+          {isAdStory ? (
+            <TouchableOpacity style={[styles.storyCategoryChip, { backgroundColor: `${categoryColor}CC` }]} onPress={handleAdPress} activeOpacity={0.84}>
+              <Text style={styles.storyCategoryChipText}>Sponsored</Text>
+            </TouchableOpacity>
+          ) : null}
 
      {isAdStory && story.redirect === 'lead_form' ? (
             <View style={styles.adLeadStrip}>
@@ -1848,7 +1851,7 @@ const handleLike = async () => {
       </View>
 
       {/* ── Thin separator between cards ── */}
-      <View style={[styles.cardSeparator, Platform.OS === 'android' && styles.androidCardSeparator]} />
+      <View style={[styles.cardSeparator, Platform.OS !== 'web' && styles.androidCardSeparator]} />
     </KeyboardAvoidingView>
   );
 }

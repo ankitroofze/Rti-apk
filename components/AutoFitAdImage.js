@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Image, View } from 'react-native';
 
-export default function AutoFitAdImage({ uri, maxWidth, maxHeight, radius = 0, style }) {
+export default function AutoFitAdImage({ uri, maxWidth, maxHeight, radius = 0, style, onError, fill = false }) {
   const [ratio, setRatio] = useState(null);
 
   // Android pe onLoad ka nativeEvent.source kabhi-kabhi nahi aata -> getSize se ratio lo
@@ -19,6 +19,19 @@ export default function AutoFitAdImage({ uri, maxWidth, maxHeight, radius = 0, s
 
   if (!uri) return null;
 
+  // fill=true: image poore frame (maxWidth x maxHeight) ko cover kare — koi khali side nahi
+  if (fill) {
+    return (
+      <Image
+        source={{ uri }}
+        onError={onError}
+        style={[{ width: maxWidth, height: maxHeight, borderRadius: radius }, style]}
+        resizeMode="cover"
+        fadeDuration={0}
+      />
+    );
+  }
+
   let width = maxWidth;
   let height = ratio ? maxWidth / ratio : Math.min(maxWidth * 0.6, maxHeight);
   if (ratio && height > maxHeight) {
@@ -30,6 +43,7 @@ export default function AutoFitAdImage({ uri, maxWidth, maxHeight, radius = 0, s
     <View style={{ width: maxWidth, alignItems: 'center' }}>
       <Image
         source={{ uri }}
+        onError={onError}
         onLoad={(e) => {
           const { width: w, height: h } = e.nativeEvent.source || {};
           if (w && h && !ratio) setRatio(w / h);

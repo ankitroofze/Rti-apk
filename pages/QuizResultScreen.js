@@ -143,10 +143,10 @@ console.log('QUIZ RESULT DATA:', JSON.stringify(result));
   );
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={Platform.OS === 'android' ? [] : ['top']}>
+    <SafeAreaView style={{ flex: 1 }} edges={Platform.OS === 'web' ? ['top'] : []}>
     <View style={QuizResultStyles.root}>
       {/* Custom Header with Back Button */}
-      {Platform.OS === 'android' ? (
+      {Platform.OS !== 'web' ? (
 <ModuleAndroidHeader title="Quiz Result" onBack={() => navigation.goBack()} />
 ) : (
 <>

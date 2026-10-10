@@ -49,7 +49,6 @@ export default function MySubscriptionsScreen({ navigation }) {
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>My Subscriptions</Text>
-        <Text style={styles.subtitle}>Aapke active subscriptions aur naye plans</Text>
 
         {loading ? (
           <ActivityIndicator color="#F97316" style={{ marginTop: 30 }} />
@@ -73,10 +72,10 @@ export default function MySubscriptionsScreen({ navigation }) {
             </View>
           ))
         ) : (
-          <Text style={styles.emptyText}>Aapne abhi koi subscription nahi liya hai.</Text>
+          null
         )}
 
-        <Text style={[styles.subtitle, { marginTop: 22, marginBottom: 10 }]}>Baki Subscriptions — Purchase Karein</Text>
+        <View style={{ height: 16 }} />
         {PURCHASE_LINKS.map((link) => (
           <TouchableOpacity
             key={link.screen}

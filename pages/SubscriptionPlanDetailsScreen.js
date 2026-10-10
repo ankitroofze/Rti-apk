@@ -74,7 +74,7 @@ export default function SubscriptionPlanDetailsScreen({ navigation, route }) {
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['left', 'right', 'bottom']}>
       <View style={S.root}>
-        {Platform.OS === 'android' ? (
+        {Platform.OS !== 'web' ? (
 <ModuleAndroidHeader title={headerTitle} onBack={() => navigation.goBack()} />
 ) : (
 <>

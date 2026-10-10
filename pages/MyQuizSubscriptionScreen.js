@@ -35,7 +35,7 @@ export default function MyQuizSubscriptionScreen({ navigation }) {
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor="#F3F4F6" />
-      {Platform.OS === 'android' ? (
+      {Platform.OS !== 'web' ? (
 <ModuleAndroidHeader title="My Quiz Subscription" onBack={() => navigation.goBack()} />
 ) : (
 <>

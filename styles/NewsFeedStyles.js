@@ -731,7 +731,7 @@ metricLabel: {
     flexDirection: 'row',
     alignItems: 'flex-end',
     gap: 8,
-    paddingBottom: Platform.OS === 'android' ? 6 : 0,
+    paddingBottom: Platform.OS === 'web' ? 0 : 6,
   },
   commentInput: {
     flex: 1,

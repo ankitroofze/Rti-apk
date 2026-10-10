@@ -9,6 +9,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { UserStore } from '../store/UserStore';
 import { useToast } from '../components/ui/ToastProvider';
 import Text from '../components/RobotoText';
+import ModuleWebHeader from '../components/Modulewebheader';
+import ModuleMobileHeader from '../components/ModuleMobileHeader';
 
 // ── Design Tokens ───
 const C = {
@@ -130,7 +132,7 @@ const sb = StyleSheet.create({
 });
 
 // ── Ad Card ────────────────────────────────────────────────────────────────────
-function AdCard({ ad, onEdit, onDelete, isWeb }) {
+function AdCard({ ad, onEdit, onDelete, isWeb, isWide }) {
   const date = ad.created_at
     ? new Date(ad.created_at).toLocaleDateString('en-IN')
     : '—';
@@ -152,102 +154,119 @@ function AdCard({ ad, onEdit, onDelete, isWeb }) {
   const coverImage = imageUrls[0] || '';
 
   return (
-    <View style={[ac.card, isWeb && ac.cardWeb]}>
-      {/* Top row */}
-      <View style={ac.topRow}>
-        <View style={ac.photoWrap}>
-          {coverImage ? (
-            <Image source={{ uri: coverImage }} style={ac.photo} resizeMode="cover" />
-          ) : (
-            <View style={ac.photoPlaceholder}>
-              <Ionicons name="image-outline" size={22} color={C.textSub} />
-            </View>
-          )}
-          {imageUrls.length > 1 ? (
-            <View style={ac.mediaCount}><Text style={ac.mediaCountText}>+{imageUrls.length - 1}</Text></View>
-          ) : null}
-          {ad.video ? <View style={ac.videoBadge}><Ionicons name="videocam" size={11} color="#fff" /></View> : null}
-        </View>
-        <View style={ac.info}>
-          <Text style={ac.title} numberOfLines={2}>{ad.title || 'Untitled Ad'}</Text>
-          <Text style={ac.desc} numberOfLines={2}>{ad.description || '—'}</Text>
-          <View style={ac.metaRow}>
-            <StatusBadge status={ad.status || 'active'} />
-            <Text style={ac.date}>
-              {updatedDate ? `Edited ${updatedDate}` : `Posted ${date}`}
-            </Text>
+    <View style={[ac.card, isWeb && ac.cardWeb, isWide && ac.cardWide]}>
+      {/* Cover image */}
+      <View style={ac.cover}>
+        {coverImage ? (
+          <Image source={{ uri: coverImage }} style={ac.coverImg} resizeMode="cover" />
+        ) : (
+          <View style={ac.coverPlaceholder}>
+            <Ionicons name="megaphone-outline" size={34} color={C.orangeMid} />
           </View>
-          {(startLabel || endLabel) ? (
-            <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6 }}>
-              <Ionicons name="calendar-outline" size={12} color={C.orange} />
-              <Text style={[ac.date, { marginLeft: 4, color: C.orangeDark, fontWeight: '700' }]}>
-                {startLabel ? `Start: ${startLabel}` : ''}{startLabel && endLabel ? '  •  ' : ''}{endLabel ? `End: ${endLabel}` : ''}
-              </Text>
+        )}
+        <View style={ac.coverBadgeLeft}>
+          <StatusBadge status={ad.status || 'active'} />
+        </View>
+        <View style={ac.coverBadgeRight}>
+          {ad.video ? (
+            <View style={ac.mediaChip}><Ionicons name="videocam" size={12} color="#fff" /></View>
+          ) : null}
+          {imageUrls.length > 1 ? (
+            <View style={ac.mediaChip}>
+              <Ionicons name="images-outline" size={12} color="#fff" />
+              <Text style={ac.mediaChipText}>{imageUrls.length}</Text>
             </View>
           ) : null}
         </View>
       </View>
 
-      {/* Redirect info */}
-      {ad.redirect && (
-        <View style={ac.redirectRow}>
-          <Ionicons name="link-outline" size={13} color={C.orange} />
-          <Text style={ac.redirectText}>
-            Redirect: <Text style={{ fontWeight: '700', color: C.orangeDark }}>{ad.redirect}</Text>
-          </Text>
-        </View>
-      )}
+      {/* Body */}
+      <View style={ac.body}>
+        <Text style={ac.title} numberOfLines={2}>{ad.title || 'Untitled Ad'}</Text>
+        <Text style={ac.desc} numberOfLines={2}>{ad.description || '—'}</Text>
 
-      {/* Action buttons */}
-      <View style={ac.btnRow}>
-        <TouchableOpacity style={ac.editBtn} onPress={() => onEdit(ad)} activeOpacity={0.8}>
-          <Ionicons name="create-outline" size={14} color={C.orange} />
-          <Text style={ac.editBtnText}>Edit (1 credit)</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={ac.deleteBtn} onPress={() => onDelete(ad.id)} activeOpacity={0.8}>
-          <Ionicons name="trash-outline" size={14} color={C.red} />
-        </TouchableOpacity>
+        <View style={ac.chipRow}>
+          <View style={ac.chip}>
+            <Ionicons name="time-outline" size={12} color={C.orange} />
+            <Text style={ac.chipText}>{updatedDate ? `Edited ${updatedDate}` : `Posted ${date}`}</Text>
+          </View>
+          {startLabel ? (
+            <View style={ac.chip}>
+              <Ionicons name="calendar-outline" size={12} color={C.orange} />
+              <Text style={ac.chipText}>Start {startLabel}</Text>
+            </View>
+          ) : null}
+          {endLabel ? (
+            <View style={ac.chip}>
+              <Ionicons name="flag-outline" size={12} color={C.orange} />
+              <Text style={ac.chipText}>End {endLabel}</Text>
+            </View>
+          ) : null}
+        </View>
+
+        {ad.redirect ? (
+          <View style={ac.redirectRow}>
+            <Ionicons name="link-outline" size={13} color={C.orange} />
+            <Text style={ac.redirectText} numberOfLines={1}>
+              Redirect: <Text style={{ fontWeight: '700', color: C.orangeDark }}>{ad.redirect}</Text>
+            </Text>
+          </View>
+        ) : null}
+
+        <View style={ac.btnRow}>
+          <TouchableOpacity style={ac.editBtn} onPress={() => onEdit(ad)} activeOpacity={0.85}>
+            <Ionicons name="create-outline" size={15} color="#fff" />
+            <Text style={ac.editBtnText}>Edit</Text>
+            <View style={ac.creditPill}><Text style={ac.creditPillText}>1 credit</Text></View>
+          </TouchableOpacity>
+          <TouchableOpacity style={ac.deleteBtn} onPress={() => onDelete(ad.id)} activeOpacity={0.8}>
+            <Ionicons name="trash-outline" size={16} color={C.orange} />
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
 }
 const ac = StyleSheet.create({
   card: {
-    backgroundColor: C.white, borderRadius: 18,
-    padding: 16, marginBottom: 12,
-    borderWidth: 1, borderColor: C.border,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
+    backgroundColor: C.white, borderRadius: 16, overflow: 'hidden',
+    marginBottom: 14,
+    borderWidth: 1, borderColor: '#EDE8E1',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06, shadowRadius: 12, elevation: 3,
   },
-  cardWeb: { marginBottom: 0 },
-  topRow:  { flexDirection: 'row', gap: 12, marginBottom: 10 },
-  photoWrap: { flexShrink: 0, position: 'relative' },
-  photo:    { width: 72, height: 72, borderRadius: 12 },
-  mediaCount: { position: 'absolute', right: 3, bottom: 3, minWidth: 22, height: 18, paddingHorizontal: 4, borderRadius: 9, backgroundColor: 'rgba(0,0,0,0.68)', alignItems: 'center', justifyContent: 'center' },
-  mediaCountText: { color: '#fff', fontSize: 10, fontWeight: '800' },
-  videoBadge: { position: 'absolute', left: 3, top: 3, width: 20, height: 18, borderRadius: 9, backgroundColor: 'rgba(0,0,0,0.68)', alignItems: 'center', justifyContent: 'center' },
-  photoPlaceholder: {
-    width: 72, height: 72, borderRadius: 12,
-    backgroundColor: C.orangeLight, alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: C.orangeBorder,
-  },
-  info:    { flex: 1, minWidth: 0 },
-  title:   { fontSize: 14, fontWeight: '800', color: C.text, marginBottom: 4 },
-  desc:    { fontSize: 12, color: C.textSub, marginBottom: 6, lineHeight: 17 },
-  metaRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  date:    { fontSize: 11, color: C.textSub },
+  cardWeb:  { marginBottom: 0, width: '100%' },
+  cardWide: { width: '48.8%' },
+
+  cover:    { width: '100%', height: 150, backgroundColor: C.orangeLight },
+  coverImg: { width: '100%', height: '100%' },
+  coverPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: C.orangeLight },
+  coverBadgeLeft:  { position: 'absolute', top: 10, left: 10 },
+  coverBadgeRight: { position: 'absolute', top: 10, right: 10, flexDirection: 'row', gap: 6 },
+  mediaChip: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 8, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.6)' },
+  mediaChipText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+
+  body:  { padding: 14 },
+  title: { fontSize: 15, fontWeight: '800', color: C.text, marginBottom: 4, lineHeight: 20 },
+  desc:  { fontSize: 12.5, color: C.textSub, lineHeight: 18, marginBottom: 10 },
+
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 10 },
+  chip:    { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20, backgroundColor: C.orangeLight, borderWidth: 1, borderColor: C.orangeBorder },
+  chipText:{ fontSize: 11, fontWeight: '600', color: C.orangeDark },
 
   redirectRow: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: C.orangeLight, borderRadius: 8,
-    paddingHorizontal: 10, paddingVertical: 6, marginBottom: 10,
+    backgroundColor: '#FAFAFA', borderRadius: 10, borderWidth: 1, borderColor: C.border,
+    paddingHorizontal: 10, paddingVertical: 8, marginBottom: 12,
   },
   redirectText: { fontSize: 12, color: C.textSub, flex: 1 },
 
   btnRow:      { flexDirection: 'row', gap: 8 },
-  editBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 9, borderRadius: 10, backgroundColor: C.orangeLight, borderWidth: 1, borderColor: C.orangeBorder },
-  editBtnText: { fontSize: 13, fontWeight: '700', color: C.orange },
-  deleteBtn:   { width: 38, height: 38, borderRadius: 10, backgroundColor: C.redLight, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#fecaca' },
+  editBtn:     { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 42, borderRadius: 12, backgroundColor: C.orange },
+  editBtnText: { fontSize: 14, fontWeight: '800', color: '#fff' },
+  creditPill:  { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.22)' },
+  creditPillText: { fontSize: 10.5, fontWeight: '700', color: '#fff' },
+  deleteBtn:   { width: 42, height: 42, borderRadius: 12, backgroundColor: C.orangeLight, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: C.orangeMid },
 });
 
 // ── Main Screen ────────────────────────────────────────────────────────────────
@@ -365,20 +384,12 @@ export default function MyAdsScreen({ navigation }) {
   if (isWeb) {
     return (
       <View style={ws.root}>
-        {/* Top Bar */}
-        <View style={[ws.topBar, isCompactWeb && ws.topBarCompact]}>
-          <View style={[ws.topLeft, isCompactWeb && ws.topLeftCompact]}>
-            <Ionicons name="home" size={14} color="#ffffff" />
-            <Text style={ws.bcSep}>›</Text>
-            <Text style={ws.bcStep}>Dashboard</Text>
-            <Text style={ws.bcSep}>›</Text>
-            <Text style={ws.bcCur}>My Ads</Text>
-          </View>
-          <TouchableOpacity style={[ws.backBtn, isCompactWeb && ws.backBtnCompact]} onPress={() => navigation.navigate('Settings')} activeOpacity={0.8}>
-            <Ionicons name="arrow-back" size={13} color="#ffffff" />
-            <Text style={ws.backBtnText}>Back to menu</Text>
-          </TouchableOpacity>
-        </View>
+        {/* Top Bar — profile-red image header */}
+        <ModuleWebHeader
+          title="My Ads"
+          navigation={navigation}
+          onBack={() => navigation.navigate('Settings')}
+        />
 
         <ScrollView
           style={ws.scroll}
@@ -481,6 +492,7 @@ export default function MyAdsScreen({ navigation }) {
                       onEdit={handleEdit}
                       onDelete={handleDelete}
                       isWeb
+                      isWide={isWide}
                     />
                   ))}
                 </View>
@@ -497,21 +509,22 @@ export default function MyAdsScreen({ navigation }) {
   return (
     <View style={s.root}>
 
-      {/* Header */}
-      <View style={s.header}>
-        <TouchableOpacity onPress={() => navigation.navigate('Settings')} style={s.backBtn} activeOpacity={0.7}>
-          <Ionicons name="arrow-back" size={20} color="#ffffff" />
-        </TouchableOpacity>
-        <Text style={s.headerTitle}>My Advertisements</Text>
-        <TouchableOpacity
-          style={s.headerBuyBtn}
-          onPress={() => navigation.navigate('AdPlans', { returnTo: 'MyAds' })}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="flash" size={14} color="#ffffff" />
-         <Text style={s.headerBuyText}>Buy More Credits</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Header — profile-red image */}
+      <ModuleMobileHeader
+        title="My Advertisements"
+        navigation={navigation}
+        onBack={() => navigation.navigate('Settings')}
+        rightExtra={(
+          <TouchableOpacity
+            style={s.headerBuyBtn}
+            onPress={() => navigation.navigate('AdPlans', { returnTo: 'MyAds' })}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="flash" size={14} color="#ffffff" />
+            <Text style={s.headerBuyText}>Buy Credits</Text>
+          </TouchableOpacity>
+        )}
+      />
 
       <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
 

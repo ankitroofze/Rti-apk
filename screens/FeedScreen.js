@@ -1940,40 +1940,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
   };
   setPosts(prev => [nextPost, ...prev]);
 
-  try {
-    const user = await UserStore.getCurrentUser();
-    if (!user?.email) return;
-    const newsItem = {
-      id: postId, // ✅ ab real backend id
-      title: headline || 'My RTI Story',
-      subtitle: caption,
-      description: caption,
-      mediaType,
-      images: isVideoPost ? [] : [mediaUri],
-      video: isVideoPost ? mediaUri : null,
-      image: isVideoPost ? '' : mediaUri,
-      thumbnail: isVideoPost ? '' : mediaUri,
-      file: null,
-      report_type: tag,
-      category: tag,
-      state: user.state || '', district: user.district || '', taluka: user.taluka || '',
-      status: 'approved',
-      createdBy: user.email,
-      author_name: user.name || 'User',
-      author_profile_image: user.profile_image || '',
-      author_has_blue_tick: UserStore.hasBlueTick(user),
-      author_is_premium: UserStore.hasPremiumAccess(user),
-      author_is_subscriber: UserStore.hasActiveSubscription(user),
-      author_role: user.role || 'free',
-      author_role_label: user.role_label || '',
-      author_seat_id: user.state_seat?.seat_id || '', author_seat_name: user.state_seat?.seat_name || '',
-      createdAt: new Date().toISOString(), date: new Date().toLocaleDateString('en-IN'),
-      views: 0, shares: 0, likes: 0, comments: 0, liked_by: [],
-    };
-    await UserStore.updateUser(user.email, { news: [newsItem, ...(Array.isArray(user.news) ? user.news : [])] });
-  } catch {
-    Alert.alert('Save failed', 'Unable to save this reel right now.');
-  }
+  // ✅ Local `user.news` me copy save nahi hoti — data sirf server se aata hai.
 }, [currentUser, currentUserEmail]);
 
 const onViewableItemsChangedRef = useRef(({ viewableItems }) => {

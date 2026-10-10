@@ -1,11 +1,12 @@
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ScrollView,
   Text,
   View,
   TouchableOpacity,
   Modal,
+  Pressable,
   Platform,
   StyleSheet,
   ImageBackground,
@@ -27,23 +28,13 @@ import ModuleWebHeader from '../components/Modulewebheader';
 import { INDIAN_STATES, getDistricts, getTalukas, getVillages } from './locationData';
 
 // ─────────────────────────────────────────────
-// Role badge colors (kept outside StyleSheet — dynamic per role)
-// ─────────────────────────────────────────────
-const ROLE_COLORS = {
-  free:    { bg: '#f1f5f9', text: '#64748b', border: '#cbd5e1' },
-  basic:   { bg: '#fff0f5', text: '#ea580c', border: '#ffd6e7' },
-  pro:     { bg: '#f0fdf4', text: '#15803d', border: '#86efac' },
-  premium: { bg: '#fefce8', text: '#b45309', border: '#fcd34d' },
-};
-
-// ─────────────────────────────────────────────
 // LocationFilterDropdown — State/District/Taluka filter chip
 // (web/Android/iOS teeno par same dikhta hai, koi Platform check nahi)
 // ─────────────────────────────────────────────
 function LocationFilterDropdown({ label, value, options, onChange, placeholder = 'All', disabled = false }) {
   const [open, setOpen] = useState(false);
   return (
-        <View style={{ ...(Platform.OS === 'android' ? { width: '100%' } : { flex: 1 }), position: 'relative', zIndex: open ? 20 : 1, elevation: open ? 20 : 1 }}>
+        <View style={{ ...(Platform.OS !== 'web' ? { width: '100%' } : { flex: 1 }), position: 'relative', zIndex: open ? 20 : 1, elevation: open ? 20 : 1 }}>
       <TouchableOpacity
         activeOpacity={disabled ? 1 : 0.7}
         onPress={() => !disabled && setOpen((o) => !o)}
@@ -101,690 +92,6 @@ function LocationFilterDropdown({ label, value, options, onChange, placeholder =
 }
 
 // ─────────────────────────────────────────────
-// RoleBadge — unchanged (used in both app & web)
-// ─────────────────────────────────────────────
-function RoleBadge({ role = 'free', label }) {
-  const colors = ROLE_COLORS[role] || ROLE_COLORS.free;
-  const iconName =
-    role === 'premium' ? 'star'
-    : role === 'pro'   ? 'award'
-    : role === 'basic' ? 'check-circle'
-    : 'user';
-
-  return (
-    <View style={[S.roleBadge, { backgroundColor: colors.bg, borderColor: colors.border }]}>
-      <Feather name={iconName} size={12} color={colors.text} />
-      <Text style={[S.roleBadgeText, { color: colors.text }]}>
-        {label || UserStore.getRoleLabel(role)}
-      </Text>
-    </View>
-  );
-}
-
-// ─────────────────────────────────────────────
-// SeatSelectModal — unchanged
-// ─────────────────────────────────────────────
-function SeatSelectModal({
-  visible,
-  stateName,
-  seats,
-  selectedSeatId,
-  pendingPlan,
-  onClose,
-  onSelectSeatId,
-  onSubmit,
-}) {
-  const seatsToShow = Array.isArray(seats) ? seats : [];
-  const isLoadingSeats = seatsToShow.length === 0;
-
-  return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <TouchableOpacity
-        style={S.seatBackdrop}
-        activeOpacity={1}
-        onPress={onClose}
-      >
-      <View style={S.seatSheet}>
-        <View style={S.seatHandle} />
-        <Text style={S.seatTitle}>Select your seat</Text>
-        <View style={S.seatStateRow}>
-          <View style={S.seatStateDot} />
-          <Text style={S.seatStateText}>{stateName || '-'}</Text>
-        </View>
-        {pendingPlan ? (
-          <View style={S.pendingPlanBox}>
-            <Text style={S.pendingPlanLabel}>Selected Plan</Text>
-            <Text style={S.pendingPlanName}>{pendingPlan.plan_name}</Text>
-            <Text style={S.pendingPlanMeta}>₹{pendingPlan.price} · {pendingPlan.duration}</Text>
-          </View>
-        ) : null}
-        <ScrollView showsVerticalScrollIndicator={false}>
-          {isLoadingSeats ? (
-            <Text style={S.seatLoadingText}>Loading seats…</Text>
-          ) : null}
-          <View style={S.seatList}>
-            {seatsToShow.map((seat) => {
-              const isTaken    = seat.status === 'taken';
-              const isDisabled = seat.status === 'disabled';
-              const isSelected = selectedSeatId === seat.id;
-              const disabled   = isTaken || isDisabled;
-              const statusText =
-                seat.status === 'mine' ? 'Yours'
-                : isTaken              ? 'Taken'
-                : isDisabled           ? 'Disabled'
-                : 'Available';
-              return (
-                <TouchableOpacity
-                  key={seat.id}
-                  activeOpacity={0.85}
-                  disabled={disabled}
-                  onPress={() => onSelectSeatId(seat.id)}
-                  style={[
-                    S.seatItem,
-                    isSelected && S.seatItemSelected,
-                    disabled   && S.seatItemDisabled,
-                  ]}
-                >
-                  <View style={S.seatItemLeft}>
-                    <Text style={[S.seatItemName, disabled && S.seatItemNameDisabled]}>
-                      {seat.name}
-                    </Text>
-                    <Text style={[S.seatItemStatus, disabled && S.seatItemStatusMuted]}>
-                      {statusText}
-                    </Text>
-                  </View>
-                  {isSelected
-                    ? <View style={S.seatCheckCircle}><Feather name="check" size={13} color="#fff" /></View>
-                    : <View style={S.seatCheckCircleEmpty} />
-                  }
-                </TouchableOpacity>
-              );
-                    })}
-          </View>
-        </ScrollView>
-
-        <TouchableOpacity
-          activeOpacity={0.85}
-          disabled={!selectedSeatId}
-          onPress={() => onSubmit?.(selectedSeatId)}
-          style={[
-            S.seatSubmitBtn,
-            !selectedSeatId && S.seatSubmitBtnDisabled,
-          ]}
-        >
-          <Text style={S.seatSubmitBtnText}>Submit</Text>
-        </TouchableOpacity>
-      </View>
-      </TouchableOpacity>
-    </Modal>
-  );
-}
-
-// ─────────────────────────────────────────────
-// WEB-ONLY: 3-column pricing layout
-// (renders only when Platform.OS === 'web')
-// ─────────────────────────────────────────────
-const WEB_ORANGE       = '#ea580c';
-const WEB_ORANGE_DARK  = '#ea6a0a';
-const WEB_ORANGE_LIGHT = '#fff7ed';
-
-const webStyles = StyleSheet.create({
-  pageScroller: {
-    flex: 1,
-    backgroundColor: '#fff4ec',
-  },
-  // ── Page wrapper ──
-  pageWrapper: {
-    flexGrow: 1,
-    backgroundColor: '#fff4ec',
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingVertical: 32,
-    paddingHorizontal: 24,
-  },
-  pageWrapperCompact: {
-    paddingVertical: 0,
-    paddingHorizontal: 0,
-  },
-  innerBox: {
-    backgroundColor: '#ffffff',
-    borderRadius: 32,
-    width: '100%',
-    maxWidth: 1100,
-    overflow: 'hidden',
-    shadowColor: '#ea580c',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 48,
-    elevation: 8,
-  },
-  innerBoxCompact: {
-    maxWidth: '100%',
-    borderRadius: 0,
-    minHeight: 'auto',
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-
-  // ── Navbar ──
-  navbar: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  paddingHorizontal: 32,
-  paddingVertical: 18,
-  borderBottomWidth: 1,
-  borderBottomColor: '#ffede0',
-},
-  navbarCompact: {
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-  },
-  navLogo: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: WEB_ORANGE,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 36,
-  },
-  navLogoText: {
-    color: '#fff',
-    fontWeight: '800',
-    fontSize: 18,
-  },
-  navLinks: {
-    flexDirection: 'row',
-    flex: 1,
-    gap: 36,
-  },
-  navLink: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: '#78716c',
-  },
-  navLinkActive: {
-    color: WEB_ORANGE,
-    fontWeight: '700',
-  },
-  navLoginBtn: {
-    backgroundColor: WEB_ORANGE,
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderRadius: 12,
-    shadowColor: WEB_ORANGE,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.30,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  navLoginText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-
-  // ── Hero ──
-  heroSection: {
-    alignItems: 'center',
-    paddingTop: 44,
-    paddingBottom: 28,
-    paddingHorizontal: 32,
-  },
-  heroSectionCompact: {
-    paddingTop: 24,
-    paddingBottom: 18,
-    paddingHorizontal: 16,
-  },
-  heroTitle: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: '#1c1917',
-    marginBottom: 10,
-    textAlign: 'center',
-    letterSpacing: -0.5,
-  },
-  heroTitleCompact: {
-    fontSize: 24,
-    lineHeight: 30,
-    marginBottom: 8,
-  },
-  heroSubRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  heroSubRowCompact: {
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-  },
-  heroSubText: {
-    fontSize: 15,
-    color: '#78716c',
-  },
-  heroSubLink: {
-    fontSize: 15,
-    color: WEB_ORANGE,
-    fontWeight: '600',
-  },
-
-  // ── Plans grid ──
-  plansGrid: {
-    flexDirection: 'row',
-    paddingHorizontal: 32,
-    paddingBottom: 48,
-    gap: 18,
-    alignItems: 'stretch',
-  },
-  plansGridCompact: {
-    flexDirection: 'column',
-    paddingHorizontal: 14,
-    paddingBottom: 24,
-    gap: 12,
-    alignItems: 'stretch',
-  },
-
-  // ── Plan card ──
-  planCard: {
-    flex: 1,
-    minWidth: 0,
-    borderRadius: 24,
-    padding: 28,
-    borderWidth: 1.5,
-    borderColor: '#ffe8d6',
-    backgroundColor: '#fffaf7',
-    shadowColor: '#ea580c',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
-    shadowRadius: 16,
-    elevation: 2,
-  },
-  planCardCompact: {
-    flexGrow: 0,
-    flexShrink: 0,
-    flexBasis: 'auto',
-    width: '100%',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-  },
-  planCardFeatured: {
-    backgroundColor: WEB_ORANGE,
-    borderColor: WEB_ORANGE,
-    shadowOpacity: 0.28,
-    shadowRadius: 24,
-    elevation: 8,
-  },
-  planCardFeaturedCompact: {
-    shadowOpacity: 0.18,
-  },
-
-  planCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 18,
-  },
-  planCardHeaderCompact: {
-    marginBottom: 10,
-    gap: 10,
-  },
-  planCardName: {
-    fontSize: 19,
-    fontWeight: '800',
-    color: '#1c1917',
-  },
-  planCardNameCompact: {
-    fontSize: 16,
-    flex: 1,
-  },
-  planCardNameFeatured: {
-    color: '#ffffff',
-  },
-  popularBadge: {
-    backgroundColor: 'rgba(255,255,255,0.28)',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 5,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.5)',
-  },
-  popularBadgeText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#ffffff',
-  },
-
-  planCardPrice: {
-    fontSize: 36,
-    fontWeight: '900',
-    color: '#1c1917',
-    letterSpacing: -1,
-    marginBottom: 4,
-  },
-  planCardPriceCompact: {
-    fontSize: 28,
-    lineHeight: 34,
-  },
-  planCardPriceFeatured: {
-    color: '#ffffff',
-  },
-  planCardPriceSuffix: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: '#a8a29e',
-    letterSpacing: 0,
-  },
-  planCardPriceSuffixCompact: {
-    fontSize: 13,
-  },
-  planCardPriceSuffixFeatured: {
-    color: 'rgba(255,255,255,0.7)',
-  },
-
-  planCardDesc: {
-    fontSize: 13,
-    color: '#78716c',
-    lineHeight: 20,
-    marginBottom: 18,
-    minHeight: 40,
-  },
-  planCardDescCompact: {
-    minHeight: 0,
-    marginBottom: 12,
-  },
-  planCardDescFeatured: {
-    color: 'rgba(255,255,255,0.82)',
-  },
-
-  planDivider: {
-    height: 1,
-    backgroundColor: '#ffe8d6',
-    marginBottom: 16,
-  },
-  planDividerFeatured: {
-    backgroundColor: 'rgba(255,255,255,0.22)',
-  },
-
-  featuresList: {
-    flex: 1,
-    gap: 10,
-    marginBottom: 24,
-  },
-  featuresListCompact: {
-    flexGrow: 0,
-    flexShrink: 0,
-    flexBasis: 'auto',
-    gap: 8,
-    marginBottom: 16,
-  },
-  featureRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  featureText: {
-    fontSize: 13.5,
-    color: '#57534e',
-    fontWeight: '500',
-    flex: 1,
-    lineHeight: 20,
-  },
-  featureTextCompact: {
-    fontSize: 12.5,
-    lineHeight: 18,
-  },
-  featureTextFeatured: {
-    color: 'rgba(255,255,255,0.90)',
-  },
-  featureCheckIcon: {
-    marginTop: 3,
-  },
-
-  planBtn: {
-    width: '100%',
-    paddingVertical: 13,
-    borderRadius: 14,
-    alignItems: 'center',
-    backgroundColor: WEB_ORANGE,
-    shadowColor: WEB_ORANGE,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.28,
-    shadowRadius: 10,
-    elevation: 4,
-  },
-  planBtnCompact: {
-    paddingVertical: 11,
-    borderRadius: 12,
-  },
-  planBtnOutlined: {
-    backgroundColor: '#ffffff',
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.6)',
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  planBtnText: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#ffffff',
-  },
-  planBtnTextCompact: {
-    fontSize: 14,
-  },
-  planBtnTextOutlined: {
-    color: WEB_ORANGE,
-  },
-
-  // ── Hover state for non-featured cards ──
-  planCardHovered: {
-    borderColor: WEB_ORANGE,
-    backgroundColor: '#fff7ed',
-    shadowOpacity: 0.18,
-    shadowRadius: 24,
-    elevation: 6,
-    transform: [{ translateY: -4 }],
-  },
-
-  // ── Nav back button ──
-  navBackBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginRight: 28,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    backgroundColor: '#fff7ed',
-    borderWidth: 1,
-    borderColor: '#ffe8d6',
-  },
-  navBackBtnCompact: {
-    marginRight: 0,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  navBackBtnText: {
-    color: WEB_ORANGE,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-});
-
-// Web plan card data — index 1 (middle) is featured
-const WEB_PLAN_CARD_META = [
-  { featured: false, popular: false },
-  { featured: true,  popular: true  },
-  { featured: false, popular: false },
-];
-
-function WebPlanCard({ plan, index, onPress, compact }) {
-  const meta       = WEB_PLAN_CARD_META[index] || {};
-  const isFeatured = meta.featured;
-  const planRole   = UserStore.getRoleFromPlanId(plan.plan_id);
-  const seatRoleName = UserStore.getSeatRoleNameForPlanRoleId(plan.role_id_raw);
-  const [hovered, setHovered] = useState(false);
-  return (
-    <TouchableOpacity
-      activeOpacity={0.92}
-      onPress={() => onPress(plan)}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={[
-        webStyles.planCard,
-        compact && webStyles.planCardCompact,
-        isFeatured && webStyles.planCardFeatured,
-        compact && isFeatured && webStyles.planCardFeaturedCompact,
-        !isFeatured && hovered && webStyles.planCardHovered,
-      ]}
-    >
-      {/* Header row */}
-      <View style={[webStyles.planCardHeader, compact && webStyles.planCardHeaderCompact]}>
-              <View>
-          <Text style={[webStyles.planCardName, compact && webStyles.planCardNameCompact, isFeatured && webStyles.planCardNameFeatured]}>
-            {plan.plan_name}
-          </Text>
-          {seatRoleName ? (
-            <Text style={{ fontSize: 12, fontWeight: '700', marginTop: 2, color: isFeatured ? 'rgba(255,255,255,0.85)' : '#F97316' }}>
-              {seatRoleName}
-            </Text>
-          ) : null}
-        </View>
-        {meta.popular && (
-          <View style={webStyles.popularBadge}>
-            <Text style={webStyles.popularBadgeText}>Popular</Text>
-          </View>
-        )}
-      </View>
-
-      {/* Price */}
-      <Text style={[webStyles.planCardPrice, compact && webStyles.planCardPriceCompact, isFeatured && webStyles.planCardPriceFeatured]}>
-        ₹{plan.price}{' '}
-        <Text style={[webStyles.planCardPriceSuffix, compact && webStyles.planCardPriceSuffixCompact, isFeatured && webStyles.planCardPriceSuffixFeatured]}>
-          /{plan.duration}
-        </Text>
-      </Text>
-
-      {/* Description / role badge as desc */}
-      <Text style={[webStyles.planCardDesc, compact && webStyles.planCardDescCompact, isFeatured && webStyles.planCardDescFeatured]}>
-        {plan.description || `${plan.plan_name} for a comprehensive experience.`}
-      </Text>
-
-      {/* Divider */}
-      <View style={[webStyles.planDivider, isFeatured && webStyles.planDividerFeatured]} />
-
-      {/* Features */}
-      <View style={[webStyles.featuresList, compact && webStyles.featuresListCompact]}>
-        {Array.isArray(plan.features) && plan.features.map((feature, idx) => (
-          <View key={idx} style={webStyles.featureRow}>
-            <Feather
-              name="check"
-              size={14}
-              color={isFeatured ? 'rgba(255,255,255,0.9)' : WEB_ORANGE}
-              style={webStyles.featureCheckIcon}
-            />
-            <Text style={[webStyles.featureText, compact && webStyles.featureTextCompact, isFeatured && webStyles.featureTextFeatured]}>
-              {feature}
-            </Text>
-          </View>
-        ))}
-      </View>
-
-      {/* CTA Button */}
-      <TouchableOpacity
-        activeOpacity={0.88}
-        onPress={() => onPress(plan)}
-        style={[webStyles.planBtn, compact && webStyles.planBtnCompact, isFeatured && webStyles.planBtnOutlined]}
-      >
-        <Text style={[webStyles.planBtnText, compact && webStyles.planBtnTextCompact, isFeatured && webStyles.planBtnTextOutlined]}>
-          Go Premium
-        </Text>
-      </TouchableOpacity>
-    </TouchableOpacity>
-  );
-}
-function WebLayout({ subscriptionData, loading, handleBuyPlan, navigation, compact }) {
-  return (
-    <ScrollView
-      style={webStyles.pageScroller}
-      contentContainerStyle={[webStyles.pageWrapper, compact && webStyles.pageWrapperCompact]}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={[webStyles.innerBox, compact && webStyles.innerBoxCompact]}>
-
-        {/* Navbar */}
-<View style={[webStyles.navbar, compact && webStyles.navbarCompact]}>
-  <TouchableOpacity
-    style={[webStyles.navBackBtn, compact && webStyles.navBackBtnCompact]}
-    onPress={() => navigation.goBack()}
-  >
-    <Feather name="arrow-left" size={16} color={WEB_ORANGE} />
-    <Text style={webStyles.navBackBtnText}>Back</Text>
-  </TouchableOpacity>
-</View>
-
-        {/* ✅ NEW: Active subscription status card — web par bhi dikhna chahiye */}
-        {!loading ? (
-          <View style={{ width: '100%', maxWidth: 560, marginHorizontal: 'auto', marginBottom: 16 }}>
-                      <SubscriptionStatusCard
-              isActive={Boolean(subscriptionData.activePlan) && (!subscriptionData.activePlan?.expires_at || new Date(subscriptionData.activePlan.expires_at) >= new Date())}
-              planName={subscriptionData.activePlan?.plan_name}
-              price={subscriptionData.activePlan?.price}
-              duration={subscriptionData.activePlan?.duration}
-              credits={subscriptionData.activePlan?.credits}
-              features={subscriptionData.activePlan?.features}
-              purchasedAt={subscriptionData.activePlan?.purchased_at}
-expiresAt={subscriptionData.activePlan?.expires_at}
-              roles={subscriptionData.activePlan?.role_names}
-              onBuyPress={() => setSeatModalOpen(true)}
-            />
-          </View>
-        ) : null}
-
-        {/* Hero */}
-        <View style={[webStyles.heroSection, compact && webStyles.heroSectionCompact]}>
-          <Text style={[webStyles.heroTitle, compact && webStyles.heroTitleCompact]}>Unlock Fitness Excellence With Premium</Text>
-          <View style={[webStyles.heroSubRow, compact && webStyles.heroSubRowCompact]}>
-            <Text style={webStyles.heroSubText}>Pick the plan that's best for you, or </Text>
-            <Text style={webStyles.heroSubLink}>call us</Text>
-            <Text style={webStyles.heroSubText}> to find it</Text>
-          </View>
-        </View>
-
-        {/* 3-column Plans */}
-        <View style={[webStyles.plansGrid, compact && webStyles.plansGridCompact]}>
-          {loading ? (
-            <Text style={S.loadingText}>Loading plans…</Text>
-          ) : (
-            subscriptionData.plans.map((plan, index) => (
-              <WebPlanCard
-                key={plan.plan_id}
-                plan={plan}
-                index={index}
-                onPress={(p) => navigation.navigate('SubscriptionPlanDetails', {
-                  headerTitle: 'Subscription Plans',
-                  plan: p,
-                  theme: getCardTheme(index),
-                  isActive: subscriptionData.activePlan?.plan_id === p.plan_id,
-                  onBuyPlan: handleBuyPlan,
-                })}
-                compact={compact}
-              />
-            ))
-          )}
-        </View>
-
-      </View>
-    </ScrollView>
-  );
-}
-
-// ─────────────────────────────────────────────
 // Main Screen — Platform.OS check here only
 // ─────────────────────────────────────────────
 export default function SubscriptionPlansScreen({ navigation, route }) {
@@ -803,6 +110,9 @@ export default function SubscriptionPlansScreen({ navigation, route }) {
   const [detailsModal, setDetailsModal] = useState(null); // Read More pe click hote hi { plan, theme } set hogaoga
   // ✅ Sold seats (plan + location key). Backend 409 seat_unavailable aate hi yahan add hota hai.
   const [soldKeys, setSoldKeys] = useState([]);
+  const [paying, setPaying] = useState(false);        // checkout chal raha hai — buttons disable
+  const [loadError, setLoadError] = useState('');      // plans refresh fail hone par inline message
+  const navTimerRef = useRef(null);
 
    const [subscriptionData, setSubscriptionData] = useState({
     currentUser:      null,
@@ -828,12 +138,19 @@ export default function SubscriptionPlansScreen({ navigation, route }) {
    // ✅ FIX: plan ka apna location field khaali ho tabhi woh "national" maan ke hamesha dikhega.
   // Agar plan ka koi field bhara hai (jaise state = "Maharashtra"), to woh plan TABHI dikhega
   // jab user ne exact wahi filter explicitly select kiya ho — khaali filter pe nahi dikhega.
+  // ✅ Sirf LIVE (expire na hua) active plan hi "active" maana jaayega
+  const activePlanLive = (() => {
+    const ap = subscriptionData.activePlan;
+    if (!ap) return null;
+    if (ap.expires_at && UserStore.isExpired(ap.expires_at)) return null;
+    return ap;
+  })();
   const filteredPlans = subscriptionData.plans.filter((plan) => {
     const matchState    = !plan.state    || (filterState    && String(plan.state).trim().toLowerCase()    === filterState.toLowerCase());
     const matchDistrict = !plan.district || (filterDistrict && String(plan.district).trim().toLowerCase() === filterDistrict.toLowerCase());
     const matchTaluka   = !plan.taluka   || (filterTaluka   && String(plan.taluka).trim().toLowerCase()   === filterTaluka.toLowerCase());
     const matchVillage  = !plan.village  || (filterVillage  && String(plan.village).trim().toLowerCase()  === filterVillage.toLowerCase());
-    const isMyActivePlan = subscriptionData.activePlan?.plan_id === plan.plan_id;
+    const isMyActivePlan = activePlanLive?.plan_id === plan.plan_id;
     return isMyActivePlan || (matchState && matchDistrict && matchTaluka && matchVillage);
   });
   const returnTo = route?.params?.returnTo || 'Subscription Plans';
@@ -843,37 +160,70 @@ export default function SubscriptionPlansScreen({ navigation, route }) {
   const loadPlans = useCallback(async () => {
     // full-screen loader sirf pehli baar; filter badalne par silent refresh
     const isFirstLoad = !firstLoadDone.current;
-    if (isFirstLoad) {
-      setLoading(true);
-      // ✅ FAST: pehle local saved data se Active plan card turant dikha do,
-      // network (sync + plans list) ka wait mat karo
-      const quick = await UserStore.getActivePlanQuick();
-      if (quick) {
-        setSubscriptionData((prev) => ({ ...prev, ...quick, plans: prev.plans?.length ? prev.plans : quick.plans }));
-        setActiveReady(true);
+    try {
+      if (isFirstLoad) {
+        setLoading(true);
+        // ✅ FAST: pehle local saved data se Active plan card turant dikha do,
+        // network (sync + plans list) ka wait mat karo
+        const quick = await UserStore.getActivePlanQuick();
+        if (quick) {
+          setSubscriptionData((prev) => ({ ...prev, ...quick, plans: prev.plans?.length ? prev.plans : quick.plans }));
+          setActiveReady(true);
+        }
       }
+      const [data, seatData] = await Promise.all([
+        UserStore.getSubscriptionSummary({
+          state: filterState,
+          district: filterDistrict,
+          taluka: filterTaluka,
+          village: filterVillage,
+        }, { skipSync: !isFirstLoad && (Date.now() - lastSyncAt.current) < 60000 }),
+        UserStore.getStateSeatSummary(),
+      ]);
+      firstLoadDone.current = true;
+      if (isFirstLoad || (Date.now() - lastSyncAt.current) >= 60000) lastSyncAt.current = Date.now();
+      // ✅ data null SIRF tab aata hai jab user logged-out ho. Network/server error par
+      // ab cached data + loadFailed aata hai, Login par nahi bheja jaata.
+      if (!data) { navigation.replace('Login'); return; }
+      setSubscriptionData(data);
+      setSeatSummary(seatData || null);
+      setLoadError(data.loadFailed ? 'Unable to refresh plans. Showing saved data — please check your internet connection.' : '');
+      const seatId = seatData?.current_seat?.seat_id || '';
+      setSelectedSeatId((prev) => prev || seatId);
+    } catch (err) {
+      console.warn('[SubscriptionPlans] loadPlans failed:', err?.message || err);
+      setLoadError('Unable to load plans. Please check your internet connection and try again.');
+    } finally {
+      // ✅ Kuch bhi ho (error/return), loader kabhi atka nahi rahega
+      setLoading(false);
+      setActiveReady(true);
     }
-    const [data, seatData] = await Promise.all([
-      UserStore.getSubscriptionSummary({
-        state: filterState,
-        district: filterDistrict,
-        taluka: filterTaluka,
-        village: filterVillage,
-      }, { skipSync: !isFirstLoad && (Date.now() - lastSyncAt.current) < 60000 }),
-      UserStore.getStateSeatSummary(),
-    ]);
-    firstLoadDone.current = true;
-    if (isFirstLoad || (Date.now() - lastSyncAt.current) >= 60000) lastSyncAt.current = Date.now();
-    setLoading(false);
-    setActiveReady(true);
-    if (!data) { navigation.replace('Login'); return; }
-    setSubscriptionData(data);
-    setSeatSummary(seatData || null);
-    const seatId = seatData?.current_seat?.seat_id || '';
-    setSelectedSeatId((prev) => prev || seatId);
   }, [navigation, filterState, filterDistrict, filterTaluka, filterVillage]);
 
   useFocusEffect(useCallback(() => { loadPlans(); }, [loadPlans]));
+
+  // ✅ Pichla payment kat gaya tha par verify nahi ho paya (net/server issue / app band) —
+  // screen khulte hi automatically dobara verify karo.
+  useFocusEffect(useCallback(() => {
+    let alive = true;
+    (async () => {
+      if (payingRef.current) return;
+      const r = await UserStore.retryPendingRolePayment();
+      if (!alive || !r) return;
+      if (r.ok) {
+        lastSyncAt.current = 0;
+        try { await loadPlans(); } catch (e) { /* ignore */ }
+        showPopup(`🎉 ${r.plan_name || 'Your plan'} activated!`, 'success');
+      } else if (r.stillPending) {
+        showPopup('Your payment was received. We are still confirming your subscription — it will be activated automatically. Please do not pay again.', 'info');
+      } else if (r.message) {
+        showPopup(r.message, 'error');
+      }
+    })();
+    return () => { alive = false; };
+  }, [loadPlans, showPopup]));
+
+  useEffect(() => () => { if (navTimerRef.current) clearTimeout(navTimerRef.current); }, []);
 const stateName    = filterState || seatSummary?.state || subscriptionData.currentUser?.state || '';
 const activeSeatId = seatSummary?.current_seat?.seat_id || '';
 // ✅ NEW: seat sirf State se nahi, plan ke apne District/Taluka/Village se bhi
@@ -905,7 +255,7 @@ const isPlanSold = (plan) => {
   // ✅ Premium plan kabhi Sold nahi dikhega (seat lock nahi hota) — backend is_sold bheje tab bhi nahi
   if (UserStore.isPremiumPlan(plan)) return false;
   // Apna active plan Sold nahi dikhega ("Currently active" dikhega)
-  if (subscriptionData.activePlan?.plan_id === plan.plan_id) return false;
+  if (activePlanLive?.plan_id === plan.plan_id) return false;
   // Baaki saare role plans: backend ka is_sold ya 409 seat_unavailable ke baad local sold key
   return Boolean(plan.is_sold) || soldKeys.includes(soldKeyFor(plan));
 };
@@ -918,10 +268,15 @@ const markPlanSold = (plan) => {
 const startSubscriptionPayment = async (plan, seatRoleId) => {
   if (payingRef.current) return; // pichla order/checkout abhi chal raha hai
   payingRef.current = true;
+  setPaying(true);
   try {
     await runSubscriptionPayment(plan, seatRoleId);
+  } catch (err) {
+    console.warn('[SubscriptionPlans] payment flow error:', err?.message || err);
+    showPopup('Something went wrong. If money was deducted, it will be confirmed automatically. Please try again.', 'error');
   } finally {
     payingRef.current = false;
+    setPaying(false);
   }
 };
 const runSubscriptionPayment = async (plan, seatRoleId) => {
@@ -930,11 +285,11 @@ const runSubscriptionPayment = async (plan, seatRoleId) => {
   // nikalo, taaki hamesha wahi plan ki apni district/taluka/village jaaye
   // jiske liye actually payment ho raha hai.
   // ✅ Seat location ki priority: plan ki fixed location > screen par chuna hua filter > profile.
-  // Pehle filter ignore hota tha, isliye 2 users alag profile location se alag seat khareed rahe the.
   const { seatState, planDistrict, planTaluka, planVillage } = getSeatLocation(plan);
 
   const orderResult = await UserStore.createPaymentOrder({
     plan_id: plan.plan_id,
+    plan,
     seat_state: seatState,
     seat_district: planDistrict,
     seat_taluka: planTaluka,
@@ -945,15 +300,19 @@ const runSubscriptionPayment = async (plan, seatRoleId) => {
   // ✅ 409 seat_unavailable / koi bhi error: message dikhao, Razorpay mat kholo,
   // user dusri location chun sakta hai
   if (!orderResult || orderResult.error) {
-    // ✅ 409 seat_unavailable -> is location par plan Sold mark, dobara buy nahi hoga
     if (orderResult?.seatUnavailable) markPlanSold(plan);
     showPopup(orderResult?.message || 'Unable to create order.', 'error');
     return;
   }
 
+  const confirmLater = () => showPopup(
+    'Your payment was received, but we could not confirm it yet. Please do not pay again — it will be activated automatically when you reopen this screen.',
+    'info'
+  );
+
   await openRazorpayCheckout(orderResult.razorpay, 'role', {
     onVerified: async (response) => {
-    const verifyResult = await UserStore.verifyPayment({
+      const verifyParams = {
         razorpay_order_id:   response.razorpay_order_id,
         razorpay_payment_id: response.razorpay_payment_id,
         razorpay_signature:  response.razorpay_signature,
@@ -964,34 +323,56 @@ const runSubscriptionPayment = async (plan, seatRoleId) => {
         seat_taluka: planTaluka,
         seat_village: planVillage,
         seat_role_id: seatRoleId,
-      });
+      };
+      // ✅ Paise kat chuke hain — pehle pending record save karo, taaki verify fail / app band
+      // hone par bhi next open par automatically verify ho jaye.
+      await UserStore.savePendingRolePayment({ params: verifyParams, plan_name: plan.plan_name });
+      const verifyResult = await UserStore.verifyPaymentWithRetry(verifyParams);
 
       if (verifyResult?.ok) {
-        // ✅ FIX: turant fresh data load karo (sync skip nahi) taaki Active plan card / "Currently active" abhi dikhe
+        await UserStore.clearPendingRolePayment();
+        // ✅ turant fresh data load karo (sync skip nahi) taaki Active plan card / "Currently active" abhi dikhe
         lastSyncAt.current = 0;
         try { await loadPlans(); } catch (e) { /* ignore */ }
         showPopup(`🎉 ${plan.plan_name} activated!`, 'success');
-        setTimeout(() => navigation.navigate(returnTo), 1500);
-      } else {
-        // ✅ verify 409 (seat_unavailable) yahin aata hai — "activated" mat dikhao, sirf message
-        if (verifyResult?.seatUnavailable) markPlanSold(plan);
-        showPopup(verifyResult?.message || 'Payment verification failed.', 'error');
+        if (navTimerRef.current) clearTimeout(navTimerRef.current);
+        navTimerRef.current = setTimeout(() => navigation.navigate(returnTo), 1500);
+        return;
       }
+      if (verifyResult?.seatUnavailable) {
+        // final answer (409) — dobara verify karne ka fayda nahi
+        await UserStore.clearPendingRolePayment();
+        markPlanSold(plan);
+        showPopup(verifyResult?.message || 'This seat is no longer available.', 'error');
+        return;
+      }
+      const retryable = Boolean(verifyResult?.isNetwork) || Number(verifyResult?.status) >= 500;
+      if (retryable) { confirmLater(); return; } // pending record rakha hai — auto retry hoga
+      // final reject (4xx): dobara try nahi hoga
+      await UserStore.clearPendingRolePayment();
+      showPopup(
+        `${verifyResult?.message || 'Payment verification failed.'} If money was deducted, please contact support with your payment receipt.`,
+        'error'
+      );
     },
+    // Payment ho gaya par verify step me unexpected error aaya — pending record bachta hai
+    onVerifyError: async () => { confirmLater(); },
     onFailed: async (errorInfo) => {
       // ✅ 'role' pass karo -> POST /role-subscriptions/payment/failed (seat turant free)
       // Back/cancel par seat release na ho to retry par "seat taken" aata hai, isliye ek baar dobara try karte hain
-      const release = () => UserStore.markPaymentFailed(
-        errorInfo.razorpay_order_id,
-        errorInfo.error_code,
-        errorInfo.error_description,
-        'role'
-      );
-      const res = await release();
-      if (!res?.ok) {
-        await new Promise((r) => setTimeout(r, 1500));
-        await release();
-      }
+      try {
+        const release = () => UserStore.markPaymentFailed(
+          errorInfo.razorpay_order_id,
+          errorInfo.error_code,
+          errorInfo.error_description,
+          'role'
+        );
+        const res = await release();
+        if (!res?.ok) {
+          await new Promise((r) => setTimeout(r, 1500));
+          await release();
+        }
+      } catch (e) { /* seat release best-effort */ }
       // Back dabane par "failed" nahi, simple cancel message
       showPopup(
         errorInfo.cancelled ? 'Payment cancelled. You can try again anytime.' : (errorInfo.error_description || 'Payment failed.'),
@@ -1001,6 +382,7 @@ const runSubscriptionPayment = async (plan, seatRoleId) => {
   });
 };
 const handleBuyPlan = (plan) => {
+  if (payingRef.current) return; // checkout pehle se chal raha hai
   // ✅ Sold plan ko koi doosra user buy nahi kar sakta
   if (isPlanSold(plan)) {
     showPopup('This seat is already taken. Please choose another location.', 'error');
@@ -1022,7 +404,12 @@ const handleBuyPlan = (plan) => {
   }
    setPendingPlan(plan);
   if (activeSeatId) {
-    startSubscriptionPayment(plan, activeSeatId);
+    // ✅ Purani seat tabhi use karo jab wo is plan ke role ke liye valid ho; warna plan ke role ki seat.
+    const allowedForPlan = UserStore.getSeatIdsForRoleId(plan.role_id_raw) || [];
+    const seatForPlan = allowedForPlan.length
+      ? (allowedForPlan.includes(activeSeatId) ? activeSeatId : allowedForPlan[0])
+      : activeSeatId;
+    startSubscriptionPayment(plan, seatForPlan);
     return;
   }
    // ✅ Web par bhi ab seat-select dropdown nahi aayega — Android/iOS jaisa hi
@@ -1030,66 +417,13 @@ const handleBuyPlan = (plan) => {
   startSubscriptionPayment(plan, UserStore.getSeatIdForRoleId(plan.role_id_raw) || activeSeatId || '');
 };
 
-// const handleBuyPlan = (plan) => {
-//   if (!stateName) {
-//     showPopup('Please select your state first.', 'error', {
-//       primaryLabel: 'Open',
-//       secondaryLabel: 'Cancel',
-//       onPrimaryPress: () =>
-//         navigation.navigate('StateSelect', { fromPremium: true, autoOpen: true }),
-//     });
-//     return;
-//   }
-//   setPendingPlan(plan);
-//   if (activeSeatId) {
-//     navigateToPayment(plan, stateName, activeSeatId);   // ✅ fixed
-//     return;
-//   }
-//   setSeatModalOpen(true);
-// };
-
-  // ── Web renders its own full layout ──
-  // if (Platform.OS === 'web') {
-  //   return (
-  //     <>
-  //       <WebLayout
-  //         subscriptionData={subscriptionData}
-  //         loading={loading}
-  //         handleBuyPlan={handleBuyPlan}
-  //         navigation={navigation}
-  //         compact={isCompactWeb}
-  //       />
-  //       {/* Seat modal works on web too */}
-  //     <SeatSelectModal
-  //       visible={seatModalOpen}
-  //       stateName={stateName}
-  //            seats={restrictedSeats}
-
-  //       selectedSeatId={selectedSeatId}
-  //       pendingPlan={pendingPlan}
-  //       onClose={() => setSeatModalOpen(false)}
-  //         onSelectSeatId={(seatId) => {
-  //         if (!seatId) return;
-  //         setSelectedSeatId(seatId);
-  //       }}
-  //       onSubmit={(seatId) => {
-  //         if (!seatId || !pendingPlan) return;
-  //         setSeatModalOpen(false);
-  //         const selectedPlan = pendingPlan;
-  //         setPendingPlan(null);
-  //         startSubscriptionPayment(selectedPlan, seatId);
-  //       }}
-  //     />
-  //     </>
-  //   );
-  // }
    // ── App (iOS / Android) — image header + horizontal carousel (side arrows
   // se ya swipe se scroll), fixed bottom "Pay" bar jiska color selected card
   // ke hisaab se badalta hai ──
   const selectedPlanIndex = subscriptionData.plans.findIndex((p) => p.plan_id === selectedPlanId);
   const selectedPlanObj = selectedPlanIndex >= 0 ? subscriptionData.plans[selectedPlanIndex] : null;
   const isSelectedPlanActive = Boolean(
-    selectedPlanObj && subscriptionData.activePlan?.plan_id === selectedPlanObj.plan_id
+    selectedPlanObj && activePlanLive?.plan_id === selectedPlanObj.plan_id
   );
   const selectedTheme = getCardTheme(selectedPlanIndex >= 0 ? selectedPlanIndex : 0);
 
@@ -1110,7 +444,7 @@ const handleBuyPlan = (plan) => {
         /* ✅ Web header — design ek hi jagah (components/ModuleWebHeader.js) se aata hai */
         <ModuleWebHeader title="Upgrade Your Role" navigation={navigation} />
       ) : (
-         Platform.OS === 'android' ? (
+         Platform.OS !== 'web' ? (
 <ModuleAndroidHeader title="Upgrade Your Role" onBack={() => navigation.navigate('QuickMenu')} />
 ) : (
 <ImageBackground
@@ -1147,7 +481,7 @@ const handleBuyPlan = (plan) => {
       {activeReady ? (
            <View style={{ width: '100%', maxWidth: 560, marginBottom: 16, alignSelf: 'center' }}>
             <SubscriptionStatusCard
-              isActive={Boolean(subscriptionData.activePlan) && (!subscriptionData.activePlan?.expires_at || new Date(subscriptionData.activePlan.expires_at) >= new Date())}
+              isActive={Boolean(activePlanLive)}
               roles={subscriptionData.activePlan?.role_names}
               planName={subscriptionData.activePlan?.plan_name}
               price={subscriptionData.activePlan?.price}
@@ -1166,7 +500,7 @@ const handleBuyPlan = (plan) => {
         <Text style={S.sectionTitle}>Our Premium Plans</Text>
 
                {/* ✅ NEW: State / District / Taluka / Village filter row */}
-              <View style={{ flexDirection: Platform.OS === 'android' ? 'column' : 'row', gap: 10, marginBottom: 18, position: 'relative', zIndex: 50, elevation: 50 }}>
+              <View style={{ flexDirection: Platform.OS === 'web' ? 'row' : 'column', gap: 10, marginBottom: 18, position: 'relative', zIndex: 50, elevation: 50 }}>
           <LocationFilterDropdown
             label="State"
             value={filterState}
@@ -1200,16 +534,26 @@ const handleBuyPlan = (plan) => {
           />
         </View>
 
+            {loadError ? (
+          <Text style={[S.loadingText, { color: '#b91c1c', marginBottom: 10 }]}>{loadError}</Text>
+        ) : null}
+
+            {!loading && subscriptionData.plans.length > filteredPlans.length ? (
+          <Text style={[S.loadingText, { marginBottom: 10 }]}>
+            {subscriptionData.plans.length - filteredPlans.length} more plan(s) are available for specific locations. Select State / District / Taluka above to see them.
+          </Text>
+        ) : null}
+
             {loading ? (
           <Text style={S.loadingText}>Loading plans…</Text>
         ) : filteredPlans.length === 0 ? (
           <Text style={S.loadingText}>
-            Is location ke liye koi subscription plan available nahi hai.
+            No subscription plans are available for this location. Try changing the State / District / Taluka filter.
           </Text>
         ) : (
           <View style={S.plansGrid}>
             {filteredPlans.map((plan, index) => {
-              const isActive = subscriptionData.activePlan?.plan_id === plan.plan_id;
+              const isActive = activePlanLive?.plan_id === plan.plan_id;
               const isSold = isPlanSold(plan);
               const isSelected = selectedPlanId === plan.plan_id;
               const theme = getCardTheme(index);
@@ -1258,12 +602,12 @@ const handleBuyPlan = (plan) => {
 
                     <TouchableOpacity
                       activeOpacity={0.85}
-                      disabled={isActive || isSold}
+                      disabled={isActive || isSold || paying}
                       onPress={() => handleBuyPlan(plan)}
-                      style={[S.selectPlanBtn, isSelected && S.selectPlanBtnActive, isSold && { opacity: 0.6, backgroundColor: '#e5e7eb' }]}
+                      style={[S.selectPlanBtn, isSelected && S.selectPlanBtnActive, isSold && { opacity: 0.6, backgroundColor: '#e5e7eb' }, paying && !isActive && !isSold && { opacity: 0.6 }]}
                     >
                       <Text style={[S.selectPlanBtnText, isSold && { color: '#6b7280' }]}>
-                        {isActive ? 'Currently active' : isSold ? 'Sold' : 'Pay Now'}
+                        {isActive ? 'Currently active' : isSold ? 'Sold' : paying ? 'Please wait…' : 'Pay Now'}
                       </Text>
                       {!isActive && !isSold && <Feather name="chevron-right" size={14} color="#b91c1c" />}
                     </TouchableOpacity>
@@ -1277,31 +621,9 @@ const handleBuyPlan = (plan) => {
         <View style={{ height: 100 }} />
       </ScrollView>
 
-      {/* Fixed bottom Pay bar — selected card ke color/image jaisa hi dikhta hai
-      {selectedPlanObj && !isSelectedPlanActive ? (
-        <View style={S.payBar}>
-          <View style={{ flex: 1 }}>
-            <Text style={S.payBarLabel} numberOfLines={1}>
-              {selectedPlanObj.plan_name} · {selectedPlanObj.duration}
-            </Text>
-            <Text style={S.payBarPrice}>₹{selectedPlanObj.price}</Text>
-          </View>
-          <TouchableOpacity onPress={() => handleBuyPlan(selectedPlanObj)} activeOpacity={0.85}>
-                     <ImageBackground
-            source={selectedTheme.image}
-              style={S.payBtn}
-              imageStyle={S.payBtnImage}
-              resizeMode="cover"
-            >
-                        <Text style={[S.payBtnText, { color: selectedTheme.textColor }]}>Pay Now</Text>
-            </ImageBackground>
-          </TouchableOpacity>
-        </View>
-      ) : null} */}
-
            <Modal visible={!!detailsModal} transparent animationType="fade" onRequestClose={() => setDetailsModal(null)}>
         <TouchableOpacity style={S.seatBackdrop} activeOpacity={1} onPress={() => setDetailsModal(null)}>
-          <View style={S.seatSheet}>
+          <Pressable style={S.seatSheet} onPress={() => {}}>
             <View style={S.seatHandle} />
             {detailsModal && (
               <>
@@ -1329,7 +651,7 @@ const handleBuyPlan = (plan) => {
                 </TouchableOpacity>
               </>
             )}
-          </View>
+          </Pressable>
         </TouchableOpacity>
       </Modal>
     </View>

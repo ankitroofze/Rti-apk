@@ -183,7 +183,7 @@ export default function SellerReportsScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.root}>
-      {Platform.OS === 'android' ? (
+      {Platform.OS !== 'web' ? (
 <ModuleAndroidHeader title="Your Reports" subtitle="Seller Analytics" onBack={() => navigation?.goBack?.()}
   rightExtra={<TouchableOpacity onPress={loadData} activeOpacity={0.8} style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
 <Ionicons name="refresh" size={20} color="#fff" />
