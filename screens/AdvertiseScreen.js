@@ -11,6 +11,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import ModuleWebHeader from '../components/Modulewebheader';
 import { HEADER_BG_IMAGE } from '../constants/subscriptionThemes';
 import { VideoView, useVideoPlayer } from 'expo-video';
+import AdVideoPlayer from '../components/AdVideoPlayer';
 import { getResponsiveWindowWidth } from '../utils/webDevice';
 import { UserStore } from '../store/UserStore';
 import { useToast } from '../components/ui/ToastProvider';
@@ -179,8 +180,10 @@ function AdPreviewModal({ visible, onClose, onNext, adData, userMobile }) {
               </View>
               <Text style={wpm.adTitle}>{adData.title || 'Ad Title'}</Text>
               <Text style={wpm.adDesc}>{adData.description || 'Ad Description'}</Text>
-              {adData.photo ? (
-                <Image source={{ uri: adData.photo }} style={wpm.adImage} resizeMode="cover" />
+              {adData.video ? (
+                <AdVideoPlayer key={adData.video} uri={adData.video} style={wpm.adImage} />
+              ) : adData.photo ? (
+                <Image source={{ uri: adData.photo }} style={wpm.adImage} resizeMode="contain" />
               ) : (
                 <View style={wpm.adImagePlaceholder}>
                   <Ionicons name="image-outline" size={36} color="#CCCCCC" />
@@ -235,8 +238,10 @@ function AdPreviewModal({ visible, onClose, onNext, adData, userMobile }) {
             </View>
             <Text style={pm.adTitle}>{adData.title || 'Ad Title'}</Text>
             <Text style={pm.adDesc}>{adData.description || 'Ad Description'}</Text>
-            {adData.photo ? (
-              <Image source={{ uri: adData.photo }} style={pm.adImage} resizeMode="cover" />
+            {adData.video ? (
+              <AdVideoPlayer key={adData.video} uri={adData.video} style={pm.adImage} />
+            ) : adData.photo ? (
+              <Image source={{ uri: adData.photo }} style={pm.adImage} resizeMode="contain" />
             ) : (
               <View style={pm.adImagePlaceholder}>
                 <Ionicons name="image-outline" size={36} color={C.textSub} />
@@ -284,7 +289,7 @@ const pm = StyleSheet.create({
   adBadgeText:        { fontSize: 11, color: C.primary, fontFamily: FONT.bold },
   adTitle:            { fontSize: 15, fontFamily: FONT.bold, color: C.textBody, paddingHorizontal: 12, paddingBottom: 2 },
   adDesc:             { fontSize: 12, color: C.textSub, paddingHorizontal: 12, paddingBottom: 10 },
-  adImage:            { width: '100%', height: 180 },
+  adImage:            { width: '100%', height: 180, backgroundColor: '#000' },
   adImagePlaceholder: { width: '100%', height: 180, backgroundColor: C.white, alignItems: 'center', justifyContent: 'center' },
   ctaRow:             { flexDirection: 'row', height: 48 },
   ctaWhatsapp:        { flex: 1, backgroundColor: C.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5 },
@@ -312,7 +317,7 @@ const wpm = StyleSheet.create({
   adBadgeText:  { fontSize:11, color: C.primary, fontFamily: FONT.bold },
   adTitle:   { fontSize:15, fontFamily: FONT.bold, color:'#111111', paddingHorizontal:12, paddingBottom:2 },
   adDesc:    { fontSize:12, color:'#888888', paddingHorizontal:12, paddingBottom:10 },
-  adImage:   { width:'100%', height:200 },
+  adImage:   { width:'100%', height:200, backgroundColor:'#000' },
   adImagePlaceholder: { width:'100%', height:200, backgroundColor:'#ffffff', alignItems:'center', justifyContent:'center' },
   ctaRow:        { flexDirection:'row', height:48 },
   ctaWhatsapp:   { flex:1, backgroundColor: C.primary, flexDirection:'row', alignItems:'center', justifyContent:'center', gap:5 },
@@ -715,10 +720,64 @@ const editAd = route?.params?.editAd || null;
       return true; // permission API fail ho to bhi picker khol ke dekho
     }
   };
-  const pickerTypes = (kind) => (ImagePicker.MediaTypeOptions
-    ? (kind === 'video' ? ImagePicker.MediaTypeOptions.Videos : ImagePicker.MediaTypeOptions.Images)
-    : [kind === 'video' ? 'videos' : 'images']);
+  const pickerTypes = (kind) => {
+    if (ImagePicker.MediaTypeOptions) {
+      if (kind === 'video') return ImagePicker.MediaTypeOptions.Videos;
+      if (kind === 'all') return ImagePicker.MediaTypeOptions.All;
+      return ImagePicker.MediaTypeOptions.Images;
+    }
+    if (kind === 'video') return ['videos'];
+    if (kind === 'all') return ['images', 'videos'];
+    return ['images'];
+  };
+  const MAX_VIDEO_MB = 10; // backend limit: 10 MB (mp4, mov, avi, webm)
+  const isVideoAsset = (a) => a?.type === 'video' || String(a?.mimeType || '').startsWith('video/') || /\.(mp4|mov|m4v|webm|3gp)(\?|$)/i.test(String(a?.uri || a?.fileName || ''));
 
+  // WEB: ek hi picker me photo + video dono (file dialog)
+  const handlePickMixed = async () => {
+    try {
+      if (!(await ensureLibraryAccess())) {
+        Alert.alert('Permission needed', 'Please allow access to your photo library.');
+        return;
+      }
+      // video ke saath `quality` mat do (Android par re-encode se fail/hang hota tha)
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: pickerTypes('all'),
+        allowsMultipleSelection: true,
+        selectionLimit: 6,
+      });
+      if (result.canceled || !result.assets?.length) return;
+
+      const images = result.assets.filter((a) => !isVideoAsset(a));
+      const videos = result.assets.filter((a) => isVideoAsset(a));
+
+      if (videos.length) {
+        const v = videos[0];
+        const size = v.fileSize || v.file?.size || 0;
+        if (size && size > MAX_VIDEO_MB * 1024 * 1024) {
+          Alert.alert('Video too large', `Please choose a video under ${MAX_VIDEO_MB} MB.`);
+          return;
+        }
+        // ek ad me ya video ya photo (backend media_type 1/2) — video chuna to photos hata do
+        setAdVideo(v.uri);
+        setPhoto(null);
+        setExtraPhotos([]);
+      } else if (images.length) {
+        setAdVideo(null);
+        setPhoto(images[0].uri);
+        setExtraPhotos(images.slice(1, 5).map((x) => x.uri));
+      }
+      setTimeout(() => {
+        (Platform.OS === 'web' ? webScrollRef : mobileScrollRef).current?.scrollTo({ y: 360, animated: true });
+        titleInputRef.current?.focus();
+      }, 180);
+    } catch (e) {
+      console.error('[AdvertiseScreen.handlePickPhoto]', e);
+      Alert.alert('Media error', 'Could not select the photo/video. Please try again.');
+    }
+  };
+
+  // NATIVE: sirf photos — quality 0.5 se compress (chhoti file = fast, reliable upload)
   const handlePickPhoto = async () => {
     try {
       if (!(await ensureLibraryAccess())) {
@@ -729,9 +788,10 @@ const editAd = route?.params?.editAd || null;
         mediaTypes: pickerTypes('image'),
         allowsMultipleSelection: true,
         selectionLimit: 5,
-        quality: 0.5, // chhoti file = fast upload
+        quality: 0.5,
       });
       if (result.canceled || !result.assets?.length) return;
+      setAdVideo(null); // ek ad me ya photo ya video
       setPhoto(result.assets[0].uri);
       setExtraPhotos(result.assets.slice(1, 5).map((a) => a.uri));
       setTimeout(() => {
@@ -740,8 +800,18 @@ const editAd = route?.params?.editAd || null;
       }, 180);
     } catch (e) {
       console.error('[AdvertiseScreen.handlePickPhoto]', e);
-      Alert.alert('Photo error', 'Photo select nahi ho paayi. Please dobara try karein.');
+      Alert.alert('Photo error', 'Could not select the photo. Please try again.');
     }
+  };
+
+  // Main upload box: web par mixed picker, mobile par Photo / Video choice
+  const handlePickMedia = () => {
+    if (Platform.OS === 'web') { handlePickMixed(); return; }
+    Alert.alert('Add media', 'What would you like to add?', [
+      { text: 'Photo', onPress: () => setTimeout(handlePickPhoto, 250) },
+      { text: 'Video', onPress: () => setTimeout(handlePickVideo, 250) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const handlePickVideo = async () => {
@@ -757,16 +827,18 @@ const editAd = route?.params?.editAd || null;
       });
       if (result.canceled || !result.assets?.length) return;
       const asset = result.assets[0];
-      const MAX_MB = 50;
+      const MAX_MB = MAX_VIDEO_MB;
       const size = asset.fileSize || asset.file?.size || 0; // web par fileSize nahi hota, file.size hota hai
       if (size && size > MAX_MB * 1024 * 1024) {
         Alert.alert('Video too large', `Please choose a video under ${MAX_MB} MB.`);
         return;
       }
       setAdVideo(asset.uri);
+      setPhoto(null);          // ek ad me ya video ya photo
+      setExtraPhotos([]);
     } catch (e) {
       console.error('[AdvertiseScreen.handlePickVideo]', e);
-      Alert.alert('Video error', 'Video select nahi ho paaya. Please dobara try karein.');
+      Alert.alert('Video error', 'Could not select the video. Please try again.');
     }
   };
 
@@ -795,7 +867,7 @@ const editAd = route?.params?.editAd || null;
           style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: ADV_RED, marginRight: 10 }}
         >
           <Ionicons name="videocam" size={16} color={ADV_RED} />
-          <Text style={{ color: ADV_RED, fontWeight: '700', marginLeft: 6 }}>{adVideo ? 'Change Video' : 'Add Video (mp4, max 50 MB)'}</Text>
+          <Text style={{ color: ADV_RED, fontWeight: '700', marginLeft: 6 }}>{adVideo ? 'Change Video' : 'Add Video (mp4/mov/webm, max 10 MB)'}</Text>
         </TouchableOpacity>
         {adVideo ? (
           <>
@@ -810,8 +882,9 @@ const editAd = route?.params?.editAd || null;
   );
 
   const handleNext = async () => {
-    if (!photo) {
-      Alert.alert('Required', 'Please add an advertisement photo.');
+    // Ad ya to image ka hota hai ya video ka (media_type 1 / 2) — dono me se ek zaroori
+    if (!photo && !adVideo) {
+      Alert.alert('Required', 'Please add an advertisement photo or video.');
       return;
     }
     if (!title.trim()) {
@@ -881,6 +954,7 @@ const editAd = route?.params?.editAd || null;
         title:       title.trim(),
         description: description.trim(),
         photo,
+        video:       adVideo,
         redirect:    selectedRedirect,
         extraValues: {
           ...extraValues,
@@ -1013,11 +1087,15 @@ const editAd = route?.params?.editAd || null;
             <View style={ws.section}>
               <SectionLabel number="1" title="Select Advertisement Photo or Video" />
               <Text style={ws.subLabel}>Add photo or video of visiting card, shop, pamphlet, or poster</Text>
-              <TouchableOpacity style={[ws.uploadOuter, adv.uploadOuter]} onPress={handlePickPhoto} activeOpacity={0.85}>
-                {photo ? (
+              <TouchableOpacity style={[ws.uploadOuter, adv.uploadOuter]} onPress={adVideo ? undefined : handlePickMedia} activeOpacity={adVideo ? 1 : 0.85}>
+                {photo || adVideo ? (
                   <>
-                    <Image source={{ uri: photo }} style={ws.photoPreview} resizeMode="cover" />
-                    <TouchableOpacity style={ws.changeOverlay} onPress={handlePickPhoto}>
+                    {adVideo ? (
+                      <AdVideoPlayer key={adVideo} uri={adVideo} style={ws.photoPreview} />
+                    ) : (
+                      <Image source={{ uri: photo }} style={ws.photoPreview} resizeMode="contain" />
+                    )}
+                    <TouchableOpacity style={ws.changeOverlay} onPress={handlePickMedia}>
                       <Ionicons name="pencil" size={13} color="#fff" />
                       <Text style={ws.changeOverlayText}>Change Image/Video</Text>
                     </TouchableOpacity>
@@ -1104,7 +1182,7 @@ const editAd = route?.params?.editAd || null;
           visible={showPreview}
           onClose={() => setShowPreview(false)}
           onNext={handlePreviewNext}
-          adData={{ photo, title, description, redirect: selectedRedirect }}
+          adData={{ photo, video: adVideo, title, description, redirect: selectedRedirect }}
           userMobile={userMobile}
         />
 
@@ -1155,11 +1233,15 @@ const editAd = route?.params?.editAd || null;
         <View style={s.section}>
           <SectionLabel number="1" title="Select Advertisement Photo or Video" />
           <Text style={s.subLabel}>Add photo or video of visiting card, shop, pamphlet, or poster</Text>
-          <TouchableOpacity style={[s.uploadOuter, adv.uploadOuter]} onPress={handlePickPhoto} activeOpacity={0.85}>
-            {photo ? (
+          <TouchableOpacity style={[s.uploadOuter, adv.uploadOuter]} onPress={adVideo ? undefined : handlePickMedia} activeOpacity={adVideo ? 1 : 0.85}>
+            {photo || adVideo ? (
               <>
-                <Image source={{ uri: photo }} style={s.photoPreview} resizeMode="cover" />
-                <TouchableOpacity style={s.changeOverlay} onPress={handlePickPhoto}>
+                {adVideo ? (
+                  <AdVideoPlayer key={adVideo} uri={adVideo} style={s.photoPreview} />
+                ) : (
+                  <Image source={{ uri: photo }} style={s.photoPreview} resizeMode="contain" />
+                )}
+                <TouchableOpacity style={s.changeOverlay} onPress={handlePickMedia}>
                   <Ionicons name="pencil" size={12} color="#fff" />
                   <Text style={s.changeOverlayText}>Change</Text>
                 </TouchableOpacity>
@@ -1172,13 +1254,7 @@ const editAd = route?.params?.editAd || null;
             )}
           </TouchableOpacity>
         </View>
-{extraPhotos.length > 0 ? (
-  <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12, paddingHorizontal: 4 }}>
-    {extraPhotos.map((u, i) => (
-      <Image key={`${u}-${i}`} source={{ uri: u }} style={{ width: 70, height: 70, borderRadius: 8, marginRight: 8, marginBottom: 8 }} />
-    ))}
-  </View>
-) : null}
+{renderMediaExtras()}
         {/* 2. Title */}
         <View style={s.section}>
           <SectionLabel number="2" title="Write Advertisement Title" />
@@ -1251,7 +1327,7 @@ const editAd = route?.params?.editAd || null;
         visible={showPreview}
         onClose={() => setShowPreview(false)}
         onNext={handlePreviewNext}
-        adData={{ photo, title, description, redirect: selectedRedirect }}
+        adData={{ photo, video: adVideo, title, description, redirect: selectedRedirect }}
         userMobile={userMobile}
       />
 
@@ -1440,7 +1516,7 @@ const s = StyleSheet.create({
     paddingVertical: 20,
   },
   uploadCaption: { fontSize: 12, fontFamily: FONT.regular, color: C.textBody, textAlign: 'center', paddingHorizontal: 16 },
-  photoPreview: { width: '100%', height: 190, borderRadius: 8 },
+  photoPreview: { width: '100%', height: 190, borderRadius: 8, backgroundColor: '#000' },
   changeOverlay: {
     position: 'absolute', bottom: 8, right: 8,
     backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 20,
@@ -1542,7 +1618,7 @@ const ws = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 24,
   },
   uploadCaption: { fontSize: 13, fontFamily: FONT.regular, color: C.textBody, textAlign: 'center', paddingHorizontal: 16 },
-  photoPreview: { width: '100%', height: 220, borderRadius: 8 },
+  photoPreview: { width: '100%', height: 220, borderRadius: 8, backgroundColor: '#000' },
   changeOverlay: {
     position: 'absolute', bottom: 10, right: 10,
     backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 20,

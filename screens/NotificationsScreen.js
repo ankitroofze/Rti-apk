@@ -1,5 +1,5 @@
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Platform,
   SafeAreaView,
@@ -14,6 +14,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useToast } from '../components/ui/ToastProvider';
 import styles, { C } from '../styles/NotificationsStyles';
 import { UserStore } from '../store/UserStore';
+import { navigateFromNotification } from '../utils/Notificationnavigation';
+import { subscribePushEvents, refreshBadge } from '../utils/Pushnotifications';
 
 const getNotificationAccent = (item = {}) => {
   const haystack = `${item.title || ''} ${item.message || ''}`.toLowerCase();
@@ -85,7 +87,10 @@ export default function NotificationsScreen({ navigation }) {
     items: [],
     unreadCount: 0,
     readCount: 0,
+    hasMore: false,
+    nextCursor: null,
   });
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const loadNotifications = useCallback(async () => {
     setLoading(true);
@@ -105,6 +110,48 @@ export default function NotificationsScreen({ navigation }) {
     }, [loadNotifications])
   );
 
+  // Foreground push aaye to list silently refresh
+  useEffect(() => {
+    const unsub = subscribePushEvents(async () => {
+      const data = await UserStore.getNotificationsSummary();
+      if (data) setNotificationData(data);
+    });
+    return () => unsub?.();
+  }, []);
+
+  const handleLoadMore = async () => {
+    if (loadingMore || !notificationData.hasMore) return;
+    setLoadingMore(true);
+    const res = await UserStore.getMoreNotifications(notificationData.nextCursor);
+    setLoadingMore(false);
+    if (!res.ok) { showToast(res.message || 'Unable to load more.', 'error'); return; }
+    setNotificationData((prev) => {
+      const seen = new Set(prev.items.map((i) => i.id));
+      const fresh = res.items.filter((i) => !seen.has(i.id));
+      return {
+        ...prev,
+        items: [...prev.items, ...fresh],
+        readCount: prev.readCount + fresh.filter((i) => i.status !== 'Unread').length,
+        hasMore: res.hasMore,
+        nextCursor: res.nextCursor,
+      };
+    });
+  };
+
+  const handleMarkAllRead = async () => {
+    const result = await UserStore.markAllNotificationsRead();
+    if (!result.ok) { showToast(result.message, 'error'); return; }
+    await loadNotifications();
+    refreshBadge();
+  };
+
+  const handleDelete = async (itemId) => {
+    const result = await UserStore.deleteNotificationItem(itemId);
+    if (!result.ok) { showToast(result.message, 'error'); return; }
+    await loadNotifications();
+    refreshBadge();
+  };
+
   const handleRead = async (itemId) => {
     const result = await UserStore.updateNotificationItem(itemId);
     if (!result.ok) {
@@ -112,6 +159,7 @@ export default function NotificationsScreen({ navigation }) {
       return;
     }
     await loadNotifications();
+    refreshBadge();
   };
 
   // NEW: tapping any notification — marks it read (if unread) and, for a
@@ -123,17 +171,8 @@ export default function NotificationsScreen({ navigation }) {
       await handleRead(item.id);
     }
 
-    if (item.type === 'lead_form_submission' && item.submission_id) {
-      navigation.navigate('AdLeadResponse', {
-        submissionId: item.submission_id,
-        adId: item.ad_id,
-      });
-      return;
-    }
-
-    if (!item.type) {
-      showToast('Notification marked as read.', 'success');
-    }
+    // type + data ke hisaab se sahi screen kholo (news / profile / wallet / ...)
+    navigateFromNotification(navigation, item);
   };
 
   const sortedItems = [...notificationData.items].sort(
@@ -147,7 +186,7 @@ export default function NotificationsScreen({ navigation }) {
         {Platform.OS === 'web' && <View style={styles.statusBarSpacer} />}
 
         {/* Header */}
-        {Platform.OS === 'android' ? (
+        {Platform.OS !== 'web' ? (
 <ModuleAndroidHeader title="Notifications" onBack={() => navigation.navigate('QuickMenu')} />
 ) : (
 <>
@@ -240,6 +279,17 @@ export default function NotificationsScreen({ navigation }) {
                 </View>
               </View>
 
+              {notificationData.unreadCount > 0 ? (
+                <TouchableOpacity
+                  style={[styles.actionButton, { alignSelf: 'flex-end', marginBottom: 10 }]}
+                  onPress={handleMarkAllRead}
+                  activeOpacity={0.8}
+                >
+                  <Feather name="check-circle" size={15} color={C.accent} />
+                  <Text style={styles.actionButtonText}>Mark all as read</Text>
+                </TouchableOpacity>
+              ) : null}
+
               {loading ? (
                 <View style={styles.stateCard}>
                   <Feather name="loader" size={18} color="#94a3b8" />
@@ -284,6 +334,13 @@ export default function NotificationsScreen({ navigation }) {
                               <Text style={styles.notificationDate}>
                                 {formatNotificationDate(item.date)}
                               </Text>
+                              <TouchableOpacity
+                                onPress={() => handleDelete(item.id)}
+                                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                                activeOpacity={0.7}
+                              >
+                                <Feather name="trash-2" size={15} color="#94a3b8" />
+                              </TouchableOpacity>
                               <View
                                 style={[
                                   styles.statusBadge,
@@ -317,6 +374,16 @@ export default function NotificationsScreen({ navigation }) {
                       </TouchableOpacity>
                     );
                   })}
+                  {notificationData.hasMore ? (
+                    <TouchableOpacity
+                      style={[styles.actionButton, { alignSelf: 'center', marginTop: 12 }]}
+                      onPress={handleLoadMore}
+                      activeOpacity={0.8}
+                    >
+                      <Feather name="chevrons-down" size={15} color={C.accent} />
+                      <Text style={styles.actionButtonText}>{loadingMore ? 'Loading...' : 'Load more'}</Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               ) : (
                 <View style={styles.emptyState}>

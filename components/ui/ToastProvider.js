@@ -138,7 +138,7 @@ export function ToastProvider({ children }) {
           </View>
         </Modal>
       ) : null}
-       {loaderVisible && Platform.OS === 'android' ? (
+       {loaderVisible ? (
         <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={() => {}}>
           <View style={styles.loaderBackdrop}>
             <View style={styles.loaderCard}>

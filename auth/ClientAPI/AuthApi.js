@@ -543,7 +543,7 @@ export const AuthAPI = {
         return { ok: false, status, errors, message: firstError };
       }
       if (status === 429) {
-        return { ok: false, status, rateLimited: true, message: 'Bahut zyada try, 1 minute baad dobara karein.' };
+        return { ok: false, status, rateLimited: true, message: 'Too many attempts. Please try again after 1 minute.' };
       }
       return { ok: false, status, message: data?.message || `Server error (${status}). Please try again.` };
     } catch (err) {
@@ -1776,6 +1776,87 @@ if (status === 200 || status === 201) {
   },
 
 
+  // ─────────────────────────────────────────────────────────
+  // PUSH NOTIFICATIONS (Laravel) — device token + notification inbox
+  // ─────────────────────────────────────────────────────────
+
+  /** POST /device-tokens  { token, platform: android|ios|web, device_name? } — har login/app start par safe */
+  registerDeviceToken: async ({ token, platform, deviceName = '' }) => {
+    try {
+      if (!token) return { ok: false, message: 'No device token.' };
+      return await authedJSON('POST', '/device-tokens', {
+        token,
+        platform,
+        ...(deviceName ? { device_name: String(deviceName).slice(0, 100) } : {}),
+      });
+    } catch (err) {
+      console.error('[AuthAPI.registerDeviceToken] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  /** DELETE /device-tokens  { token } — logout se PEHLE call karo */
+  unregisterDeviceToken: async (token) => {
+    try {
+      if (!token) return { ok: false, message: 'No device token.' };
+      return await authedJSON('DELETE', '/device-tokens', { token });
+    } catch (err) {
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  /** GET /notifications?per_page=&cursor=&unread=1 */
+  getNotifications: async ({ perPage = 20, cursor = null, unread = false } = {}) => {
+    try {
+      const q = [`per_page=${perPage}`];
+      if (cursor) q.push(`cursor=${encodeURIComponent(cursor)}`);
+      if (unread) q.push('unread=1');
+      const r = await authedJSON('GET', `/notifications?${q.join('&')}`);
+      if (!r.ok) return r;
+      const d = r.data || {};
+      return {
+        ok: true,
+        notifications: Array.isArray(d.notifications) ? d.notifications : [],
+        unreadCount: Number(d.unread_count || 0),
+        hasMore: Boolean(d.has_more),
+        nextCursor: d.next_cursor || null,
+      };
+    } catch (err) {
+      console.error('[AuthAPI.getNotifications] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  /** GET /notifications/unread-count (bell badge) */
+  getUnreadNotificationCount: async () => {
+    try {
+      const r = await authedJSON('GET', '/notifications/unread-count');
+      if (!r.ok) return r;
+      const d = r.data || {};
+      return { ok: true, count: Number(d.unread_count ?? d.count ?? d.unread ?? 0) || 0 };
+    } catch {
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  /** POST /notifications/{id}/read */
+  markNotificationRead: async (id) => {
+    try { return await authedJSON('POST', `/notifications/${encodeURIComponent(id)}/read`); }
+    catch { return { ok: false, isNetwork: true, message: 'Network error.' }; }
+  },
+
+  /** POST /notifications/read-all */
+  markAllNotificationsRead: async () => {
+    try { return await authedJSON('POST', '/notifications/read-all'); }
+    catch { return { ok: false, isNetwork: true, message: 'Network error.' }; }
+  },
+
+  /** DELETE /notifications/{id} */
+  deleteNotification: async (id) => {
+    try { return await authedJSON('DELETE', `/notifications/${encodeURIComponent(id)}`); }
+    catch { return { ok: false, isNetwork: true, message: 'Network error.' }; }
+  },
+
   /**
    * Like a news item (toggle-style backend — POST /likes creates a like)
    * POST /likes
@@ -2094,6 +2175,45 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
   },
 
   /**
+   * Feeds / Reels List
+   * GET /feeds   (base URL me already /api hai => /api/feeds)
+   * Response: { news: [ { id, type: 2, media_type, media, images, tittle, description, ... } ] }
+   * Sirf feed/reel posts aati hain (type hamesha 2). Response ka key `news` hai, `feeds` nahi.
+   */
+  getFeeds: async (params = {}) => {
+    try {
+      const query = {};
+      if (params.per_page) query.per_page = Math.min(Number(params.per_page) || 10, 30);
+      if (params.cursor) query.cursor = params.cursor;
+      const qs = new URLSearchParams(query).toString();
+      const { status, data } = await publicRequest(qs ? `/feeds?${qs}` : '/feeds');
+
+      if (status === 200 || status === 201) {
+        const list = Array.isArray(data?.news) ? data.news
+          : Array.isArray(data?.news?.data) ? data.news.data
+          : Array.isArray(data?.data) ? data.data
+          : [];
+        const pg = data?.pagination || {};
+        const nextCursor = pg.next_cursor || data?.next_cursor || null;
+        return {
+          ok: true,
+          news: list,
+          pagination: {
+            per_page: pg.per_page || Number(query.per_page) || 10,
+            has_more: Boolean((pg.has_more ?? data?.has_more) && nextCursor),
+            next_cursor: nextCursor,
+            next_page_url: pg.next_page_url || data?.next_page_url || null,
+          },
+        };
+      }
+      return { ok: false, message: apiErrorMessage(status, data) };
+    } catch (err) {
+      console.error('[AuthAPI.getFeeds] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  /**
    * ✅ NEW: Share count — POST /news/{id}/share (public, no body)
    * Sirf native share SUCCESS hone ke baad call karna.
    */
@@ -2399,7 +2519,12 @@ createAdsDetails: async ({
     formData.append('end_date', endDate || new Date(Date.now() + (30 * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10));
     formData.append('status', String(status));
 
-    if (image) {
+    // ✅ Backend ab media_type maangta hai: 1 = image ad, 2 = video ad.
+    // Video ad me sirf `video` file jaati hai (image nahi) — ek ad ya image ya video.
+    const hasVideo = Boolean(video);
+    formData.append('media_type', hasVideo ? '2' : '1');
+
+    if (image && !hasVideo) {
       if (Platform.OS === 'web') {
         let imageBlob = image instanceof Blob ? image : null;
         // blob: URL kabhi-kabhi revoke ho jaata hai — IndexedDB me store kiya
@@ -2415,7 +2540,7 @@ createAdsDetails: async ({
         formData.append('image', { uri: image, type: meta.type, name: meta.name });
       }
     }
-    for (let i = 0; i < (images || []).length; i += 1) {
+    for (let i = 0; !hasVideo && i < (images || []).length; i += 1) {
       const uri = images[i];
       if (!uri || uri === image) continue;
       if (Platform.OS === 'web') {
@@ -2436,7 +2561,8 @@ createAdsDetails: async ({
           try { videoBlob = await fetch(video).then((r) => r.blob()); } catch (e) {}
         }
         // ✅ FIX: pehle video read fail hone par chupchap drop ho jaata tha — ab saaf error milega
-        if (!videoBlob) return { ok: false, message: 'Video read nahi ho paaya. Please video dobara select karein.' };
+        if (!videoBlob) return { ok: false, message: 'Could not read the video. Please select the video again.' };
+        if (videoBlob.size > 10 * 1024 * 1024) return { ok: false, message: 'Video must be smaller than 10 MB.' };
         const vExt = (videoBlob.type.split('/')[1] || 'mp4').replace('quicktime', 'mov').split(';')[0];
         formData.append('video', videoBlob, `ad-video.${vExt}`);
       } else {
@@ -2457,7 +2583,9 @@ createAdsDetails: async ({
       body: formData,
     }, formData, uploadTimeoutMs);
     if (resStatus === 200 || resStatus === 201) return { ok: true, ad: data?.data || data?.ad || data };
+    console.warn('[AuthAPI.createAdsDetails] server said:', resStatus, JSON.stringify(data)?.slice(0, 500));
     if (resStatus === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    if (resStatus === 413) return { ok: false, message: 'File is too large (413). Please choose a smaller photo/video.' };
     if (resStatus === 422) {
       const errors = data?.errors || {};
       const firstError = Object.values(errors).flat()[0] || data?.message || 'Validation failed.';
@@ -2466,7 +2594,8 @@ createAdsDetails: async ({
     return { ok: false, message: data?.message || `Server error (${resStatus}).` };
   } catch (err) {
     console.error('[AuthAPI.createAdsDetails] Error:', err);
-    return { ok: false, isNetwork: true, message: 'Network error.' };
+    const why = err?.name === 'AbortError' ? 'Upload timed out.' : (err?.message || 'unknown');
+    return { ok: false, isNetwork: true, message: `Network error. (${why})` };
   }
 },
 
@@ -2478,34 +2607,56 @@ updateAdsDetails: async (id, fields = {}) => {
     // ✅ FIX: agar image update ho rahi hai aur wo ek naya local uri hai (blob:/file:),
     // to usko bhi createAdsDetails ki tarah asli Blob/file banake bhejo — text string
     // ki tarah nahi, warna edit karne pe bhi image backend pe kabhi save/khulti nahi thi.
-    const { image, ...restFields } = fields;
-    const isLocalImageUri = typeof image === 'string' && /^(blob:|file:|content:|idb-media:|data:)/i.test(image);
+    const { image, video, ...restFields } = fields;
+    const isLocalUri = (v) => typeof v === 'string' && /^(blob:|file:|content:|idb-media:|data:)/i.test(v);
+    const isLocalImageUri = isLocalUri(image) || image instanceof Blob;
+    const isLocalVideoUri = isLocalUri(video) || video instanceof Blob;
 
     let status, data;
-    if (isLocalImageUri || image instanceof Blob) {
+    if (isLocalImageUri || isLocalVideoUri) {
       const formData = new FormData();
       Object.entries({ ...restFields, _method: 'PUT' }).forEach(([key, value]) => {
         if (value !== undefined && value !== null) formData.append(key, String(value));
       });
-      if (Platform.OS === 'web') {
-        let imageBlob = image instanceof Blob ? image : null;
-        if (!imageBlob && isIdbMediaUri(image)) imageBlob = await getIdbMediaBlob(image);
-        if (!imageBlob) {
-          try { imageBlob = await fetch(image).then((response) => response.blob()); } catch { /* niche validation handle karega */ }
+      const toWebBlob = async (src) => {
+        let blob = src instanceof Blob ? src : null;
+        if (!blob && isIdbMediaUri(src)) blob = await getIdbMediaBlob(src);
+        if (!blob) { try { blob = await fetch(src).then((r) => r.blob()); } catch { /* niche handle */ } }
+        return blob;
+      };
+      if (isLocalVideoUri) {
+        // Video ad: media_type 2 + sirf video file
+        formData.append('media_type', '2');
+        if (Platform.OS === 'web') {
+          const vBlob = await toWebBlob(video);
+          if (!vBlob) return { ok: false, message: 'Could not read the video. Please select the video again.' };
+          if (vBlob.size > 10 * 1024 * 1024) return { ok: false, message: 'Video must be smaller than 10 MB.' };
+          const vExt = (vBlob.type.split('/')[1] || 'mp4').replace('quicktime', 'mov').split(';')[0];
+          formData.append('video', vBlob, `ad-video.${vExt}`);
+        } else {
+          const meta = guessFileMeta(video, 'video', 0);
+          formData.append('video', { uri: video, type: meta.type, name: meta.name });
         }
-        if (imageBlob) formData.append('image', imageBlob, 'ad-image.jpg');
       } else {
-        formData.append('image', { uri: image, type: 'image/jpeg', name: 'ad-image.jpg' });
+        // Image ad: media_type 1 + image file
+        formData.append('media_type', '1');
+        if (Platform.OS === 'web') {
+          const imageBlob = await toWebBlob(image);
+          if (imageBlob) formData.append('image', imageBlob, 'ad-image.jpg');
+        } else {
+          formData.append('image', { uri: image, type: 'image/jpeg', name: 'ad-image.jpg' });
+        }
       }
       const res = await fetchWithDebug(`/ads-details/${id}`, {
         method: 'POST',
         headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
         body: formData,
-      }, formData);
+      }, formData, isLocalVideoUri ? 300000 : undefined);
       status = res.status; data = res.data;
     } else {
-      // Image change nahi hui (ya already ek hosted URL hai) — purane simple text flow se bhejo
-      const res = await postFormData(`/ads-details/${id}`, { ...fields, _method: 'PUT' }, token);
+      // Media change nahi hua (ya already hosted URL hai) — sirf text fields bhejo
+      const { image: _i, video: _v, ...textFields } = fields;
+      const res = await postFormData(`/ads-details/${id}`, { ...textFields, _method: 'PUT' }, token);
       status = res.status; data = res.data;
     }
     if (status === 200 || status === 201) return { ok: true, ad: data?.data || data?.ad || data };

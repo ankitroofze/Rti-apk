@@ -159,6 +159,10 @@ function AdCard({ ad, onEdit, onDelete, isWeb, isWide }) {
       <View style={ac.cover}>
         {coverImage ? (
           <Image source={{ uri: coverImage }} style={ac.coverImg} resizeMode="cover" />
+        ) : ad.video ? (
+          <View style={[ac.coverPlaceholder, { backgroundColor: '#000' }]}>
+            <Ionicons name="play-circle" size={44} color="#fff" />
+          </View>
         ) : (
           <View style={ac.coverPlaceholder}>
             <Ionicons name="megaphone-outline" size={34} color={C.orangeMid} />

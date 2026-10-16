@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "715490281200",
+    "project_id": "rti-news-653de",
+    "storage_bucket": "rti-news-653de.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:715490281200:android:83f97b3419f912f65a6435",
+        "android_client_info": {
+          "package_name": "com.roofze.rtinews"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAJId1W7v6luVBcYDFOS81Ol8xrNRBtNYY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

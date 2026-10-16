@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { BackHandler, Platform } from 'react-native';
-import { createNavigationContainerRef, NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer } from '@react-navigation/native';
+import { navigationRef } from '../utils/navigationRef';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import PaymentHistoryScreen from '../pages/Paymenthistoryscreen';
 import HomeScreen from '../screens/HomeScreen';
@@ -72,7 +73,6 @@ import LegalPolicyScreen from '../pages/LegalPolicyScreen';
 
 const Stack = createNativeStackNavigator();
 const NAVIGATION_STATE_KEY = 'rti-news-navigation-state';
-const navigationRef = createNavigationContainerRef();
 
 export default function AppNavigator() {
   const [isNavStateReady, setIsNavStateReady] = useState(false);

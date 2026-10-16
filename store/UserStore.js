@@ -10,6 +10,7 @@ import {
   YOUTUBE_STREAM_KEY_PLACEHOLDER,
 } from '../constants/liveStreamingConfig';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
+import { unregisterDeviceToken } from '../utils/Pushnotifications';
 import { getAwardeeFontSize } from '../utils/profileHelpers';
 
 const MEDIA_ORIGIN = 'https://rtiapi.roofze.in';
@@ -1027,7 +1028,8 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
   const author = apiItem.user || apiItem.author || {};
   const authorSeat = author.state_seat || author.seat || {};
   const mediaTypeRaw = apiItem.media_type ?? apiItem.mediaType ?? 0;
-  const mediaTypeMap = { 0: 'None', 1: 'Image', 2: 'Video', 3: 'File' };
+  // 1 = image, 2 = video, 3 = PDF, 4 = external URL
+  const mediaTypeMap = { 0: 'None', 1: 'Image', 2: 'Video', 3: 'File', 4: 'Link' };
   const mediaType = mediaTypeMap[Number(mediaTypeRaw)] || 'None';
    const mediaUrl = apiItem.media_url || apiItem.media || '';
 
@@ -1089,7 +1091,8 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
     mediaType,
     media: mediaType === 'Image' ? undefined : mediaUrl,
 images: mediaType === 'Image' ? collectedImages : [],
-    video: mediaType === 'Video' && mediaUrl ? { uri: mediaUrl } : null,
+    // video hamesha plain string URL (cards String(video) karte hain; object => "[object Object]")
+    video: mediaType === 'Video' && mediaUrl ? resolveMediaUrl(mediaUrl) : null,
     file: mediaType === 'File' && mediaUrl ? { uri: mediaUrl, name: apiItem.media_name || 'file' } : null,
     author_name: author.name || apiItem.author_name || 'RTI News',
     author_profile_image: author.profile_image_url || author.profile_image || '',
@@ -2156,7 +2159,77 @@ const _normalizeFollowListItem = (raw) => {
 };
 
 // ─── User Store ───────────────────────────────────────────────────────────────
+// ✅ Push notification inbox: Laravel API item -> screen item
+const _mapApiNotification = (n = {}) => {
+  const data = n.data && typeof n.data === 'object' ? n.data : {};
+  return {
+    ...data,
+    id: String(n.id),
+    title: n.title || 'Notification',
+    message: n.body || '',
+    date: n.created_at || null,
+    status: n.is_read ? 'Read' : 'Unread',
+    type: n.type || data.type || '',
+    data,
+  };
+};
+
+const _buildNotificationSummary = (user, res) => {
+  const items = res.notifications.map(_mapApiNotification);
+  const unreadInList = items.filter((i) => i.status === 'Unread').length;
+  return {
+    currentUser: user,
+    items,
+    unreadCount: res.unreadCount,
+    readCount: Math.max(0, items.length - unreadInList),
+    hasMore: res.hasMore,
+    nextCursor: res.nextCursor,
+  };
+};
+
 export const UserStore = {
+
+  // ✅ Notification inbox (GET /notifications). null => login zaroori.
+  getNotificationsSummary: async () => {
+    const user = await UserStore.getCurrentUser();
+    if (!user) return null;
+    const res = await AuthAPI.getNotifications({ perPage: 20 });
+    if (!res.ok) {
+      if (res.isAuth) return null;
+      return { currentUser: user, items: [], unreadCount: 0, readCount: 0, hasMore: false, nextCursor: null, error: res.message };
+    }
+    return _buildNotificationSummary(user, res);
+  },
+
+  // ✅ Agla page (cursor pagination)
+  getMoreNotifications: async (cursor) => {
+    if (!cursor) return { ok: true, items: [], hasMore: false, nextCursor: null };
+    const res = await AuthAPI.getNotifications({ perPage: 20, cursor });
+    if (!res.ok) return res;
+    return { ok: true, items: res.notifications.map(_mapApiNotification), hasMore: res.hasMore, nextCursor: res.nextCursor };
+  },
+
+  // ✅ Bell badge
+  getUnreadNotificationCount: async () => {
+    const res = await AuthAPI.getUnreadNotificationCount();
+    return res.ok ? res.count : 0;
+  },
+
+  // ✅ Ek notification read mark karo
+  updateNotificationItem: async (id) => {
+    const res = await AuthAPI.markNotificationRead(id);
+    return res.ok ? { ok: true } : { ok: false, message: res.message || 'Unable to mark as read.' };
+  },
+
+  markAllNotificationsRead: async () => {
+    const res = await AuthAPI.markAllNotificationsRead();
+    return res.ok ? { ok: true } : { ok: false, message: res.message || 'Unable to mark all as read.' };
+  },
+
+  deleteNotificationItem: async (id) => {
+    const res = await AuthAPI.deleteNotification(id);
+    return res.ok ? { ok: true } : { ok: false, message: res.message || 'Unable to delete notification.' };
+  },
 
   // ✅ Kisi bhi follow/unfollow ka live update sunne ke liye subscribe karo.
   // callback(payload) milega jahan payload = { email, id, isFollowing }.
@@ -2502,8 +2575,8 @@ verifyQuizPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_sig
       id: `notif-quiz-sub-${Date.now()}`,
       title: `🎉 Quiz Subscription Activated!`,
       message: quizCount
-        ? `${plan?.label || 'Quiz'} Subscription active ho gaya. Aap ab ${quizCount} quiz attempt kar sakte hain.`
-        : `${plan?.label || 'Quiz'} Subscription active ho gaya. Ab aap quizzes attempt kar sakte hain.`,
+        ? `${plan?.label || 'Quiz'} Subscription is now active. You can now attempt ${quizCount} quizzes.`
+        : `${plan?.label || 'Quiz'} Subscription is now active. You can now attempt quizzes.`,
       date: today,
       status: 'Unread',
     };
@@ -2536,7 +2609,7 @@ verifyQuizPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_sig
       notifications: [notification, ...normalizeNotifications(user.notifications)],
       payment_history: [...normalizePaymentHistory(user.payment_history), quizPayment],
     });
-       if (!updatedUser) return { ok: false, message: 'Subscription save nahi ho paya.' };
+       if (!updatedUser) return { ok: false, message: 'Could not save the subscription.' };
     await recordQualifyingTransaction({
       buyerEmail: user.email,
       amount: Number(plan?.price || 0),
@@ -2901,6 +2974,7 @@ consumeQuizAttempt: async () => {
   } catch (err) { console.log('[ensureUserId] ERROR', err); return null; }
 },
   clearCurrentUser: async () => {
+    try { await unregisterDeviceToken(); } catch {} // logout se PEHLE push token hatao (auth abhi valid hai)
     try { await AsyncStorage.removeItem(CURRENT_USER_KEY); return true; }
     catch { return false; }
   },
@@ -4238,7 +4312,8 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
       const skipBlockedUsers = Boolean(options?.skipBlockedUsers);
       // ✅ FIX: 'all' = Home screen (GET /news, sabke posts), 'mine' (default) =
       // News Feed / Profile "My Posts" (GET /my-news, sirf apne posts)
-     const feedType = options?.feedType === 'all' ? 'all' : 'mine';
+     // 'feeds' = GET /feeds (sirf feed/reel posts, type 2)
+     const feedType = options?.feedType === 'all' ? 'all' : options?.feedType === 'feeds' ? 'feeds' : 'mine';
       const feedCursor = options?.cursor || null;
       const feedContentType = options?.type === 1 || options?.type === 2 ? options.type : undefined; // 1 news, 2 reels
       const feedPerPage = options?.perPage || 10;
@@ -4248,7 +4323,13 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
       // ── Real news ab yahan se aati hai (dummy defaultNewsFeed hata diya) ──
       let apiItems = [];
       try {
-        if (feedType === 'all') {
+        if (feedType === 'feeds') {
+          const apiRes = await AuthAPI.getFeeds({ per_page: feedPerPage, ...(feedCursor ? { cursor: feedCursor } : {}) });
+          feedPagination = apiRes.pagination || null;
+          if (apiRes.ok && Array.isArray(apiRes.news)) {
+            apiItems = apiRes.news;
+          }
+        } else if (feedType === 'all') {
           // Home screen: sabhi users ke news, backend ke /news (index) route se
       const apiRes = await AuthAPI.getNewsList({ per_page: feedPerPage, ...(feedContentType ? { type: feedContentType } : {}), ...(feedCursor ? { cursor: feedCursor } : {}) });
           feedPagination = apiRes.pagination || null;
@@ -6200,7 +6281,9 @@ getActiveAdsFeed: async (options = {}) => {
               .filter(Boolean);
             return Array.from(new Set([ad.image, ...urls].filter(Boolean)));
           })(),
-          video: ad.video || ad.video_url || '',
+          // ✅ video ad (media_type 2): backend `video` (ya `media`) me URL deta hai, image null hoti hai
+          video: ad.video || ad.video_url || (Number(ad.media_type) === 2 ? (ad.media || '') : ''),
+          media_type: Number(ad.media_type) || ((ad.video || ad.video_url) ? 2 : 1),
           url: redirectionUrl,
           redirect: redirectType,
           extraValues,
@@ -6302,7 +6385,7 @@ createAdOrder: async ({ planId }) => {
       payment_history: [...normalizePaymentHistory(user.payment_history), adPayment],
     });
 
-    if (!updatedUser) return { ok: false, message: 'Credits save nahi ho paaye.' };
+    if (!updatedUser) return { ok: false, message: 'Could not save the credits.' };
     return { ok: true, credits: newCredits };
   } catch (err) {
     console.error('[UserStore.verifyAdPayment] Error:', err);
@@ -6461,7 +6544,10 @@ useAdCredit: async (reason = 'post', adData = {}) => {
         endDate,
         status: 1,
       });
-      if (!apiRes.ok) return { ok: false, message: apiRes.message || 'Unable to create ad on server.' };
+      if (!apiRes.ok) {
+        console.warn('[UserStore.useAdCredit] createAdsDetails failed:', JSON.stringify(apiRes));
+        return { ok: false, message: apiRes.message || 'Unable to create ad on server.' };
+      }
 
       const backendAd = apiRes.ad || {};
       const newAd = {
@@ -6471,7 +6557,8 @@ useAdCredit: async (reason = 'post', adData = {}) => {
         description: backendAd.description || adData.description,
         image: backendAd.image || adData.image,
         // ✅ FIX: local blob:/file: uri session ke baad mar jaati hai — backend ka URL prefer karo
-        video: backendAd.video || backendAd.video_url || adData.video,
+        video: backendAd.video || backendAd.video_url || (Number(backendAd.media_type) === 2 ? backendAd.media : '') || adData.video,
+        media_type: Number(backendAd.media_type) || (adData.video ? 2 : 1),
         images: (Array.isArray(backendAd.images) && backendAd.images.length) ? backendAd.images : adData.images,
         url: backendAd.url || adData.url,
         created_at: backendAd.created_at || today,
@@ -6492,6 +6579,7 @@ useAdCredit: async (reason = 'post', adData = {}) => {
       title: adData.title || '',
       description: adData.description || '',
       image: adData.image || adData.photo || '',
+      video: adData.video || '',
       url: adData.url || '',
     });
     if (!apiRes.ok) return { ok: false, message: apiRes.message || 'Unable to update ad on server.' };
@@ -6506,7 +6594,10 @@ useAdCredit: async (reason = 'post', adData = {}) => {
     const updatedUser = await UserStore.updateUser(user.email, { ads: updatedAds });
     if (!updatedUser) return { ok: false, message: 'Unable to save changes.' };
     return { ok: true, credits: currentCredits, ad: updatedAd };
-  } catch { return { ok: false, message: 'Unable to use credit.' }; }
+  } catch (e) {
+    console.error('[UserStore.useAdCredit] failed:', e);
+    return { ok: false, message: `Unable to use credit. (${e?.message || 'unknown error'})` };
+  }
 },
 
 // deleteAd ko replace karo — ab DELETE /ads-details/{id} bhi call hoga

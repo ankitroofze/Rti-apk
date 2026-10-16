@@ -145,7 +145,7 @@ headerUserName: {
   fontSize: 11,
   fontWeight: '700',
   textAlign: 'center',
-  color: '#008b23',
+  color: '#8b0000',
 },
 
   
@@ -283,7 +283,7 @@ awardeeName: {
   ───────────────────────────── */
   goldLatter: {
     position: 'absolute',
-    top: '61%',
+    top: '57%',
     right: '5%',
     width: '20%',
     height: '9%',
@@ -326,7 +326,7 @@ awardeeName: {
     photoWrapper: {
   position: 'absolute',
   right: '4%',
-  top: '60%',
+  top: '66%',
   width: '31%',
   height: '20%',
 },
@@ -356,6 +356,7 @@ awardeeName: {
   photo: {
     width: '100%',
     height: '100%',
+    resizeMode: 'cover',
   },
 
   photoPlaceholder: {
@@ -482,3 +483,38 @@ awardeeName: {
     fontWeight: '800',
   },
 });
+
+
+/* ─────────────────────────────────────────────
+   SCALED TEXT STYLES  (Android / iOS)
+   Web certificate fonts are scaled by (cardWidth / 375).
+   Same formula here so Android looks exactly like web.
+───────────────────────────────────────────── */
+export const getScaledCertStyles = (cardWidth = 360, awardeeFontBase = 18) => {
+  const S = (cardWidth || 360) / 375;      // font / size scale
+  const P = (cardWidth || 360) / 1024;     // px-in-1024-page scale
+  return StyleSheet.create({
+    headerUserName: { fontSize: 11 * S, fontWeight: '700', color: '#8b0000' },
+    awardeeName: { fontSize: awardeeFontBase * S, fontWeight: '800', color: RED },
+    passedText: { fontSize: 11 * S, lineHeight: 16 * S },
+    resultBadgeText: {
+      borderWidth: Math.max(0.75, 1.5 * P),
+      borderRadius: 14 * S,
+      paddingHorizontal: 12 * S,
+      paddingVertical: 4 * S,
+      fontSize: 10 * S,
+      fontWeight: '800',
+    },
+    sinceText: { fontSize: 9.5 * S, lineHeight: 14 * S },
+    congratsText: { fontSize: 11 * S, lineHeight: 16 * S },
+    signatoryName: { fontSize: 9 * S },
+    signatoryRole: { fontSize: 7.5 * S, lineHeight: 11 * S },
+    signatorySmall: { fontSize: 7 * S },
+    photoInner: { borderRadius: 6 * P },
+    photoPlaceholderText: { fontSize: 9 * S, fontWeight: '600' },
+    dateBannerWrapper: { height: 20 * S },
+    dateBannerText: { fontSize: 9.5 * S, marginRight: 45 * S },
+    italicFooter: { fontSize: 8 * S },
+    emailBannerWrapper: { height: 15 * S },
+  });
+};

@@ -1059,7 +1059,7 @@ const styles = StyleSheet.create(withRobotoOnIOS({
     fontSize: 14,
     color: BRAND.ink,
     padding: 0,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_400Regular',
   },
   searchInputWide: {
     fontSize: 16,
@@ -1093,7 +1093,7 @@ const styles = StyleSheet.create(withRobotoOnIOS({
     color: '#fff',
     fontWeight: '800',
     fontSize: 13,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_900Black',
   },
   pageRow: { flex: 1, flexDirection: 'row' },
   scroll: { flex: 1 },
@@ -1168,7 +1168,7 @@ const styles = StyleSheet.create(withRobotoOnIOS({
     fontSize: 12.5,
     fontWeight: '700',
     color: '#334155',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_700Bold',
   },
   chipTextActive: { color: '#fff' },
 
@@ -1188,14 +1188,14 @@ const styles = StyleSheet.create(withRobotoOnIOS({
     fontWeight: '700',
     color: BRAND.ink,
     marginBottom: 10,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_700Bold',
   },
   sidebarItem: { paddingVertical: 9, paddingHorizontal: 10, borderRadius: 5 },
   sidebarItemActive: { backgroundColor: BRAND.primaryLight },
   sidebarItemText: {
     fontSize: 14,
     color: '#475569',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_400Regular',
   },
   sidebarItemTextActive: { color: BRAND.primaryDark, fontWeight: '700' },
   priceRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
@@ -1214,21 +1214,21 @@ const styles = StyleSheet.create(withRobotoOnIOS({
   priceRs: {
     fontSize: 11,
     color: '#94a3b8',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_400Regular',
   },
   priceInput: {
     flex: 1,
     fontSize: 12,
     color: BRAND.ink,
     padding: 0,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_400Regular',
   },
   sortItem: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7 },
   sortItemActive: {},
   sortItemText: {
     fontSize: 12.5,
     color: '#475569',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_400Regular',
   },
   applyBtn: {
     flexDirection: 'row',
@@ -1244,7 +1244,7 @@ const styles = StyleSheet.create(withRobotoOnIOS({
     color: '#fff',
     fontWeight: '800',
     fontSize: 13,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_900Black',
   },
 
   // ── Results bar ──
@@ -1259,7 +1259,7 @@ const styles = StyleSheet.create(withRobotoOnIOS({
   resultsText: {
     fontSize: 13,
     color: '#64748b',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_400Regular',
   },
   sortPills: { flexDirection: 'row', gap: 8 },
   sortPill: {
@@ -1275,7 +1275,7 @@ const styles = StyleSheet.create(withRobotoOnIOS({
     fontSize: 11.5,
     color: '#64748b',
     fontWeight: '600',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_700Bold',
   },
   sortPillTextActive: { color: BRAND.primaryDark, fontWeight: '800' },
 
@@ -1299,7 +1299,7 @@ const styles = StyleSheet.create(withRobotoOnIOS({
     fontSize: 13,
     color: '#334155',
     fontWeight: '600',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_700Bold',
   },
   sortDropdownMenu: {
     position: 'absolute',
@@ -1328,7 +1328,7 @@ const styles = StyleSheet.create(withRobotoOnIOS({
   sortDropdownItemText: {
     fontSize: 13,
     color: '#475569',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_400Regular',
   },
   sortDropdownItemTextActive: {
     color: BRAND.primaryDark,
@@ -1372,7 +1372,7 @@ const styles = StyleSheet.create(withRobotoOnIOS({
     fontSize: 13,
     color: '#94a3b8',
     fontWeight: '500',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_500Medium',
   },
 
   photoCountBadge: {
@@ -1391,7 +1391,7 @@ const styles = StyleSheet.create(withRobotoOnIOS({
     color: '#fff',
     fontSize: 12,
     fontWeight: '700',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_700Bold',
   },
 
   verifiedRibbon: {
@@ -1407,7 +1407,7 @@ const styles = StyleSheet.create(withRobotoOnIOS({
     color: '#fff',
     fontSize: 10.5,
     fontWeight: '800',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_900Black',
   },
   wishlistBtn: {
     position: 'absolute',
@@ -1443,7 +1443,7 @@ heroBannerImage: {
     fontSize: 10.5,
     fontWeight: '700',
     color: BRAND.primaryDark,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_700Bold',
   },
   cardBody: { padding: 12 },
   cardTitle: {
@@ -1451,13 +1451,13 @@ heroBannerImage: {
     fontWeight: '800',
     color: '#0f172a',
     lineHeight: 21,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_900Black',
   },
   cardMeta: {
     fontSize: 11.5,
     color: '#94a3b8',
     marginTop: 3,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_400Regular',
   },
   cardCityRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
   cardCityText: {
@@ -1465,21 +1465,21 @@ heroBannerImage: {
     marginLeft: 3,
     fontSize: 12,
     color: '#64748b',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_400Regular',
   },
   cardPrice: {
     fontSize: 14.5,
     fontWeight: '900',
     color: BRAND.primaryDark,
     marginTop: 5,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_900Black',
   },
   cardDesc: {
     fontSize: 12.5,
     color: '#64748b',
     lineHeight: 18,
     marginTop: 6,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_400Regular',
   },
 
   cardBottomRow: {
@@ -1503,7 +1503,7 @@ heroBannerImage: {
     color: BRAND.primaryDark,
     fontWeight: '700',
     fontSize: 12,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_700Bold',
   },
   enquireBtn: {
     flex: 1,
@@ -1520,7 +1520,7 @@ heroBannerImage: {
     color: '#fff',
     fontWeight: '700',
     fontSize: 12,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_700Bold',
   },
 
   stateBox: {
@@ -1537,14 +1537,14 @@ heroBannerImage: {
     color: '#64748b',
     textAlign: 'center',
     lineHeight: 20,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_400Regular',
   },
   emptyTitle: {
     fontSize: 16,
     fontWeight: '900',
     color: '#0f172a',
     marginTop: 8,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_900Black',
   },
 
   modalBackdrop: {
@@ -1616,7 +1616,7 @@ heroBannerImage: {
     fontSize: 12,
     color: '#16a34a',
     fontWeight: '700',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_700Bold',
   },
   imageCounter: {
     position: 'absolute',
@@ -1631,7 +1631,7 @@ heroBannerImage: {
     color: '#fff',
     fontSize: 11,
     fontWeight: '800',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_900Black',
   },
   modalProductInfo: {
     backgroundColor: '#fff',
@@ -1654,7 +1654,7 @@ heroBannerImage: {
     fontWeight: '900',
     color: '#0f172a',
     lineHeight: 26,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_900Black',
   },
   modalPriceBadge: {
     backgroundColor: '#fef2f2',
@@ -1668,7 +1668,7 @@ heroBannerImage: {
     fontSize: 16,
     fontWeight: '900',
     color: '#dc2626',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_900Black',
   },
   modalMetaChipsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10, marginBottom: 14 },
   metaChip: {
@@ -1686,7 +1686,7 @@ heroBannerImage: {
     fontSize: 12,
     color: '#0369a1',
     fontWeight: '600',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_700Bold',
   },
   modalDescSection: { marginBottom: 14 },
   modalSectionLabel: {
@@ -1696,13 +1696,13 @@ heroBannerImage: {
     textTransform: 'uppercase',
     letterSpacing: 0.8,
     marginBottom: 6,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_900Black',
   },
   modalDescText: {
     fontSize: 14,
     color: '#334155',
     lineHeight: 21,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_400Regular',
   },
   modalInfoGrid: { gap: 8, marginBottom: 16 },
   infoRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
@@ -1718,14 +1718,14 @@ heroBannerImage: {
     fontSize: 13,
     color: '#94a3b8',
     fontWeight: '600',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_700Bold',
   },
   infoValue: {
     fontSize: 13,
     color: '#0f172a',
     fontWeight: '700',
     flex: 1,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_700Bold',
   },
   modalActions: { flexDirection: 'row', gap: 10, marginTop: 4 },
   modalCallBtn: {
@@ -1764,7 +1764,7 @@ heroBannerImage: {
     color: '#fff',
     fontWeight: '900',
     fontSize: 14,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_900Black',
   },
   sheetHeader: {
     flexDirection: 'row',
@@ -1781,7 +1781,7 @@ heroBannerImage: {
     fontWeight: '900',
     color: '#0f172a',
     flex: 1,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_900Black',
   },
   formContent: { padding: 16, paddingBottom: 32 },
   productInfoBox: {
@@ -1803,13 +1803,13 @@ heroBannerImage: {
     textTransform: 'uppercase',
     letterSpacing: 0.6,
     marginBottom: 2,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_700Bold',
   },
   productInfoValue: {
     fontSize: 15,
     color: '#0f172a',
     fontWeight: '800',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_900Black',
   },
   formLabel: {
     fontSize: 14,
@@ -1817,7 +1817,7 @@ heroBannerImage: {
     color: '#334155',
     marginBottom: 8,
     marginTop: 14,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_700Bold',
   },
   inputWrap: {
     flexDirection: 'row',
@@ -1836,7 +1836,7 @@ heroBannerImage: {
     color: '#0f172a',
     paddingVertical: 12,
     outlineStyle: 'none',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_400Regular',
   },
   textArea: {
     minHeight: 90,
@@ -1861,6 +1861,6 @@ heroBannerImage: {
     color: '#fff',
     fontSize: 16,
     fontWeight: '900',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'System',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_900Black',
   },
 }));

@@ -237,7 +237,7 @@ export default function RegisterScreen({ navigation }) {
 
   const handleSendOTP = async () => {
     if (otpSending) return;
-    if (!emailOk) { setEmailTouched(true); showToast('Valid email address daalo', 'error'); return; }
+    if (!emailOk) { setEmailTouched(true); showToast('Please enter a valid email address', 'error'); return; }
     setOtpSending(true);
     try {
       const result = await AuthAPI.requestRegisterOTP({ email: normalizedEmail });
@@ -259,14 +259,14 @@ export default function RegisterScreen({ navigation }) {
 
   const handleRegister = async () => {
     if (submitting) return;
-    if (!isStep1Valid) { showToast('First and Last name daalo', 'error'); return; }
-    if (!mobileOk) { setMobileTouched(true); showToast('Valid 10-digit mobile number daalo', 'error'); return; }
-    if (!normalizedEmail) { setEmailTouched(true); showToast('Email address daalo', 'error'); return; }
-    if (!emailOk) { setEmailTouched(true); showToast('Valid email address daalo', 'error'); return; }
-    if (!emailVerified || verifiedEmail !== normalizedEmail || !verifiedOtp) { showToast('Email verify karo pehle', 'error'); return; }
-    if (!passwordStrong) { setPasswordTouched(true); showToast('Strong password use karo', 'error'); return; }
-    if (password !== confirm) { showToast('Passwords match nahi kar rahe', 'error'); return; }
-    if (!termsAccepted) { setTermsTouched(true); showToast('Terms & Conditions accept karo', 'error'); return; }
+    if (!isStep1Valid) { showToast('Please enter your first and last name', 'error'); return; }
+    if (!mobileOk) { setMobileTouched(true); showToast('Please enter a valid 10-digit mobile number', 'error'); return; }
+    if (!normalizedEmail) { setEmailTouched(true); showToast('Please enter your email address', 'error'); return; }
+    if (!emailOk) { setEmailTouched(true); showToast('Please enter a valid email address', 'error'); return; }
+    if (!emailVerified || verifiedEmail !== normalizedEmail || !verifiedOtp) { showToast('Please verify your email first', 'error'); return; }
+    if (!passwordStrong) { setPasswordTouched(true); showToast('Please use a strong password', 'error'); return; }
+    if (password !== confirm) { showToast('Passwords do not match', 'error'); return; }
+    if (!termsAccepted) { setTermsTouched(true); showToast('Please accept the Terms & Conditions', 'error'); return; }
 
     setSubmitting(true);
     try {
@@ -427,7 +427,7 @@ export default function RegisterScreen({ navigation }) {
                     />
                     {mobileShowError ? <Ionicons name="close-circle" size={16} color="#ff4444" /> : null}
                   </View>
-                  {mobileShowError && <Text style={styles.errorText}>Valid 10-digit Indian mobile number daalo (6-9 se shuru)</Text>}
+                  {mobileShowError && <Text style={styles.errorText}>Enter a valid 10-digit Indian mobile number (starting with 6-9)</Text>}
                 </View>
 
                 <View style={styles.inputGroup}>
@@ -457,7 +457,7 @@ export default function RegisterScreen({ navigation }) {
                     ) : null}
                   </View>
                   {emailTouched && !emailOk && normalizedEmail.length > 0 &&
-                    <Text style={styles.errorText}>Valid email daalo, e.g. you@example.com</Text>}
+                    <Text style={styles.errorText}>Enter a valid email, e.g. you@example.com</Text>}
                   {emailOk && !emailVerified && <Text style={localStyles.otpHint}>{'👆 Press "Send OTP" to verify your email'}</Text>}
                 </View>
 

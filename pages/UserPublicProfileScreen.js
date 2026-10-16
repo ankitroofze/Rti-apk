@@ -1,7 +1,7 @@
 import NameWithTick from '../components/NameWithTick';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Clipboard, Image, ImageBackground, KeyboardAvoidingView, Modal,
+  Alert, Clipboard, Image, ImageBackground, KeyboardAvoidingView, Linking, Modal,
   Platform, ScrollView, Share, StatusBar, Text, TextInput,
   TouchableOpacity, TouchableWithoutFeedback, useWindowDimensions, View,
 } from 'react-native';
@@ -22,7 +22,6 @@ import { isValidImageUrl } from '../utils/storyHelpers';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 import styles from '../styles/UserPublicProfileStyles';
 import ProfileStyles from '../styles/ProfileStyles';
-import { PROFILE_BG_RED } from '../constants/profileConstants';
 
 // Red header image ko poore header me fill karne ke liye
 const RED_HEADER_IMG = {
@@ -131,6 +130,55 @@ const ProfileImageModal = ({ visible, imageUri, name, onClose }) => (
     </TouchableWithoutFeedback>
   </Modal>
 );
+
+// ── Profile share sheet: WhatsApp / Facebook / Telegram / X / Email / Copy / More ──────────────
+// NOTE: web par profile ka public link yahan se banta hai. Agar aapka web route alag ho to
+// sirf neeche ke 2 constants badal do.
+const PROFILE_SHARE_BASE = 'https://rtinews.in';
+const PROFILE_SHARE_PATH = '/UserPublicProfile';
+
+const ShareProfileSheet = ({ visible, onClose, name, url, message, onCopy, onMore }) => {
+  const text = encodeURIComponent(message);
+  const link = encodeURIComponent(url);
+  const open = (target) => { onClose?.(); Linking.openURL(target).catch(() => {}); };
+  const options = [
+    { key: 'wa', label: 'WhatsApp', icon: 'whatsapp', color: '#25D366', onPress: () => open(`https://wa.me/?text=${text}`) },
+    { key: 'fb', label: 'Facebook', icon: 'facebook', color: '#1877F2', onPress: () => open(`https://www.facebook.com/sharer/sharer.php?u=${link}`) },
+    { key: 'tg', label: 'Telegram', icon: 'telegram', color: '#229ED9', onPress: () => open(`https://t.me/share/url?url=${link}&text=${encodeURIComponent(name + ' on RTI News')}`) },
+    { key: 'x', label: 'X', icon: 'twitter', color: '#0f172a', onPress: () => open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(name + ' on RTI News')}&url=${link}`) },
+    { key: 'mail', label: 'Email', icon: 'email-outline', color: '#EA4335', onPress: () => open(`mailto:?subject=${encodeURIComponent(name + ' - RTI News')}&body=${text}`) },
+    { key: 'copy', label: 'Copy Link', icon: 'link-variant', color: ORANGE, onPress: () => { onClose?.(); onCopy?.(); } },
+    { key: 'more', label: 'More', icon: 'share-variant', color: '#64748b', onPress: () => { onClose?.(); onMore?.(); } },
+  ];
+  return (
+    <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end', alignItems: 'center' }}>
+          <TouchableWithoutFeedback>
+            <View style={{ width: '100%', maxWidth: 520, backgroundColor: '#ffffff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 12, paddingBottom: Platform.OS === 'ios' ? 36 : 24 }}>
+              <View style={{ width: 40, height: 4, backgroundColor: '#e2e8f0', borderRadius: 2, alignSelf: 'center', marginBottom: 14 }} />
+              <Text style={{ fontSize: 16, fontWeight: '800', color: '#0f172a', textAlign: 'center' }}>Share Profile</Text>
+              <Text style={{ fontSize: 12, color: '#64748b', textAlign: 'center', marginTop: 2, marginBottom: 14, paddingHorizontal: 24 }} numberOfLines={1}>{name}</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 12 }}>
+                {options.map((o) => (
+                  <TouchableOpacity key={o.key} onPress={o.onPress} activeOpacity={0.75} style={{ width: '25%', alignItems: 'center', paddingVertical: 12 }}>
+                    <View style={{ width: 52, height: 52, borderRadius: 26, backgroundColor: o.color, justifyContent: 'center', alignItems: 'center' }}>
+                      <MaterialCommunityIcons name={o.icon} size={26} color="#ffffff" />
+                    </View>
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: '#334155', marginTop: 6 }} numberOfLines={1}>{o.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TouchableOpacity onPress={onClose} activeOpacity={0.7} style={{ paddingVertical: 14, alignItems: 'center', marginTop: 4 }}>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: '#64748b' }}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
+  );
+};
 
 const ProfileMenuSheet = ({ visible, onClose, onCopyLink, onReport, onBlock }) => (
   <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
@@ -248,6 +296,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const [modalImage, setModalImage] = useState('');
   const [modalName, setModalName] = useState('');
   const [menuVisible, setMenuVisible] = useState(false);
+  const [shareVisible, setShareVisible] = useState(false);
   const [viewerEmail, setViewerEmail] = useState('');
 
   const [commentModalVisible, setCommentModalVisible] = useState(false);
@@ -306,7 +355,15 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         // ✅ NEW: agar backend se is post/author ka numeric id nahi mila (author_id null tha),
         // to follow/followers list se mile id se profile.id backfill kardo — isse Block/Report
         // jaise actions ke liye targetId resolve ho jaayega.
-        if (active && !userId && summary?.resolvedId && !(Array.isArray(user?.posts) && user.posts.length)) {
+        // Dusre device par A ka local record nahi hota (ya purana hota hai) -> role/subscription
+        // missing rehta tha aur profile hamesha default dikhta tha. Isliye tier 'common' aaye
+        // ya posts na ho to server se full public profile (subscription ke saath) fetch karo.
+        const tierLooksCommon = getProfileTier({
+          ...(user || {}),
+          has_blue_tick: user ? Boolean(UserStore.hasBlueTick(user)) : false,
+        }).key === 'common';
+        const needsFullProfile = !(Array.isArray(user?.posts) && user.posts.length) || tierLooksCommon;
+        if (active && !userId && summary?.resolvedId && needsFullProfile) {
           try {
             const full = await UserStore.getPublicProfileById(summary.resolvedId);
             if (full && active) { user = { ...(user || {}), ...full }; setProfile(user); }
@@ -473,7 +530,17 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   // Referral code tab dikhta hai jab profile owner ne koi role / subscription / premium liya ho
   // (yaani tier common se upar ho) — visitor chahe Common user ho ya kuch bhi.
   const hasPaidAccess = profileTier.key !== 'common' || isSubscribedProfile;
+  // Web / mobile-web par pehle common user ka pill gayab rehta tha jabki Android/iOS par 'Common User' dikhta tha
+  const shownPillText = rolePillText || tierPillLabel;
   const referralCode = hasPaidAccess ? rawReferralCode : '';
+  // ID Card + Appointment Letter: sirf jab owner ne ROLE subscription liya ho (Premium/Verified/Common nahi).
+  // Visitor koi bhi ho (Common bhi) use ye dikhna chahiye.
+  const hasRoleSubscription = ['representative', 'executive', 'chief'].includes(profileTier.key);
+  const showDocuments = hasRoleSubscription && hasDocumentSource(display);
+  // Bio + location bhi sirf paid (role / premium) owner ke public profile par.
+  const shownBio = hasPaidAccess ? bio : '';
+  const shownLocationLine = hasPaidAccess ? locationLine : '';
+  const shownState = hasPaidAccess ? state : '';
   const memberIdText = String(display?.member_id || display?.memberId || '').trim()
     || (display?.email || resolvedEmail ? generateMemberId(display?.email || resolvedEmail) : '');
   const resolvedProfilePhoto = useResolvedUri(safePhotoUri || null);
@@ -644,20 +711,35 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     });
   };
 
+  // Public https link (WhatsApp / Facebook me clickable). userId ho to wahi, warna email.
+  const shareUserId = String(userId || profile?.id || display?.id || '').trim();
+  const profileShareUrl = `${PROFILE_SHARE_BASE}${PROFILE_SHARE_PATH}?${shareUserId ? `userId=${encodeURIComponent(shareUserId)}` : `email=${encodeURIComponent(resolvedEmail || '')}`}`;
+  const profileShareMessage = `${name} on RTI News\n${profileShareUrl}`;
+
   const handleCopyProfileLink = () => {
     setMenuVisible(false);
-    Clipboard.setString(`rtinews://profile?email=${resolvedEmail || ''}&name=${encodeURIComponent(name)}`);
+    Clipboard.setString(profileShareUrl);
     showToast('Profile link copied!', 'success');
   };
 
-  const handleShareProfile = async () => {
+  const openShareSheet = () => setShareVisible(true);
+
+  // "More": phone ka system share sheet (native) / browser ka share (web), na ho to link copy
+  const handleShareMore = async () => {
     try {
-      await Share.share({
-        title: `${name} - RTI News`,
-        message: `${name} (RTI News)\nrtinews://profile?email=${resolvedEmail || ''}&name=${encodeURIComponent(name)}`,
-      });
-    } catch { showToast('Share failed.', 'error'); }
+      if (Platform.OS === 'web') {
+        if (typeof navigator !== 'undefined' && navigator.share) {
+          await navigator.share({ title: `${name} - RTI News`, text: `${name} on RTI News`, url: profileShareUrl });
+        } else {
+          Clipboard.setString(profileShareUrl);
+          showToast('Profile link copied!', 'success');
+        }
+        return;
+      }
+      await Share.share({ title: `${name} - RTI News`, message: profileShareMessage, url: profileShareUrl });
+    } catch { /* user ne cancel kiya */ }
   };
+  const handleShareProfile = openShareSheet;
 
   const handleCopyReferralCode = () => {
     if (!referralCode) return;
@@ -1011,6 +1093,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const sharedModals = (
     <>
       <ProfileImageModal visible={modalVisible} imageUri={modalImage} name={modalName} onClose={() => setModalVisible(false)} />
+      <ShareProfileSheet visible={shareVisible} onClose={() => setShareVisible(false)} name={name} url={profileShareUrl} message={profileShareMessage} onCopy={handleCopyProfileLink} onMore={handleShareMore} />
       <ProfileMenuSheet visible={menuVisible} onClose={() => setMenuVisible(false)} onCopyLink={handleCopyProfileLink} onReport={handleReport} onBlock={handleBlock} />
       <BlockConfirmModal visible={blockConfirmVisible} name={name} onCancel={() => setBlockConfirmVisible(false)} onConfirm={confirmBlock} />
       <Modal visible={Boolean(followModalType)} transparent animationType="slide" onRequestClose={() => setFollowModalType('')}>
@@ -1078,7 +1161,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         {sharedModals}
 
         {/* Top Bar */}
-        <ImageBackground source={PROFILE_BG_RED} resizeMode="cover" imageStyle={RED_HEADER_IMG} style={[styles.topBar, { backgroundColor: '#B91C1C', borderBottomColor: '#7F1D1D', overflow: 'hidden' }]}>
+        <ImageBackground source={profileTier.bgImage} resizeMode="cover" imageStyle={RED_HEADER_IMG} style={[styles.topBar, { backgroundColor: profileTier.gradientDark?.[1] || profileTier.accent, borderBottomColor: profileTier.gradientDark?.[2] || profileTier.accent, overflow: 'hidden' }]}>
           <TouchableOpacity style={[styles.backBtn, { backgroundColor: 'rgba(255,255,255,0.22)' }]} onPress={() => navigation.goBack()} activeOpacity={0.8}>
             <Feather name="arrow-left" size={20} color="#FFFFFF" />
           </TouchableOpacity>
@@ -1129,10 +1212,10 @@ export default function UserPublicProfileScreen({ route, navigation }) {
             </View>
 
             {/* Bio + Pills + Location */}
-            {locationLine ? (
+            {shownLocationLine ? (
               <View style={styles.locationLine}>
                 <Feather name="map-pin" size={13} color={ORANGE} />
-                <Text style={styles.locationLineText} numberOfLines={2}>{locationLine}</Text>
+                <Text style={styles.locationLineText} numberOfLines={2}>{shownLocationLine}</Text>
               </View>
             ) : null}
             {accountAge ? (
@@ -1141,20 +1224,20 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                 <Text style={[styles.locationLineText, { color: '#94a3b8' }]}>Member {accountAge}</Text>
               </View>
             ) : null}
-                    {rolePillText ? (
+                    {shownPillText ? (
               <View style={[styles.rolePill, { backgroundColor: pillTheme.bg, borderColor: pillTheme.border }]}>
                 <Feather name="star" size={12} color={pillTheme.text} />
-                <Text style={[styles.rolePillText, { color: pillTheme.text }]} numberOfLines={1}>{rolePillText}</Text>
+                <Text style={[styles.rolePillText, { color: pillTheme.text }]} numberOfLines={1}>{shownPillText}</Text>
               </View>
             ) : null}
-            {(seatName || seatId) && (seatName || seatId) !== rolePillText ? (
+            {(seatName || seatId) && (seatName || seatId) !== shownPillText ? (
               <View style={[styles.seatPill, { backgroundColor: pillTheme.bg, borderColor: pillTheme.border }]}>
                 <Feather name="award" size={12} color={pillTheme.text} />
                 <Text style={[styles.seatPillText, { color: pillTheme.text }]} numberOfLines={1}>{seatName || seatId}</Text>
               </View>
             ) : null}
-            {bio ? <Text style={[styles.bioInline, { marginTop: 6 }]} numberOfLines={4}>{bio}</Text> : null}
-      {hasDocumentSource(display) ? (
+            {shownBio ? <Text style={[styles.bioInline, { marginTop: 6 }]} numberOfLines={4}>{shownBio}</Text> : null}
+      {showDocuments ? (
   <View style={{ marginTop: 14, width: '100%' }}>
   <Text style={{ fontSize: 13, fontWeight: '800', color: '#374151', marginBottom: 8 }}>ID Card</Text>
     <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', gap: 12 }}>
@@ -1197,7 +1280,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                 {followLoading ? '...' : isFollowing ? 'Following' : 'Follow'}
               </Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.shareBtn} onPress={() => setMenuVisible(true)} activeOpacity={0.85}>
+            <TouchableOpacity style={styles.shareBtn} onPress={openShareSheet} activeOpacity={0.85}>
                            <Feather name="share-2" size={16} color={pillTheme.border} />
               <Text style={styles.shareBtnText}>Share Profile</Text>
             </TouchableOpacity>
@@ -1306,7 +1389,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         {sharedModals}
 
         {/* ── Top Bar ── */}
-                  <ImageBackground source={PROFILE_BG_RED} resizeMode="cover" imageStyle={RED_HEADER_IMG} style={[webSt.topBar, { backgroundColor: '#B91C1C', borderBottomColor: '#7F1D1D', overflow: 'hidden' }]}>
+                  <ImageBackground source={profileTier.bgImage} resizeMode="cover" imageStyle={RED_HEADER_IMG} style={[webSt.topBar, { backgroundColor: profileTier.gradientDark?.[1] || profileTier.accent, borderBottomColor: profileTier.gradientDark?.[2] || profileTier.accent, overflow: 'hidden' }]}>
           <TouchableOpacity style={[webSt.backBtn, { backgroundColor: 'rgba(255,255,255,0.22)' }]} onPress={() => navigation.goBack()} activeOpacity={0.8}>
             <Feather name="arrow-left" size={20} color="#FFFFFF" />
           </TouchableOpacity>
@@ -1346,7 +1429,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                       {followLoading ? '...' : isFollowing ? 'Following' : 'Follow'}
                     </Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={webSt.shareBtn} onPress={() => setMenuVisible(true)} activeOpacity={0.85}>
+                  <TouchableOpacity style={webSt.shareBtn} onPress={openShareSheet} activeOpacity={0.85}>
                     <Text style={webSt.shareBtnText}>Share Profile</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={webSt.moreBtn} onPress={() => setMenuVisible(true)} activeOpacity={0.8}>
@@ -1372,19 +1455,19 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
                 {/* Row 3: bio section */}
                 <View style={webSt.bioSection}>
-                  {rolePillText ? <Text style={webSt.bioRole}>{rolePillText}</Text> : null}
-                  {(seatName || seatId) && (seatName || seatId) !== rolePillText
+                  {shownPillText ? <Text style={webSt.bioRole}>{shownPillText}</Text> : null}
+                  {(seatName || seatId) && (seatName || seatId) !== shownPillText
                     ? <Text style={webSt.bioSeat}>{seatName || seatId}</Text>
                     : null}
-                                 {bio ? <Text style={webSt.bioText}>{bio}</Text> : null}
-                  {locationLine ? <Text style={webSt.bioLocation}>📍 {locationLine}</Text> : null}
+                                 {shownBio ? <Text style={webSt.bioText}>{shownBio}</Text> : null}
+                  {shownLocationLine ? <Text style={webSt.bioLocation}>📍 {shownLocationLine}</Text> : null}
                   {accountAge ? <Text style={webSt.bioLocation}>🗓 Member {accountAge}</Text> : null}
                 </View>
               </View>
             </View>
 
             {/* ── ID Card / Appointment Letter / Referral Code (desktop web) ── */}
-            {hasDocumentSource(display) ? (
+            {showDocuments ? (
               <View style={{ marginTop: 14, width: '100%' }}>
                 <Text style={{ fontSize: 13, fontWeight: '800', color: '#374151', marginBottom: 8 }}>ID Card</Text>
                 <View style={{ flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 12 }}>
@@ -1525,9 +1608,9 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
         {/* ── Cover (tier image) + back / menu ── */}
         <ImageBackground
-                  source={PROFILE_BG_RED}
+                  source={profileTier.bgImage}
           resizeMode="cover"
-          style={ProfileStyles.greenHeader}
+          style={[ProfileStyles.greenHeader, { backgroundColor: profileTier.gradientDark?.[1] || profileTier.accent }]}
           imageStyle={ProfileStyles.greenHeaderImage}
         >
           <View style={[ProfileStyles.greenHeaderTop, { paddingTop: insets.top + 8 }]}>
@@ -1566,13 +1649,13 @@ export default function UserPublicProfileScreen({ route, navigation }) {
             {memberIdText ? (
               <Text style={ProfileStyles.profileCardUsername}>Member ID: {memberIdText}</Text>
             ) : null}
-            {state || locationLine ? (
+            {shownState || shownLocationLine ? (
               <View style={ProfileStyles.profileCardLocation}>
                 <MaterialIcons name="location-on" size={11} color="#555555" />
-                <Text style={ProfileStyles.profileCardLocationText}>{state ? `${state}, India` : locationLine}</Text>
+                <Text style={ProfileStyles.profileCardLocationText}>{shownState ? `${shownState}, India` : shownLocationLine}</Text>
               </View>
             ) : null}
-            {bio ? <Text style={ProfileStyles.profileCardBioText} numberOfLines={4}>{bio}</Text> : null}
+            {shownBio ? <Text style={ProfileStyles.profileCardBioText} numberOfLines={4}>{shownBio}</Text> : null}
           </View>
 
           <View style={ProfileStyles.profileStatsExact}>
@@ -1650,6 +1733,28 @@ export default function UserPublicProfileScreen({ route, navigation }) {
             </TouchableOpacity>
           </View>
         ) : null}
+
+        {/* ── ID Card + Appointment Letter (sirf role subscription wale owner ke liye, sabko dikhta hai) ── */}
+        {showDocuments ? (() => {
+          const docW = Math.floor((windowWidth - 16 * 2 - 12) / 2);
+          return (
+            <View style={{ marginTop: 14, paddingHorizontal: 16 }}>
+              <Text style={{ fontSize: 13, fontWeight: '800', color: '#374151', marginBottom: 8 }}>ID Card</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', gap: 12 }}>
+                <ScaledCard width={docW} naturalWidth={360}>
+                  <AutoIdCardPreview profile={display} />
+                </ScaledCard>
+                <ScaledCard width={docW} naturalWidth={360}>
+                  <AutoIdCardBackPreview />
+                </ScaledCard>
+              </View>
+              <Text style={{ fontSize: 13, fontWeight: '800', color: '#374151', marginTop: 16, marginBottom: 8 }}>Appointment Letter</Text>
+              <View style={{ width: '100%', aspectRatio: 210 / 297, alignSelf: 'center' }}>
+                <AutoAppointmentLetterPreview profile={display} />
+              </View>
+            </View>
+          );
+        })() : null}
 
         {/* ── Tabs: Posts (left) | Activity (right) ── */}
         <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E5E7EB', marginTop: 12 }}>

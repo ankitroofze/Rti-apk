@@ -311,7 +311,7 @@ function MobileRichField({ label, value, onChange }) {
           multiline
           numberOfLines={4}
           placeholderTextColor="#666"
-          placeholder="Yahan likhein..."
+          placeholder="Write here..."
         />
       </View>
     );
@@ -347,7 +347,7 @@ function MobileRichField({ label, value, onChange }) {
           placeholderColor: '#666',
           cssText: NEWSPAPER_CSS,
         }}
-        placeholder="Yahan likhein..."
+        placeholder="Write here..."
         useContainer
         initialHeight={150}
       />

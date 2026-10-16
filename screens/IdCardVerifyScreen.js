@@ -87,7 +87,7 @@ export default function IdCardVerifyScreen({ navigation, route }) {
     content = (
       <View style={s.center}>
         <Ionicons name={state.phase === 'network' ? 'cloud-offline-outline' : 'warning-outline'} size={54} color="#6b7280" />
-        <Text style={s.errTitle}>{state.phase === 'network' ? 'Internet check karo' : 'Something went wrong'}</Text>
+        <Text style={s.errTitle}>{state.phase === 'network' ? 'Check your internet connection' : 'Something went wrong'}</Text>
         <TouchableOpacity style={[s.primary, { marginTop: 16 }]} onPress={load}><Ionicons name="refresh" size={18} color="#fff" /><Text style={s.primaryText}>Retry</Text></TouchableOpacity>
         <TouchableOpacity style={[s.secondary, { marginTop: 10 }]} onPress={scanAgain}><Text style={s.secondaryText}>Scan Again</Text></TouchableOpacity>
       </View>

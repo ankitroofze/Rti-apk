@@ -154,7 +154,7 @@ const LoginStyles = StyleSheet.create({
 
   brandName: {
     fontSize: 13, fontWeight: '700', color: '#e8732a',
-    textAlign: 'center', marginBottom: 16, letterSpacing: 1, fontFamily: 'Roboto',
+    textAlign: 'center', marginBottom: 16, letterSpacing: 1, fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto',
   },
 
   headerBlock: {
@@ -170,17 +170,17 @@ const LoginStyles = StyleSheet.create({
 
   welcomeBack: {
     fontSize: 12, fontWeight: '600', color: '#999999',
-    textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, fontFamily: 'Roboto',
+    textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4, fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto',
   },
 
   formTitle: {
     fontSize: 24, fontWeight: '800', color: '#111111',
-    textAlign: 'center', marginBottom: 6, fontFamily: 'Roboto',
+    textAlign: 'center', marginBottom: 6, fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto',
   },
 
   formSubtitle: {
     fontSize: 13, color: '#999999',
-    textAlign: 'center', lineHeight: 20, fontFamily: 'Roboto',
+    textAlign: 'center', lineHeight: 20, fontFamily: Platform.OS === 'ios' ? 'Roboto_400Regular' : 'Roboto',
   },
 
   // Unused stubs kept for compatibility

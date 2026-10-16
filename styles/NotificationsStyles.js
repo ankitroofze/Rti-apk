@@ -1,7 +1,7 @@
 import { Platform, StatusBar, StyleSheet } from 'react-native';
 import { MODULE_PAGE_BG } from '../constants/subscriptionThemes';
 
-// ✅ Poore app jaisa hi Roboto family — headings ke liye
+// Same Roboto font family as the rest of the app, used for headings
 const FONT = {
   regular: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
   medium:  Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
@@ -9,7 +9,7 @@ const FONT = {
 };
 
 export const C = {
-  pageBg: MODULE_PAGE_BG,          // ✅ ab yeh shared constant se aata hai
+  pageBg: MODULE_PAGE_BG,          // comes from the shared constant
   white: '#ffffff',
   textDark: '#111827',
   textNavy: '#1e293b',
@@ -92,8 +92,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     overflow: 'hidden',
+    paddingLeft: 22,
+    paddingVertical: 16,
   },
-  heroTextWrap: { flex: 1, paddingHorizontal: 24 },
+  heroTextWrap: { flex: 1, paddingHorizontal: 4 },
   heroCardImage: {
     borderRadius: 12,
   },
@@ -101,12 +103,24 @@ const styles = StyleSheet.create({
     width: 52, height: 52, borderRadius: 14,
     backgroundColor: C.redSoft,
     alignItems: 'center', justifyContent: 'center',
-    marginRight: 16,
+    marginRight: 14,
   },
- 
+
    heroTitle: { fontSize: 24, fontWeight: '800', color: C.textDark, fontFamily: FONT.bold },
   heroSubtitle: { fontSize: 13.5, color: C.textMid, marginTop: 3, fontFamily: FONT.regular },
   heroDecoIcon: { opacity: 0.18, marginLeft: 10 },
+
+  heroEyebrow: {
+    fontSize: 11, fontWeight: '700', letterSpacing: 1.2,
+    color: C.red, marginBottom: 4, fontFamily: FONT.bold,
+  },
+  heroOwner: { paddingHorizontal: 24, alignItems: 'flex-end', maxWidth: 260 },
+  ownerName: { fontSize: 13.5, fontWeight: '700', color: C.textDark, fontFamily: FONT.bold },
+  ownerEmail: { fontSize: 12.5, color: C.textMid, marginTop: 2, fontFamily: FONT.regular },
+  listSubtitle: { fontSize: 12.5, color: C.textMid, marginTop: 8, maxWidth: 520, lineHeight: 18 },
+  notificationRowUnread: { backgroundColor: '#fffafa' },
+  rowAction: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 },
+  rowActionText: { fontSize: 12.5, fontWeight: '700', color: C.accent },
 
   // ── Stat cards row ──
   statsRow: {

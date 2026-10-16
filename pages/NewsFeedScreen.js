@@ -739,6 +739,7 @@ const syncFeed = useCallback(async (focusItemId = null) => {
 const handleLike = async (item) => {
   const currentEmail = String(newsData.currentUser?.email || '').trim().toLowerCase();
   const wasLiked = Boolean(item.liked_by_me || (currentEmail && Array.isArray(item.liked_by) && item.liked_by.includes(currentEmail)));
+  if (wasLiked) return;   // ✅ ek baar like ho gaya to dobara request/unlike nahi
   // Render immediately on Android and web; the server response then confirms it.
   setNewsData((prev) => ({
     ...prev,
@@ -1459,7 +1460,7 @@ const handleLike = async (item) => {
                 ) : null}
                          {item.video ? (
                   <View style={styles.videoPreviewWrap}>
-                    <VideoPreview uri={item.video} style={styles.videoPreview} contentFit="cover" />
+                    <VideoPreview uri={typeof item.video === 'string' ? item.video : item.video?.uri} style={styles.videoPreview} contentFit="cover" />
                   </View>
                 ) : null}
 

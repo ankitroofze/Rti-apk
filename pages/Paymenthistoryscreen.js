@@ -165,7 +165,7 @@ export default function PaymentHistoryScreen({ navigation }) {
       setMeta(null);
       setSummary(null);
       setUsingFallback(true);
-      setErrorMsg(res?.isAuth ? 'Session expired. Please login again.' : (res?.message || 'Payment history load nahi ho payi.'));
+      setErrorMsg(res?.isAuth ? 'Session expired. Please login again.' : (res?.message || 'Could not load the payment history.'));
     }
     setLoading(false);
     setRefreshing(false);
@@ -242,7 +242,7 @@ export default function PaymentHistoryScreen({ navigation }) {
             {filteredPlans.length === 0 ? (
               <View style={S.emptyBox}>
                 <Feather name="inbox" size={28} color="#C7CBD4" />
-                <Text style={S.emptyText}>Is category me koi active plan nahi hai.</Text>
+                <Text style={S.emptyText}>There is no active plan in this category.</Text>
               </View>
             ) : (
               filteredPlans.map((p, idx) => {
@@ -316,7 +316,7 @@ export default function PaymentHistoryScreen({ navigation }) {
             {transactions.length === 0 ? (
               <View style={S.emptyBox}>
                 <Feather name="file-text" size={28} color="#C7CBD4" />
-                <Text style={S.emptyText}>Abhi tak koi transaction record nahi mila.</Text>
+                <Text style={S.emptyText}>No transaction records found yet.</Text>
               </View>
             ) : (
               transactions.map((t, idx) => {

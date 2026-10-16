@@ -16,7 +16,7 @@ const APP_NAME = 'RTI App';
 // ✅ Referral link frontend par generate NAHI hota — backend (GET /referral) se aata hai.
 const buildReferMessage = (code = '', link = '') => (
   `Join ${APP_NAME} using my referral code: ${code || 'RTI'}\n\n` +
-  `Signup karo, mobile verify karo aur subscription lo.\n\n` +
+  `Sign up, verify your mobile number and take a subscription.\n\n` +
   (link ? `Join: ${link}` : '')
 );
 

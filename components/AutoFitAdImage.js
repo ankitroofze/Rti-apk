@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Image, View } from 'react-native';
 
-export default function AutoFitAdImage({ uri, maxWidth, maxHeight, radius = 0, style, onError, fill = false }) {
+export default function AutoFitAdImage({ uri, maxWidth, maxHeight, radius = 0, style, onError, fill = false, onRatio }) {
   const [ratio, setRatio] = useState(null);
 
   // Android pe onLoad ka nativeEvent.source kabhi-kabhi nahi aata -> getSize se ratio lo
@@ -16,6 +16,8 @@ export default function AutoFitAdImage({ uri, maxWidth, maxHeight, radius = 0, s
     );
     return () => { alive = false; };
   }, [uri]);
+
+  useEffect(() => { if (ratio && onRatio) onRatio(uri, ratio); }, [ratio, uri, onRatio]);
 
   if (!uri) return null;
 

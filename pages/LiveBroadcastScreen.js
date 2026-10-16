@@ -255,7 +255,7 @@ setIsSaving(true);
     showToast('Live created. Connecting to YouTube...', 'success');
   } else {
     // Web: camera se direct stream nahi hoti — encoder (OBS) me URL + key daalna hoga
-    showPopup('YouTube live create ho gayi. Neeche "RTMP Ingest URL" aur "Stream Key" OBS (ya kisi encoder) me daalo, stream start karo, phir "Go Live on YouTube" dabao.', 'success');
+    showPopup('YouTube live created. Enter the "RTMP Ingest URL" and "Stream Key" shown below into OBS (or any encoder), start the stream, then tap "Go Live on YouTube".', 'success');
   }
 };
 
@@ -273,7 +273,7 @@ setIsSaving(true);
       showToast('You are now LIVE on YouTube.', 'success');
       return;
     }
-    showPopup(result?.message || 'YouTube stream abhi inactive hai. Pehle OBS se stream start karo, 10-15 second ruko, phir dobara try karo.', 'error');
+    showPopup(result?.message || 'The YouTube stream is not active yet. Start the stream from OBS first, wait 10-15 seconds, then try again.', 'error');
   };
   const handleStopLive = async () => {
     setIsSaving(true);
@@ -297,13 +297,13 @@ setIsSaving(true);
   };
   // Start Live button kyun disabled hai — screen par saaf dikhane ke liye
   const startBlockReason = isExpoGo
-    ? 'Expo Go me Start Live nahi chalta. Native Android APK build chahiye.'
+    ? 'Start Live does not work in Expo Go. A native Android APK build is required.'
     : !canStartHere
-      ? `Start Live sirf Android APK ya web par chalta hai (abhi platform: ${Platform.OS}).`
+      ? `Start Live works only on the Android APK or on web (current platform: ${Platform.OS}).`
       : isPublishing
-        ? 'Live pehle se chal rahi hai ya atak gayi hai. "Stop Live" dabao, phir dobara Start Live karo.'
+        ? 'A live stream is already running or is stuck. Tap "Stop Live", then start the live stream again.'
         : isSaving
-          ? 'Request chal rahi hai, thoda wait karo...'
+          ? 'A request is in progress, please wait...'
           : '';
 
   return (
@@ -473,7 +473,7 @@ setIsSaving(true);
                 disabled={!activeWatchUrl}
                 onPress={async () => {
                   try {
-                    await Share.share({ message: `Live dekho: ${activeWatchUrl}` });
+                    await Share.share({ message: `Watch live: ${activeWatchUrl}` });
                   } catch {
                     showToast('Unable to share link.', 'error');
                   }

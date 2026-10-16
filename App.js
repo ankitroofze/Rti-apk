@@ -11,6 +11,7 @@ import { ToastProvider } from './components/ui/ToastProvider';
 import ErrorBoundary from './components/ErrorBoundary';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { AuthProvider } from './contexts/AuthContext';
+import PushNotificationBootstrap from './components/Pushnotificationbootstrap';
 import { isMobileWebDevice } from './utils/webDevice';
 
 
@@ -116,6 +117,8 @@ export default function App() {
         <AuthProvider>
           <ErrorBoundary>
             <ToastProvider>
+              {/* ✅ Push notifications: login par token register + foreground/tap handling */}
+              <PushNotificationBootstrap />
               <AppNavigator />
             </ToastProvider>
           </ErrorBoundary>

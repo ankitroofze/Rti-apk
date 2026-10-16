@@ -9,7 +9,7 @@ let scriptLoadingPromise = null;
  */
 export const loadRazorpayScript = () => {
   if (Platform.OS !== 'web') {
-    return Promise.reject(new Error('Razorpay checkout web-only supported abhi.'));
+    return Promise.reject(new Error('Razorpay checkout is currently supported on web only.'));
   }
   if (typeof window !== 'undefined' && window.Razorpay) {
     return Promise.resolve(true);
@@ -157,7 +157,7 @@ export const openRazorpayCheckout = async (orderData, planType, { onVerified, on
     await reportFailure({
       razorpay_order_id: orderData?.order_id,
       error_code: 'SCRIPT_LOAD_FAILED',
-      error_description: err?.message || 'Razorpay script load nahi ho paya.',
+      error_description: err?.message || 'Could not load the Razorpay script.',
     });
     return;
   }

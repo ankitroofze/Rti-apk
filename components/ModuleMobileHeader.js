@@ -89,6 +89,6 @@ const S = {
   right: { flexDirection: 'row', alignItems: 'center', gap: 10, width: 36, justifyContent: 'flex-end' },
   backBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   titleWrap: { flex: 1, alignItems: 'flex-start', marginLeft: 10 },
-  title: { fontSize: 18, fontWeight: '700', color: '#ffffff', fontFamily: 'Roboto' },
-  subtitle: { fontSize: 12, color: 'rgba(255,255,255,0.88)', marginTop: 1, fontFamily: 'Roboto' },
+  title: { fontSize: 18, fontWeight: '700', color: '#ffffff', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
+  subtitle: { fontSize: 12, color: 'rgba(255,255,255,0.88)', marginTop: 1, fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
 };

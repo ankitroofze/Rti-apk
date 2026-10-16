@@ -1,5 +1,5 @@
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Platform,
   SafeAreaView,
@@ -14,6 +14,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useToast } from '../components/ui/ToastProvider';
 import styles, { C } from '../styles/NotificationsStyles';
 import { UserStore } from '../store/UserStore';
+import { navigateFromNotification } from '../utils/Notificationnavigation';
+import { subscribePushEvents, refreshBadge } from '../utils/Pushnotifications';
 
 const getNotificationAccent = (item = {}) => {
   const haystack = `${item.title || ''} ${item.message || ''}`.toLowerCase();
@@ -85,7 +87,10 @@ export default function NotificationsScreen({ navigation }) {
     items: [],
     unreadCount: 0,
     readCount: 0,
+    hasMore: false,
+    nextCursor: null,
   });
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const loadNotifications = useCallback(async () => {
     setLoading(true);
@@ -105,6 +110,48 @@ export default function NotificationsScreen({ navigation }) {
     }, [loadNotifications])
   );
 
+  // When a foreground push arrives, silently refresh the list
+  useEffect(() => {
+    const unsub = subscribePushEvents(async () => {
+      const data = await UserStore.getNotificationsSummary();
+      if (data) setNotificationData(data);
+    });
+    return () => unsub?.();
+  }, []);
+
+  const handleLoadMore = async () => {
+    if (loadingMore || !notificationData.hasMore) return;
+    setLoadingMore(true);
+    const res = await UserStore.getMoreNotifications(notificationData.nextCursor);
+    setLoadingMore(false);
+    if (!res.ok) { showToast(res.message || 'Unable to load more.', 'error'); return; }
+    setNotificationData((prev) => {
+      const seen = new Set(prev.items.map((i) => i.id));
+      const fresh = res.items.filter((i) => !seen.has(i.id));
+      return {
+        ...prev,
+        items: [...prev.items, ...fresh],
+        readCount: prev.readCount + fresh.filter((i) => i.status !== 'Unread').length,
+        hasMore: res.hasMore,
+        nextCursor: res.nextCursor,
+      };
+    });
+  };
+
+  const handleMarkAllRead = async () => {
+    const result = await UserStore.markAllNotificationsRead();
+    if (!result.ok) { showToast(result.message, 'error'); return; }
+    await loadNotifications();
+    refreshBadge();
+  };
+
+  const handleDelete = async (itemId) => {
+    const result = await UserStore.deleteNotificationItem(itemId);
+    if (!result.ok) { showToast(result.message, 'error'); return; }
+    await loadNotifications();
+    refreshBadge();
+  };
+
   const handleRead = async (itemId) => {
     const result = await UserStore.updateNotificationItem(itemId);
     if (!result.ok) {
@@ -112,6 +159,7 @@ export default function NotificationsScreen({ navigation }) {
       return;
     }
     await loadNotifications();
+    refreshBadge();
   };
 
   // NEW: tapping any notification — marks it read (if unread) and, for a
@@ -123,17 +171,8 @@ export default function NotificationsScreen({ navigation }) {
       await handleRead(item.id);
     }
 
-    if (item.type === 'lead_form_submission' && item.submission_id) {
-      navigation.navigate('AdLeadResponse', {
-        submissionId: item.submission_id,
-        adId: item.ad_id,
-      });
-      return;
-    }
-
-    if (!item.type) {
-      showToast('Notification marked as read.', 'success');
-    }
+    // Open the right screen based on type + data (news / profile / wallet / ...)
+    navigateFromNotification(navigation, item);
   };
 
   const sortedItems = [...notificationData.items].sort(
@@ -144,10 +183,8 @@ export default function NotificationsScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.root}>
-        {Platform.OS === 'web' && <View style={styles.statusBarSpacer} />}
-
         {/* Header */}
-        {Platform.OS !== 'web' ? (
+        {Platform.OS === 'android' ? (
 <ModuleAndroidHeader title="Notifications" onBack={() => navigation.navigate('QuickMenu')} />
 ) : (
 <>
@@ -156,8 +193,8 @@ export default function NotificationsScreen({ navigation }) {
             style={[
               styles.headerInner,
               Platform.OS === 'web' && {
-                paddingHorizontal: isMobileWeb ? 16 : 24,
-                maxWidth: isMobileWeb ? '100%' : 950,
+                paddingHorizontal: isMobileWeb ? 12 : 20,
+                maxWidth: '100%',
               },
             ]}
           >
@@ -179,64 +216,85 @@ export default function NotificationsScreen({ navigation }) {
           style={styles.scrollView}
           contentContainerStyle={[
             styles.scrollContent,
-            // Web: page background stretches full-width, inner content is centered
-            Platform.OS === 'web' && {
-              paddingHorizontal: 0,
-              alignItems: 'stretch',
-            },
+            Platform.OS === 'web' && { paddingHorizontal: 0, alignItems: 'stretch' },
           ]}
           showsVerticalScrollIndicator={false}
         >
           <WebContentWrapper isMobile={isMobileWeb}>
             {/* Hero card */}
             <View style={styles.heroCard}>
-              <Text style={styles.heroEyebrow}>Inbox Center</Text>
-              <Text style={styles.heroTitle}>Stay updated with every activity</Text>
-              <Text style={styles.heroSubtitle}>Account alerts, plan updates</Text>
-
-              <View style={styles.ownerRow}>
-                <View style={styles.ownerBadge}>
-                  <Feather name="bell" size={18} color={C.accent} />
-                </View>
-                <View style={styles.ownerInfo}>
-                  <Text style={styles.ownerName}>{currentUser?.name || 'RTI User'}</Text>
-                  <Text style={styles.ownerEmail}>{currentUser?.email || 'Your notification inbox'}</Text>
-                </View>
+              <View style={styles.heroIconWrap}>
+                <Feather name="bell" size={22} color={C.accent} />
               </View>
+              <View style={styles.heroTextWrap}>
+                <Text style={styles.heroEyebrow}>INBOX CENTER</Text>
+                <Text style={styles.heroTitle}>Stay updated with every activity</Text>
+                <Text style={styles.heroSubtitle}>Account alerts, plan updates</Text>
+              </View>
+              {!isMobileWeb && (currentUser?.name || currentUser?.email) ? (
+                <View style={styles.heroOwner}>
+                  <Text style={styles.ownerName} numberOfLines={1}>{currentUser?.name || 'RTI User'}</Text>
+                  <Text style={styles.ownerEmail} numberOfLines={1}>{currentUser?.email || ''}</Text>
+                </View>
+              ) : null}
             </View>
 
-            {/* Metrics row */}
-            <View style={styles.metricsRow}>
-              <View style={[styles.metricCard, styles.metricPrimary]}>
-                <Text style={styles.metricValue}>{notificationData.items.length}</Text>
-                <Text style={styles.metricLabel}>Total</Text>
+            {/* Stats row */}
+            <View style={styles.statsRow}>
+              <View style={[styles.statCard, styles.statCardMessages]}>
+                <View style={[styles.statIconWrap, styles.statIconMessages]}>
+                  <Feather name="inbox" size={20} color={C.blue} />
+                </View>
+                <View style={styles.statTextWrap}>
+                  <Text style={styles.statValue}>{notificationData.items.length}</Text>
+                  <Text style={styles.statLabel}>Total</Text>
+                </View>
               </View>
-              <View style={[styles.metricCard, styles.metricSecondary]}>
-                <Text style={[styles.metricValue, styles.metricValueUnread]}>
-                  {notificationData.unreadCount}
-                </Text>
-                <Text style={styles.metricLabel}>Unread</Text>
+              <View style={[styles.statCard, styles.statCardUnread]}>
+                <View style={[styles.statIconWrap, styles.statIconUnread]}>
+                  <Feather name="bell" size={20} color={C.red} />
+                </View>
+                <View style={styles.statTextWrap}>
+                  <Text style={styles.statValue}>{notificationData.unreadCount}</Text>
+                  <Text style={styles.statLabel}>Unread</Text>
+                </View>
               </View>
-              <View style={[styles.metricCard, styles.metricAccent]}>
-                <Text style={[styles.metricValue, styles.metricValueRead]}>
-                  {notificationData.readCount}
-                </Text>
-                <Text style={styles.metricLabel}>Read</Text>
+              <View style={[styles.statCard, styles.statCardRead]}>
+                <View style={[styles.statIconWrap, styles.statIconRead]}>
+                  <Feather name="check-circle" size={20} color={C.green} />
+                </View>
+                <View style={styles.statTextWrap}>
+                  <Text style={styles.statValue}>{notificationData.readCount}</Text>
+                  <Text style={styles.statLabel}>Read</Text>
+                </View>
               </View>
             </View>
 
             {/* Notifications list card */}
-            <View style={styles.card}>
-              <View style={styles.sectionHeaderRow}>
-                <View style={styles.sectionHeaderTextWrap}>
-                  <Text style={styles.sectionTitle}>Recent Notifications</Text>
-                  <Text style={styles.sectionText}>
-                    Unread notifications upar rakhe gaye hain. Tap karke read mark kar sakte ho.
+            <View style={styles.listCard}>
+              <View style={styles.listHeaderRow}>
+                <View style={styles.listTitleWrap}>
+                  <Text style={styles.listTitle}>Recent Notifications</Text>
+                  <View style={styles.listTitleUnderline} />
+                  <Text style={styles.listSubtitle}>
+                    Unread notifications are shown at the top. Tap a notification to mark it as read.
                   </Text>
                 </View>
-                <View style={styles.livePill}>
-                  <Feather name="clock" size={12} color={C.accent} />
-                  <Text style={styles.livePillText}>Latest First</Text>
+                <View style={styles.listHeaderActions}>
+                  <View style={styles.filterPill}>
+                    <Feather name="clock" size={13} color={C.accent} />
+                    <Text style={styles.filterPillText}>Latest First</Text>
+                  </View>
+                  {notificationData.unreadCount > 0 ? (
+                    <TouchableOpacity
+                      style={styles.markReadPill}
+                      onPress={handleMarkAllRead}
+                      activeOpacity={0.8}
+                    >
+                      <Feather name="check-circle" size={13} color={C.accent} />
+                      <Text style={styles.markReadPillText}>Mark all as read</Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               </View>
 
@@ -247,76 +305,79 @@ export default function NotificationsScreen({ navigation }) {
                 </View>
               ) : sortedItems.length ? (
                 <View style={styles.notificationList}>
-                  {sortedItems.map((item) => {
+                  {sortedItems.map((item, index) => {
                     const accent = getNotificationAccent(item);
                     const unread = String(item.status || '').toLowerCase() === 'unread';
                     const isLeadForm = item.type === 'lead_form_submission';
+                    const isLast = index === sortedItems.length - 1;
 
                     return (
                       <TouchableOpacity
                         key={item.id}
                         style={[
-                          styles.notificationCard,
-                          unread ? styles.notificationCardUnread : styles.notificationCardRead,
+                          styles.notificationRow,
+                          unread && styles.notificationRowUnread,
+                          isLast && { borderBottomWidth: 0 },
                         ]}
                         activeOpacity={0.86}
                         onPress={() => handleItemPress(item)}
                       >
-                        <View style={styles.notificationTopRow}>
-                          <View
-                            style={[
-                              styles.notificationIconWrap,
-                              { backgroundColor: accent.bg, borderColor: accent.border },
-                            ]}
-                          >
-                            <Feather name={accent.icon} size={18} color={accent.tint} />
-                          </View>
+                        <View
+                          style={[
+                            styles.notificationIconWrap,
+                            { backgroundColor: accent.bg, borderWidth: 1, borderColor: accent.border },
+                          ]}
+                        >
+                          <Feather name={accent.icon} size={18} color={accent.tint} />
+                        </View>
 
-                          <View style={styles.notificationContent}>
-                            <View style={styles.notificationMetaRow}>
-                              <Text style={styles.notificationTitle}>{item.title}</Text>
-                              {unread ? <View style={styles.unreadDot} /> : null}
-                            </View>
-
-                            <Text style={styles.notificationMessage}>{item.message}</Text>
-
-                            <View style={styles.notificationFooter}>
-                              <Text style={styles.notificationDate}>
-                                {formatNotificationDate(item.date)}
-                              </Text>
-                              <View
-                                style={[
-                                  styles.statusBadge,
-                                  unread ? styles.unreadBadge : styles.readBadge,
-                                ]}
-                              >
-                                <Text
-                                  style={[
-                                    styles.statusBadgeText,
-                                    unread ? styles.unreadBadgeText : styles.readBadgeText,
-                                  ]}
-                                >
-                                  {unread ? 'Unread' : 'Read'}
-                                </Text>
-                              </View>
-                            </View>
-
-                            {isLeadForm ? (
-                              <View style={styles.actionButton}>
-                                <Feather name="clipboard" size={15} color={C.accent} />
-                                <Text style={styles.actionButtonText}>View Response</Text>
-                              </View>
-                            ) : unread ? (
-                              <View style={styles.actionButton}>
-                                <Feather name="check-circle" size={15} color={C.accent} />
-                                <Text style={styles.actionButtonText}>Mark as Read</Text>
+                        <View style={styles.notificationContent}>
+                          <View style={styles.notificationTitleRow}>
+                            <Text style={styles.notificationTitle}>{item.title}</Text>
+                            {unread ? (
+                              <View style={styles.newBadge}>
+                                <Text style={styles.newBadgeText}>NEW</Text>
                               </View>
                             ) : null}
                           </View>
+                          <Text style={styles.notificationMessage}>{item.message}</Text>
+
+                          {isLeadForm ? (
+                            <View style={styles.rowAction}>
+                              <Feather name="clipboard" size={13} color={C.accent} />
+                              <Text style={styles.rowActionText}>View Response</Text>
+                            </View>
+                          ) : null}
+                        </View>
+
+                        <View style={styles.notificationRight}>
+                          <View style={styles.notificationTimeRow}>
+                            <Text style={styles.notificationTime}>
+                              {formatNotificationDate(item.date)}
+                            </Text>
+                            {unread ? <View style={styles.unreadDot} /> : null}
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => handleDelete(item.id)}
+                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                            activeOpacity={0.7}
+                          >
+                            <Feather name="trash-2" size={15} color="#94a3b8" />
+                          </TouchableOpacity>
                         </View>
                       </TouchableOpacity>
                     );
                   })}
+                  {notificationData.hasMore ? (
+                    <TouchableOpacity
+                      style={[styles.markReadPill, { alignSelf: 'center', marginTop: 14 }]}
+                      onPress={handleLoadMore}
+                      activeOpacity={0.8}
+                    >
+                      <Feather name="chevrons-down" size={14} color={C.accent} />
+                      <Text style={styles.markReadPillText}>{loadingMore ? 'Loading...' : 'Load more'}</Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               ) : (
                 <View style={styles.emptyState}>
@@ -325,7 +386,7 @@ export default function NotificationsScreen({ navigation }) {
                   </View>
                   <Text style={styles.emptyTitle}>No notifications yet</Text>
                   <Text style={styles.emptyText}>
-                    Jab new updates aayenge, wo yahin dikhengi.
+                    New updates will appear here when they arrive.
                   </Text>
                 </View>
               )}

@@ -237,7 +237,7 @@ export async function exportToPdf(sections, templateId) {
     if (canShare) {
       await Sharing.shareAsync(uri, {
         mimeType: 'application/pdf',
-        dialogTitle: 'PDF Share / Save karein',
+        dialogTitle: 'Share / Save PDF',
       });
     }
     return uri;

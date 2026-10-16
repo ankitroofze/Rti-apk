@@ -18,14 +18,14 @@ import styles, { C } from '../styles/ChatStyles';
 
 // ── MOCK conversation (remove once API is connected) ──
 const MOCK_MESSAGES = [
-  { id: 'm1', from: 'them', sender: 'Suresh', type: 'text', text: 'Namaste! RTI form ka status kya hai?', time: '9:40 AM', status: 'read' },
-  { id: 'm2', from: 'me', type: 'text', text: 'Namaste, form submit ho gaya hai. Reference number bhej raha hoon.', time: '9:41 AM', status: 'read', edited: false },
+  { id: 'm1', from: 'them', sender: 'Suresh', type: 'text', text: 'Hello! What is the status of the RTI form?', time: '9:40 AM', status: 'read' },
+  { id: 'm2', from: 'me', type: 'text', text: 'Hello, the form has been submitted. I am sending the reference number.', time: '9:41 AM', status: 'read', edited: false },
   { id: 'm3', from: 'me', type: 'document', fileName: 'RTI_Application_Copy.pdf', fileMeta: '248 KB · PDF', time: '9:41 AM', status: 'delivered' },
   { id: 'm4', from: 'them', sender: 'Suresh', type: 'image', time: '9:50 AM', status: 'read' },
-  { id: 'm5', from: 'them', sender: 'Suresh', type: 'text', text: 'Sarkari office ka address confirm karo', time: '9:51 AM', status: 'read' },
+  { id: 'm5', from: 'them', sender: 'Suresh', type: 'text', text: 'Please confirm the government office address', time: '9:51 AM', status: 'read' },
   { id: 'm6', from: 'me', type: 'location', label: 'Taluka Office, Shirur', time: '9:53 AM', status: 'sent' },
   { id: 'm7', from: 'me', type: 'voice', duration: '0:18', time: '9:54 AM', status: 'delivered' },
-  { id: 'm8', from: 'them', sender: 'Suresh', type: 'text', text: 'Ok theek hai, wahi milte hai', time: '9:55 AM', status: 'read' },
+  { id: 'm8', from: 'them', sender: 'Suresh', type: 'text', text: 'Okay, sounds good, let us meet there', time: '9:55 AM', status: 'read' },
 ];
 
 const ATTACH_OPTIONS = [

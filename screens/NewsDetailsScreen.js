@@ -648,7 +648,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
     [article.menuTags]
   );
 
-  const videoUri = String(article.video || '').trim();
+  const videoUri = String(typeof article.video === 'string' ? article.video : article.video?.uri || '').trim();
   const [resolvedVideoUri, setResolvedVideoUri] = useState(null);
   const [isVideoPlaying, setIsVideoPlaying] = useState(false);
   const [showVideoPoster, setShowVideoPoster] = useState(true);
@@ -1159,7 +1159,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
                       activeOpacity={0.8}
                       style={{ marginTop: 8 }}
                     >
-                      <Text style={{ color: '#f97316', fontSize: 14, fontWeight: '700', fontFamily: 'Roboto' }}>
+                      <Text style={{ color: '#f97316', fontSize: 14, fontWeight: '700', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' }}>
                         {showFullBody ? 'Show less ▲' : 'Read more ▼'}
                       </Text>
                     </TouchableOpacity>
@@ -1383,7 +1383,7 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
   },
-  backButtonText: { color: '#0f172a', fontSize: 13, fontWeight: '800', fontFamily: 'Roboto' },
+  backButtonText: { color: '#0f172a', fontSize: 13, fontWeight: '800', fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
   utilityChip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1395,7 +1395,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#fdba74',
   },
-  utilityChipText: { color: '#f97316', fontSize: 11, fontWeight: '800', fontFamily: 'Roboto' },
+  utilityChipText: { color: '#f97316', fontSize: 11, fontWeight: '800', fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
    storyCardShell: {
     backgroundColor: '#ffffff',
     borderWidth: 1,
@@ -1417,8 +1417,8 @@ const styles = StyleSheet.create({
   storyAuthorAvatar: { width: 54, height: 54, borderRadius: 27, backgroundColor: '#e2e8f0' },
   storyAuthorTextWrap: { flex: 1 },
   storyAuthorNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
-  storyAuthorName: { color: '#0f172a', fontSize: 22, fontWeight: '900', fontFamily: 'Roboto' },
-  storyAuthorRoleText: { color: '#64748b', fontSize: 13, fontWeight: '700', marginTop: 4, fontFamily: 'Roboto' },
+  storyAuthorName: { color: '#0f172a', fontSize: 22, fontWeight: '900', fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
+  storyAuthorRoleText: { color: '#64748b', fontSize: 13, fontWeight: '700', marginTop: 4, fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
    followAuthorButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1435,18 +1435,18 @@ const styles = StyleSheet.create({
     ? { backgroundColor: '#fff1f2', borderWidth: 1, borderColor: '#fda4af' }
     : { backgroundColor: '#fff7ed', borderWidth: 1, borderColor: '#fdba74' },
   followAuthorButtonDisabled: { opacity: 0.65 },
-  followAuthorButtonText: { color: '#ffffff', fontSize: 12, fontWeight: '800', fontFamily: 'Roboto' },
+  followAuthorButtonText: { color: '#ffffff', fontSize: 12, fontWeight: '800', fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
   followAuthorButtonTextActive: { color: IS_WEB ? '#e11d48' : '#f97316' },
   storyHeadlineText: {
     color: '#0f172a',
     fontSize: 34,
     lineHeight: 44,
     fontWeight: '900',
-    fontFamily: 'Roboto',
+    fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto',
   },
-  storyHeadlineTextCompact: { fontSize: 24, lineHeight: 32, fontFamily: 'Roboto' },
-  storySubtitleText: { color: '#334155', fontSize: 18, lineHeight: 28, marginTop: 12, fontWeight: '700', fontFamily: 'Roboto' },
-  storyExcerptText: { color: '#475569', fontSize: 16, lineHeight: 25, marginTop: 12, fontFamily: 'Roboto' },
+  storyHeadlineTextCompact: { fontSize: 24, lineHeight: 32, fontFamily: Platform.OS === 'ios' ? 'Roboto_400Regular' : 'Roboto' },
+  storySubtitleText: { color: '#334155', fontSize: 18, lineHeight: 28, marginTop: 12, fontWeight: '700', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
+  storyExcerptText: { color: '#475569', fontSize: 16, lineHeight: 25, marginTop: 12, fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   storyMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 16 },
    storyMetaPill: {
     flexDirection: 'row',
@@ -1459,17 +1459,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
-  storyMetaPillText: { color: '#64748b', fontSize: 13, fontWeight: '600', fontFamily: 'Roboto' },
+  storyMetaPillText: { color: '#64748b', fontSize: 13, fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   storyHeroImageWrap: { marginTop: 18, height: 220, borderRadius: 5, overflow: 'hidden', backgroundColor: '#e2e8f0', marginBottom: 16, zIndex: 0, position: 'relative', flexShrink: 0 },
   storyHeroImageWrapCompact: { height: 220 },
   storyHeroImage: { width: '100%', height: '100%' },
   imagePlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f1f5f9' },
-  imagePlaceholderText: { color: '#94a3b8', fontSize: 13, marginTop: 8, fontWeight: '600', fontFamily: 'Roboto' },
+  imagePlaceholderText: { color: '#94a3b8', fontSize: 13, marginTop: 8, fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   videoContainer: { width: '100%', height: '100%', position: 'relative' },
   videoView: { width: '100%', height: '100%' },
   videoPoster: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' },
   playButtonOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(15, 23, 42, 0.3)' },
-  playButtonText: { color: '#ffffff', fontSize: 14, fontWeight: '600', marginTop: 8, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, fontFamily: 'Roboto' },
+  playButtonText: { color: '#ffffff', fontSize: 14, fontWeight: '600', marginTop: 8, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   storyStatsRow: {
     marginTop: 18,
     flexDirection: 'row',
@@ -1487,7 +1487,7 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingRight: 8,
   },
-  storyStatText: { color: '#374151', fontSize: 14.5, fontWeight: '600', fontFamily: 'Roboto' },
+  storyStatText: { color: '#374151', fontSize: 14.5, fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   likedText: { color: '#ef4444' },
   articleBodyWrap: { marginTop: 24 },
   articleBodyParagraph: {
@@ -1495,16 +1495,16 @@ const styles = StyleSheet.create({
     fontSize: 18,
     lineHeight: 32,
     marginBottom: 18,
-    fontFamily: 'Roboto',
+    fontFamily: Platform.OS === 'ios' ? 'Roboto_400Regular' : 'Roboto',
   },
   articleBodyParagraphLast: { marginBottom: 0 },
   storyBodySection: { marginTop: 22 },
-  storyBodyTitle: { color: '#0f172a', fontSize: 18, fontWeight: '900', marginBottom: 10, fontFamily: 'Roboto' },
-  storyBodyText: { color: '#334155', fontSize: 15, lineHeight: 26, fontFamily: 'Roboto' },
+  storyBodyTitle: { color: '#0f172a', fontSize: 18, fontWeight: '900', marginBottom: 10, fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
+  storyBodyText: { color: '#334155', fontSize: 15, lineHeight: 26, fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
   galleryRow: { flexDirection: 'row', gap: 10 },
   galleryImage: { width: 190, height: 130, borderRadius: 16, backgroundColor: '#e2e8f0' },
   attachmentButton: { flexDirection: 'row', alignItems: 'center', gap: 10, alignSelf: 'flex-start', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 999, backgroundColor: '#f97316' },
-  attachmentButtonText: { color: '#ffffff', fontSize: 13, fontWeight: '800', fontFamily: 'Roboto' },
+  attachmentButtonText: { color: '#ffffff', fontSize: 13, fontWeight: '800', fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
   authorImageModalBackdrop: { flex: 1, backgroundColor: 'rgba(2, 6, 23, 0.94)', alignItems: 'center', justifyContent: 'center' },
   authorImageModalClose: {
     position: 'absolute',
@@ -1526,45 +1526,45 @@ const styles = StyleSheet.create({
   modalContainer: { flex: 1, backgroundColor: '#ffffff' },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: Platform.OS === 'ios' ? 60 : 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: '#e2e8f0', backgroundColor: '#ffffff' },
   modalCloseButton: { padding: 8 },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: '#0f172a', fontFamily: 'Roboto' },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: '#0f172a', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   commentInputContainer: { flexDirection: 'row', padding: 16, borderBottomWidth: 1, borderBottomColor: '#e2e8f0', backgroundColor: '#f8fafc' },
-  commentInput: { flex: 1, backgroundColor: '#ffffff', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, marginRight: 12, fontSize: 14, borderWidth: 1, borderColor: '#e2e8f0', maxHeight: 100, fontFamily: 'Roboto' },
+  commentInput: { flex: 1, backgroundColor: '#ffffff', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, marginRight: 12, fontSize: 14, borderWidth: 1, borderColor: '#e2e8f0', maxHeight: 100, fontFamily: Platform.OS === 'ios' ? 'Roboto_400Regular' : 'Roboto' },
   submitCommentButton: { backgroundColor: '#f97316', borderRadius: 20, paddingHorizontal: 16, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6 },
   submitCommentButtonDisabled: { backgroundColor: '#cbd5e1' },
-  submitCommentText: { color: '#ffffff', fontWeight: '600', fontSize: 14, fontFamily: 'Roboto' },
+  submitCommentText: { color: '#ffffff', fontWeight: '600', fontSize: 14, fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   commentsList: { flex: 1 },
   noCommentsContainer: { alignItems: 'center', justifyContent: 'center', paddingTop: 80, paddingHorizontal: 32 },
-  noCommentsText: { fontSize: 18, fontWeight: '600', color: '#0f172a', marginTop: 20, fontFamily: 'Roboto' },
-  noCommentsSubtext: { fontSize: 14, color: '#64748b', textAlign: 'center', marginTop: 8, fontFamily: 'Roboto' },
+  noCommentsText: { fontSize: 18, fontWeight: '600', color: '#0f172a', marginTop: 20, fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
+  noCommentsSubtext: { fontSize: 14, color: '#64748b', textAlign: 'center', marginTop: 8, fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   commentItem: { flexDirection: 'row', padding: 16, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', alignItems: 'flex-start' },
   commentReplyItem: { marginLeft: 20, paddingLeft: 0, paddingRight: 0, paddingBottom: 8, borderBottomWidth: 0 },
   commentAvatar: { marginRight: 12 },
   commentAvatarImage: { width: 40, height: 40, borderRadius: 20 },
   commentAvatarPlaceholder: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#f97316', alignItems: 'center', justifyContent: 'center' },
-  commentAvatarText: { color: '#ffffff', fontSize: 16, fontWeight: '600', fontFamily: 'Roboto' },
+  commentAvatarText: { color: '#ffffff', fontSize: 16, fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   commentContent: { flex: 1 },
   commentBubble: { backgroundColor: '#f8fafc', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, borderWidth: 1, borderColor: '#e2e8f0' },
   commentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6, flexWrap: 'wrap' },
-  commentUserName: { fontSize: 14, fontWeight: '700', color: '#0f172a', cursor: Platform.OS === 'web' ? 'pointer' : 'default', fontFamily: 'Roboto' },
-  commentTime: { fontSize: 12, color: '#94a3b8', fontFamily: 'Roboto' },
-  commentText: { fontSize: 14, color: '#334155', lineHeight: 20, fontFamily: 'Roboto' },
+  commentUserName: { fontSize: 14, fontWeight: '700', color: '#0f172a', cursor: Platform.OS === 'web' ? 'pointer' : 'default', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
+  commentTime: { fontSize: 12, color: '#94a3b8', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
+  commentText: { fontSize: 14, color: '#334155', lineHeight: 20, fontFamily: Platform.OS === 'ios' ? 'Roboto_400Regular' : 'Roboto' },
   commentActions: { flexDirection: 'row', gap: 16, flexWrap: 'wrap', marginTop: 8, paddingLeft: 4 },
   commentActionButton: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  commentActionText: { fontSize: 12, color: '#64748b', fontWeight: '600', fontFamily: 'Roboto' },
+  commentActionText: { fontSize: 12, color: '#64748b', fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   commentActionTextLiked: { color: '#ef4444' },
   deleteText: { color: '#ef4444' },
   commentEditorWrap: { gap: 10 },
-  commentEditInput: { minHeight: 82, borderWidth: 1, borderColor: '#dbe3ee', borderRadius: 14, backgroundColor: '#ffffff', paddingHorizontal: 14, paddingVertical: 10, color: '#0f172a', fontSize: 14, textAlignVertical: 'top', fontFamily: 'Roboto' },
+  commentEditInput: { minHeight: 82, borderWidth: 1, borderColor: '#dbe3ee', borderRadius: 14, backgroundColor: '#ffffff', paddingHorizontal: 14, paddingVertical: 10, color: '#0f172a', fontSize: 14, textAlignVertical: 'top', fontFamily: Platform.OS === 'ios' ? 'Roboto_400Regular' : 'Roboto' },
   commentInlineActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' },
   commentPrimaryAction: { borderRadius: 999, backgroundColor: '#f97316', paddingHorizontal: 14, paddingVertical: 8 },
-  commentPrimaryActionText: { color: '#ffffff', fontSize: 12, fontWeight: '700', fontFamily: 'Roboto' },
+  commentPrimaryActionText: { color: '#ffffff', fontSize: 12, fontWeight: '700', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   commentSecondaryAction: { borderRadius: 999, backgroundColor: '#e2e8f0', paddingHorizontal: 14, paddingVertical: 8 },
-  commentSecondaryActionText: { color: '#475569', fontSize: 12, fontWeight: '700', fontFamily: 'Roboto' },
+  commentSecondaryActionText: { color: '#475569', fontSize: 12, fontWeight: '700', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   replyComposerWrap: { marginTop: 10, paddingLeft: 4, gap: 10 },
-  replyInput: { minHeight: 70, borderWidth: 1, borderColor: '#dbe3ee', borderRadius: 14, backgroundColor: '#ffffff', paddingHorizontal: 14, paddingVertical: 10, color: '#0f172a', fontSize: 14, textAlignVertical: 'top', fontFamily: 'Roboto' },
+  replyInput: { minHeight: 70, borderWidth: 1, borderColor: '#dbe3ee', borderRadius: 14, backgroundColor: '#ffffff', paddingHorizontal: 14, paddingVertical: 10, color: '#0f172a', fontSize: 14, textAlignVertical: 'top', fontFamily: Platform.OS === 'ios' ? 'Roboto_400Regular' : 'Roboto' },
   commentRepliesWrap: { marginTop: 10 },
   commentRepliesToggle: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 4, marginBottom: 4 },
   commentRepliesLine: { width: 24, height: 1, backgroundColor: '#cbd5e1' },
-  commentRepliesToggleText: { fontSize: 12, fontWeight: '700', color: '#475569', fontFamily: 'Roboto' },
+  commentRepliesToggleText: { fontSize: 12, fontWeight: '700', color: '#475569', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   commentReplies: { marginTop: 10, borderLeftWidth: 2, borderLeftColor: '#e2e8f0', paddingLeft: 10 },
 });

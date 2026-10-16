@@ -4,7 +4,7 @@ import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import {
   View, Text, Image, TouchableOpacity, StyleSheet,
   Platform, Share, TextInput, KeyboardAvoidingView, Alert, Clipboard, ScrollView, Linking,
-  Modal, TouchableWithoutFeedback, ActivityIndicator,
+  Modal, TouchableWithoutFeedback, ActivityIndicator, useWindowDimensions,
 } from 'react-native';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
 import ProfileAvatar from './ProfileAvatar';
@@ -383,6 +383,57 @@ function InlineReadMore({ text, style, onPress }) {
   );
 }
 // ─────────────────────────────────────────────
+// VideoPopupModal — news video ko popup (modal) me bada karke dikhata hai
+// (detail page par jaye bina). Sirf tabhi mount hota hai jab open ho,
+// isliye har card ka extra player nahi banta.
+// ─────────────────────────────────────────────
+function VideoPopupModal({ uri, title, onClose }) {
+  const { width, height } = useWindowDimensions();
+  const player = useVideoPlayer({ uri }, (p) => { p.loop = false; });
+
+  useEffect(() => {
+    if (!player) return undefined;
+    try { player.muted = false; player.volume = 1; } catch (_) {}
+    safePlay(player);
+    return () => { safePause(player); };
+  }, [player]);
+
+  const boxW = Math.min(width - 24, 920);
+  const boxH = Math.max(180, Math.min(Math.round(boxW * 9 / 16), Math.round(height * 0.7)));
+
+  return (
+    <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={onClose}>
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.88)' }}>
+        <TouchableWithoutFeedback onPress={onClose}>
+          <View style={StyleSheet.absoluteFill} />
+        </TouchableWithoutFeedback>
+        <View style={{ width: boxW, backgroundColor: '#000', borderRadius: 12, overflow: 'hidden' }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#111' }}>
+            <Text numberOfLines={2} style={{ flex: 1, color: '#fff', fontSize: 14, fontWeight: '700' }}>{title || 'Video'}</Text>
+            <TouchableOpacity
+              onPress={onClose}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+              style={{ marginLeft: 10, width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center' }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="close" size={18} color="#fff" />
+            </TouchableOpacity>
+          </View>
+          <VideoView
+            player={player}
+            style={{ width: boxW, height: boxH, backgroundColor: '#000' }}
+            contentFit="contain"
+            nativeControls
+            fullscreenOptions={{ enabled: true }}
+            playsInline
+          />
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ─────────────────────────────────────────────
 // TrendingCard Component
 // ─────────────────────────────────────────────
 function TrendingCard({ item, onPress, onLike, onOpenComments, onShare, currentUserEmail }) {
@@ -390,7 +441,7 @@ function TrendingCard({ item, onPress, onLike, onOpenComments, onShare, currentU
   return (
     <TouchableOpacity style={styles.trndCard} onPress={() => onPress(item)} activeOpacity={0.85}>
       <Image
-        source={{ uri: item.images?.length ? item.images[0] : item.video || item.image }}
+        source={{ uri: item.images?.length ? item.images[0] : (item.image || item.thumbnail || undefined) }}
         style={styles.trndCardImg}
         resizeMode="cover"
       />
@@ -654,8 +705,10 @@ export default function NewsFeedCard({
       // warna optimistic update turant "auto unlike" hoke ulta ho jaata tha.
       if (Date.now() - lastOwnLikeActionAtRef.current < 15000) return;
      const serverLiked = story.liked_by_me !== undefined ? Boolean(story.liked_by_me) : Boolean(Array.isArray(story.liked_by) && story.liked_by.includes(currentEmail));
+      // ✅ server false/missing bole tab bhi local saved like ko maano (refresh/page change ke baad red rahe)
+      const localLiked = await getLikedIds(currentEmail);
       if (!alive) return;
-      setIsLiked(serverLiked);
+      setIsLiked(serverLiked || Boolean(localLiked[story.id]));
     })();
     return () => { alive = false; };
   }, [currentEmail, story.id, story.liked_by, story.liked_by_me]);
@@ -717,7 +770,7 @@ export default function NewsFeedCard({
     return isValidImageUrl(avatar) ? avatar : '';
   }, [currentUser?.profile_image]);
 
-  const videoUri = String(story.video || '').trim();
+  const videoUri = String(typeof story.video === 'string' ? story.video : story.video?.uri || '').trim();
   const [resolvedVideoUri, setResolvedVideoUri] = useState(null);
 
   useEffect(() => {
@@ -852,6 +905,7 @@ const safeImage = isValidImageUrl(effectiveImageUri)
   }, [canPlayVideo, player]);
 
   const [videoDurationLabel, setVideoDurationLabel] = useState('');
+  const [showVideoModal, setShowVideoModal] = useState(false);
   useEffect(() => {
     if (!canPlayVideo || !player) return;
     const fmt = (secs) => {
@@ -930,6 +984,9 @@ const safeImage = isValidImageUrl(effectiveImageUri)
 const handleLike = async () => {
   if (!requireLogin()) return;
   if (likeInFlightRef.current) return;      // is news ka request pending hai — dobara nahi
+  if (isLiked) return;                      // ✅ already liked — dobara like/unlike nahi
+  const savedLikes = await getLikedIds(currentEmail);
+  if (savedLikes[story.id]) { setIsLiked(true); return; }   // ✅ local me liked hai — duplicate POST nahi
   likeInFlightRef.current = true;
 
   const prevLiked = isLiked;
@@ -963,6 +1020,7 @@ const handleLike = async () => {
     // ✅ backend ka response final truth
     const finalLiked = Boolean(result.liked);
     setIsLiked(finalLiked);
+    if (finalLiked) setLikedId(currentEmail, story.id, true);   // ✅ like ko phone me save karo
     if (Number.isFinite(result.likesCount)) {
       setLikesCount(result.likesCount);
     } else {
@@ -1199,7 +1257,7 @@ const handleLike = async () => {
       const richShareMessage = `${story.title}\n\n${story.excerpt || story.description || ''}\n\n${effectiveImageUri ? `Image: ${effectiveImageUri}\n\n` : ''}Read full news: ${postLink}\n\nRTI News App${shareMessage ? '' : ''}`;
       const result = await Share.share(
         { title: story.title, message: richShareMessage, url: postLink },
-        { subject: story.title, dialogTitle: 'Share karo' }
+        { subject: story.title, dialogTitle: 'Share' }
       );
       if (result.action === Share.sharedAction && !isAdStory) {
         const res = await AuthAPI.shareNews(story.id);
@@ -1641,7 +1699,18 @@ const handleLike = async () => {
           ) : null}
           <TouchableOpacity
             style={styles.storyExpandBtn}
-            onPress={(e) => { e.stopPropagation?.(); if (!handleAdPress()) onOpenDetails(story); }}
+            onPress={(e) => {
+              e.stopPropagation?.();
+              if (handleAdPress()) return;
+              // video news: detail page ki jagah popup me video kholo
+              if (canPlayVideo) {
+                safePause(player);
+                setVideoPaused(true);
+                setShowVideoModal(true);
+                return;
+              }
+              onOpenDetails(story);
+            }}
             activeOpacity={0.82}
           >
             <Ionicons name="expand-outline" size={16} color="#ffffff" />
@@ -1720,6 +1789,10 @@ const handleLike = async () => {
               </View>
             ))}
           </View>
+        ) : null}
+
+        {showVideoModal && canPlayVideo ? (
+          <VideoPopupModal uri={effectiveVideoUri} title={story.title} onClose={() => setShowVideoModal(false)} />
         ) : null}
 
         {/* ── More Menu ── */}

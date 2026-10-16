@@ -506,7 +506,7 @@ export default function WithdrawScreen({ navigation }) {
                 <Text style={FS.labelText}>PAN Number</Text>
                 <Text style={FS.required}> *</Text>
               </View>
-              <Text style={FS.subtitle}>Zaroori hai — bina PAN ke withdrawal request submit nahi hogi</Text>
+              <Text style={FS.subtitle}>Required — a withdrawal request cannot be submitted without a PAN</Text>
               <TextInput
                 style={FS.input}
                 value={form.pan_number}
@@ -935,7 +935,7 @@ export default function WithdrawScreen({ navigation }) {
               <Text style={FS.labelText}>PAN Number</Text>
               <Text style={FS.required}> *</Text>
             </View>
-            <Text style={FS.subtitle}>Zaroori hai — bina PAN ke withdrawal request submit nahi hogi</Text>
+            <Text style={FS.subtitle}>Required — a withdrawal request cannot be submitted without a PAN</Text>
             <TextInput
               style={FS.input}
               value={form.pan_number}

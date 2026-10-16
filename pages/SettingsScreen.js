@@ -225,7 +225,7 @@ export default function SettingsScreen({ navigation }) {
   };
 
   // ── Delete Account (server API) ───────────────────────────────────────────
-  const DELETE_CONFIRM_MSG = 'Aapka account inactive ho jayega. Dobara login karke aap use kabhi bhi active kar sakte hain.';
+  const DELETE_CONFIRM_MSG = 'Your account will become inactive. You can reactivate it any time by logging in again.';
 
   const openDeletePasswordModal = () => {
     setDeletePassword('');
@@ -287,7 +287,7 @@ export default function SettingsScreen({ navigation }) {
       return;
     }
     if (result.isNetwork) {         // internet band — modal khula rehta hai, user Retry kar sake
-      setDeleteError('Internet connection nahi hai. Check karke dobara try karein.');
+      setDeleteError('No internet connection. Please check and try again.');
       return;
     }
     setDeleteError(result.message || 'Unable to delete account.');
@@ -300,14 +300,14 @@ export default function SettingsScreen({ navigation }) {
 
   const handleWhatsappJoin = () => {
     Linking.openURL(`https://wa.me/${WHATSAPP_NUMBER}`).catch(() =>
-      showToast('WhatsApp open nahi hua. Check karo.', 'error')
+      showToast('Could not open WhatsApp. Please check and try again.', 'error')
     );
   };
 
   const handleContactCompany = () => {
     Linking.openURL(
       `https://mail.google.com/mail/?view=cm&fs=1&to=${COMPANY_EMAIL}&su=Support%20Request`
-    ).catch(() => showToast('Gmail open nahi hua. Check karo.', 'error'));
+    ).catch(() => showToast('Could not open Gmail. Please check and try again.', 'error'));
   };
 
   const handleRateApp = () => {
@@ -319,12 +319,12 @@ export default function SettingsScreen({ navigation }) {
 
     if (Platform.OS === 'ios') {
       Linking.openURL(iosUrl).catch(() =>
-        showToast('App Store open nahi hua.', 'error')
+        showToast('Could not open the App Store.', 'error')
       );
     } else {
       Linking.openURL(androidUrl).catch(() =>
         Linking.openURL(androidFallback).catch(() =>
-          showToast('Play Store open nahi hua.', 'error')
+          showToast('Could not open the Play Store.', 'error')
         )
       );
     }
@@ -463,7 +463,7 @@ export default function SettingsScreen({ navigation }) {
         <View style={delStyles.overlay}>
           <View style={delStyles.box}>
             <Text style={delStyles.title}>Delete Account</Text>
-            <Text style={delStyles.sub}>Confirm karne ke liye apna current password daalein.</Text>
+            <Text style={delStyles.sub}>Enter your current password to confirm.</Text>
             <View style={[delStyles.inputWrap, !!deleteError && delStyles.inputWrapError]}>
               <Ionicons name="lock-closed-outline" size={18} color="#888" />
               <TextInput

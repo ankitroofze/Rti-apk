@@ -76,7 +76,7 @@ async function load() {
   const listRes = await AuthAPI.getIdCards();
   console.log('[IdCard] GET /id-cards ->', JSON.stringify(listRes || {}).slice(0, 800));
   debugInfo.reason = listRes.ok
-    ? `GET ok: ${listRes.idCards?.length || 0} card, QR key nahi mili`
+    ? `GET ok: ${listRes.idCards?.length || 0} card, QR key not found`
     : `GET fail: ${listRes.message || 'error'}`;
 
   if (listRes.ok) {
@@ -112,7 +112,7 @@ async function load() {
     String(b.purchased_at || b.created_at || '').localeCompare(String(a.purchased_at || a.created_at || '')))[0];
   const subscriptionId = sub?.id ?? sub?.subscription_id;
   if (!subscriptionId) {
-    debugInfo.reason = 'Active subscription nahi mili (POST nahi hua)';
+    debugInfo.reason = 'No active subscription found (POST was not sent)';
     return null;
   }
 
@@ -120,7 +120,7 @@ async function load() {
   const created = await AuthAPI.createIdCard({ subscriptionId });
   console.log('[IdCard] POST /id-cards ->', JSON.stringify(created || {}).slice(0, 800));
   debugInfo.reason = created.ok
-    ? 'POST ok par response mein QR nahi'
+    ? 'POST ok but no QR in the response'
     : `POST fail: ${created.message || 'error'}`;
 
   if (created.ok) {

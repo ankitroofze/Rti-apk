@@ -143,7 +143,7 @@ function PhoneField({ label, fieldKey, data, update }) {
         placeholder="e.g. +91 9876543210"
         maxLength={15}
       />
-      {!isValid && <Text style={{ color: '#ef4444', fontSize: 9, marginTop: 2 }}>Sirf numbers allowed hain</Text>}
+      {!isValid && <Text style={{ color: '#ef4444', fontSize: 9, marginTop: 2 }}>Only numbers are allowed</Text>}
     </View>
   );
 }

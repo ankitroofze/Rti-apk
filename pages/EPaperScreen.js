@@ -165,7 +165,7 @@ const [reporterDate, setReporterDate] = useState('');
   },[navigation]);
   useFocusEffect(useCallback(()=>{loadData();},[loadData]));
 
-  const handleDelete=(item)=>{Alert.alert('Delete',`"${(item.title||'').replace(/<[^>]*>/g,'')||'This item'}" delete karein?`,[{text:'Cancel',style:'cancel'},{text:'Delete',style:'destructive',onPress:async()=>{const user=await UserStore.getCurrentUser();if(!user)return;await UserStore.updateUser(user.email,{epapers:(user.epapers||[]).filter(e=>e.id!==item.id)});showSuccess('Deleted.');loadData();}}]);};
+  const handleDelete=(item)=>{Alert.alert('Delete',`"${(item.title||'').replace(/<[^>]*>/g,'')||'This item'}" will be deleted. Continue?`,[{text:'Cancel',style:'cancel'},{text:'Delete',style:'destructive',onPress:async()=>{const user=await UserStore.getCurrentUser();if(!user)return;await UserStore.updateUser(user.email,{epapers:(user.epapers||[]).filter(e=>e.id!==item.id)});showSuccess('Deleted.');loadData();}}]);};
   const handleApprove=async(item)=>{const user=await UserStore.getCurrentUser();if(!user)return;await UserStore.updateUser(user.email,{epapers:(user.epapers||[]).map(e=>e.id===item.id?{...e,status:'approved'}:e)});showSuccess('Approved!');loadData();};
   const handleReject=async(item)=>{const user=await UserStore.getCurrentUser();if(!user)return;await UserStore.updateUser(user.email,{epapers:(user.epapers||[]).map(e=>e.id===item.id?{...e,status:'rejected'}:e)});showSuccess('Rejected.');loadData();};
   const handleView=async(item)=>{const result=await UserStore.updateEPaperItem(item.id,'view');if(!result?.ok){showToast(result?.message||'Error.','error');return;}setViewItem({...item,views:(item.views||0)+1});loadData();};
@@ -544,7 +544,7 @@ const [reporterDate, setReporterDate] = useState('');
         </View>
         <View>
           <Text style={{fontSize: 16, fontFamily: FONT_FAMILY,fontWeight:'800',color:'#111111'}}>Reporter Details</Text>
-          <Text style={{fontSize: 12, fontFamily: FONT_FAMILY,color:'#888888',marginTop:1}}>Publish karne se pehle confirm karein</Text>
+          <Text style={{fontSize: 12, fontFamily: FONT_FAMILY,color:'#888888',marginTop:1}}>Please confirm before publishing</Text>
         </View>
       </View>
 
@@ -557,7 +557,7 @@ const [reporterDate, setReporterDate] = useState('');
         <TextInput
           value={reporterName}
           onChangeText={setReporterName}
-          placeholder="Apna naam darj karein"
+          placeholder="Enter your name"
           placeholderTextColor="#BBBBBB"
           style={{flex:1,fontSize: 14, fontFamily: FONT_FAMILY,color:'#111111'}}
         />

@@ -56,6 +56,26 @@ const styles = StyleSheet.create(withRobotoFont({
     fontSize: 64,
     opacity: 0.9,
   },
+  playBadge: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...Platform.select({
+      web: { backdropFilter: 'blur(8px)', boxShadow: '0px 4px 18px rgba(0,0,0,0.45)' },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.45,
+        shadowRadius: 10,
+        elevation: 8,
+      },
+    }),
+  },
 
   // ── Top bar (mute only) ────────────────────────────────────────────────────
   reelTopBar: {
@@ -153,19 +173,19 @@ const styles = StyleSheet.create(withRobotoFont({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 5,
+    marginBottom: 8,
   },
   reelUserAvatar: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 1.5,
     borderColor: '#fff',
   },
   reelUserName: {
     color: '#fff',
     fontWeight: '800',
-    fontSize: 14,
+    fontSize: 15,
     ...Platform.select({
       web: { textShadow: '0px 1px 3px rgba(0,0,0,0.9)' },
       default: {
@@ -176,21 +196,28 @@ const styles = StyleSheet.create(withRobotoFont({
     }),
   },
   reelUserRole: {
-    color: 'rgba(255,255,255,0.72)',
+    color: 'rgba(255,255,255,0.75)',
     fontSize: 11,
+    marginTop: 1,
   },
 
   followBtn: {
     backgroundColor: '#f97316',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 18,
     marginLeft: 8,
+    minWidth: 84,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    borderWidth: 1,
+    borderColor: '#f97316',
   },
   followBtnFollowing: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: 'rgba(255,255,255,0.15)',
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.3)',
+    borderColor: 'rgba(255,255,255,0.55)',
   },
   followBtnText: {
     color: '#fff',
@@ -204,7 +231,7 @@ const styles = StyleSheet.create(withRobotoFont({
   reelLocationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 3,
+    gap: 4,
     marginBottom: 6,
   },
   reelLocationIcon: { fontSize: 11 },
@@ -216,10 +243,10 @@ const styles = StyleSheet.create(withRobotoFont({
 
   reelHeadline: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '900',
-    lineHeight: 22,
-    marginBottom: 5,
+    fontSize: 17,
+    fontWeight: '800',
+    lineHeight: 23,
+    marginBottom: 6,
     ...Platform.select({
       web: { textShadow: '0px 1px 4px rgba(0,0,0,0.95)' },
       default: {

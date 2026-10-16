@@ -254,6 +254,7 @@ function TopRotatingAdSlot({ ads = [], onPress }) {
   }, [ads.length]);
   const ad = ads[index];
   const image = ad?.image || ad?.photo || ad?.image_url || ad?.images?.[0] || ad?.photos?.[0];
+  // video-only ads yahan rotate nahi hote (3 sec me badal jaate) — wo in-feed slot me chalte hain
   if (!image) return null;
   return (
     <TouchableOpacity style={styles.topAdSlot} activeOpacity={0.92} onPress={() => onPress?.(ad)}>
@@ -266,6 +267,10 @@ function TopRotatingAdSlot({ ads = [], onPress }) {
 function InFeedAdSlot({ ad, onPress }) {
   const { width: winW } = useWindowDimensions();
   const [page, setPage] = useState(0);
+  const [slideHeights, setSlideHeights] = useState({});
+  const groupScrollRef = React.useRef(null);
+  const groupKey = Array.isArray(ad?.adGroup) ? ad.adGroup.map((x) => x?.id).join('|') : '';
+  React.useEffect(() => { setPage(0); setSlideHeights({}); }, [groupKey]);
   const imageOf = (a) => a?.image || a?.photo || a?.image_url || a?.images?.[0] || a?.photos?.[0];
   // Ek hi user ke 2+ ads: ek slot ke andar side-scroll karke dekho
   const group = Array.isArray(ad?.adGroup) && ad.adGroup.length > 1 ? ad.adGroup : null;
@@ -283,13 +288,47 @@ function InFeedAdSlot({ ad, onPress }) {
             showsHorizontalScrollIndicator={false}
             scrollEventThrottle={16}
             onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / slideW))}
+            onScroll={Platform.OS === 'web' ? (e) => { const n = Math.round(e.nativeEvent.contentOffset.x / slideW); if (n !== page) setPage(n); } : undefined}
+            ref={groupScrollRef}
+            style={slideHeights[page] ? { height: slideHeights[page] } : undefined}
           >
-            {group.map((a) => (
-              <TouchableOpacity key={String(a.id)} style={{ width: slideW, alignItems: 'center' }} activeOpacity={0.92} onPress={() => onPress?.(a)}>
-                <AutoFitAdImage uri={imageOf(a)} maxWidth={slideW} maxHeight={420} />
+            {group.map((a, gi) => (
+              <TouchableOpacity
+                key={String(a.id)}
+                style={{ width: slideW, alignItems: 'center', alignSelf: 'flex-start' }}
+                activeOpacity={0.92}
+                onPress={() => onPress?.(a)}
+                onLayout={(e) => {
+                  const h = Math.round(e.nativeEvent.layout.height);
+                  setSlideHeights((prev) => (prev[gi] === h ? prev : { ...prev, [gi]: h }));
+                }}
+              >
+                {(() => {
+                  // single ad jaisa hi rule: video ya multi-image ho to MediaGallery, nahi to AutoFitAdImage
+                  const imgs = Array.isArray(a?.images) ? a.images.filter(Boolean) : [];
+                  const first = imageOf(a);
+                  if (a?.video || imgs.length > 1) {
+                    return <MediaGallery images={imgs.length ? imgs : (first ? [first] : [])} video={a.video} width={slideW} maxHeight={420} onPressImage={() => onPress?.(a)} />;
+                  }
+                  return first ? <AutoFitAdImage uri={first} maxWidth={slideW} maxHeight={420} /> : null;
+                })()}
               </TouchableOpacity>
             ))}
           </ScrollView>
+          {Platform.OS === 'web' ? (
+            <>
+              {page > 0 ? (
+                <TouchableOpacity onPress={() => { const n = page - 1; setPage(n); groupScrollRef.current?.scrollTo({ x: n * slideW, animated: true }); }} style={{ position: 'absolute', left: 6, top: '45%', width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', zIndex: 5 }}>
+                  <Text style={{ color: '#fff', fontSize: 18, lineHeight: 20 }}>‹</Text>
+                </TouchableOpacity>
+              ) : null}
+              {page < group.length - 1 ? (
+                <TouchableOpacity onPress={() => { const n = page + 1; setPage(n); groupScrollRef.current?.scrollTo({ x: n * slideW, animated: true }); }} style={{ position: 'absolute', right: 6, top: '45%', width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center', zIndex: 5 }}>
+                  <Text style={{ color: '#fff', fontSize: 18, lineHeight: 20 }}>›</Text>
+                </TouchableOpacity>
+              ) : null}
+            </>
+          ) : null}
           <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 8 }}>
             {group.map((a, i) => (
               <View key={String(a.id)} style={{ width: i === page ? 16 : 6, height: 6, borderRadius: 3, backgroundColor: i === page ? '#f97316' : '#cbd5e1' }} />
@@ -485,27 +524,27 @@ const seatStyles= StyleSheet.create({
     paddingBottom: 28,
   },
   handle: { width: 36, height: 4, backgroundColor: PINK_BORDER, borderRadius: 99, alignSelf: 'center', marginBottom: 18 },
-  title: { fontSize: 15, fontWeight: '700', color: '#0f172a', marginBottom: 4, fontFamily: 'Roboto' },
+  title: { fontSize: 15, fontWeight: '700', color: '#0f172a', marginBottom: 4, fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   stateRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   stateDot: { width: 7, height: 7, borderRadius: 99, backgroundColor: PINK },
-  subtitle: { fontSize: 12, color: '#b0b8cc', fontWeight: '500', fontFamily: 'Roboto' },
-  loadingText: { fontSize: 12, color: '#b0b8cc', fontWeight: '500', paddingVertical: 10, fontFamily: 'Roboto' },
+  subtitle: { fontSize: 12, color: '#b0b8cc', fontWeight: '500', fontFamily: Platform.OS === 'ios' ? 'Roboto_500Medium' : 'Roboto' },
+  loadingText: { fontSize: 12, color: '#b0b8cc', fontWeight: '500', paddingVertical: 10, fontFamily: Platform.OS === 'ios' ? 'Roboto_500Medium' : 'Roboto' },
   seatCard: { borderWidth: 1.5, borderColor: '#f0f2f7', backgroundColor: '#fff', borderRadius: 16, padding: 13, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   seatCardSelected: { borderColor: PINK, backgroundColor: PINK_LIGHT },
   seatCardDisabled: { borderColor: '#f5f5f5', backgroundColor: '#fafafa' },
   seatCardCommon: { borderColor: PINK_BORDER, backgroundColor: PINK_MUTED },
-  seatName: { fontSize: 13, fontWeight: '600', color: '#0f172a', fontFamily: 'Roboto' },
+  seatName: { fontSize: 13, fontWeight: '600', color: '#0f172a', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   seatNameDisabled: { color: '#b0b8cc' },
   seatNameCommon: { color: PINK },
-  seatStatus: { marginTop: 3, fontSize: 11, fontWeight: '500', color: PINK, fontFamily: 'Roboto' },
+  seatStatus: { marginTop: 3, fontSize: 11, fontWeight: '500', color: PINK, fontFamily: Platform.OS === 'ios' ? 'Roboto_500Medium' : 'Roboto' },
   seatStatusMuted: { color: '#b0b8cc' },
   checkCircle: { width: 22, height: 22, borderRadius: 99, backgroundColor: PINK, alignItems: 'center', justifyContent: 'center' },
   checkCircleEmpty: { width: 22, height: 22, borderRadius: 99, borderWidth: 1.5, borderColor: '#e2e8f0' },
   cancelBtn: { flex: 1, borderWidth: 1.5, borderColor: '#f0f2f7', backgroundColor: '#fff', borderRadius: 16, paddingVertical: 13, alignItems: 'center' },
-  cancelBtnText: { color: '#0f172a', fontWeight: '600', fontSize: 13, fontFamily: 'Roboto' },
+  cancelBtnText: { color: '#0f172a', fontWeight: '600', fontSize: 13, fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   confirmBtn: { flex: 1, borderRadius: 16, paddingVertical: 13, alignItems: 'center', backgroundColor: PINK },
   confirmBtnDisabled: { backgroundColor: '#f0f2f7' },
-  confirmBtnText: { color: '#fff', fontWeight: '600', fontSize: 13, fontFamily: 'Roboto' },
+  confirmBtnText: { color: '#fff', fontWeight: '600', fontSize: 13, fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   confirmBtnTextDisabled: { color: '#b0b8cc' },
 });
 
@@ -564,22 +603,22 @@ const subStyles = StyleSheet.create({
   overlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: 20 },
   modalContent: { backgroundColor: '#fff', borderRadius: 28, padding: 22, width: '100%', maxWidth: Platform.OS === 'web' ? 560 : 400, alignItems: 'center' },
   crownCircle: { width: 48, height: 48, borderRadius: 99, backgroundColor: PINK_MUTED, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  modalTitle: { fontSize: 17, fontWeight: '700', color: '#0f172a', marginBottom: 4, fontFamily: 'Roboto' },
-  modalSubtitle: { fontSize: 12, color: '#b0b8cc', textAlign: 'center', fontFamily: 'Roboto' },
+  modalTitle: { fontSize: 17, fontWeight: '700', color: '#0f172a', marginBottom: 4, fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
+  modalSubtitle: { fontSize: 12, color: '#b0b8cc', textAlign: 'center', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   planCard: { backgroundColor: '#fff', borderRadius: 20, padding: 16, marginBottom: 10, borderWidth: 1.5, borderColor: PINK_BORDER, width: '100%' },
   badge: { alignSelf: 'flex-start', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999, marginBottom: 8 },
-  badgeText: { fontSize: 10, fontWeight: '600', letterSpacing: 0.3, fontFamily: 'Roboto' },
+  badgeText: { fontSize: 10, fontWeight: '600', letterSpacing: 0.3, fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   planHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 },
-  planName: { fontSize: 15, fontWeight: '700', fontFamily: 'Roboto' },
-  planDuration: { fontSize: 11, color: '#b0b8cc', marginTop: 2, fontFamily: 'Roboto' },
-  planPrice: { fontSize: 22, fontWeight: '700', color: '#0f172a', fontFamily: 'Roboto' },
+  planName: { fontSize: 15, fontWeight: '700', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
+  planDuration: { fontSize: 11, color: '#b0b8cc', marginTop: 2, fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
+  planPrice: { fontSize: 22, fontWeight: '700', color: '#0f172a', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   divider: { height: 1, backgroundColor: PINK_BORDER, marginBottom: 10 },
   featureRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   featureItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   featureDot: { width: 6, height: 6, borderRadius: 99 },
-  featureText: { fontSize: 11, color: '#64748b', fontFamily: 'Roboto' },
+  featureText: { fontSize: 11, color: '#64748b', fontFamily: Platform.OS === 'ios' ? 'Roboto_400Regular' : 'Roboto' },
   closeBtn: { width: '100%', marginTop: 12, paddingVertical: 14, borderRadius: 18, backgroundColor: PINK_MUTED, alignItems: 'center' },
-  closeBtnText: { fontSize: 13, fontWeight: '600', color: PINK, fontFamily: 'Roboto' },
+  closeBtnText: { fontSize: 13, fontWeight: '600', color: PINK, fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
 });
 
 // ── Main HomeScreen ───────────────────────────────────────────────────────────
@@ -1310,7 +1349,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
-  sectionResetButtonText: { color: '#f97316', fontSize: 12, fontWeight: '800', fontFamily: 'Roboto' },
+  sectionResetButtonText: { color: '#f97316', fontSize: 12, fontWeight: '800', fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
   storyCardsStack: { gap: 12 },
   storyCardsStackMobile: { gap: 0 },
 });
@@ -1322,12 +1361,12 @@ const ecomeRowStyles = StyleSheet.create({
   imageFallback: { alignItems: 'center', justifyContent: 'center' },
   body: { padding: 8, flex: 1 },
   topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6, marginBottom: 6 },
-  badge: { color: '#e21111', fontSize: 9, fontWeight: '900', letterSpacing: 0.6, backgroundColor: '#f5d8d7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 2, fontFamily: 'Roboto' },
-  category: { flex: 1, textAlign: 'right', color: '#64748b', fontSize: 10, fontWeight: '700', fontFamily: 'Roboto' },
-  title: { color: '#0f172a', fontSize: 13, fontWeight: '800', lineHeight: 18, fontFamily: 'Roboto' },
-  price: { color: '#e21111', fontSize: 14, fontWeight: '900', marginTop: 6, fontFamily: 'Roboto' },
+  badge: { color: '#e21111', fontSize: 9, fontWeight: '900', letterSpacing: 0.6, backgroundColor: '#f5d8d7', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 2, fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
+  category: { flex: 1, textAlign: 'right', color: '#64748b', fontSize: 10, fontWeight: '700', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
+  title: { color: '#0f172a', fontSize: 13, fontWeight: '800', lineHeight: 18, fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
+  price: { color: '#e21111', fontSize: 14, fontWeight: '900', marginTop: 6, fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
   footer: { borderTopWidth: 1, borderTopColor: '#e5e7eb', marginTop: 8, paddingTop: 7, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
-  seller: { flex: 1, color: '#64748b', fontSize: 10.5, fontWeight: '600', fontFamily: 'Roboto' },
+  seller: { flex: 1, color: '#64748b', fontSize: 10.5, fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
 });
 
 const ecomeStyles = StyleSheet.create({
@@ -1336,16 +1375,16 @@ const ecomeStyles = StyleSheet.create({
   imageFallback: { alignItems: 'center', justifyContent: 'center' },
   body: { flex: 1, padding: 13, minWidth: 0 },
   topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 7 },
-  badge: { color: '#dc2626', fontSize: 10, fontWeight: '900', letterSpacing: 0.8, backgroundColor: '#fef2f2', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 4, fontFamily: 'Roboto' },
-  category: { flex: 1, textAlign: 'right', color: '#64748b', fontSize: 10.5, fontWeight: '700', fontFamily: 'Roboto' },
-  title: { color: '#0f172a', fontSize: 15, fontWeight: '800', lineHeight: 20, fontFamily: 'Roboto' },
-  description: { color: '#64748b', fontSize: 12, lineHeight: 17, marginTop: 5, fontFamily: 'Roboto' },
+  badge: { color: '#dc2626', fontSize: 10, fontWeight: '900', letterSpacing: 0.8, backgroundColor: '#fef2f2', paddingHorizontal: 7, paddingVertical: 3, borderRadius: 4, fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
+  category: { flex: 1, textAlign: 'right', color: '#64748b', fontSize: 10.5, fontWeight: '700', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
+  title: { color: '#0f172a', fontSize: 15, fontWeight: '800', lineHeight: 20, fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
+  description: { color: '#64748b', fontSize: 12, lineHeight: 17, marginTop: 5, fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
   metaRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginTop: 9 },
-  price: { color: '#dc2626', fontSize: 16, fontWeight: '900', fontFamily: 'Roboto' },
-  quantity: { color: '#64748b', fontSize: 11, fontWeight: '700', fontFamily: 'Roboto' },
+  price: { color: '#dc2626', fontSize: 16, fontWeight: '900', fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
+  quantity: { color: '#64748b', fontSize: 11, fontWeight: '700', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   footer: { borderTopWidth: 0.5, borderTopColor: '#fafafa', marginTop: 10, paddingTop: 9, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  seller: { flex: 1, color: '#64748b', fontSize: 11, fontWeight: '600', fontFamily: 'Roboto' },
-  cta: { color: '#802a15', fontSize: 11, fontWeight: '800', fontFamily: 'Roboto' },
+  seller: { flex: 1, color: '#64748b', fontSize: 11, fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
+  cta: { color: '#802a15', fontSize: 11, fontWeight: '800', fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
 });
 
 const popupStyles = StyleSheet.create({

@@ -85,7 +85,7 @@ const [plansLoading, setPlansLoading] = useState(true);
       if (!plan) return;
     // ✅ backend ki asli plan id integer hoti hai; static/string id par order mat banao
     if (!Number.isInteger(Number(plan.id))) {
-      showPopup('Plans abhi load nahi hue. Please screen refresh karke dobara try karein.', 'error');
+      showPopup('Plans have not loaded yet. Please refresh the screen and try again.', 'error');
       return;
     }
     setProcessingPlanId(plan.id);

@@ -46,7 +46,7 @@ export default function ImageBlock({ uri = '', onPick, onRemove }) {
   return (
     <TouchableOpacity style={styles.uploadArea} onPress={pickImage}>
       <Text style={styles.uploadIcon}>📷</Text>
-      <Text style={styles.uploadText}>Image upload karein</Text>
+      <Text style={styles.uploadText}>Upload image</Text>
       <Text style={styles.uploadHint}>JPG, PNG support</Text>
     </TouchableOpacity>
   );

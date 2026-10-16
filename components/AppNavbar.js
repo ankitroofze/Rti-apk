@@ -19,6 +19,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
+import { subscribeBadgeRefresh, unregisterDeviceToken } from '../utils/Pushnotifications';
 import { getSiteCopy } from '../constants/siteCopy';
 import RefreshButton from './RefreshButton';
 import { UserStore } from '../store/UserStore';
@@ -213,23 +214,26 @@ function NavbarLanguageSelector({ compact = false }) {
 }
 
 // ─── Profile Dropdown ──────────────────────────────────────────────────────
-function NotificationBell({ navigation }) {
+function NotificationBell({ navigation, style }) {
   const [count, setCount] = useState(0);
   useEffect(() => {
     let alive = true;
-    (async () => {
+    const loadCount = async () => {
       try {
-        const summary = await UserStore.getNotificationsSummary();
-        if (alive) setCount(summary?.unreadCount || 0);
+        const n = await UserStore.getUnreadNotificationCount();
+        if (alive) setCount(n || 0);
       } catch {
         if (alive) setCount(0);
       }
-    })();
-    return () => { alive = false; };
+    };
+    loadCount();
+    // foreground push aaye to badge turant refresh
+    const unsub = subscribeBadgeRefresh(loadCount);
+    return () => { alive = false; unsub?.(); };
   }, []);
   return (
     <TouchableOpacity
-      style={styles.notificationBellBtn}
+      style={[styles.notificationBellBtn, style]}
       onPress={() => navigation?.navigate?.('Notifications')}
       activeOpacity={0.85}
     >
@@ -302,6 +306,7 @@ function ProfileDropdown({ navigation, showNameLabel }) {
   };
 
   const handleLogout = async () => {
+    await unregisterDeviceToken(); // ✅ pehle device token hatao, phir logout
     await logout();
     setIsOpen(false);
     setAvatarError(false);
@@ -694,7 +699,7 @@ export default function AppNavbar({ activeScreen, navigation, hideTopHeader = fa
         <View style={styles.desktopUtilityRow}>
           <NavbarLanguageSelector />
         <RefreshButton />
-<NotificationBell navigation={navigation} />
+<NotificationBell navigation={navigation} style={{ marginRight: 22 }} />
         </View>
 
         <View style={styles.desktopActionsRow}>
@@ -799,7 +804,7 @@ const styles = StyleSheet.create({
     color: '#334155',
     fontSize: 13,
     fontWeight: '700',
-    fontFamily: 'Roboto',
+    fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto',
   },
    desktopNavLabelActive: {
     color: '#e8732a',
@@ -969,7 +974,7 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     fontSize: 12,
     fontWeight: '700',
-    fontFamily: 'Roboto',
+    fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto',
   },
   languageDropdownCard: {
     position: 'absolute',
@@ -1011,7 +1016,7 @@ const styles = StyleSheet.create({
     color: '#1e293b',
     fontSize: 13,
     fontWeight: '700',
-    fontFamily: 'Roboto',
+    fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto',
   },
   languageDropdownLabelActive: {
     color: '#e8732a',
@@ -1127,7 +1132,7 @@ const styles = StyleSheet.create({
     color: '#1e293b',
     fontSize: 13,
     fontWeight: '600',
-    fontFamily: 'Roboto',
+    fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto',
   },
   logoutItem: {
     marginBottom: 4,

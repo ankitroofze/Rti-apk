@@ -72,7 +72,7 @@ export default function AdPlansScreen({ navigation, route }) {
         const defaultPlan = normalized.find(p => p.popular) || normalized[0];
         if (defaultPlan) setSelectedPlan(defaultPlan.id);
       } else {
-        setPlansError(plansResult?.message || 'Plans load nahi ho paaye.');
+        setPlansError(plansResult?.message || 'Could not load the plans.');
       }
       setPlansLoading(false);
 
@@ -111,7 +111,7 @@ const doBuy = useCallback(async (plan) => {
             const fresh = await UserStore.getAdCreditsSummary();
             if (fresh) { setCurrentCredits(fresh.credits || 0); setAdSub(fresh.ad_subscription || null); }
           } catch (e) { /* ignore */ }
-          showPopup(`🎉 ${plan.credits} credits add ho gaye! Total: ${verifyResult.credits}`, 'success');
+          showPopup(`🎉 ${plan.credits} credits added! Total: ${verifyResult.credits}`, 'success');
           setTimeout(() => {
             try {
               const returnTo = route?.params?.returnTo;
@@ -175,7 +175,7 @@ const doBuy = useCallback(async (plan) => {
       onPay={loading ? undefined : handlePay}
      payLabel="Pay Now"
       processingPlanId={loading ? processingPlanId : null}
-      emptyText={plansError || 'Abhi koi ad plan available nahi hai.'}
+      emptyText={plansError || 'No ad plans are available right now.'}
     />
   );
 }

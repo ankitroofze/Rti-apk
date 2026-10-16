@@ -6,6 +6,7 @@ import VerifiedBadge from './VerifiedBadge';
 import { groupAdsByOwner } from '../utils/adGrouping';
 import UserStore from '../store/UserStore';
 import ProfileAvatar from './ProfileAvatar';
+import AdVideoPlayer from './AdVideoPlayer';
 
 // India ke Chief Editor ki user ID yahan daalo (backend/admin panel se dekh lo).
 const CHIEF_EDITOR_USER_ID = ''; // example: '12'
@@ -20,6 +21,12 @@ const formatCount = (n) => {
 function SponsoredImage({ ad }) {
   const [failedToLoad, setFailedToLoad] = useState(false);
   const imageUri = ad.image || ad.photo || ad.image_url || ad.images?.[0] || ad.photos?.[0] || '';
+  const videoUri = ad.video || ad.video_url || '';
+
+  // ✅ video ad (media_type 2): image nahi hoti — video player dikhao (muted autoplay + controls)
+  if ((!imageUri || failedToLoad) && videoUri) {
+    return <AdVideoPlayer key={videoUri} uri={videoUri} autoPlay style={styles.sponsoredImage} />;
+  }
 
   if (!imageUri || failedToLoad) {
     return (

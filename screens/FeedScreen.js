@@ -9,6 +9,7 @@ import {
 import styles from './FeedScreenStyles';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { VideoView, useVideoPlayer } from 'expo-video';
+import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import AppNavbar from '../components/AppNavbar';
@@ -146,7 +147,7 @@ function HeartIcon({ filled, size = 24 }) {
       </svg>
     );
   }
-  return <Text style={{ fontSize: size - 2, color: filled ? '#ff3b5c' : '#fff' }}>{filled ? '♥' : '♡'}</Text>;
+  return <Ionicons name={filled ? 'heart' : 'heart-outline'} size={size} color={filled ? '#ff3b5c' : '#fff'} />;
 }
 
 function CommentIcon({ size = 24 }) {
@@ -157,7 +158,7 @@ function CommentIcon({ size = 24 }) {
       </svg>
     );
   }
-  return <Text style={{ fontSize: size - 2, color: '#fff' }}>💬</Text>;
+  return <Ionicons name="chatbubble-outline" size={size - 2} color="#fff" />;
 }
 
 function ShareIcon({ size = 24 }) {
@@ -169,7 +170,7 @@ function ShareIcon({ size = 24 }) {
       </svg>
     );
   }
-  return <Text style={{ fontSize: size - 2, color: '#fff' }}>📤</Text>;
+  return <Ionicons name="paper-plane-outline" size={size - 2} color="#fff" />;
 }
 
 function BookmarkIcon({ filled, size = 24 }) {
@@ -182,7 +183,7 @@ function BookmarkIcon({ filled, size = 24 }) {
       </svg>
     );
   }
-  return <Text style={{ fontSize: size - 2, color: filled ? '#f97316' : '#fff' }}>{filled ? '🔖' : '🏷'}</Text>;
+  return <Ionicons name={filled ? 'bookmark' : 'bookmark-outline'} size={size - 2} color={filled ? '#f97316' : '#fff'} />;
 }
 
 function MuteIcon({ muted, size = 20 }) {
@@ -200,7 +201,7 @@ function MuteIcon({ muted, size = 20 }) {
       </svg>
     );
   }
-  return <Text style={{ fontSize: size, color: '#fff' }}>{muted ? '🔇' : '🔊'}</Text>;
+  return <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={size} color="#fff" />;
 }
 
 // Share Modal
@@ -1136,26 +1137,26 @@ function ActionColumn({ post, onLike, onComment, onShare, onBookmark, onDescript
           <HeartIcon filled={post.liked} size={iconSz} />
         </Animated.View>
         <Text style={[countStyle, { color: post.liked ? '#ff3b5c' : '#fff' }]}>{likeCount}</Text>
-        <Text style={labelStyle}>Like</Text>
+        {!isMobileLayout ? <Text style={labelStyle}>Like</Text> : null}
       </TouchableOpacity>
 
       <TouchableOpacity style={btn} onPress={() => onComment(post.id)} activeOpacity={0.75}>
         <View style={circle('rgba(0,0,0,0.5)')}><CommentIcon size={iconSz} /></View>
         <Text style={countStyle}>{commentCount}</Text>
-        <Text style={labelStyle}>Comment</Text>
+        {!isMobileLayout ? <Text style={labelStyle}>Comment</Text> : null}
       </TouchableOpacity>
 
       <TouchableOpacity style={btn} onPress={() => onShare(post.id)} activeOpacity={0.75}>
         <View style={circle('rgba(0,0,0,0.5)')}><ShareIcon size={iconSz} /></View>
         <Text style={countStyle}>{shareCount}</Text>
-        <Text style={labelStyle}>Share</Text>
+        {!isMobileLayout ? <Text style={labelStyle}>Share</Text> : null}
       </TouchableOpacity>
 
       <TouchableOpacity style={btn} onPress={() => onBookmark(post.id)} activeOpacity={0.75}>
         <View style={circle(post.bookmarked ? 'rgba(249,115,22,0.3)' : 'rgba(0,0,0,0.5)')}>
           <BookmarkIcon filled={post.bookmarked} size={iconSz} />
         </View>
-        <Text style={labelStyle}>Save</Text>
+        {!isMobileLayout ? <Text style={labelStyle}>Save</Text> : null}
       </TouchableOpacity>
     </View>
   );
@@ -1165,6 +1166,7 @@ function ActionColumn({ post, onLike, onComment, onShare, onBookmark, onDescript
 function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription, onProfilePress, onAdPress, onFollow, isActive, cardWidth, cardHeight, isMobileLayout }) {
   const safePost = post || {};
   const scaleAnim = useRef(new Animated.Value(1)).current;
+  const flashAnim = useRef(new Animated.Value(0)).current; // resume par center me pause icon flash
   const [captionExpanded, setCaptionExpanded] = useState(false);
  const [muted, setMuted] = useState(true);
   const [paused, setPaused] = useState(false);
@@ -1199,6 +1201,23 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription,
   const shares      = Number(safePost.shares || 0);
   const isAd        = Boolean(safePost.isAd);
   const adRedirectMeta = isAd ? getAdRedirectMeta(safePost) : null;
+
+  // media_type based rendering: video | image | pdf | link
+  const postKind = String(safePost.type || 'image');
+  const isDocKind = !isAd && (postKind === 'pdf' || postKind === 'link');
+  const docUrl = String(safePost.media || '').trim();
+  const galleryImages = useMemo(() => (
+    postKind === 'image' && Array.isArray(safePost.images)
+      ? safePost.images.filter((u) => typeof u === 'string' && u.trim())
+      : []
+  ), [postKind, safePost.images]);
+  const [galleryW, setGalleryW] = useState(0);
+  const [galleryIdx, setGalleryIdx] = useState(0);
+  const openDoc = useCallback(() => {
+    if (!docUrl) { Alert.alert('Unavailable', 'Link is not available.'); return; }
+    if (Platform.OS === 'web') { window.open(docUrl, '_blank', 'noopener'); return; }
+    Linking.openURL(docUrl).catch(() => Alert.alert('Error', 'Could not open the link.'));
+  }, [docUrl]);
 
   useEffect(() => {
     const initializeComponent = async () => {
@@ -1411,12 +1430,16 @@ return t || '';
       setPaused(false);
       setShowPoster(false);
       safePlay(player);
+      // center me pause icon dikhao, phir fade out
+      flashAnim.stopAnimation();
+      flashAnim.setValue(1);
+      Animated.timing(flashAnim, { toValue: 0, duration: 450, delay: 500, useNativeDriver: USE_NATIVE_DRIVER }).start();
     } else {
       safePause(player);
       setPaused(true);
       // poster wapas mat lagao — warna ▶ icon chhup jaata hai aur frame hat jaata hai
     }
-  }, [canPlayVideo, isAd, onAdPress, paused, player, playerReady, safePost]);
+  }, [canPlayVideo, isAd, onAdPress, paused, player, playerReady, safePost, flashAnim]);
 
   const handleLikePress = () => {
     Animated.sequence([
@@ -1434,7 +1457,7 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
   // const bottomRight = isMobileLayout ? 60 : 14;
   const bottomRight = isMobileLayout ? 80 : 14;
 
-  const showPlayOverlay = paused && !showPoster && playerReady;
+  const showPlayOverlay = paused && playerReady;
 
   return (
     <View style={{
@@ -1460,7 +1483,21 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
           activeOpacity={1}
           onPress={handleVideoToggle}
         >
-          {canPlayVideo ? (
+          {isDocKind ? (
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: '#111' }}>
+              <Text style={{ fontSize: 56 }}>{postKind === 'pdf' ? '📄' : '🔗'}</Text>
+              <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700', textAlign: 'center', marginTop: 12 }} numberOfLines={3}>
+                {headline || (postKind === 'pdf' ? 'PDF Document' : 'External Link')}
+              </Text>
+              <TouchableOpacity
+                onPress={openDoc}
+                activeOpacity={0.85}
+                style={{ marginTop: 18, backgroundColor: '#dc2626', paddingHorizontal: 22, paddingVertical: 11, borderRadius: 24 }}
+              >
+                <Text style={{ color: '#fff', fontWeight: '700' }}>{postKind === 'pdf' ? 'Open / Download PDF' : 'Open Link'}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : canPlayVideo ? (
             <>
               <VideoView
                 player={player}
@@ -1479,6 +1516,24 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
                 />
               ) : null}
             </>
+          ) : galleryImages.length > 1 ? (
+            <View style={StyleSheet.absoluteFill} onLayout={(e) => setGalleryW(e.nativeEvent.layout.width)}>
+              {galleryW > 0 ? (
+                <ScrollView
+                  horizontal
+                  pagingEnabled
+                  showsHorizontalScrollIndicator={false}
+                  onMomentumScrollEnd={(e) => setGalleryIdx(Math.round(e.nativeEvent.contentOffset.x / galleryW))}
+                >
+                  {galleryImages.map((u, i) => (
+                    <Image key={`${u}-${i}`} source={{ uri: u }} style={{ width: galleryW, height: cardHeight }} resizeMode="cover" />
+                  ))}
+                </ScrollView>
+              ) : null}
+              <View pointerEvents="none" style={{ position: 'absolute', top: 12, alignSelf: 'center', backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12 }}>
+                <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>{galleryIdx + 1}/{galleryImages.length}</Text>
+              </View>
+            </View>
           ) : safeThumbnailUrl ? (
             <Image
               source={{ uri: safeThumbnailUrl }}
@@ -1492,20 +1547,32 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
         <View style={{ ...styles.reelOverlayBottom, pointerEvents: 'none' }} />
 
         {showPlayOverlay && (
-          <View style={[styles.pausedOverlay, Platform.OS === 'web' ? { pointerEvents: 'none' } : null]}>
-            <Text style={[styles.pausedIcon, { fontSize: 48 }]}>▶</Text>
+          <View pointerEvents="none" style={styles.pausedOverlay}>
+            <View style={styles.playBadge}>
+              <Ionicons name="play" size={42} color="#fff" style={{ marginLeft: 5 }} />
+            </View>
           </View>
         )}
 
-        <View style={styles.reelTopBar}>
-          <TouchableOpacity
-            style={[styles.muteBtn, { backgroundColor: muted ? 'rgba(249,115,22,0.8)' : 'rgba(0,0,0,0.5)' }]}
-            onPress={() => setMuted(v => !v)}
-            activeOpacity={0.8}
-          >
-            <MuteIcon muted={muted} size={20} />
-          </TouchableOpacity>
-        </View>
+        {canPlayVideo && !paused ? (
+          <Animated.View pointerEvents="none" style={[styles.pausedOverlay, { backgroundColor: 'transparent', opacity: flashAnim }]}>
+            <View style={styles.playBadge}>
+              <Ionicons name="pause" size={42} color="#fff" />
+            </View>
+          </Animated.View>
+        ) : null}
+
+        {canPlayVideo ? (
+          <View style={styles.reelTopBar}>
+            <TouchableOpacity
+              style={[styles.muteBtn, { backgroundColor: muted ? 'rgba(249,115,22,0.8)' : 'rgba(0,0,0,0.5)' }]}
+              onPress={() => setMuted(v => !v)}
+              activeOpacity={0.8}
+            >
+              <MuteIcon muted={muted} size={20} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {isMobileLayout ? (
           <ActionColumn
@@ -1524,14 +1591,16 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
           ) : null}
 
           <View style={styles.reelUserRow}>
-            <TouchableOpacity style={{ flexDirection: 'row', flex: 1, alignItems: 'center' }} onPress={() => onProfilePress(safePost)} activeOpacity={0.85}>
-              <ProfileAvatar uri={avatarUri} size={34} style={styles.reelUserAvatar} />
-              <View style={{ flex: 1 }}>
+            <TouchableOpacity style={{ flexDirection: 'row', flex: 1, minWidth: 0, alignItems: 'center', gap: 10 }} onPress={() => onProfilePress(safePost)} activeOpacity={0.85}>
+              <ProfileAvatar uri={avatarUri} size={40} style={styles.reelUserAvatar} />
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                  <Text style={styles.reelUserName}>{userName}</Text>
+                  <Text style={[styles.reelUserName, { flexShrink: 1 }]} numberOfLines={1}>{userName}</Text>
                   {Boolean(verified) ? <VerifiedBadge size={16} /> : null}
                 </View>
-                <Text style={styles.reelUserRole}>{role} · {time}</Text>
+                {(role || time) ? (
+                  <Text style={styles.reelUserRole} numberOfLines={1}>{[role, time].filter(Boolean).join(' · ')}</Text>
+                ) : null}
               </View>
             </TouchableOpacity>
             {authorEmail && currentUserEmail !== authorEmail ? (
@@ -1548,17 +1617,19 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
             ) : null}
           </View>
 
-          <View style={styles.reelLocationRow}>
-            <Text style={styles.reelLocationIcon}>📍</Text>
-            <Text style={styles.reelLocationText}>{location}</Text>
-          </View>
+          {location ? (
+            <View style={styles.reelLocationRow}>
+              <Ionicons name="location-sharp" size={12} color="rgba(255,255,255,0.75)" />
+              <Text style={styles.reelLocationText} numberOfLines={1}>{location}</Text>
+            </View>
+          ) : null}
 
-          {headline ? <Text style={styles.reelHeadline}>{headline}</Text> : null}
+          {headline ? <Text style={styles.reelHeadline} numberOfLines={2}>{headline}</Text> : null}
 
           <TouchableOpacity activeOpacity={0.85} onPress={() => onDescription(postId)}>
             <Text style={styles.reelCaption} numberOfLines={captionExpanded ? undefined : 2}>{caption}</Text>
             {caption.length > 80 && (
-              <Text style={styles.reelCaptionMore}>▼ Read More</Text>
+              <Text style={styles.reelCaptionMore}>more</Text>
             )}
           </TouchableOpacity>
 
@@ -1587,7 +1658,7 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
 
           {(safePost.commentsCount > 0 || comments.length > 0) && (
             <TouchableOpacity onPress={() => onComment(postId)} style={{ marginTop: 5 }}>
-              <Text style={styles.reelViewComments}>💬 View all {safePost.commentsCount ?? comments.length} comments</Text>
+              <Text style={styles.reelViewComments}>View all {safePost.commentsCount ?? comments.length} comments</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -1929,8 +2000,8 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     type: isVideoPost ? 'video' : 'image',
     media: mediaUri,
     video: isVideoPost ? mediaUri : null,
-    thumbnail: mediaUri,
-    image: mediaUri,
+    thumbnail: isVideoPost ? '' : mediaUri,
+    image: isVideoPost ? '' : mediaUri,
     headline: headline || 'My RTI Story',
     caption, fullDescription: caption,
     likes: 0, shares: 0, comments: [],
@@ -1970,12 +2041,8 @@ const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
       const fetchFeed = async () => {
         try {
           let nextProfileMap = {};
-          const reelsSummary = typeof UserStore.getReelsFeedSummary === 'function'
-            ? await UserStore.getReelsFeedSummary()
-            : null;
-          const summaryValue = reelsSummary?.items?.length
-            ? reelsSummary
-            : await UserStore.getNewsFeedSummary({ type: 2 });
+          // GET /api/feeds — sirf feed/reel posts (type 2). Response key: `news`
+          const summaryValue = await UserStore.getNewsFeedSummary({ type: 2, feedType: 'feeds' });
           const userProfileValue = summaryValue?.currentUser || await UserStore.getCurrentUser();
           if (!active) return;
 
@@ -2014,23 +2081,41 @@ const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
           if (summaryValue?.items) {
             const currentEmail = String(profileData?.email || '').trim().toLowerCase();
             const sourceItems = summaryValue.items.map((item) => {
-  const videoUri = String(
-    typeof item.video === 'string' ? item.video : item.video?.uri || item.media || ''
+  // media_type: 1 = image, 2 = video, 3 = PDF, 4 = external URL
+  const mt = String(item.mediaType || '');
+  const rawMedia = typeof item.media === 'string' ? item.media.trim() : '';
+  const isHttp = /^https?:/i.test(rawMedia);
+  const videoFromItem = String(
+    typeof item.video === 'string' ? item.video : item.video?.uri || ''
   ).trim();
-  const firstImage = Array.isArray(item.images)
-    ? item.images.find((u) => typeof u === 'string' && u.trim()) || ''
+  let kind;
+  if (mt === 'Video') kind = 'video';
+  else if (mt === 'File') kind = 'pdf';
+  else if (mt === 'Link') kind = 'link';
+  else if (mt === 'Image') kind = 'image';
+  else kind = (videoFromItem || (isHttp && /\.(mp4|m4v|mov|webm|ogv|m3u8)(\?.*)?$/i.test(rawMedia))) ? 'video' : 'image';
+
+  const videoUri = kind === 'video' ? (videoFromItem || (isHttp ? rawMedia : '')) : '';
+  const imagesList = kind === 'image' && Array.isArray(item.images)
+    ? item.images.filter((u) => typeof u === 'string' && u.trim())
+    : [];
+  // image post: images[] render hogi; images khali ho to `media` fallback image URL
+  const imageUri = kind === 'image'
+    ? String(item.thumbnail || item.image || imagesList[0] || (isHttp ? rawMedia : '') || '').trim()
     : '';
-  const imageUri = String(item.thumbnail || item.image || firstImage || '').trim();
-  const isVideo = Boolean(videoUri);
+  if (kind === 'image' && !imagesList.length && imageUri) imagesList.push(imageUri);
+  const docUrl = (kind === 'pdf' || kind === 'link') && isHttp ? rawMedia : '';
 
   return {
     ...item,
     id: String(item.id || Date.now()),
-    type: isVideo ? 'video' : 'image',
-    media: isVideo ? videoUri : imageUri,
-    video: isVideo ? videoUri : null,
-    thumbnail: imageUri || '',
-    image: imageUri || '',
+    type: kind,
+    media: kind === 'video' ? videoUri : kind === 'image' ? imageUri : docUrl,
+    video: kind === 'video' ? videoUri : null,
+    // video ko kabhi image/thumbnail ki tarah use nahi karna — poster sirf backend thumbnail se
+    thumbnail: kind === 'video' ? String(item.thumbnail || '') : imageUri,
+    image: imageUri,
+    images: imagesList,
     avatar: item.avatar || item.author_profile_image || '',
     liked: Boolean(item.liked),
     bookmarked: Boolean(item.bookmarked),

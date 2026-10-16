@@ -34,6 +34,8 @@ import AppNavbar from '../components/AppNavbar';
 import AutoIdCardPreview from '../components/IdCardPreview';
 import AutoIdCardBackPreview from '../components/IdCardBackPreview';
 import ScaledCard from '../components/ScaledCard';
+import PostGridThumb from '../components/PostGridThumb';
+import { PageLoader, useAppFontsReady } from '../components/WebReadyGate';
 import VerifiedBadge from '../components/VerifiedBadge';
 import { useToast } from '../components/ui/ToastProvider';
 import { UserStore } from '../store/UserStore';
@@ -387,7 +389,14 @@ function SavedProfileCardComponent({ profile, onOpenIdCard, onOpenAppointmentLet
     </View>
   );
 }
-export default function ProfileScreen({ navigation, route }) {
+// ✅ Fonts/icons ready hone tak sirf loader — half-loaded page nahi dikhega
+export default function ProfileScreen(props) {
+  const fontsReady = useAppFontsReady();
+  if (!fontsReady) return <PageLoader />;
+  return <ProfileScreenInner {...props} />;
+}
+
+function ProfileScreenInner({ navigation, route }) {
   
   useEffect(() => {
     // Android hardware back button
@@ -439,6 +448,7 @@ export default function ProfileScreen({ navigation, route }) {
   const [documentPreviewType, setDocumentPreviewType] = useState('');
   const [idCardSide, setIdCardSide] = useState('front');
   const [userPosts, setUserPosts] = useState([]);
+  const [postsLoaded, setPostsLoaded] = useState(false); // posts aane se pehle "No posts yet" na dikhe
    const [showSavedProfile, setShowSavedProfile] = useState(true);
   const [activeMenu, setActiveMenu] = useState('posts'); // profile menu: jis item pe click kiya wo Edit Profile button ke color me dikhega
   const [postViewMode, setPostViewMode] = useState('grid');
@@ -452,6 +462,7 @@ export default function ProfileScreen({ navigation, route }) {
       setFollowLists({ followers: [], following: [] });
       setUserPosts([]);
       setLoading(false);
+      setPostsLoaded(true);
        setInitializing(false);
       return;
     }
@@ -590,6 +601,7 @@ export default function ProfileScreen({ navigation, route }) {
     setForm(profileData);
     setIsLoggedIn(true);
     setLoading(false);
+    setPostsLoaded(true);
   }, [navigation, showToast]);
 
    useFocusEffect(useCallback(() => {
@@ -736,14 +748,14 @@ export default function ProfileScreen({ navigation, route }) {
 
   const handleCopyReferralCode = () => {
     const code = savedProfile.referral_code || generateReferralCode(savedProfile.email);
-    if (!code) { showToast('Subscription lene ke baad referral code milega.', 'info'); return; }
+    if (!code) { showToast('You will get a referral code after taking a subscription.', 'info'); return; }
     if (Platform.OS === 'web' && navigator?.clipboard) { navigator.clipboard.writeText(code); }
     else { Clipboard.setString(code); }
     showToast('Referral code copied!', 'success');
   };
 
 const handlePickImage = async () => {
-    if (!canChangePhoto) { showToast('Profile photo badalne ke liye Role ya Premium subscription lein.', 'info'); return; }
+    if (!canChangePhoto) { showToast('Take a Role or Premium subscription to change your profile photo.', 'info'); return; }
     try {
       setUploading(true);
       if (ImagePicker.requestMediaLibraryPermissionsAsync) {
@@ -1277,9 +1289,37 @@ const handlePickImage = async () => {
     const gridGap = 3;
     const nativeGridWidth = Math.max(windowWidth - 24, 300);
     const nativeTileSize = Math.floor((nativeGridWidth - gridGap * 2) / 3);
+    const isVideoUri = (value) => {
+      const uri = String(value || '').trim();
+      if (/^data:video/i.test(uri)) return true;
+      return /\.(mp4|m4v|mov|webm|ogv|m3u8|avi|mkv|3gp)(\?.*)?(#.*)?$/i.test(uri);
+    };
     const isImageUri = (value) => {
       const uri = String(value || '').trim();
+      if (isVideoUri(uri)) return false;
       return /^(https?:|file:|content:|data:image|blob:)/i.test(uri);
+    };
+    const firstVideoUri = (values) => {
+      for (const value of values) {
+        if (Array.isArray(value)) {
+          const nested = firstVideoUri(value);
+          if (nested) return nested;
+        } else if (value && typeof value === 'object') {
+          const nested = firstVideoUri([value.uri, value.url]);
+          if (nested) return nested;
+        } else if (typeof value === 'string' && isVideoUri(value)) {
+          return value.trim();
+        }
+      }
+      return '';
+    };
+    const getPostVideo = (post = {}) => {
+      const direct = [post.video, post.video_url, post.videoUrl, post.videoUri, post.videos];
+      for (const v of direct) {
+        const uri = typeof v === 'string' ? v : (Array.isArray(v) ? (typeof v[0] === 'string' ? v[0] : v[0]?.uri || v[0]?.url) : (v?.uri || v?.url));
+        if (uri && String(uri).trim()) return String(uri).trim();
+      }
+      return firstVideoUri([post.media, post.images, post.image, post.file, post.attachment]);
     };
     const firstImageUri = (values) => {
       for (const value of values) {
@@ -1359,6 +1399,7 @@ const handlePickImage = async () => {
           <View style={[w.postGrid, isNativeApp && { gap: 0, paddingHorizontal: 0 }]}>
             {userPosts.map((post, index) => {
               const postImage = getPostImage(post);
+              const postVideo = getPostVideo(post);
               const postKind = getPostKind(post);
               const isLastInRow = index % 3 === 2;
               return (
@@ -1378,32 +1419,32 @@ const handlePickImage = async () => {
                   onPress={() => openUserPost(post)}
                   activeOpacity={0.85}
                 >
-                  {postImage ? (
-                    <>
-                      <Image source={{ uri: postImage }} style={{ width: '100%', height: '100%' }} resizeMode="cover" />
-                      {postKind.includes('video') ? (
-                        <View style={{ position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' }}>
-                          <Feather name="play" size={12} color="#ffffff" />
+                  <PostGridThumb
+                    imageUri={postImage}
+                    videoUri={postVideo}
+                    fallback={(
+                      <View style={{ flex: 1, width: '100%', height: '100%', backgroundColor: '#1e293b', alignItems: 'center', justifyContent: 'center', padding: 8 }}>
+                        <Feather name={postKind.includes('video') ? 'video' : postKind.includes('file') ? 'file-text' : 'file'} size={18} color="#ffffff" style={{ marginBottom: 6 }} />
+                        <Text style={{ fontSize: 11, color: '#ffffff', fontWeight: '600', textAlign: 'center', lineHeight: 15 }} numberOfLines={6}>
+                          {post.content || post.title || post.description || '📰'}
+                        </Text>
+                        <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.4)', flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 3 }}>
+                          <Feather name="eye" size={10} color="#fff" />
+                          <Text style={{ fontSize: 10, color: '#fff', fontWeight: '700' }}>{post.views || post.likes || 0}</Text>
                         </View>
-                      ) : null}
-                      {Array.isArray(post.images) && post.images.length > 1 ? (
-                        <View style={{ position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' }}>
-                          <Feather name="copy" size={12} color="#ffffff" />
-                        </View>
-                      ) : null}
-                    </>
-                  ) : (
-                    <View style={{ flex: 1, width: '100%', height: '100%', backgroundColor: '#1e293b', alignItems: 'center', justifyContent: 'center', padding: 8 }}>
-                      <Feather name={postKind.includes('video') ? 'video' : postKind.includes('file') ? 'file-text' : 'file'} size={18} color="#ffffff" style={{ marginBottom: 6 }} />
-                      <Text style={{ fontSize: 11, color: '#ffffff', fontWeight: '600', textAlign: 'center', lineHeight: 15 }} numberOfLines={6}>
-                        {post.content || post.title || post.description || '📰'}
-                      </Text>
-                      <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.4)', flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 3 }}>
-                        <Feather name="eye" size={10} color="#fff" />
-                        <Text style={{ fontSize: 10, color: '#fff', fontWeight: '700' }}>{post.views || post.likes || 0}</Text>
                       </View>
+                    )}
+                  />
+                  {(postVideo || postKind.includes('video')) && (postImage || postVideo) ? (
+                    <View pointerEvents="none" style={{ position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' }}>
+                      <Feather name="play" size={12} color="#ffffff" />
                     </View>
-                  )}
+                  ) : null}
+                  {Array.isArray(post.images) && post.images.length > 1 && !postVideo ? (
+                    <View pointerEvents="none" style={{ position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' }}>
+                      <Feather name="copy" size={12} color="#ffffff" />
+                    </View>
+                  ) : null}
                   {post.is_ad ? (
                     <View style={{ position: 'absolute', top: 6, left: 6, backgroundColor: '#f59e0b', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 }}>
                       <Text style={{ fontSize: 9, fontWeight: '800', color: '#ffffff' }}>AD</Text>
@@ -1427,7 +1468,11 @@ const handlePickImage = async () => {
                 </View>
               </View>
               <Text style={w.postContent}>{post.content || post.title || post.description || ''}</Text>
-              {getPostImage(post) ? <Image source={{ uri: getPostImage(post) }} style={w.postImage} resizeMode="cover" /> : null}
+              {(getPostImage(post) || getPostVideo(post)) ? (
+                <View style={[w.postImage, { overflow: 'hidden' }]}>
+                  <PostGridThumb imageUri={getPostImage(post)} videoUri={getPostVideo(post)} />
+                </View>
+              ) : null}
               <View style={w.postActions}>
   {post.is_ad ? (
     <View style={w.postActionBtn}>
@@ -1721,7 +1766,11 @@ const handlePickImage = async () => {
                     <Text style={[w.viewAllLink, { color: accent }]}>View All</Text>
                   </TouchableOpacity>
                 </View>
-                {userPosts.length === 0 ? (
+                {!postsLoaded && userPosts.length === 0 ? (
+                  <View style={[w.emptyBox, { minHeight: 180 }]}>
+                    <ActivityIndicator size="small" color={accent} />
+                  </View>
+                ) : userPosts.length === 0 ? (
                   <View style={w.emptyBox}>
                     <View style={[w.emptyIconWrap, { backgroundColor: `${accent}14` }]}>
                       <Feather name="file-text" size={26} color={accent} />
@@ -1802,7 +1851,7 @@ const handlePickImage = async () => {
       <ImageBackground
   source={profileTier.bgImage}
   resizeMode="cover"
-  style={ProfileStyles.greenHeader}
+  style={[ProfileStyles.greenHeader, { backgroundColor: profileTier.gradientDark?.[1] || profileTier.accent }]}
   imageStyle={ProfileStyles.greenHeaderImage}
 >
 

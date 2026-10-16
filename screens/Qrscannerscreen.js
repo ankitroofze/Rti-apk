@@ -46,7 +46,7 @@ export default function QrScannerScreen({ navigation }) {
       <SafeAreaView style={s.center}>
         <Ionicons name="camera-outline" size={56} color="#fff" />
         <Text style={s.permTitle}>Camera permission required</Text>
-        <Text style={s.permText}>ID card QR scan karne ke liye camera ki permission chahiye.</Text>
+        <Text style={s.permText}>Camera permission is required to scan the ID card QR.</Text>
         {permission.canAskAgain ? (
           <TouchableOpacity style={s.btn} onPress={requestPermission}><Text style={s.btnText}>Allow Camera</Text></TouchableOpacity>
         ) : (

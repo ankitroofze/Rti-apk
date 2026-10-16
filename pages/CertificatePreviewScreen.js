@@ -7,6 +7,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Dimensions,
   Image,
   ImageBackground,
   Platform,
@@ -20,7 +21,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useToast } from '../components/ui/ToastProvider';
 import { UserStore } from '../store/UserStore';
-import styles from '../styles/CertificatePreviewStyles';
+import styles, { getScaledCertStyles } from '../styles/CertificatePreviewStyles';
 import { getAwardeeFontSize } from '../utils/profileHelpers';
 import { getQuizResultTier } from '../utils/quizResultLogic';
 
@@ -311,6 +312,7 @@ export default function CertificatePreviewScreen({ navigation, route }) {
   const [currentUser, setCurrentUser]       = useState(null);
   const [webHtml, setWebHtml]               = useState('');
   const [webPreviewWidth, setWebPreviewWidth] = useState(0);
+  const [cardWidth, setCardWidth] = useState(Math.max(280, Dimensions.get('window').width - 28));
 
   const IFrame = useMemo(() => {
     if (Platform.OS !== 'web') return null;
@@ -415,6 +417,7 @@ export default function CertificatePreviewScreen({ navigation, route }) {
  const issueDate = formatIssueDate(result?.date);
   const photoUri = currentUser?.profile_image || result?.user_photo || '';
   const resultTier = getQuizResultTier(result?.percentage);
+  const sc = useMemo(() => getScaledCertStyles(cardWidth, getAwardeeFontSize(userName, 18)), [cardWidth, userName]);
 
   const handleDownload = async () => {
     setDownloading(true);
@@ -594,9 +597,9 @@ export default function CertificatePreviewScreen({ navigation, route }) {
         <View
           style={styles.templateCard}
           onLayout={(e) => {
-            if (Platform.OS !== 'web') return;
             const nextWidth = Math.round(e?.nativeEvent?.layout?.width || 0);
             if (nextWidth > 0 && nextWidth !== webPreviewWidth) setWebPreviewWidth(nextWidth);
+            if (nextWidth > 0 && nextWidth !== cardWidth) setCardWidth(nextWidth);
           }}
         >
           {Platform.OS === 'web' && webHtml && IFrame ? (
@@ -623,7 +626,7 @@ export default function CertificatePreviewScreen({ navigation, route }) {
               
               {/* ── BHARTIYA HEADER BANNER ── */}
              <Image source={HEADER_BHARTIYA} style={styles.headerImage} resizeMode="contain" />
-                        <Text style={styles.headerUserName}>{SIGNER_NAME}</Text>
+                        <Text style={[styles.headerUserName, sc.headerUserName]}>{SIGNER_NAME}</Text>
               {/* ── RIBBON ── */}
               <Image source={RIBBON_IMG} style={styles.ribbonImage} resizeMode="contain" />
 
@@ -631,36 +634,35 @@ export default function CertificatePreviewScreen({ navigation, route }) {
 
               {/* ── USER NAME ── */}
                           <Text
-                style={[styles.awardeeName, { fontSize: getAwardeeFontSize(userName, 18) }]}
+                style={[styles.awardeeName, sc.awardeeName]}
                 numberOfLines={1}
-                adjustsFontSizeToFit
               >
                 {userName}
               </Text>
 
               {/* ── PASSED TEXT ── */}
-              <Text style={styles.passedText}>
+              <Text style={[styles.passedText, sc.passedText]}>
                 has successfully passed the examination conducted by{'\n'}
                 <Text style={styles.boldText}>Bhartiya Mahiti Adhikar</Text> with
               </Text>
 
               {/* ── EXCELLENT RESULT IMAGE ── */}
               <View style={styles.resultContainer}>
-                <Text style={[styles.resultBadgeText, { color: resultTier.color, borderColor: resultTier.color }]}>
+                <Text style={[styles.resultBadgeText, sc.resultBadgeText, { color: resultTier.color, borderColor: resultTier.color }]}>
                   {resultTier.dot} {resultTier.result} — {resultTier.badge}
                 </Text>
               </View>
 
               {/* ── SINCE TEXT ── */}
-              <Text style={styles.sinceText}>
+              <Text style={[styles.sinceText, sc.sinceText]}>
                 Subjected to the movement of Right to Information in the{'\n'}
                 organisational social work field since{' '}
                 <Text style={styles.yearsHighlight}>"15th"</Text> Years
               </Text>
 
               {/* ── CONGRATS ── */}
-              <Text style={styles.congratsText}>
-                Congratulations on your{'\n'}Outstanding achievement!
+              <Text style={[styles.congratsText, sc.congratsText]}>
+                Congratulations on your{'\n'}outstanding achievement!
               </Text>
 
               {/* ── GOLD WINGS (left - quill) ── */}
@@ -670,11 +672,11 @@ export default function CertificatePreviewScreen({ navigation, route }) {
               <Image source={GOLD_LATTER} style={styles.goldLatter} resizeMode="contain" />
 
               {/* ── SIGNATORY ── */}
-              <Text style={styles.signatoryName}>{SIGNER_NAME}</Text>
-              <Text style={styles.signatoryRole}>
+              <Text style={[styles.signatoryName, sc.signatoryName]}>{SIGNER_NAME}</Text>
+              <Text style={[styles.signatoryRole, sc.signatoryRole]}>
                 Chief Editor / Owner / Publisher / All India{'\n'}
                 President Bhartiya Mahiti Adhikar
-                <Text style={styles.signatorySmall}> (All India RTI News Work)</Text>
+                <Text style={[styles.signatorySmall, sc.signatorySmall]}> (All India RTI News Work)</Text>
               </Text>
 
               {/* ── USER PHOTO with gold frame ── */}
@@ -682,31 +684,31 @@ export default function CertificatePreviewScreen({ navigation, route }) {
                 {/* Gold frame image behind */}
                 <Image source={USER_IMG_FRAME} style={styles.photoFrameImg} resizeMode="stretch" />
                 {/* User photo inside frame */}
-                <View style={styles.photoInner}>
+                <View style={[styles.photoInner, sc.photoInner]}>
                   {photoUri
                     ? <Image source={{ uri: photoUri }} style={styles.photo} />
                     : <View style={styles.photoPlaceholder}>
-                        <Text style={styles.photoPlaceholderText}>Photo</Text>
+                        <Text style={[styles.photoPlaceholderText, sc.photoPlaceholderText]}>Photo</Text>
                       </View>
                   }
                 </View>
               </View>
 
               {/* ── DATE BANNER ── */}
-              <View style={styles.dateBannerWrapper}>
+              <View style={[styles.dateBannerWrapper, sc.dateBannerWrapper]}>
                 <Image source={DATE_BANNER} style={styles.dateBannerImg} resizeMode="stretch" />
-                <Text style={styles.dateBannerText}>
+                <Text style={[styles.dateBannerText, sc.dateBannerText]}>
                   Date of Issue: <Text style={{ fontWeight: '700' }}>{issueDate}</Text>
                 </Text>
               </View>
 
               {/* ── FOOTER ── */}
-              <Text style={styles.italicFooter}>
+              <Text style={[styles.italicFooter, sc.italicFooter]}>
                 This certificate is awarded as a recognition of excellent performance.
               </Text>
 
               {/* ── EMAIL BANNER ── */}
-              <View style={styles.emailBannerWrapper}>
+              <View style={[styles.emailBannerWrapper, sc.emailBannerWrapper]}>
                 <Image source={EMAIL_BANNER} style={styles.emailBannerImg} resizeMode="stretch" />
                
               </View>

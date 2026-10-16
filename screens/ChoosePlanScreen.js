@@ -259,7 +259,7 @@ const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
   };
 
   const handleNativeDateChange = (event, date) => {
-    setShowDatePicker(false);
+    if (Platform.OS === 'android' || event?.type === 'dismissed') setShowDatePicker(false);
     if (date) setSelectedDate(date);
   };
 
@@ -385,7 +385,11 @@ const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
                       <Text style={ws.previewTitle} numberOfLines={2}>{adData.title || 'Ad Title'}</Text>
                       <Text style={ws.previewDesc} numberOfLines={2}>{adData.description || 'Ad Description'}</Text>
                     </View>
-                    {adData.photo ? (
+                    {adData.video && !adData.photo ? (
+                      <View style={[ws.previewThumbEmpty, { backgroundColor: '#000' }]}>
+                        <Ionicons name="play-circle" size={30} color="#fff" />
+                      </View>
+                    ) : adData.photo ? (
                       <Image source={{ uri: adData.photo }} style={ws.previewThumb} resizeMode="cover" />
                     ) : (
                       <View style={ws.previewThumbEmpty}>
@@ -658,7 +662,11 @@ const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
               <Text style={s.previewTitle} numberOfLines={2}>{adData.title || 'Ad Title'}</Text>
               <Text style={s.previewDesc}  numberOfLines={2}>{adData.description || 'Ad Description'}</Text>
             </View>
-            {adData.photo ? (
+            {adData.video && !adData.photo ? (
+              <View style={[s.previewThumbPlaceholder, { backgroundColor: '#000' }]}>
+                <Ionicons name="play-circle" size={30} color="#fff" />
+              </View>
+            ) : adData.photo ? (
               <Image source={{ uri: adData.photo }} style={s.previewThumb} resizeMode="cover" />
             ) : (
               <View style={s.previewThumbPlaceholder}>
@@ -820,13 +828,20 @@ const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
             <Ionicons name="chevron-down" size={16} color={C.textSub} style={{ marginLeft: 'auto' }} />
           </TouchableOpacity>
           {showDatePicker && (
-            <DateTimePicker
-              value={selectedDate}
-              mode="date"
-              display="default"
-              minimumDate={todayDate}
-              onChange={handleNativeDateChange}
-            />
+            <>
+              <DateTimePicker
+                value={selectedDate}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                minimumDate={todayDate}
+                onChange={handleNativeDateChange}
+              />
+              {Platform.OS === 'ios' ? (
+                <TouchableOpacity onPress={() => setShowDatePicker(false)} style={{ alignSelf: 'flex-end', padding: 10 }}>
+                  <Text style={{ color: C.primary, fontWeight: '700' }}>Done</Text>
+                </TouchableOpacity>
+              ) : null}
+            </>
           )}
         </View>
 

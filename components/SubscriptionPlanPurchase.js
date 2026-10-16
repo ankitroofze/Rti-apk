@@ -64,7 +64,7 @@ export default function SubscriptionPlanPurchase({
   onPay,
  payLabel = 'Pay Now',
   processingPlanId = null,
-  emptyText = 'Abhi koi plan available nahi hai.',
+  emptyText = 'No plans are available right now.',
 }) {
     const insets = useSafeAreaInsets();
   const [detailsModal, setDetailsModal] = React.useState(null); // Read More click hote hi { plan, theme } set hoga
