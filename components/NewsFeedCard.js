@@ -15,16 +15,22 @@ import { useIsFocused, useFocusEffect } from '@react-navigation/native';
 import { CATEGORY_COLOR_MAP } from '../constants/homeData';
 import { isValidImageUrl, buildPlaceholderImage, getLocalizedCategoryLabel, getLocalizedSeatLabel } from '../utils/storyHelpers';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
-import { safePause, safePlay } from '../utils/videoPlayerSafe';
+import { safePause, safePlay, safeSetMuted } from '../utils/videoPlayerSafe';
+import { useGlobalMuted, getGlobalMuted, setGlobalMuted } from '../utils/Globalmutestore';
+import PostGridThumb from './PostGridThumb';
 import { UserStore } from '../store/UserStore';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { useAuth } from '../contexts/AuthContext';
 import { getAdRedirectMeta, openAdRedirect } from '../utils/adRedirect';
 import styles from './NewsFeedCardStyles';
 import { LinearGradient } from 'expo-linear-gradient';
-import { getProfileTier } from '../utils/profileHelpers';
+import { getProfileTier, resolveRoleTitle, cleanRoleNames } from '../utils/profileHelpers';
 import MediaGallery from './MediaGallery';
 import { MediaLogo, MediaTicker } from './MediaBrandOverlay';
+import { captureRef } from 'react-native-view-shot';
+import ShareBrandFrame from './ShareBrandFrame';
+import { useLanguage } from '../contexts/LanguageContext';
+import { shareNewsLink, shareImageFile, shareVideoFile, getMyReferralCode } from '../utils/shareNews';
 
 // ─────────────────────────────────────────────
 // Like persistence helpers
@@ -250,7 +256,9 @@ function isPlayableVideoSource(uri) {
   if (/(youtube\.com|youtu\.be)/i.test(uri)) return false;
   if (Platform.OS !== 'web') return true;
   if (/^(blob:|data:)/i.test(uri)) return true;
-  return /^https?:/i.test(uri) && /\.(mp4|m4v|mov|webm|ogv|m3u8)(\?.*)?$/i.test(uri);
+  // Android se upload hue video ke URL me extension na ho ya alag ho (.3gp, bina extension) to bhi web par
+  // chalna chahiye. Ye function sirf video items ke liye bulaya jaata hai, isliye sirf saaf-saaf image/pdf URL reject karo.
+  return /^https?:/i.test(uri) && !/\.(jpe?g|png|gif|webp|bmp|svg|heic|avif|pdf)(\?.*)?(#.*)?$/i.test(uri);
 }
 
 function useVideoThumbnail(videoUri) {
@@ -393,9 +401,16 @@ function VideoPopupModal({ uri, title, onClose }) {
 
   useEffect(() => {
     if (!player) return undefined;
-    try { player.muted = false; player.volume = 1; } catch (_) {}
+    try { player.muted = getGlobalMuted(); player.volume = 1; } catch (_) {}
+    // Popup ke native controls se mute/unmute karo to global state bhi badal do
+    let sub;
+    try {
+      sub = player.addListener?.('volumeChange', (e) => {
+        if (typeof e?.isMuted === 'boolean') setGlobalMuted(e.isMuted);
+      });
+    } catch (_) { /* purana expo-video: event nahi */ }
     safePlay(player);
-    return () => { safePause(player); };
+    return () => { try { sub?.remove?.(); } catch (_) {} safePause(player); };
   }, [player]);
 
   const boxW = Math.min(width - 24, 920);
@@ -438,13 +453,25 @@ function VideoPopupModal({ uri, title, onClose }) {
 // ─────────────────────────────────────────────
 function TrendingCard({ item, onPress, onLike, onOpenComments, onShare, currentUserEmail }) {
   const liked = currentUserEmail && Array.isArray(item.liked_by) && item.liked_by.includes(currentUserEmail);
+  // video wali news me `image` sirf random placeholder hota hai — isliye video ka asli frame dikhao
+  const trendVideoUri = String(typeof item.video === 'string' ? item.video : item.video?.uri || '').trim();
+  const isVideoItem = item.mediaType === 'Video' && Boolean(trendVideoUri);
   return (
     <TouchableOpacity style={styles.trndCard} onPress={() => onPress(item)} activeOpacity={0.85}>
-      <Image
-        source={{ uri: item.images?.length ? item.images[0] : (item.image || item.thumbnail || undefined) }}
-        style={styles.trndCardImg}
-        resizeMode="cover"
-      />
+      {isVideoItem ? (
+        <View style={[styles.trndCardImg, { overflow: 'hidden' }]}>
+          <PostGridThumb videoUri={trendVideoUri} />
+          <View pointerEvents="none" style={{ position: 'absolute', right: 6, bottom: 6, width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}>
+            <Feather name="play" size={11} color="#fff" />
+          </View>
+        </View>
+      ) : (
+        <Image
+          source={{ uri: item.images?.length ? item.images[0] : (item.image || item.thumbnail || undefined) }}
+          style={styles.trndCardImg}
+          resizeMode="cover"
+        />
+      )}
       <View style={styles.trndCategoryChip}>
         <Text style={styles.trndCategoryChipText}>{item.category || 'News'}</Text>
       </View>
@@ -525,6 +552,25 @@ const mapPreviewComments = (list) => (Array.isArray(list) ? list : []).slice(0, 
   avatar: String(c?.user?.profile_image_url || ''),
 })).filter((c) => c.id && c.text);
 
+const formatUploadTime = (value) => {
+  const date = new Date(value || 0);
+  const timestamp = date.getTime();
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return '';
+  const minutes = Math.floor(Math.max(0, Date.now() - timestamp) / 60000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr${hours === 1 ? '' : 's'} ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} day${days === 1 ? '' : 's'} ago`;
+  return date.toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit',
+  });
+};
+
+// Is session me jin news ka view record ho chuka hai (dobara API hit nahi hoga)
+const viewedNewsIds = new Set();
+
 export default function NewsFeedCard({
   story,
   isCompactLayout,
@@ -553,7 +599,7 @@ export default function NewsFeedCard({
   const [likesCount, setLikesCount] = useState(Number(story.likes || 0));
   const [commentsCount, setCommentsCount] = useState(Number(story.comments || 0));
   const [sharesCount, setSharesCount] = useState(Number(story.shares || 0));
-  const [viewsCount] = useState(Number(story.views || 0));
+  const [viewsCount, setViewsCount] = useState(Number(story.views || 0));
   const [showComments, setShowComments] = useState(false);
   const [mediaWidth, setMediaWidth] = useState(0);
   const [commentText, setCommentText] = useState('');
@@ -590,6 +636,35 @@ export default function NewsFeedCard({
   const hasFollowTarget = Boolean(storyAuthorEmail) || storyAuthorId != null;
   const isAdStory = Boolean(story.isAd);
   const adRedirectMeta = isAdStory ? getAdRedirectMeta(story) : null;
+  const uploadTime = useMemo(
+    () => formatUploadTime(story.createdAt || story.created_at || story.date),
+    [story.createdAt, story.created_at, story.date]
+  );
+
+  useEffect(() => {
+    setLikesCount(Number(story.likes || 0));
+    setCommentsCount(Number(story.comments || 0));
+    setSharesCount(Number(story.shares || 0));
+    setViewsCount(Number(story.views || 0));
+  }, [story.id, story.likes, story.comments, story.shares, story.views]);
+
+  useEffect(() => {
+    if (!isScreenFocused || !isCardVisible || isAdStory || !story.id) return undefined;
+    // POST /counts {news_id} — per news session me sirf ek baar
+    const key = String(story.id);
+    if (viewedNewsIds.has(key)) return undefined;
+    viewedNewsIds.add(key);
+    let active = true;
+    (async () => {
+      try {
+        const r = await UserStore.recordNewsView(story.id);
+        if (!active || !r?.ok) return;
+        // Response ka view_count seedha dikhao; na aaye to local +1
+        setViewsCount((prev) => (r.views != null ? Math.max(Number(r.views) || 0, prev) : prev + 1));
+      } catch (_) {}
+    })();
+    return () => { active = false; };
+  }, [isScreenFocused, isCardVisible, isAdStory, story.id]);
 
   const trendingItems = useMemo(() => {
     if (!displayedItems || !Array.isArray(displayedItems)) return [];
@@ -853,7 +928,15 @@ const safeImage = isValidImageUrl(effectiveImageUri)
 
   const player = useVideoPlayer(canPlayVideo ? { uri: effectiveVideoUri } : null, (p) => {
     p.loop = false;
+    p.muted = getGlobalMuted();
   });
+
+  // Global mute: feed me kisi bhi video par mute/unmute -> yahan bhi turant lagta hai
+  const [globalMuted, , toggleGlobalMuted] = useGlobalMuted();
+  useEffect(() => {
+    if (!canPlayVideo || !player) return;
+    safeSetMuted(player, globalMuted);
+  }, [canPlayVideo, globalMuted, player]);
 
   useEffect(() => {
     if (!canPlayVideo) return;
@@ -904,24 +987,7 @@ const safeImage = isValidImageUrl(effectiveImageUri)
     return () => { try { sub?.remove?.(); } catch (_) {} };
   }, [canPlayVideo, player]);
 
-  const [videoDurationLabel, setVideoDurationLabel] = useState('');
   const [showVideoModal, setShowVideoModal] = useState(false);
-  useEffect(() => {
-    if (!canPlayVideo || !player) return;
-    const fmt = (secs) => {
-      const total = Math.floor(secs || 0);
-      const m = Math.floor(total / 60);
-      const s = total % 60;
-      return `${m}:${s < 10 ? '0' : ''}${s}`;
-    };
-    const id = setInterval(() => {
-      if (player?.duration) {
-        setVideoDurationLabel(fmt(player.duration));
-        clearInterval(id);
-      }
-    }, 400);
-    return () => clearInterval(id);
-  }, [canPlayVideo, player]);
 
   const handleVideoPress = () => {
     // Asli player state dekho (sirf React state par bharosa nahi) — taaki pause ke baad play hamesha chale
@@ -1251,23 +1317,59 @@ const handleLike = async () => {
     }
   };
 
+  const { language: appLanguage } = useLanguage();
+  const shareFrameRef = useRef(null);
+  const [shareJob, setShareJob] = useState(null); // { uri, refCode } => offscreen branded frame
+  const hasShareVideo = Boolean(effectiveVideoUri) && !isAdStory;
+  const hasShareImage = !hasShareVideo && isValidImageUrl(effectiveImageUri) && !isAdStory;
+
+  const countShare = async () => {
+    if (isAdStory) return;
+    const res = await AuthAPI.shareNews(story.id);
+    if (res?.ok) {
+      if (Number.isFinite(res.shareCount)) setSharesCount(res.shareCount);   // backend ka count
+    } else if (res?.rateLimited) {
+      Alert.alert('Share', 'Please try again later.');
+    }
+  };
+
+  // Share button: News link + referral link, "title + app download line + link" pattern.
+  // WhatsApp me link ka preview (image / video thumbnail + RTI Voice frame) backend OG tags se aata hai.
   const handleShare = async () => {
     try {
-      const shareMessage = `📰 ${story.title}\n\n${story.excerpt || ''}\n\n🔗 ${story.url || 'https://rtinews.in'}\n\nRTI News App se padhe`;
-      const richShareMessage = `${story.title}\n\n${story.excerpt || story.description || ''}\n\n${effectiveImageUri ? `Image: ${effectiveImageUri}\n\n` : ''}Read full news: ${postLink}\n\nRTI News App${shareMessage ? '' : ''}`;
-      const result = await Share.share(
-        { title: story.title, message: richShareMessage, url: postLink },
-        { subject: story.title, dialogTitle: 'Share' }
-      );
-      if (result.action === Share.sharedAction && !isAdStory) {
-        const res = await AuthAPI.shareNews(story.id);
-        if (res?.ok) {
-          if (Number.isFinite(res.shareCount)) setSharesCount(res.shareCount);   // backend ka count
-        } else if (res?.rateLimited) {
-          Alert.alert('Share', 'Please try again later.');
-        }
-      }
+      const { result } = await shareNewsLink({ story, postLink, language: appLanguage });
+      if (result.action === Share.sharedAction) await countShare();
     } catch {}
+  };
+
+  // Image news => branded IMAGE share, Video news => VIDEO share.
+  const handleShareMedia = async () => {
+    try {
+      if (hasShareVideo) {
+        await shareVideoFile(story.branded_video || story.brandedVideo || effectiveVideoUri);
+        await countShare();
+      } else if (hasShareImage) {
+        const refCode = await getMyReferralCode();
+        setShareJob({ uri: effectiveImageUri, refCode });   // frame render -> onImageLoad me capture
+      } else {
+        await handleShare();
+      }
+    } catch {
+      Alert.alert('Share', 'Unable to share media. Please try again.');
+    }
+  };
+
+  const onShareFrameLoaded = async () => {
+    try {
+      await new Promise((r) => setTimeout(r, 150));          // layout settle
+      const out = await captureRef(shareFrameRef, { format: 'jpg', quality: 0.92, result: 'tmpfile', width: 1080, height: 1080 });
+      await shareImageFile(out);
+      await countShare();
+    } catch {
+      Alert.alert('Share', 'Unable to prepare branded image.');
+    } finally {
+      setShareJob(null);
+    }
   };
 
   const closeActionMenu = () => { setShowActionMenu(false); setMenuAnchor(null); };
@@ -1375,44 +1477,40 @@ const handleLike = async () => {
 
   // Refresh the profile entitlement so a web purchase appears on Android and
   // an old post cannot retain a tick after the Premium Plan expires.
-    const authorHasBlueTick = Boolean(
-    story.author_has_blue_tick ||
-    (liveAuthorProfile
-      ? UserStore.hasBlueTick(liveAuthorProfile)
-      : (
-        (storyAuthorEmail && currentUserEmail === storyAuthorEmail && currentUserHasBlueTick) ||
-        UserStore.hasBlueTick({
-          subscription_plan: story.author_subscription_plan,
-          is_subscribed: story.author_is_subscriber || story.author_is_premium,
-        })
-      ))
-  );
+  // Backend (live profile) jo bole wahi final. Post me save purana flag sirf tab
+  // use hoga jab live profile abhi load na hui ho.
+  const isOwnStoryForTick = Boolean(storyAuthorEmail && currentUserEmail === storyAuthorEmail);
+  const authorHasBlueTick = liveAuthorProfile
+    ? Boolean(UserStore.hasBlueTick(liveAuthorProfile))
+    : (isOwnStoryForTick
+      ? currentUserHasBlueTick
+      : Boolean(story.author_has_blue_tick));
 
   // Seat name (jaise "Car Nicobar") ab nahi dikhana. Uski jagah author ke
   // subscription plan ka role name dikhega.
   const authorPlanForRole = liveAuthorProfile?.subscription_plan || story.author_subscription_plan || null;
-  const planRoleNames = (authorPlanForRole?.role_names?.length
-    ? authorPlanForRole.role_names
+  // role_names backend se array YA string ("A, B") dono aa sakta hai -> hamesha array banao,
+  // warna string par .filter() fatal render error deta tha.
+  const _rawRoleNames = authorPlanForRole?.role_names;
+  const _roleNamesList = Array.isArray(_rawRoleNames)
+    ? _rawRoleNames
+    : (typeof _rawRoleNames === 'string' && _rawRoleNames.trim() ? _rawRoleNames.split(',') : []);
+  const planRoleNames = (_roleNamesList.length
+    ? _roleNamesList
     : String(UserStore.getSeatRoleNameForPlanRoleId(authorPlanForRole?.role_id_raw || authorPlanForRole?.role_id || '') || '')
         .split(', ')
-  ).filter(Boolean);
+  ).map((n) => String(n || '').trim()).filter(Boolean);
   // Seat id ("district_head") se role ka naam banao -> "District Head".
   // Seat NAME ("Car Nicobar") use nahi karna, sirf seat ID se role ka naam.
   const authorSeatId = String(
     liveAuthorProfile?.state_seat?.seat_id || story.author_seat_id || story.author_state_seat?.seat_id || ''
   ).trim();
-  const seatRoleFromId = authorSeatId
-    .replace(/[_-]+/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-    .trim();
-  // Priority: plan ke role names > seat id wala role > plan name > role label
+  // Backend kabhi role ki numeric id ("6") bhejta hai -> usse role naam banao, number kabhi mat dikhao.
+  const _mapRoleId = (id) => { try { return UserStore.getSeatRoleNameForPlanRoleId?.(id) || ''; } catch { return ''; } };
   const seatLabel =
-    planRoleNames.join(', ') ||
-    seatRoleFromId ||
-    String(authorPlanForRole?.plan_name || authorPlanForRole?.name || '').trim() ||
-    String(liveAuthorProfile?.role_label || story.author_role_label || '').trim();
-  // TEMP DEBUG: check karne ke baad ye line hata dena.
-  if (typeof console !== 'undefined') console.log('[PLAN-ROLE-DEBUG]', story.author_name, { authorSeatId, seatLabel, liveAuthorPlan: liveAuthorProfile?.subscription_plan, storyPlan: story.author_subscription_plan, seat_name_from_backend: liveAuthorProfile?.state_seat?.seat_name || story.author_seat_name });
+    resolveRoleTitle({ state_seat: { seat_id: authorSeatId }, subscription_plan: authorPlanForRole }, planRoleNames.join(', '), _mapRoleId) ||
+    cleanRoleNames(String(authorPlanForRole?.plan_name || authorPlanForRole?.name || '').trim(), _mapRoleId) ||
+    cleanRoleNames(String(liveAuthorProfile?.role_label || story.author_role_label || '').trim(), _mapRoleId);
   const authorTier = getProfileTier({
     seat_id: liveAuthorProfile?.state_seat?.seat_id || story.author_seat_id || story.author_state_seat?.seat_id,
     role: liveAuthorProfile?.role || story.author_role,
@@ -1432,11 +1530,36 @@ const handleLike = async () => {
         activeOpacity: 0.95,
       };
   const authorAvatarUri = isValidImageUrl(story.author_profile_image) ? story.author_profile_image : '';
+  // News location and an author's purchased-role area are different things.
+  // Show the member's own current area here, falling back to the news location
+  // only for older posts that do not carry author profile fields.
+  const authorArea = String(
+    liveAuthorProfile?.area || liveAuthorProfile?.state_seat?.area || liveAuthorProfile?.state_seat?.area_name ||
+    story.author_area ||
+    [
+      liveAuthorProfile?.taluka || story.author_taluka,
+      liveAuthorProfile?.district || story.author_district,
+      liveAuthorProfile?.state || story.author_state,
+    ].filter(Boolean).join(', ') ||
+    [story.taluka, story.district, story.state].filter(Boolean).join(', ')
+  ).trim();
 
   if (isBlockedNow) return null;
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      {shareJob && Platform.OS !== 'web' ? (
+        <View pointerEvents="none" style={{ position: 'absolute', left: -5000, top: 0 }}>
+          <ShareBrandFrame
+            ref={shareFrameRef}
+            imageUri={shareJob.uri}
+            title={story.title}
+            refCode={shareJob.refCode}
+            onImageLoad={onShareFrameLoaded}
+            onImageError={() => { setShareJob(null); Alert.alert('Share', 'Image load failed.'); }}
+          />
+        </View>
+      ) : null}
            <View ref={cardRef} style={[styles.storyCardShell, Platform.OS !== 'web' && styles.androidStoryCardShell, altShade && styles.storyCardShellAlt]}>
 
         {/* ── Ad Top Box ── */}
@@ -1473,23 +1596,22 @@ const handleLike = async () => {
             ) : null}
             
             <View style={styles.storyAuthorMetaRow}>
-                       {story.state ? (
+                       {authorArea ? (
                 <View style={[styles.storyMetaPill, { flexShrink: 1 }]}>
                   <Ionicons name="location-outline" size={12} color="#94a3b8" />
-                  <TouchableOpacity style={{ flexShrink: 1 }} onPress={() => onOpenLocation(story.state)} activeOpacity={0.82}>
+                  <TouchableOpacity style={{ flexShrink: 1 }} onPress={() => onOpenLocation(liveAuthorProfile?.state || story.author_state || story.state)} activeOpacity={0.82}>
                     <Text style={styles.storyMetaSmall} numberOfLines={1} maxFontSizeMultiplier={1.1}>
-                      {story.district ? `${story.district}, ${story.state}` : story.state}
+                      {authorArea}
                     </Text>
                   </TouchableOpacity>
                 </View>
               ) : null}
                           {(() => {
-                const agoText = String(story.publishedAgo || story.date || '').trim();
-                if (!agoText || /^updated recently$/i.test(agoText)) return null;
+                if (!uploadTime) return null;
                 return (
                   <View style={[styles.storyMetaPill, { flexShrink: 0 }]}>
                     <Ionicons name="time-outline" size={12} color="#94a3b8" />
-                    <Text style={styles.storyMetaSmall} numberOfLines={1} maxFontSizeMultiplier={1.1}>{agoText}</Text>
+                    <Text style={styles.storyMetaSmall} numberOfLines={1} maxFontSizeMultiplier={1.1}>{uploadTime}</Text>
                   </View>
                 );
               })()}
@@ -1561,27 +1683,26 @@ const handleLike = async () => {
                   <View style={styles.videoLoadingOverlay} />
                 )
               )}
+              {/* Simple controls: video par kahin bhi tap = play/pause. Paused ho to beech me play button. */}
               {videoPaused && (
-                <View style={styles.storyVideoPlayOverlay}>
+                <View style={styles.storyVideoPlayOverlay} pointerEvents="box-none">
                   <TouchableOpacity
                     style={styles.storyVideoPlayBadge}
                     onPress={(e) => { e?.stopPropagation?.(); handleVideoPress(); }}
                     activeOpacity={0.85}
                   >
-                    <Ionicons name="play" size={26} color="#0f172a" />
+                    <Ionicons name="play" size={26} color="#0f172a" style={{ marginLeft: 3 }} />
                   </TouchableOpacity>
                 </View>
               )}
-              {!videoPaused && (
-                <TouchableOpacity
-                  style={styles.videoPlayingIndicator}
-                  onPress={(e) => { e?.stopPropagation?.(); handleVideoPress(); }}
-                  activeOpacity={0.8}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Ionicons name="pause" size={18} color="#ffffff" />
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity
+                style={{ position: 'absolute', top: 10, right: 10, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', zIndex: 5 }}
+                onPress={(e) => { e?.stopPropagation?.(); toggleGlobalMuted(); }}
+                activeOpacity={0.8}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons name={globalMuted ? 'volume-mute' : 'volume-high'} size={18} color="#ffffff" />
+              </TouchableOpacity>
             </>
         ) : isFileAttachment ? (
             <View style={styles.fileAttachmentBox}>
@@ -1692,11 +1813,7 @@ const handleLike = async () => {
             </TouchableOpacity>
           ) : null}
 
-          {canPlayVideo && videoDurationLabel ? (
-            <View style={styles.videoDurationBadge}>
-              <Text style={styles.videoDurationText}>{videoDurationLabel}</Text>
-            </View>
-          ) : null}
+          {/* Video duration badge (1:29) hata diya */}
           <TouchableOpacity
             style={styles.storyExpandBtn}
             onPress={(e) => {
@@ -1731,6 +1848,12 @@ const handleLike = async () => {
 
         {/* ── Like / Comment / Share — Shuru-style bordered pill buttons ── */}
         <View style={styles.singleActionRow}>
+          {!isAdStory ? (
+            <View style={styles.singleActionItem} accessible accessibilityLabel={`${viewsCount} views`}>
+              <Ionicons name="eye-outline" size={16} color="#475569" />
+              <Text style={styles.singleActionText}>{viewsCount.toLocaleString('en-IN')}</Text>
+            </View>
+          ) : null}
           <TouchableOpacity 
             style={[styles.singleActionItem, isLiked && styles.singleActionItemActive]} 
             onPress={handleLike} 
@@ -1812,8 +1935,18 @@ const handleLike = async () => {
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleMenuShare} activeOpacity={0.82}>
                     <Ionicons name="share-social-outline" size={18} color="#0ea5e9" />
-                    <Text style={styles.storyMoreMenuText}>Share</Text>
+                    <Text style={styles.storyMoreMenuText}>Share link</Text>
                   </TouchableOpacity>
+                  {hasShareVideo || hasShareImage ? (
+                    <TouchableOpacity
+                      style={styles.storyMoreMenuItem}
+                      onPress={async () => { closeActionMenu(); await handleShareMedia(); }}
+                      activeOpacity={0.82}
+                    >
+                      <Ionicons name={hasShareVideo ? 'videocam-outline' : 'image-outline'} size={18} color="#0ea5e9" />
+                      <Text style={styles.storyMoreMenuText}>{hasShareVideo ? 'Share video' : 'Share image'}</Text>
+                    </TouchableOpacity>
+                  ) : null}
                   {hasFollowTarget && !isOwnStory && !isAdStory ? (
                     <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleBlockAuthor} activeOpacity={0.82}>
                       <Ionicons name="ban-outline" size={18} color="#ef4444" />

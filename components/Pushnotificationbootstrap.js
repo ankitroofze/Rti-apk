@@ -11,8 +11,9 @@ import {
 import { navigateFromNotification } from '../utils/Notificationnavigation';
 import { navigationRef } from '../utils/navigationRef'; // shared ref (NavigationContainer bhi yahi use karta hai)
 import { takePendingNotification } from '../utils/Pushpending';
+import WebPushPrompt from './WebPushPrompt'; // web par "Enable notifications" banner, native par null
 
-// Notification tap par navigation ready na ho (app killed se khula) to thodi der retry karo
+// Notification tap par navigation ready na ho (app killed / naya tab) to thodi der retry karo
 function openWhenReady(data, tries = 0) {
   if (navigationRef.isReady()) {
     navigateFromNotification(navigationRef, data);
@@ -23,22 +24,23 @@ function openWhenReady(data, tries = 0) {
 
 /**
  * App.js me AuthProvider ke andar ek baar render karo: <PushNotificationBootstrap />
- * - login hote hi (aur app start par logged in ho to) FCM token register karta hai
- * - foreground push dikhata hai, tap par sahi screen kholta hai
+ * Android / iOS : FCM (native) + notifee
+ * Web           : FCM web push (service worker) — utils/Pushnotifications.web.js
+ * - login hote hi (aur app start par logged in ho to) token register karta hai
+ * - foreground push par bell refresh, tap par sahi screen kholta hai
  */
 export default function PushNotificationBootstrap() {
   const { isLoggedIn } = useAuth();
 
-  // Listeners (foreground + tap)
+  // Listeners (foreground + tap) — ab web par bhi
   useEffect(() => {
-    if (Platform.OS === 'web') return undefined;
     setupChannel().catch(() => {});
     const unsubForeground = listenForeground();
     const unsubOpened = listenOpened((data) => openWhenReady(data));
     return () => { unsubForeground?.(); unsubOpened?.(); };
   }, []);
 
-  // Background me notifee tap hua ho to app foreground aate hi sahi screen kholo
+  // Background me notifee tap hua ho to app foreground aate hi sahi screen kholo (sirf native)
   useEffect(() => {
     if (Platform.OS === 'web') return undefined;
     const check = () => {
@@ -52,12 +54,13 @@ export default function PushNotificationBootstrap() {
   }, []);
 
   // Token: har login / app start (logged in) par register, refresh par update
+  // Web par ye silent hai: permission pehle se granted ho tabhi register; warna WebPushPrompt button se maangta hai.
   useEffect(() => {
-    if (Platform.OS === 'web' || !isLoggedIn) return undefined;
+    if (!isLoggedIn) return undefined;
     registerDeviceToken();
     const unsubRefresh = listenTokenRefresh();
     return () => unsubRefresh?.();
   }, [isLoggedIn]);
 
-  return null;
+  return <WebPushPrompt />;
 }

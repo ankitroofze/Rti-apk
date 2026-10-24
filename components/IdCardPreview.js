@@ -2,8 +2,9 @@ import { Image, Platform, Text, TouchableOpacity, View } from 'react-native';
 import IdCardQr from './IdCardQr';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
 import IdCardStyles from '../styles/IdCardStyles';
-import { useIdCardVerification, buildFallbackQrUrl, buildPageVerifyUrl, formatCardDate } from '../utils/idCardService';
-import { getIssueDate } from '../utils/profileHelpers';
+import { useIdCardVerification, cardFromProfile, buildFallbackQrUrl, buildPageVerifyUrl, formatCardDate } from '../utils/idCardService';
+import { getIssueDate, resolveRoleTitle, resolveAreaText } from '../utils/profileHelpers';
+import { UserStore } from '../store/UserStore';
 
 const CERT_LOGO = require('../assets/images/certificate_logo.jpg');
 const ID_LOGO = require('../assets/images/id-logo.png');
@@ -38,16 +39,37 @@ function fmtValidUpto(issueDate) {
 const ID_CARD_FONT = Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular';
 const ID_CARD_FONT_BLACK = Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_900Black';
 
-export default function AutoIdCardPreview({ profile }) {
+// viewOnly=true -> public profile (kisi aur ka card): data profile owner ka hi dikhega, viewer ka nahi.
+export default function AutoIdCardPreview({ profile, viewOnly = false }) {
   useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
-  const rank = getRank(profile.referral_count || 0);
-  const seatName = String(profile?.state_seat?.seat_name || profile?.author_seat_name || '').trim();
-  const designation = seatName || `${rank.label} - RTI News Member`;
+  const safeProfile = profile || {};
+  const seat = safeProfile?.state_seat || safeProfile?.seat || {};
+  const rank = getRank(safeProfile.referral_count || 0);
+  // ROLE: purchased role / designation hi dikhao — seat_name kabhi jagah ka naam hota hai
+  // ("Taloje Majkur"), isliye wo Role me nahi, Area me jaata hai.
+  const planRoleNames = (() => {
+    try {
+      return UserStore.getSeatRoleNameForPlanRoleId?.(
+        safeProfile?.subscription_plan?.role_id_raw || safeProfile?.subscription_plan?.role_id || ''
+      ) || '';
+    } catch { return ''; }
+  })();
+  const designation = resolveRoleTitle(safeProfile, planRoleNames, (id) => { try { return UserStore.getSeatRoleNameForPlanRoleId?.(id) || ''; } catch { return ''; } }) || `${rank.label} - RTI News Member`;
+  const area = resolveAreaText(safeProfile);
+  const mobile = String(
+    safeProfile?.phone || safeProfile?.mobile_number || safeProfile?.mobile ||
+    safeProfile?.phone_number || safeProfile?.contact_number || safeProfile?.contact ||
+    safeProfile?.author_mobile || safeProfile?.author_phone || ''
+  ).trim();
   const issueDate = getIssueDate(profile);
-  const { idCard, loading, refresh } = useIdCardVerification(); // backend se: id_number + valid_until + qr_payload
+  const own = useIdCardVerification({ enabled: !viewOnly }); // sirf apne profile par backend /id-cards
+  const idCard = viewOnly ? cardFromProfile(safeProfile) : own.idCard;
   // ID No + Valid Upto sirf /id-cards API se (fallback purana logic)
-  const memberId = idCard?.id_number || profile.member_id || generateMemberId(profile.email);
-  const validUpto = formatCardDate(idCard?.valid_until) || fmtValidUpto(issueDate);
+  const memberId = idCard?.id_number || safeProfile.id_number || safeProfile.id_card_number ||
+    safeProfile.member_id || safeProfile.memberId || safeProfile.user_id ||
+    (safeProfile.email ? generateMemberId(safeProfile.email) : (safeProfile.id != null && safeProfile.id !== '' ? `#${safeProfile.id}` : 'N/A'));
+  const planExpiry = formatCardDate(safeProfile?.subscription_plan?.expires_at || safeProfile?.subscription_plan?.expiry || safeProfile?.subscription_plan?.end_date);
+  const validUpto = formatCardDate(idCard?.valid_until) || planExpiry || fmtValidUpto(issueDate);
 
   return (
     <View style={IdCardStyles.idCardShadowWrap}>
@@ -74,7 +96,7 @@ export default function AutoIdCardPreview({ profile }) {
         <Image source={ID_LOGO} style={IdCardStyles.idCardLogoImg} resizeMode="contain" />
         <View style={IdCardStyles.idCardPhotoBox}>
           <Image
-            source={profile.profile_image ? { uri: profile.profile_image } : DEFAULT_AVATAR}
+            source={safeProfile.profile_image ? { uri: safeProfile.profile_image } : DEFAULT_AVATAR}
             style={IdCardStyles.idCardPhoto}
           />
         </View>
@@ -92,7 +114,7 @@ export default function AutoIdCardPreview({ profile }) {
 
    <View style={IdCardStyles.idCardRow}>
           <Text style={IdCardStyles.idCardKeyBold}>Name:-</Text>
-          <Text style={IdCardStyles.idCardVal}>{profile.name || ''}</Text>
+          <Text style={IdCardStyles.idCardVal}>{safeProfile.name || safeProfile.full_name || safeProfile.author_name || ''}</Text>
         </View>
 
         <View style={IdCardStyles.idCardRow}>
@@ -100,17 +122,21 @@ export default function AutoIdCardPreview({ profile }) {
           <Text style={IdCardStyles.idCardVal}>{designation}</Text>
         </View>
 
+        {(!viewOnly || area) ? (
         <View style={IdCardStyles.idCardRow}>
           <Text style={IdCardStyles.idCardKeyLight}>Area:-</Text>
           <Text style={IdCardStyles.idCardValLight}>
-            {[profile.village, profile.state].filter(Boolean).join(', ') || ''}
+            {area}
           </Text>
         </View>
+        ) : null}
 
-      <View style={IdCardStyles.idCardRow}>
+        {(!viewOnly || mobile) ? (
+        <View style={IdCardStyles.idCardRow}>
           <Text style={IdCardStyles.idCardKeyLight}>Mo:-</Text>
-          <Text style={IdCardStyles.idCardValLight}>{profile.contact_number || ''}</Text>
+          <Text style={IdCardStyles.idCardValLight}>{mobile}</Text>
         </View>
+        ) : null}
 
         {/* ID No + Valid Upto — ek hi row me */}
      <View style={[IdCardStyles.idCardRow, { marginBottom: 6 }]}>

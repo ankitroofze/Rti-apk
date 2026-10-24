@@ -604,7 +604,7 @@ export default function NewspaperPage({ route, navigation }) {
   // ── MOBILE layout ────────────────────────────────────────────────────────────
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-    <KeyboardAvoidingView style={styles.root} behavior="padding">
+    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Feather name="arrow-left" size={14} color="#7a420a" />

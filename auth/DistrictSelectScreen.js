@@ -221,7 +221,7 @@ export default function DistrictSelectScreen({ navigation, route }) {
     <SafeAreaView style={{ flex: 1 }} edges={[]}>
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ImageBackground source={require('../assets/images/profile-red.png')} resizeMode="cover" style={styles.root}>
         <View style={[styles.glow, styles.glowTop]} />

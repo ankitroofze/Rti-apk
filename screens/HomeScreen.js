@@ -725,10 +725,14 @@ export default function HomeScreen({ navigation, route }) {
 
     try {
       const cursor = loadMore ? newsCursorRef.current : null;
-      const [summary, activeAds, ecomeSummary] = await Promise.all([
+      // ✅ SPEED: ecom summary (kai API calls) ab news/ads ko block nahi karti —
+      // news + ads aate hi screen par dikh jaate hain, ecom baad me chupchap judta hai.
+      const ecomPromise = loadMore
+        ? Promise.resolve(null)
+        : UserStore.getEcomeMarketplaceSummary().catch(() => null);
+      const [summary, activeAds] = await Promise.all([
         UserStore.getNewsFeedSummary({ feedType: 'all', type: 1, perPage: 10, ...(cursor ? { cursor } : {}) }),
         loadMore ? Promise.resolve(null) : UserStore.getActiveAdsFeed(),
-        loadMore ? Promise.resolve(null) : UserStore.getEcomeMarketplaceSummary(),
       ]);
       if (reqId !== newsReqIdRef.current) return;   // purana response (refresh ke baad) ignore
       if (loadMore && !summary) return;             // temporary fail — cursor/hasMore jaisa tha waisa rahe
@@ -743,7 +747,7 @@ export default function HomeScreen({ navigation, route }) {
       } else {
         newsStoriesRef.current = pageStories;
         adStoriesRef.current = Array.isArray(activeAds) ? activeAds.map(homeStoryFromAd) : [];
-        ecomeStoriesRef.current = Array.isArray(ecomeSummary?.listings) ? ecomeSummary.listings.map(homeStoryFromEcome) : [];
+        // ecom listings: pichla jo tha wahi rahe, naya aate hi neeche update ho jayega
         // Advertisements sirf rotating popup mein, news cards ke beech nahi (existing rule)
         setActiveAds(adStoriesRef.current);
       }
@@ -755,6 +759,17 @@ export default function HomeScreen({ navigation, route }) {
       const news = [...newsStoriesRef.current].sort(sortByNewest);
       const mixed = [...news, ...groupAdStories(adStoriesRef.current)].sort(sortByNewest);
       setLiveStories(interleaveHomeStories(mixed, [], ecomeStoriesRef.current));
+
+      // ecom aate hi feed dobara banao (news/ads pehle hi dikh chuke hain)
+      if (!loadMore) {
+        ecomPromise.then((ecomRes) => {
+          if (reqId !== newsReqIdRef.current) return; // refresh ho chuka hai, purana ignore
+          ecomeStoriesRef.current = Array.isArray(ecomRes?.listings) ? ecomRes.listings.map(homeStoryFromEcome) : [];
+          const newsNow = [...newsStoriesRef.current].sort(sortByNewest);
+          const mixedNow = [...newsNow, ...groupAdStories(adStoriesRef.current)].sort(sortByNewest);
+          setLiveStories(interleaveHomeStories(mixedNow, [], ecomeStoriesRef.current));
+        }).catch(() => {});
+      }
     } catch {
       if (!loadMore && reqId === newsReqIdRef.current) setLiveStories([]);
     } finally {

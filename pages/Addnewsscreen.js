@@ -39,6 +39,8 @@ if (Platform.OS !== 'web') {
   actions = richEditorLib.actions;
 }
 import VideoPreview from '../components/VideoPreview';
+import NewsCameraModal from '../components/NewsCameraModal';
+import VideoAudioEditorModal from '../components/VideoAudioEditorModal';
 import NewsLimitModal from '../components/NewsLimitModal';
 import WebRichEditor from '../components/WebRichEditor';
 import { useToast, useBusy } from '../components/ui/ToastProvider';
@@ -301,6 +303,27 @@ const ms = StyleSheet.create({
   itemTextActive: { color: C.primary, fontFamily: FONT.bold },
 });
 
+// ── Camera + Gallery source buttons (reference screenshot jaisa) ───────────────
+function MediaSourceButtons({ onCamera, onGallery, galleryIcon = 'image', galleryLabel = 'Gallery', cameraLabel = 'Camera' }) {
+  return (
+    <View style={sb.row}>
+      <TouchableOpacity style={sb.btn} onPress={onCamera} activeOpacity={0.8}>
+        <Feather name="camera" size={26} color={C.textSub} />
+        <Text style={sb.text}>{cameraLabel}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={sb.btn} onPress={onGallery} activeOpacity={0.8}>
+        <Feather name={galleryIcon} size={26} color={C.textSub} />
+        <Text style={sb.text}>{galleryLabel}</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+const sb = StyleSheet.create({
+  row:  { flexDirection: 'row', gap: 12 },
+  btn:  { width: 92, height: 92, borderRadius: 14, borderWidth: 1, borderColor: C.border, backgroundColor: C.white, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  text: { fontSize: 12, fontFamily: FONT.medium, color: C.textBody },
+});
+
 const MAX_VIDEO_MB = 10;
 const MAX_VIDEO_BYTES = MAX_VIDEO_MB * 1024 * 1024;
 const VIDEO_TOO_LARGE_MSG = `Video size is too large. Please post a video of ${MAX_VIDEO_MB}MB or less.`;
@@ -384,6 +407,10 @@ export default function AddNewsScreen({ navigation, route }) {
   const [reportPickerVisible, setReportPickerVisible] = useState(false);
   const [rolePickerVisible, setRolePickerVisible] = useState(false);
   const [savedDraft, setSavedDraft] = useState(null);
+  const [cameraVisible, setCameraVisible] = useState(false);
+  const [cameraMode, setCameraMode] = useState('photo');
+  const [audioEditorVisible, setAudioEditorVisible] = useState(false);
+  const [audioMix, setAudioMix] = useState(null); // { music, musicId, musicUrl, musicVolume, voiceUri, muteOriginal }
 
   const videoOriginalUriRef = useRef(null);
   const titleEditorRef = useRef(null);
@@ -694,12 +721,58 @@ const admin = user.role === 'admin';
 
         if (!validateVideoDuration(asset.duration)) return;
         setVideo(asset.uri);
+        setAudioMix(null);
+        setTimeout(() => setAudioEditorVisible(true), 350);
         setTimeout(() => titleEditorRef.current?.focusContentEditor?.(), 180);
       }
     } catch (err) {
       console.warn('Video picker error:', err);
       showToast('Unable to open video picker.', 'error');
     }
+  };
+
+  // ── Camera: direct shoot (photo / video) ─────────────────────────────────────
+  const openCamera = async (mode = 'photo') => {
+    if (Platform.OS === 'web') {
+      // Web / mobile-web: browser ka native camera capture
+      try {
+        const res = await ImagePicker.launchCameraAsync({
+          mediaTypes: mode === 'video' ? ['videos'] : ['images'],
+          quality: 0.7,
+          videoMaxDuration: 60,
+        });
+        if (!res.canceled && res.assets?.[0]) {
+          const a = res.assets[0];
+          handleCaptured({ type: a.type === 'video' ? 'video' : 'photo', uri: a.uri, durationMs: a.duration });
+        }
+      } catch {
+        showToast('Unable to open camera.', 'error');
+      }
+      return;
+    }
+    setCameraMode(mode);
+    setCameraVisible(true);
+  };
+
+  // Camera modal se aaya hua photo/video form me daalo. true => modal band karo.
+  const handleCaptured = ({ type, uri, durationMs }) => {
+    if (!uri) return false;
+    if (type === 'video') {
+      if (!validateVideoDuration(durationMs)) return false;
+      setImages([]);
+      setAttachment(null);
+      setMediaType('Video');
+      setVideo(uri);
+      setAudioMix(null);
+      if (Platform.OS !== 'web') setTimeout(() => setAudioEditorVisible(true), 350);
+    } else {
+      setVideo(null);
+      setAttachment(null);
+      setMediaType('Image');
+      setImages((prev) => (prev.length >= 5 ? prev : [...prev, uri]));
+    }
+    setCameraVisible(false);
+    return true;
   };
 
   const pickFile = async () => {
@@ -798,6 +871,10 @@ console.log("Platform:", Platform.OS);
       mediaName: mediaNameToSend,
       mediaMime: mediaMimeToSend,
       extraImages: mediaType === 'Image' ? images.slice(1) : [],
+      // Music / voice-over — sirf nayi (local) video ke liye; backend ffmpeg se merge karta hai
+      audioMix: (mediaType === 'Video' && audioMix && !/^https?:/i.test(String(video || '')) && (audioMix.musicId || audioMix.voiceUri))
+        ? audioMix
+        : null,
     };
 
     const apiResult = isEditMode
@@ -936,7 +1013,7 @@ console.log("Platform:", Platform.OS);
         return (
           <TouchableOpacity
             key={type}
-            onPress={() => { setMediaType(type); setImages([]); setVideo(null); setAttachment(null); }}
+            onPress={() => { setMediaType(type); setImages([]); setVideo(null); setAudioMix(null); setAttachment(null); }}
             activeOpacity={0.85}
           >
             {sel ? (
@@ -970,18 +1047,19 @@ console.log("Platform:", Platform.OS);
               </View>
             ))}
           </ScrollView>
-          <TouchableOpacity style={T.addMoreBtn} onPress={pickImages} activeOpacity={0.85}>
-            <Ionicons name="add" size={15} color={C.primary} />
-            <Text style={T.addMoreBtnText}>Add More Images</Text>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity style={T.addMoreBtn} onPress={() => openCamera('photo')} activeOpacity={0.85}>
+              <Feather name="camera" size={14} color={C.primary} />
+              <Text style={T.addMoreBtnText}>Camera</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={T.addMoreBtn} onPress={pickImages} activeOpacity={0.85}>
+              <Ionicons name="add" size={15} color={C.primary} />
+              <Text style={T.addMoreBtnText}>Add More Images</Text>
+            </TouchableOpacity>
+          </View>
         </>
       ) : (
-        <TouchableOpacity style={T.uploadOuter} onPress={pickImages} activeOpacity={0.85}>
-          <View style={T.uploadInnerDashed}>
-            <Feather name="image" size={36} color={C.primary} />
-            <Text style={T.uploadCaption}>Add news photos (jpeg/png)</Text>
-          </View>
-        </TouchableOpacity>
+        <MediaSourceButtons onCamera={() => openCamera('photo')} onGallery={pickImages} />
       )}
     </View>
   ) : null;
@@ -996,18 +1074,23 @@ console.log("Platform:", Platform.OS);
             <Feather name="repeat" size={12} color="#fff" />
             <Text style={T.changeOverlayText}>Change Video</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={T.videoRemoveBtn} onPress={() => setVideo(null)}>
+          <TouchableOpacity style={T.videoRemoveBtn} onPress={() => { setVideo(null); setAudioMix(null); }}>
             <Feather name="x" size={12} color="#fff" />
           </TouchableOpacity>
         </View>
-      ) : (
-        <TouchableOpacity style={T.uploadOuter} onPress={pickVideo} activeOpacity={0.85}>
-          <View style={T.uploadInnerDashed}>
-            <Feather name="video" size={36} color={C.primary} />
-            <Text style={T.uploadCaption}>Add a news video (mp4)</Text>
-          </View>
+      ) : null}
+      {video && Platform.OS !== 'web' ? (
+        <TouchableOpacity style={T.audioEditBtn} onPress={() => setAudioEditorVisible(true)} activeOpacity={0.85}>
+          <Text style={T.audioEditText}>
+            {audioMix?.musicId || audioMix?.voiceUri
+              ? `🎵 ${audioMix.music?.title || 'Music'}${audioMix.voiceUri ? '  •  🎙️ Voice' : ''}  (Edit)`
+              : '🎵 Add Music  /  🎙️ Record Voice'}
+          </Text>
         </TouchableOpacity>
-      )}
+      ) : null}
+      {!video ? (
+        <MediaSourceButtons onCamera={() => openCamera('video')} onGallery={pickVideo} galleryIcon="video" />
+      ) : null}
     </View>
   ) : null;
 
@@ -1328,6 +1411,27 @@ console.log("Platform:", Platform.OS);
         </ScrollView>
       </KeyboardAvoidingView>
 
+      <VideoAudioEditorModal
+        visible={audioEditorVisible}
+        videoUri={video}
+        initial={audioMix}
+        onClose={() => setAudioEditorVisible(false)}
+        onDone={(mix) => {
+          setAudioMix(mix.musicId || mix.voiceUri ? mix : null);
+          setAudioEditorVisible(false);
+        }}
+      />
+
+      <NewsCameraModal
+        visible={cameraVisible}
+        initialMode={cameraMode}
+        onClose={() => setCameraVisible(false)}
+        onCapture={handleCaptured}
+        chips={REPORT_TYPES}
+        selectedChip={reportType}
+        onSelectChip={setReportType}
+      />
+
       <ListPickerModal
         visible={reportPickerVisible}
         title="Select Report Type"
@@ -1370,6 +1474,8 @@ const sharedField = {
   chipTextOn: { color: C.white, fontFamily: FONT.bold },
 
   mediaBlock: { marginTop: 12 },
+  audioEditBtn: { marginTop: 10, backgroundColor: '#111827', borderRadius: 10, paddingVertical: 12, paddingHorizontal: 14, alignItems: 'center' },
+  audioEditText: { color: '#fff', fontSize: 13, fontFamily: FONT.bold },
 
    uploadOuter: {
     width: '100%', minHeight: 140,

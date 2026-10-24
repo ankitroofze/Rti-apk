@@ -103,7 +103,7 @@ export default function LoginScreen({ navigation, route }) {
         const result = await AuthAPI.login({ email: value.toLowerCase(), password });
         if (result.ok) { await finishLogin(value.toLowerCase(), result.user); return; }
         // ✅ NEW: deleted account -> reactivate ka option do
-        if (result.code === 'account_deleted') { confirmReactivate(value.toLowerCase()); return; }
+        if (result.code === 'account_deleted') { setErrors((prev) => ({ ...prev, general: 'Your account has been deleted. Please register with a new account.' })); return; }
         if (!result.isNetwork) { setErrors((prev) => ({ ...prev, general: result.message || 'Invalid credentials.' })); return; }
       }
       const mobile = value.replace(/\s/g, '');
@@ -122,7 +122,7 @@ export default function LoginScreen({ navigation, route }) {
   return (
     <SafeAreaView style={styles.flex} edges={[]}>
     <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ImageBackground source={require('../assets/images/profile-red.png')} resizeMode="cover" style={styles.root}>
         <ScrollView ref={scrollRef} style={styles.scrollView} contentContainerStyle={[styles.formScroll, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 40 }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="none" showsVerticalScrollIndicator={false}>
           <View style={styles.formContainer}>

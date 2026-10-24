@@ -1,7 +1,7 @@
 import NameWithTick from '../components/NameWithTick';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Clipboard, Image, ImageBackground, KeyboardAvoidingView, Linking, Modal,
+  Alert, BackHandler, Clipboard, Image, ImageBackground, KeyboardAvoidingView, Linking, Modal,
   Platform, ScrollView, Share, StatusBar, Text, TextInput,
   TouchableOpacity, TouchableWithoutFeedback, useWindowDimensions, View,
 } from 'react-native';
@@ -13,7 +13,8 @@ import AutoIdCardPreview from '../components/IdCardPreview';
 import AutoIdCardBackPreview from '../components/IdCardBackPreview';
 import ScaledCard from '../components/ScaledCard';
 import AutoAppointmentLetterPreview from '../components/AppointmentLetterPreview';
-import { hasDocumentSource, getProfileTier, generateMemberId } from '../utils/profileHelpers';
+import { hasPublicDocumentSource, getProfileTier, generateMemberId, getSubscriptionName, resolveAreaText, cleanRoleNames } from '../utils/profileHelpers';
+import { cardFromProfile } from '../utils/idCardService';
 import { useToast } from '../components/ui/ToastProvider';
 import VerifiedBadge from '../components/VerifiedBadge';
 import VideoPreview from '../components/VideoPreview';
@@ -308,6 +309,19 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const [replyingToCommentId, setReplyingToCommentId] = useState(null);
   const [replyText, setReplyText] = useState('');
 
+  // ✅ FIX: Android back / upar-neeche karte waqt app se bahar nikal jaata tha
+  // (profile notification / link se khula ho to stack me pichli screen nahi hoti).
+  // Ab: pichli screen hai to wahan, nahi to Home.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return undefined;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (navigation?.canGoBack?.()) navigation.goBack();
+      else navigation?.navigate?.('Home');
+      return true;
+    });
+    return () => sub.remove();
+  }, [navigation]);
+
   useEffect(() => {
     let alive = true;
     (async () => {
@@ -362,11 +376,17 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           ...(user || {}),
           has_blue_tick: user ? Boolean(UserStore.hasBlueTick(user)) : false,
         }).key === 'common';
-        const needsFullProfile = !(Array.isArray(user?.posts) && user.posts.length) || tierLooksCommon;
+        // FIX: local cache purana ho sakta hai (role/blue tick badal chuka ho) — isliye HAMESHA server se fresh lo.
+        const needsFullProfile = true;
         if (active && !userId && summary?.resolvedId && needsFullProfile) {
           try {
             const full = await UserStore.getPublicProfileById(summary.resolvedId);
-            if (full && active) { user = { ...(user || {}), ...full }; setProfile(user); }
+            if (full && active) {
+              // Purane cached blue tick / plan flags hata do, phir fresh server data lagao
+              const { has_blue_tick: _a, is_blue_tick: _b, blue_tick: _c, subscription_plan: _d, active_plan: _e, role_subscription_plan: _f, subscription: _g, subscription_type: _h, role: _i, state_seat: _j, ...cleanOld } = (user || {});
+              user = { ...cleanOld, ...full };
+              setProfile(user);
+            }
           } catch { /* ignore */ }
         }
         if (active && !user?.id && summary?.resolvedId) {
@@ -466,17 +486,33 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     const display = profile || author || {};
   const name = String(display?.name || display?.author_name || 'User').trim() || 'User';
   const roleLabel = String(display?.role_label || display?.author_role_label || '').trim();
-  const state = String(display?.state || '').trim();
-  const district = String(display?.district || '').trim();
-  const taluka = String(display?.taluka || '').trim();
+  const state = String(display?.state || display?.author_state || '').trim();
+  const district = String(display?.district || display?.author_district || '').trim();
+  const taluka = String(display?.taluka || display?.author_taluka || '').trim();
  const bio = String(display?.bio || '').trim();
   const rawReferralCode = String(display?.my_referral_code || display?.referral_code || '').trim();
     // Latest active Premium plan hamesha purane seat/role label se upar rahega
-  const latestIsPremium = Boolean(UserStore.hasBlueTick(profile || display));
+  const _hasRoleTier = ['representative', 'executive', 'chief'].includes(getProfileTier({
+    state_seat: display?.state_seat, seat_id: display?.seat_id, seat_name: display?.seat_name,
+    role: display?.role || display?.author_role,
+    subscription_plan: display?.subscription_plan,
+  }).key);
+  const latestIsPremium = !_hasRoleTier && Boolean(UserStore.hasBlueTick(profile || display));
   const seatName = latestIsPremium ? '' : String(display?.state_seat?.seat_name || display?.author_seat_name || '').trim();
   const seatId = latestIsPremium ? '' : String(display?.state_seat?.seat_id || display?.author_seat_id || '').trim();
   const roleId = latestIsPremium ? 'premium' : String(display?.role || display?.author_role || '').trim().toLowerCase();
-  const rolePillText = latestIsPremium ? 'Premium User' : (roleLabelToEnglish(roleId) || roleLabel || seatName || '');
+  const _mapRoleId = (id) => { try { return UserStore.getSeatRoleNameForPlanRoleId?.(id) || ''; } catch { return ''; } };
+  const purchasedRoleNames = cleanRoleNames(
+    Array.isArray(display?.subscription_plan?.role_names) && display.subscription_plan.role_names.length
+      ? display.subscription_plan.role_names
+      : (display?.subscription_plan?.role_id_raw || display?.subscription_plan?.role_id || ''),
+    _mapRoleId
+  );
+  // The purchased plan designation is the visible role.  Generic cached
+  // labels (for example "Free Member") must not replace it.
+  const rolePillText = latestIsPremium
+    ? 'Premium User'
+    : (purchasedRoleNames || roleLabelToEnglish(roleId) || roleLabel || seatName || '');
   const joinDate = String(display?.join_date || '').trim();
   const networkCount = (() => {
     const val = Number(display?.referral_count || 0);
@@ -508,7 +544,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const safePhotoUri = isValidImageUrl(photoUri) ? photoUri : '';
   // Never trust stale post/legacy flags: entitlement belongs to this profile's
   // active Premium Plan and is identical on web and Android.
-  const isVerified = Boolean(UserStore.hasBlueTick(profile || display));
+  const isVerified = !_hasRoleTier && Boolean(UserStore.hasBlueTick(profile || display));
   const isSubscribedProfile = Boolean(
     display?.is_subscribed || display?.author_is_subscribed || ['basic', 'pro', 'premium'].includes(roleId)
   );
@@ -527,6 +563,11 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   // Role/seat wale user ka pill uske seat ka naam dikhata hai (jaise "State Bureau Chief"),
   // baaki tiers me Common User / Premium User / Verified User.
   const tierPillLabel = (['representative', 'executive', 'chief'].includes(profileTier.key) && seatName) ? seatName : profileTier.label;
+  // Badge/pill me SUBSCRIPTION ka naam dikhao (role tiers ke liye) — seat_name (jagah ka naam) nahi.
+  const isRoleTier = ['representative', 'executive', 'chief'].includes(profileTier.key);
+  const subscriptionPillLabel = isRoleTier
+    ? (getSubscriptionName(display) || rolePillText || tierPillLabel)
+    : tierPillLabel;
   // Referral code tab dikhta hai jab profile owner ne koi role / subscription / premium liya ho
   // (yaani tier common se upar ho) — visitor chahe Common user ho ya kuch bhi.
   const hasPaidAccess = profileTier.key !== 'common' || isSubscribedProfile;
@@ -536,13 +577,82 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   // ID Card + Appointment Letter: sirf jab owner ne ROLE subscription liya ho (Premium/Verified/Common nahi).
   // Visitor koi bhi ho (Common bhi) use ye dikhna chahiye.
   const hasRoleSubscription = ['representative', 'executive', 'chief'].includes(profileTier.key);
-  const showDocuments = hasRoleSubscription && hasDocumentSource(display);
+  const showDocuments = hasRoleSubscription && hasPublicDocumentSource(display);
+
+  // ── "ID & Letter" tab content — apne ProfileScreen ke "Documents" section jaisa hi layout ──
+  // stacked=true  -> mobile web / Android / iOS: ID front + back upar-neeche (220px), phir letter
+  // stacked=false -> desktop web: ID front + back side-by-side (220px), phir letter
+  // Sizes ProfileScreen jaise hi: ID 220/360, Letter 194/560. Download button visitor ko nahi dikhta.
+  const docCardStyle = { backgroundColor: '#ffffff', borderRadius: 8, padding: 16, borderWidth: 1, borderColor: '#e5e7eb', marginBottom: 12 };
+  const renderDocumentsTab = (stacked = true) => (
+    <View style={{ marginTop: 16, paddingHorizontal: 12, paddingBottom: 24, width: '100%' }}>
+      <Text style={{ fontSize: 14, fontWeight: '700', color: '#111827', marginBottom: 12 }}>Documents</Text>
+
+      {/* ID Card (front + back) */}
+      <View style={[docCardStyle, { alignItems: 'center' }]}>
+        <View style={{ width: '100%', alignSelf: 'center', alignItems: 'center', paddingVertical: 8, flexDirection: stacked ? 'column' : 'row', ...(stacked ? {} : { flexWrap: 'wrap' }), justifyContent: 'center', gap: stacked ? 12 : 10 }}>
+          <ScaledCard width={220} naturalWidth={360} style={{ alignSelf: 'center' }}>
+            <AutoIdCardPreview profile={display} viewOnly />
+          </ScaledCard>
+          <ScaledCard width={220} naturalWidth={360} style={{ alignSelf: 'center' }}>
+            <AutoIdCardBackPreview />
+          </ScaledCard>
+        </View>
+      </View>
+
+      {/* Appointment Letter */}
+      <View style={docCardStyle}>
+        <View style={{ width: '100%', alignItems: 'center', paddingVertical: 8 }}>
+          <ScaledCard width={194} naturalWidth={560}>
+            <AutoAppointmentLetterPreview profile={display} />
+          </ScaledCard>
+        </View>
+      </View>
+    </View>
+  );
+  // Documents tab hide ho gaya (owner ka role badla) to posts par wapas
+  const effectiveTab = activeTab === 'documents' && !showDocuments ? 'posts' : activeTab;
   // Bio + location bhi sirf paid (role / premium) owner ke public profile par.
   const shownBio = hasPaidAccess ? bio : '';
   const shownLocationLine = hasPaidAccess ? locationLine : '';
   const shownState = hasPaidAccess ? state : '';
-  const memberIdText = String(display?.member_id || display?.memberId || '').trim()
+  // ID No: pehle backend ke id-card ka id_number, phir member_id, tab jaake generated fallback
+  const idCardInfo = (() => { try { return cardFromProfile(display); } catch { return null; } })();
+  const memberIdText = String(idCardInfo?.id_number || display?.id_number || display?.member_id || display?.memberId || '').trim()
     || (display?.email || resolvedEmail ? generateMemberId(display?.email || resolvedEmail) : '');
+  // Mobile: backend `phone` bhejta hai; baaki naam purane local records ke liye
+  const mobileText = String(
+    display?.phone || display?.mobile_number || display?.phone_number || display?.contact_number || display?.mobile ||
+    display?.author_mobile || display?.author_phone || ''
+  ).trim();
+  // Role + Area: seat ka naam (jaise "State Bureau Chief") aur uska area (state / district / taluka)
+  const roleAreaRole = shownPillText || tierPillLabel || '';
+  const seatArea = String(
+    display?.state_seat?.area || display?.state_seat?.area_name || display?.state_seat?.location || display?.area || display?.author_area || ''
+  ).trim();
+  const roleAreaPlace = seatArea || resolveAreaText(display) || locationLine;
+  const hasContactCard = Boolean(roleAreaRole || roleAreaPlace || mobileText || memberIdText);
+  const renderContactCard = (extraStyle) => (hasContactCard ? (
+    <View style={[{ marginHorizontal: 12, marginTop: 12, backgroundColor: '#ffffff', borderRadius: 12, borderWidth: 1, borderColor: '#e5e7eb', paddingVertical: 6, paddingHorizontal: 14 }, extraStyle]}>
+      {[
+        { key: 'role', icon: 'award', label: 'Role', value: roleAreaRole },
+        { key: 'area', icon: 'map-pin', label: 'Area', value: roleAreaPlace },
+        { key: 'mobile', icon: 'smartphone', label: 'Mobile', value: mobileText, onPress: mobileText ? () => Linking.openURL(`tel:${mobileText}`).catch(() => {}) : null },
+        { key: 'id', icon: 'credit-card', label: 'ID No', value: memberIdText },
+      ].filter((r) => r.value).map((r, i, arr) => (
+        <TouchableOpacity
+          key={r.key}
+          activeOpacity={r.onPress ? 0.7 : 1}
+          onPress={r.onPress || undefined}
+          style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: i === arr.length - 1 ? 0 : 1, borderBottomColor: '#f1f5f9' }}
+        >
+          <Feather name={r.icon} size={15} color={profileTier.accent} />
+          <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748b', marginLeft: 8, width: 58 }}>{r.label}</Text>
+          <Text style={{ flex: 1, fontSize: 13, fontWeight: '700', color: '#0f172a' }} numberOfLines={2}>{r.value}</Text>
+        </TouchableOpacity>
+      ))}
+    </View>
+  ) : null);
   const resolvedProfilePhoto = useResolvedUri(safePhotoUri || null);
 
   // ── Sorted posts ────────────────────────────────────────────────────────────
@@ -1224,10 +1334,10 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                 <Text style={[styles.locationLineText, { color: '#94a3b8' }]}>Member {accountAge}</Text>
               </View>
             ) : null}
-                    {shownPillText ? (
+                    {subscriptionPillLabel ? (
               <View style={[styles.rolePill, { backgroundColor: pillTheme.bg, borderColor: pillTheme.border }]}>
                 <Feather name="star" size={12} color={pillTheme.text} />
-                <Text style={[styles.rolePillText, { color: pillTheme.text }]} numberOfLines={1}>{shownPillText}</Text>
+                <Text style={[styles.rolePillText, { color: pillTheme.text }]} numberOfLines={1}>{subscriptionPillLabel}</Text>
               </View>
             ) : null}
             {(seatName || seatId) && (seatName || seatId) !== shownPillText ? (
@@ -1237,23 +1347,6 @@ export default function UserPublicProfileScreen({ route, navigation }) {
               </View>
             ) : null}
             {shownBio ? <Text style={[styles.bioInline, { marginTop: 6 }]} numberOfLines={4}>{shownBio}</Text> : null}
-      {showDocuments ? (
-  <View style={{ marginTop: 14, width: '100%' }}>
-  <Text style={{ fontSize: 13, fontWeight: '800', color: '#374151', marginBottom: 8 }}>ID Card</Text>
-    <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', gap: 12 }}>
-      <ScaledCard width={170} naturalWidth={360}>
-        <AutoIdCardPreview profile={display} />
-      </ScaledCard>
-      <ScaledCard width={170} naturalWidth={360}>
-        <AutoIdCardBackPreview />
-      </ScaledCard>
-    </View>
-    <Text style={{ fontSize: 13, fontWeight: '800', color: '#374151', marginTop: 16, marginBottom: 8 }}>Appointment Letter</Text>
-    <View style={{ width: '100%', aspectRatio: 210 / 297, maxWidth: 480, alignSelf: 'center' }}>
-      <AutoAppointmentLetterPreview profile={display} />
-    </View>
-  </View>
-) : null}
             {referralCode ? (
   <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 6, gap: 6 }}>
     <Feather name="gift" size={12} color={REFERRAL_RED} />
@@ -1286,6 +1379,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
             </TouchableOpacity>
           </View>
 
+          {renderContactCard()}
+
           {/* ── Tabs ── */}
           <View style={styles.tabsRow}>
             <View style={styles.tabsLeft}>
@@ -1303,6 +1398,15 @@ export default function UserPublicProfileScreen({ route, navigation }) {
               >
                 <Text style={[styles.tabText, activeTab === 'activity' && styles.tabTextActive]}>Activity</Text>
               </TouchableOpacity>
+              {showDocuments ? (
+                <TouchableOpacity
+                  style={[styles.tabBtn, activeTab === 'documents' && styles.tabBtnActive]}
+                  onPress={() => setActiveTab('documents')}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.tabText, activeTab === 'documents' && styles.tabTextActive]}>ID & Letter</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
             {activeTab === 'posts' && sortedPosts.length > 0 ? (
               <View style={styles.gridToggleIcons}>
@@ -1317,7 +1421,9 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           </View>
 
           {/* ── Tab Content ── */}
-          {activeTab === 'activity' ? (
+          {effectiveTab === 'documents' ? (
+            renderDocumentsTab(true)
+          ) : activeTab === 'activity' ? (
             <View style={styles.activityCard}>
               <Text style={styles.mutedText}>No activity yet.</Text>
             </View>
@@ -1466,30 +1572,14 @@ export default function UserPublicProfileScreen({ route, navigation }) {
               </View>
             </View>
 
-            {/* ── ID Card / Appointment Letter / Referral Code (desktop web) ── */}
-            {showDocuments ? (
-              <View style={{ marginTop: 14, width: '100%' }}>
-                <Text style={{ fontSize: 13, fontWeight: '800', color: '#374151', marginBottom: 8 }}>ID Card</Text>
-                <View style={{ flexDirection: 'row', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 12 }}>
-                  <ScaledCard width={170} naturalWidth={360}>
-                    <AutoIdCardPreview profile={display} />
-                  </ScaledCard>
-                  <ScaledCard width={170} naturalWidth={360}>
-                    <AutoIdCardBackPreview />
-                  </ScaledCard>
-                </View>
-                <Text style={{ fontSize: 13, fontWeight: '800', color: '#374151', marginTop: 16, marginBottom: 8 }}>Appointment Letter</Text>
-                <View style={{ width: '100%', aspectRatio: 210 / 297, maxWidth: 480, alignSelf: 'flex-start' }}>
-                  <AutoAppointmentLetterPreview profile={display} />
-                </View>
-              </View>
-            ) : null}
             {referralCode ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 6 }}>
                 <Feather name="gift" size={12} color={REFERRAL_RED} />
                 <Text style={{ fontSize: 12, fontWeight: '700', color: '#111111' }}>Referral Code: <Text style={{ color: REFERRAL_RED }}>{referralCode}</Text></Text>
               </View>
             ) : null}
+
+            {renderContactCard({ marginHorizontal: 0, marginBottom: 16 })}
 
             {/* ── Divider ── */}
             <View style={webSt.divider} />
@@ -1512,6 +1602,16 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                 <Feather name="activity" size={12} color={activeTab === 'activity' ? '#0f172a' : '#737373'} />
                 <Text style={[webSt.tabText, activeTab === 'activity' && webSt.tabTextActive]}>ACTIVITY</Text>
               </TouchableOpacity>
+              {showDocuments ? (
+                <TouchableOpacity
+                  style={[webSt.tabBtn, activeTab === 'documents' && webSt.tabBtnActive]}
+                  onPress={() => setActiveTab('documents')}
+                  activeOpacity={0.85}
+                >
+                  <Feather name="credit-card" size={12} color={activeTab === 'documents' ? '#0f172a' : '#737373'} />
+                  <Text style={[webSt.tabText, activeTab === 'documents' && webSt.tabTextActive]}>ID & LETTER</Text>
+                </TouchableOpacity>
+              ) : null}
 
               {activeTab === 'posts' && sortedPosts.length > 0 ? (
                 <View style={webSt.gridToggle}>
@@ -1526,7 +1626,9 @@ export default function UserPublicProfileScreen({ route, navigation }) {
             </View>
 
             {/* ── Posts Grid / List / Empty ── */}
-            {activeTab === 'activity' ? (
+            {effectiveTab === 'documents' ? (
+              renderDocumentsTab(false)
+            ) : activeTab === 'activity' ? (
               <View style={webSt.emptyCard}>
                 <Feather name="activity" size={36} color="#cbd5e1" style={{ marginBottom: 10 }} />
                 <Text style={webSt.emptyText}>No activity yet.</Text>
@@ -1631,7 +1733,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
               onPress={() => openImageModal(profileTier.key === 'common' ? '' : (resolvedProfilePhoto || safePhotoUri), name)}
               activeOpacity={0.85}
             >
-              <ProfileAvatar uri={resolvedProfilePhoto || safePhotoUri} size={100} style={ProfileStyles.profileCardAvatar} />
+              <ProfileAvatar uri={resolvedProfilePhoto || safePhotoUri} size={100} style={ProfileStyles.profileCardAvatar} forceDefault={profileTier.key === 'common'} />
             </TouchableOpacity>
             {showShield ? (
               <View style={ProfileStyles.roleShieldBadge} pointerEvents="none">
@@ -1679,7 +1781,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
             end={{ x: 1, y: 1 }}
             style={ProfileStyles.premiumPillExact}
           >
-            <Text style={ProfileStyles.premiumPillTextExact}>{tierPillLabel}</Text>
+            <Text style={ProfileStyles.premiumPillTextExact} numberOfLines={2}>{subscriptionPillLabel}</Text>
           </LinearGradient>
 
           {/* Edit Profile ki jagah Follow, add-person ki jagah Share */}
@@ -1734,31 +1836,12 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           </View>
         ) : null}
 
-        {/* ── ID Card + Appointment Letter (sirf role subscription wale owner ke liye, sabko dikhta hai) ── */}
-        {showDocuments ? (() => {
-          const docW = Math.floor((windowWidth - 16 * 2 - 12) / 2);
-          return (
-            <View style={{ marginTop: 14, paddingHorizontal: 16 }}>
-              <Text style={{ fontSize: 13, fontWeight: '800', color: '#374151', marginBottom: 8 }}>ID Card</Text>
-              <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-start', gap: 12 }}>
-                <ScaledCard width={docW} naturalWidth={360}>
-                  <AutoIdCardPreview profile={display} />
-                </ScaledCard>
-                <ScaledCard width={docW} naturalWidth={360}>
-                  <AutoIdCardBackPreview />
-                </ScaledCard>
-              </View>
-              <Text style={{ fontSize: 13, fontWeight: '800', color: '#374151', marginTop: 16, marginBottom: 8 }}>Appointment Letter</Text>
-              <View style={{ width: '100%', aspectRatio: 210 / 297, alignSelf: 'center' }}>
-                <AutoAppointmentLetterPreview profile={display} />
-              </View>
-            </View>
-          );
-        })() : null}
+
+        {renderContactCard()}
 
         {/* ── Tabs: Posts (left) | Activity (right) ── */}
         <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E5E7EB', marginTop: 12 }}>
-          {[{ key: 'posts', label: 'Posts' }, { key: 'activity', label: 'Activity' }].map((t) => {
+          {[{ key: 'posts', label: 'Posts' }, { key: 'activity', label: 'Activity' }, ...(showDocuments ? [{ key: 'documents', label: 'ID & Letter' }] : [])].map((t) => {
             const active = activeTab === t.key;
             return (
               <TouchableOpacity
@@ -1785,7 +1868,9 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         ) : null}
 
         {/* ── Tab Content ── */}
-        {activeTab === 'activity' ? (
+        {effectiveTab === 'documents' ? (
+          renderDocumentsTab(true)
+        ) : activeTab === 'activity' ? (
           <View style={styles.activityCard}>
             <Text style={styles.mutedText}>No activity yet.</Text>
           </View>

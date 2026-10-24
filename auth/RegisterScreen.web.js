@@ -308,6 +308,8 @@ export default function RegisterScreen({ navigation }) {
         navigation.navigate('Login');
         return;
       }
+      // Account ban gaya + token save: session turant save (app band karke kholne par bhi isi ID se login)
+      try { await UserStore.setCurrentUser(normalizedEmail); } catch (_) {}
       navigation.navigate('StateSelect', { fromPremium: false, needsCreateUser: true });
     } catch {
       showToast('Registration failed. Please try again.', 'error');

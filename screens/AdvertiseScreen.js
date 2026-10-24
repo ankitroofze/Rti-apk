@@ -1210,7 +1210,7 @@ const editAd = route?.params?.editAd || null;
   return (
     <KeyboardAvoidingView
       style={s.root}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <View style={[s.header, adv.header]}>
       <Image source={HEADER_BG_IMAGE} style={adv.headerImg} resizeMode="cover" />

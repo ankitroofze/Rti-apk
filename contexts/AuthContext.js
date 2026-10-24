@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { clearIdCardVerification } from '../utils/idCardService';
 
 const AuthContext = createContext(null);
 const CURRENT_USER_KEY = 'current_user_email';
@@ -42,6 +43,7 @@ export function AuthProvider({ children }) {
     try {
       await AsyncStorage.removeItem(CURRENT_USER_KEY);
     } catch {}
+    clearIdCardVerification(); // agle user ko purana ID card/QR na dikhe
     setIsLoggedIn(false);
   };
 

@@ -4,6 +4,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  KeyboardAvoidingView,
   Linking,
   Modal,
   Platform,
@@ -340,6 +341,10 @@ const EnquiryFormModal = ({ product, onClose, onSaved }) => {
 
   return (
     <Modal visible transparent animationType="slide" onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
       <Pressable style={styles.modalBackdrop} onPress={onClose}>
         <Pressable style={[styles.detailSheet, { maxHeight: '82%' }]} onPress={() => {}}>
           <View style={styles.sheetHeader}>
@@ -348,7 +353,11 @@ const EnquiryFormModal = ({ product, onClose, onSaved }) => {
               <Ionicons name="close" size={18} color="#64748b" />
             </TouchableOpacity>
           </View>
-          <ScrollView contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            contentContainerStyle={styles.formContent}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+          >
             <View style={styles.productInfoBox}>
               <View style={{width:36,height:36,borderRadius:10,backgroundColor:'#fff',alignItems:'center',justifyContent:'center',borderWidth:1,borderColor:'#fecaca'}}>
                 <Ionicons name="cube-outline" size={18} color="#dc2626" />
@@ -396,6 +405,7 @@ const EnquiryFormModal = ({ product, onClose, onSaved }) => {
           </ScrollView>
         </Pressable>
       </Pressable>
+      </KeyboardAvoidingView>
     </Modal>
   );
 };

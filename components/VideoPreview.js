@@ -15,7 +15,9 @@ function isLikelyPlayableVideoSource(uri) {
   if (isIdbMediaUri(uri)) return true;
   if (/^(blob:|data:)/i.test(uri)) return true;
 
-  return /^https?:/i.test(uri) && /\.(mp4|m4v|mov|webm|ogv|m3u8)(\?.*)?$/i.test(uri);
+  // Android se upload hue video ke URL me extension na ho ya alag ho (.3gp, bina extension) to bhi web par
+  // chalna chahiye. Ye function sirf video items ke liye bulaya jaata hai, isliye sirf saaf-saaf image/pdf URL reject karo.
+  return /^https?:/i.test(uri) && !/\.(jpe?g|png|gif|webp|bmp|svg|heic|avif|pdf)(\?.*)?(#.*)?$/i.test(uri);
 }
 
 export default function VideoPreview({ uri, style, contentFit = 'cover' }) {

@@ -113,7 +113,8 @@ function NavbarLanguageSelector({ compact = false }) {
   );
 
   const openDropdown = () => {
-    if (IS_WEB) {
+    // Mobile (compact): hamesha screen ke center me modal khulega
+    if (compact || IS_WEB) {
       setIsOpen(true);
       return;
     }
@@ -171,7 +172,36 @@ function NavbarLanguageSelector({ compact = false }) {
         )}
       </TouchableOpacity>
 
-      {IS_WEB ? (
+      {compact ? (
+        <Modal
+          visible={isOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setIsOpen(false)}
+          statusBarTranslucent
+        >
+          <View style={styles.centerModalBackdrop}>
+            <TouchableOpacity
+              style={StyleSheet.absoluteFillObject}
+              activeOpacity={1}
+              onPress={() => { blurActiveElement(); setIsOpen(false); }}
+            />
+            <View style={styles.centerModalCard}>
+              <View style={styles.centerModalHeader}>
+                <Ionicons name="globe-outline" size={18} color="#e8732a" />
+                <Text style={styles.centerModalTitle}>Select Language</Text>
+                <TouchableOpacity
+                  onPress={() => { blurActiveElement(); setIsOpen(false); }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="close" size={20} color="#64748b" />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.centerModalList}>{dropdownContent}</View>
+            </View>
+          </View>
+        </Modal>
+      ) : IS_WEB ? (
         isOpen ? (
           <>
             <TouchableOpacity
@@ -525,17 +555,17 @@ function MobileTopHeader({ navigation, handleNavigate, handleHomeShortcut }) {
       <View style={styles.mobileTopHeader}>
         <View style={styles.mobileTopHeaderLeft}>
           <NavbarBrand onPressHome={() => handleNavigate('Home')} compact />
-                  <View style={{ marginLeft: 8, flexShrink: 1, minWidth: 0 }}>
-            <Text style={styles.mobileBrandTitle} numberOfLines={1}>
+          <View style={styles.mobileBrandTextWrap}>
+            <Text style={styles.mobileBrandTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
               RTI <Text style={{ color: '#1d3fae' }}>VOICE</Text>
             </Text>
-            <Text style={styles.mobileBrandSubtitle} numberOfLines={1}>ALL INDIA RTI NEWS NETWORK</Text>
+            <Text style={styles.mobileBrandSubtitle} numberOfLines={2}>ALL INDIA RTI NEWS NETWORK</Text>
           </View>
         </View>
               <View style={styles.mobileTopHeaderActions}>
           <NavbarLanguageSelector compact />
-<RefreshButton />
-<NotificationBell navigation={navigation} />
+<RefreshButton style={styles.mobileRefreshBtn} />
+<NotificationBell navigation={navigation} style={styles.mobileBellBtn} />
           <ProfileDropdown navigation={navigation} />
         </View>
       </View>
@@ -771,9 +801,9 @@ const styles = StyleSheet.create({
   },
   // Mobile header logo — made noticeably bigger, no border around it
   brandLogoCompact: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
     transform: [{ scale: 1 }],
   },
   desktopNavLinksRow: {
@@ -936,7 +966,7 @@ const styles = StyleSheet.create({
    mobileTopHeaderActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 2,
     flexShrink: 0,
   },
   // ─── Web overlay ───────────────────────────────────────────────────────
@@ -1153,9 +1183,9 @@ const styles = StyleSheet.create({
   primaryActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 8,
     borderRadius: 999,
     ...Platform.select({
       default: {
@@ -1168,23 +1198,22 @@ const styles = StyleSheet.create({
     }),
   },
      mobileBrandTitle: {
-  fontSize: 23.5,
+  fontSize: 20,
   fontWeight: '600',
   color: '#c40b0b',
-  letterSpacing: 0.3,
-  marginLeft: -21,
+  letterSpacing: 0.2,
   fontFamily: Platform.OS === 'web'
     ? "'Roboto', sans-serif"
     : 'Roboto_500Medium',
 },
 
 mobileBrandSubtitle: {
-  fontSize: 13,
+  fontSize: 9.5,
+  lineHeight: 12,
   fontWeight: '500',
   color: '#374151',
-  letterSpacing: 0.3,
+  letterSpacing: 0.2,
   marginTop: 1,
-  marginLeft: -21,
   fontFamily: Platform.OS === 'web'
     ? "'Roboto', sans-serif"
     : 'Roboto_500Medium',
@@ -1195,6 +1224,48 @@ mobileBrandSubtitle: {
     fontWeight: '800',
     fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
   },
+  mobileBrandTextWrap: { flexShrink: 1, minWidth: 0, flex: 1 },
+  mobileRefreshBtn: { padding: 4, marginHorizontal: 0 },
+  mobileBellBtn: { width: 34, height: 34, marginHorizontal: 0 },
+  centerModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  centerModalCard: {
+    width: '100%',
+    maxWidth: 340,
+    maxHeight: '70%',
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#fed7aa',
+    ...Platform.select({
+      web: { boxShadow: '0 18px 48px rgba(15, 23, 42, 0.28)' },
+      default: { elevation: 24, shadowColor: '#0f172a', shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.25, shadowRadius: 24 },
+    }),
+  },
+  centerModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f1f5f9',
+    backgroundColor: '#fff7ed',
+  },
+  centerModalTitle: {
+    flex: 1,
+    color: '#0f172a',
+    fontSize: 14,
+    fontWeight: '800',
+    fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto',
+  },
+  centerModalList: { flexShrink: 1 },
   mobileNewspaperBtn: {
     width: 36,
     height: 36,

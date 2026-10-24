@@ -1029,9 +1029,14 @@ const handlePickImage = async () => {
   // label ("Authorised Representative") se hamesha priority lega.
    const canChangePhoto = profileTier.key !== 'common';   // sirf Role / Premium / Verified wale photo badal sakte hain
     const profileSeatKeyLC = String(displayProfile?.state_seat?.seat_id || '').trim().toLowerCase();
-  const profileTierLabel = SEAT_ID_TO_TIER[profileSeatKeyLC]
+  const purchasedRoleLabel = Array.isArray(displayProfile?.subscription_plan?.role_names)
+    ? displayProfile.subscription_plan.role_names.filter(Boolean).join(', ')
+    : UserStore.getSeatRoleNameForPlanRoleId?.(
+      displayProfile?.subscription_plan?.role_id_raw || displayProfile?.subscription_plan?.role_id || ''
+    );
+  const profileTierLabel = purchasedRoleLabel || (SEAT_ID_TO_TIER[profileSeatKeyLC]
     ? displayProfile?.state_seat?.seat_name
-    : ((profileTier.key === 'premium' && !displayHasBlueTick && realPlanName(displayProfile?.subscription_plan?.plan_name)) || profileTier.label);
+    : ((profileTier.key === 'premium' && !displayHasBlueTick && realPlanName(displayProfile?.subscription_plan?.plan_name)) || profileTier.label));
   const referralCode = displayProfile.referral_code || generateReferralCode(displayProfile.email);
   const canSeeReferral = Boolean(isLoggedIn && UserStore.hasActiveSubscription(displayProfile));
   const rank = getRank(displayProfile.referral_count || 0);
@@ -1136,9 +1141,11 @@ const handlePickImage = async () => {
 
   // Follow modal
   const followModal = (
-    <Modal visible={Boolean(followModalType)} transparent animationType="slide" onRequestClose={closeFollowList}>
-      <View style={ProfileStyles.followModalOverlay}>
-        <View style={ProfileStyles.followModalCard}>
+    <Modal visible={Boolean(followModalType)} transparent animationType={Platform.OS === 'web' ? 'fade' : 'slide'} onRequestClose={closeFollowList}>
+      <View style={[ProfileStyles.followModalOverlay, Platform.OS === 'web' && { justifyContent: 'center', alignItems: 'center' }]}>
+        {/* web par bahar click se band ho */}
+        {Platform.OS === 'web' ? <TouchableOpacity style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} activeOpacity={1} onPress={closeFollowList} /> : null}
+        <View style={[ProfileStyles.followModalCard, Platform.OS === 'web' && { width: 440, maxWidth: '92%', borderRadius: 12 }]}>
           <View style={ProfileStyles.followModalHeader}>
             <Text style={ProfileStyles.followModalTitle}>
               {followModalType === 'followers' ? 'Followers' : 'Following'}
@@ -1726,22 +1733,20 @@ const handlePickImage = async () => {
                     </View>
                   </View>
 
-                  {!isWebNarrow ? (
-                    <View style={w.statsBox}>
-                      <View style={w.statItem}>
-                        <Text style={w.statNum}>{userPosts.length}</Text>
-                        <Text style={w.statLabel}>Posts</Text>
-                      </View>
-                      <View style={w.statItem}>
-                        <Text style={w.statNum}>{profileStats.followers}</Text>
-                        <Text style={w.statLabel}>Followers</Text>
-                      </View>
-                      <View style={w.statItem}>
-                        <Text style={w.statNum}>{profileStats.following}</Text>
-                        <Text style={w.statLabel}>Following</Text>
-                      </View>
+                  <View style={[w.statsBox, isWebNarrow && { marginTop: 12 }]}>
+                    <View style={w.statItem}>
+                      <Text style={w.statNum}>{userPosts.length}</Text>
+                      <Text style={w.statLabel}>Posts</Text>
                     </View>
-                  ) : null}
+                    <TouchableOpacity style={w.statItem} activeOpacity={0.7} onPress={() => openFollowList('followers')}>
+                      <Text style={w.statNum}>{profileStats.followers}</Text>
+                      <Text style={w.statLabel}>Followers</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={w.statItem} activeOpacity={0.7} onPress={() => openFollowList('following')}>
+                      <Text style={w.statNum}>{profileStats.following}</Text>
+                      <Text style={w.statLabel}>Following</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
                               <View style={[w.actionsRow, { alignItems: 'center' }]}>
@@ -1801,6 +1806,7 @@ const handlePickImage = async () => {
           </View>
           </View>
         </ScrollView>
+        {followModal}
       </View>
     );
   };

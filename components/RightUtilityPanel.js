@@ -7,9 +7,28 @@ import { groupAdsByOwner } from '../utils/adGrouping';
 import UserStore from '../store/UserStore';
 import ProfileAvatar from './ProfileAvatar';
 import AdVideoPlayer from './AdVideoPlayer';
+import PostGridThumb from './PostGridThumb';
 
 // India ke Chief Editor ki user ID yahan daalo (backend/admin panel se dekh lo).
 const CHIEF_EDITOR_USER_ID = ''; // example: '12'
+
+// Trending row ka thumbnail: video wali news me pehle video ka asli frame dikhao.
+// (normalizeStoryItem video-news ko bhi random placeholder `image` de deta hai, isliye image par bharosa nahi)
+function TrendingThumb({ story, index }) {
+  const videoUri = String(typeof story?.video === 'string' ? story.video : story?.video?.uri || '').trim();
+  const isVideo = story?.mediaType === 'Video' || Boolean(videoUri);
+  if (isVideo && videoUri) {
+    return (
+      <View style={[styles.updateThumb, { overflow: 'hidden' }]}>
+        <PostGridThumb videoUri={videoUri} />
+        <View pointerEvents="none" style={{ position: 'absolute', right: 5, bottom: 5, width: 20, height: 20, borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}>
+          <Ionicons name="play" size={11} color="#fff" />
+        </View>
+      </View>
+    );
+  }
+  return <Image source={{ uri: story?.image || 'https://picsum.photos/seed/update' + index + '/80/80' }} style={styles.updateThumb} />;
+}
 
 const formatCount = (n) => {
   const v = Number(n || 0);
@@ -278,7 +297,7 @@ export default function RightUtilityPanel({
         </View>
         {(latestUpdates.length ? latestUpdates : []).map((story, i) => (
           <TouchableOpacity key={story.id || i} style={styles.updateRow} activeOpacity={0.8} onPress={() => onOpenDetails?.(story)}>
-            <Image source={{ uri: story.image || 'https://picsum.photos/seed/update' + i + '/80/80' }} style={styles.updateThumb} />
+            <TrendingThumb story={story} index={i} />
             <View style={{ flex: 1 }}>
               <Text style={styles.updateCategory}>{String(story.category || 'India')}</Text>
               <Text style={styles.updateTitle} numberOfLines={3}>{story.title}</Text>

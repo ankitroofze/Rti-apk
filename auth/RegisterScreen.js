@@ -368,7 +368,9 @@ export default function RegisterScreen({ navigation }) {
         navigation.navigate('Login');
         return;
       }
-            console.log('PENDING AFTER REGISTER:', await UserStore.getPendingRegistration());
+      // Account server par ban gaya + token save ho gaya: session turant save karo, taaki location
+      // steps ke beech app band karke dobara kholne par bhi isi ID se login rahe.
+      try { await UserStore.setCurrentUser(normalizedEmail); } catch (_) {}
       navigation.navigate('StateSelect', { fromPremium: false, needsCreateUser: true });
     } catch {
       showToast('Registration failed. Please try again.', 'error');

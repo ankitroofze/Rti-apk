@@ -3,6 +3,7 @@ import { View, ScrollView, TouchableOpacity, Text, Platform } from 'react-native
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import AutoFitAdImage from './AutoFitAdImage';
+import MediaControlBar, { isAudioUrl } from './MediaControlBar';
 
 // Video ka asli width/height ratio nikalta hai (native + web) taaki video bina zoom/crop/stretch ke
 // bilkul waisa dikhe jaisa upload kiya gaya tha.
@@ -52,15 +53,42 @@ function getVideoBox(width, ratio, maxHeight) {
 
 // WEB: browser ka apna <video> tag. Browser video ka asli size (videoWidth/videoHeight) khud jaanta hai,
 // to video kabhi stretch/zoom nahi hota aur frame ki height asli ratio se hi banti hai.
+// Audio-only file (videoWidth === 0) par browser ka alag "pill" player aata hai — usse hata kar
+// hum apna video-jaisa control bar dikhate hain (MediaControlBar).
 function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio }) {
   const [ratio, setRatio] = useState(null);
+  const [audioOnly, setAudioOnly] = useState(() => isAudioUrl(uri));
+  const [st, setSt] = useState({ playing: false, cur: 0, dur: 0, muted: false });
+  const vref = useRef(null);
+
+  const sync = (e) => {
+    const v = e?.currentTarget || e?.target || vref.current;
+    if (!v) return;
+    setSt({
+      playing: !v.paused && !v.ended,
+      cur: v.currentTime || 0,
+      dur: Number.isFinite(v.duration) ? v.duration : 0,
+      muted: !!v.muted,
+    });
+  };
+
   const handleMeta = (e) => {
     const v = e?.currentTarget || e?.target;
     if (v && v.videoWidth > 0 && v.videoHeight > 0) {
       const r = v.videoWidth / v.videoHeight;
       setRatio(r);
+      setAudioOnly(false);
       onRatio?.(uri, r);
+    } else if (v) {
+      setAudioOnly(true); // video track nahi hai -> audio ad
     }
+    sync(e);
+  };
+
+  const toggle = () => {
+    const v = vref.current;
+    if (!v) return;
+    if (v.paused || v.ended) { if (v.ended) v.currentTime = 0; v.play?.(); } else v.pause();
   };
 
   const { w, h } = coverMode
@@ -71,13 +99,34 @@ function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio }) {
     <View style={{ width: w, height: h, backgroundColor: '#000', overflow: 'hidden' }}>
       {React.createElement('video', {
         key: uri,
+        ref: vref,
         src: uri,
-        controls: true,
+        controls: !audioOnly,
         playsInline: true,
         preload: 'metadata',
         onLoadedMetadata: handleMeta,
+        onPlay: sync,
+        onPause: sync,
+        onEnded: sync,
+        onTimeUpdate: sync,
+        onDurationChange: sync,
+        onVolumeChange: sync,
         style: { width: '100%', height: '100%', objectFit: 'contain', display: 'block', backgroundColor: '#000' },
       })}
+      {audioOnly ? (
+        <>
+          <TouchableOpacity activeOpacity={1} onPress={toggle} style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 56 }} />
+          <MediaControlBar
+            playing={st.playing}
+            current={st.cur}
+            duration={st.dur}
+            muted={st.muted}
+            onToggle={toggle}
+            onSeek={(t) => { if (vref.current) vref.current.currentTime = t; }}
+            onMute={() => { if (vref.current) vref.current.muted = !vref.current.muted; }}
+          />
+        </>
+      ) : null}
     </View>
   );
 }
@@ -85,14 +134,77 @@ function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio }) {
 function NativeVideoSlide({ uri, width, maxHeight, coverMode, onRatio }) {
   const player = useVideoPlayer({ uri }, (p) => { p.loop = false; });
   const ratio = useVideoRatio(uri, player);
+  const [audioOnly, setAudioOnly] = useState(() => isAudioUrl(uri));
+  const [st, setSt] = useState({ playing: false, cur: 0, dur: 0, muted: false });
 
   useEffect(() => { if (ratio) onRatio?.(uri, ratio); }, [ratio, uri, onRatio]);
+  useEffect(() => { if (ratio) setAudioOnly(false); }, [ratio]);
+
+  // Source load hone par video track na ho to audio-only maano
+  useEffect(() => {
+    let sub;
+    try {
+      sub = player.addListener('sourceLoad', (e) => {
+        const tracks = e?.availableVideoTracks;
+        if (Array.isArray(tracks) && tracks.length === 0) setAudioOnly(true);
+      });
+    } catch (e) { /* purana expo-video */ }
+    return () => { try { sub?.remove?.(); } catch (e) { /* ignore */ } };
+  }, [player]);
+
+  // Audio bar ke liye time/play state (chhota polling — saare expo-video versions par chalta hai)
+  useEffect(() => {
+    if (!audioOnly) return undefined;
+    const read = () => {
+      try {
+        setSt((prev) => {
+          const next = {
+            playing: !!player.playing,
+            cur: Number(player.currentTime) || 0,
+            dur: Number(player.duration) || 0,
+            muted: !!player.muted,
+          };
+          return prev.playing === next.playing && prev.muted === next.muted
+            && Math.abs(prev.cur - next.cur) < 0.2 && prev.dur === next.dur ? prev : next;
+        });
+      } catch (e) { /* ignore */ }
+    };
+    read();
+    const timer = setInterval(read, 250);
+    return () => clearInterval(timer);
+  }, [audioOnly, player]);
+
+  const toggle = () => {
+    try {
+      if (player.playing) { player.pause(); return; }
+      if (st.dur > 0 && st.cur >= st.dur - 0.3) player.currentTime = 0;
+      player.play();
+    } catch (e) { /* ignore */ }
+  };
+
+  const bar = audioOnly ? (
+    <>
+      <TouchableOpacity activeOpacity={1} onPress={toggle} style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 56 }} />
+      <MediaControlBar
+        playing={st.playing}
+        current={st.cur}
+        duration={st.dur}
+        muted={st.muted}
+        onToggle={toggle}
+        onSeek={(t) => { try { player.currentTime = t; } catch (e) { /* ignore */ } }}
+        onMute={() => { try { player.muted = !player.muted; } catch (e) { /* ignore */ } }}
+      />
+    </>
+  ) : null;
+
+  const surface = Platform.OS === 'android' ? 'textureView' : undefined;
 
   // cover mode (purana behaviour): fixed 16:9 frame
   if (coverMode) {
     return (
       <View style={{ width, height: Math.round(width * 9 / 16), backgroundColor: '#000' }}>
-        <VideoView player={player} style={{ width: '100%', height: '100%' }} contentFit="contain" nativeControls surfaceType={Platform.OS === 'android' ? 'textureView' : undefined} />
+        <VideoView player={player} style={{ width: '100%', height: '100%' }} contentFit="contain" nativeControls={!audioOnly} surfaceType={surface} />
+        {bar}
       </View>
     );
   }
@@ -100,7 +212,8 @@ function NativeVideoSlide({ uri, width, maxHeight, coverMode, onRatio }) {
   const { w, h } = getVideoBox(width, ratio, maxHeight);
   return (
     <View style={{ width: w, height: h, backgroundColor: '#000', overflow: 'hidden' }}>
-      <VideoView player={player} style={{ width: '100%', height: '100%' }} contentFit="contain" nativeControls surfaceType={Platform.OS === 'android' ? 'textureView' : undefined} />
+      <VideoView player={player} style={{ width: '100%', height: '100%' }} contentFit="contain" nativeControls={!audioOnly} surfaceType={surface} />
+      {bar}
     </View>
   );
 }

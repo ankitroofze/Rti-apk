@@ -320,6 +320,25 @@ const newsUploadErrorResult = (err, mediaType) => {
   };
 };
 
+// Video ke saath music / voice-over ke fields (backend ffmpeg se merge karta hai).
+const appendAudioMix = async (formData, audioMix) => {
+  if (!audioMix) return;
+  if (audioMix.musicId) formData.append('music_id', String(audioMix.musicId));
+  if (audioMix.musicUrl) formData.append('music_url', String(audioMix.musicUrl));
+  if (audioMix.musicId || audioMix.musicUrl) {
+    formData.append('music_volume', String(audioMix.musicVolume ?? 0.6));
+  }
+  formData.append('mute_original', audioMix.muteOriginal === false ? '0' : '1');
+  if (audioMix.voiceUri) {
+    if (Platform.OS === 'web') {
+      const blob = await fetch(audioMix.voiceUri).then((r) => r.blob());
+      formData.append('voice', blob, 'voice.m4a');
+    } else {
+      formData.append('voice', { uri: audioMix.voiceUri, type: 'audio/mp4', name: 'voice.m4a' });
+    }
+  }
+};
+
 export const AuthAPI = {
 
   /**
@@ -1683,6 +1702,7 @@ if (status === 200 || status === 201) {
     mediaName = 'media',
     mediaMime = '',
     extraImages = [],
+    audioMix = null,
   }) => {
     try {
       console.log("Received mediaUri:", mediaUri);
@@ -1710,6 +1730,8 @@ if (status === 200 || status === 201) {
           });
         }
       }
+
+      await appendAudioMix(formData, audioMix);
 
       for (let i = 0; i < (extraImages || []).length; i += 1) {
         const uri = extraImages[i];
@@ -1911,7 +1933,7 @@ if (status === 200 || status === 201) {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
 
-      const response = await fetch(`${BASE_URL}/likes/${newsId}`, {
+      let response = await fetch(`${BASE_URL}/likes/${newsId}`, {
         method: 'DELETE',
         headers: {
           Accept: 'application/json',
@@ -1919,7 +1941,35 @@ if (status === 200 || status === 201) {
         },
       });
 
-      const json = await response.json().catch(() => null);
+      let json = await response.json().catch(() => null);
+
+      // ✅ FIX: hosting firewall (ModSecurity) DELETE ko 403/405 se block karta hai (response HTML hota
+      // hai, Laravel ka JSON nahi). /likes/{id} par POST + method-override bhi block hota hai, isliye
+      // wo raasta chhod diya. Ab jo endpoint chal raha hai (POST /likes, toggle) use try karte hain:
+      //   - server `liked: false` bataye  => unlike ho gaya (success)
+      //   - server `liked: true` bataye   => backend toggle nahi karta, unlike nahi hua (honest fail)
+      const blockedByHost = response.status === 405 || (response.status === 403 && json === null);
+      if (blockedByHost) {
+        const tr = await fetch(`${BASE_URL}/likes`, {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ news_id: Number(newsId) }),
+        });
+        const tj = await tr.json().catch(() => null);
+        if (tr.status === 200 || tr.status === 201) {
+          const nowLiked = tj?.liked !== undefined ? Boolean(tj.liked) : Number(tj?.like?.like) === 1;
+          if (!nowLiked) {
+            return { ok: true, liked: false, likesCount: tj?.likes_count != null ? Number(tj.likes_count) : null, message: tj?.message || 'Unliked.', data: tj };
+          }
+          return { ok: false, message: 'Unlike blocked by server firewall (ModSecurity). Please contact hosting/admin.' };
+        }
+        if (tr.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+        return { ok: false, message: 'Unlike blocked by server firewall (ModSecurity). Please contact hosting/admin.' };
+      }
 
       if (response.status === 200 || response.status === 201 || response.status === 204) {
         return { ok: true, liked: false, likesCount: json?.likes_count != null ? Number(json.likes_count) : null, message: json?.message || 'Unliked.', data: json };
@@ -2183,8 +2233,11 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
   getFeeds: async (params = {}) => {
     try {
       const query = {};
-      if (params.per_page) query.per_page = Math.min(Number(params.per_page) || 10, 30);
+      if (params.per_page) query.per_page = Math.max(1, Math.min(Number(params.per_page) || 10, 30));
       if (params.cursor) query.cursor = params.cursor;
+      // Reel feed mein comment previews ki zarurat nahi hoti; detail kholte waqt
+      // comments alag endpoint se load hote hain.
+      if (params.comments === 0) query.comments = 0;
       const qs = new URLSearchParams(query).toString();
       const { status, data } = await publicRequest(qs ? `/feeds?${qs}` : '/feeds');
 
@@ -2273,6 +2326,7 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
     mediaName = 'media',
     mediaMime = '',
     extraImages = [],
+    audioMix = null,
   }) => {
     try {
       const token = await getAuthToken();
@@ -2303,6 +2357,8 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
 
       // Keep edit uploads consistent with create: send every additional image,
       // not only the first cover image.
+      await appendAudioMix(formData, audioMix);
+
       for (let i = 0; i < (extraImages || []).length; i += 1) {
         const uri = extraImages[i];
         if (!uri) continue;
@@ -2406,33 +2462,6 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
       return { ok: false, isNetwork: true, message: 'Network error.' };
     }
   },
-
-  /**
-   * Get news counts (likes, comments, shares, views)
-   * POST /counts
-   * Body (form-data): news_id
-   * Headers: Authorization: Bearer {token}
-   */
-  getNewsCounts: async ({ newsId }) => {
-    try {
-      const token = await getAuthToken();
-      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
-
-      const { status, data } = await postFormData('/counts', {
-        news_id: String(newsId),
-      }, token);
-
-      if (status === 200 || status === 201) {
-        return { ok: true, counts: data?.counts || data?.data || data };
-      }
-      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
-      return { ok: false, message: data?.message || `Server error (${status}).` };
-    } catch (err) {
-      console.error('[AuthAPI.getNewsCounts] Error:', err);
-      return { ok: false, isNetwork: true, message: 'Network error.' };
-    }
-  },
-
 
  getAdsDetails: async () => {
   try {
@@ -2704,6 +2733,26 @@ recordAdView: async (adsId) => {
     return { ok: false, message: data?.message || `Server error (${status}).` };
   } catch (err) {
     console.error('[AuthAPI.recordAdView] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+// ── NEWS VIEWS API ──────────────────────────────────────────
+// POST /news-views  (form-data: news_id) — ads wale /ads-views jaisa
+recordNewsView: async (newsId) => {
+  try {
+    const token = await getAuthToken();
+    // Backend abhi login token maangta hai — guest ke liye call skip (error mat do)
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const id = Number(newsId);
+    const { status, data } = await postJSON('/counts', { news_id: Number.isFinite(id) ? id : newsId }, token);
+    if (status === 200 || status === 201) {
+      return { ok: true, data, counts: data?.counts || data?.data || data };
+    }
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.recordNewsView] Error:', err);
     return { ok: false, isNetwork: true, message: 'Network error.' };
   }
 },

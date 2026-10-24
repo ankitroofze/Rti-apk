@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { BackHandler, Platform } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Alert, BackHandler, Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { navigationRef } from '../utils/navigationRef';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -75,6 +75,7 @@ const Stack = createNativeStackNavigator();
 const NAVIGATION_STATE_KEY = 'rti-news-navigation-state';
 
 export default function AppNavigator() {
+  const exitDialogVisibleRef = useRef(false);
   const [isNavStateReady, setIsNavStateReady] = useState(false);
 
   const stackScreens = [
@@ -158,9 +159,8 @@ export default function AppNavigator() {
     setIsNavStateReady(true);
   }, []);
 
-  // Android hardware back now always returns to the previous screen when the
-  // stack has one. At the root we return false so Android handles its normal
-  // app-exit behavior.
+  // Android back: previous screen par return karo; root par user confirmation
+  // ke bina app close nahi hogi.
   useEffect(() => {
     if (Platform.OS !== 'android') return undefined;
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -168,7 +168,18 @@ export default function AppNavigator() {
         navigationRef.goBack();
         return true;
       }
-      return false;
+      if (exitDialogVisibleRef.current) return true;
+      exitDialogVisibleRef.current = true;
+      Alert.alert(
+        'Exit app?',
+        'Do you want to exit app?',
+        [
+          { text: 'Cancel', style: 'cancel', onPress: () => { exitDialogVisibleRef.current = false; } },
+          { text: 'Yes', style: 'destructive', onPress: () => BackHandler.exitApp() },
+        ],
+        { cancelable: true, onDismiss: () => { exitDialogVisibleRef.current = false; } }
+      );
+      return true;
     });
     return () => subscription.remove();
   }, []);

@@ -326,7 +326,7 @@ export default function VillageSelectScreen({ navigation, route }) {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={[]}>
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <ImageBackground source={require('../assets/images/profile-red.png')} resizeMode="cover" style={styles.root}>
         <View style={[styles.glow, styles.glowTop]} />
         <View style={[styles.glow, styles.glowBottom]} />

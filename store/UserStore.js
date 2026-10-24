@@ -977,6 +977,11 @@ const normalizeNewsFeed = (items = []) => {
     author_profile_image: item.author_profile_image || item.authorProfileImage || item.createdByProfileImage || item.profile_image || '',
     author_subscription_plan: item.author_subscription_plan || item.authorSubscriptionPlan || null,
     author_subscription_type: item.author_subscription_type || item.authorSubscriptionType || '',
+    author_mobile: item.author_mobile || item.authorMobile || item.author_phone || item.authorPhone || '',
+    author_area: item.author_area || item.authorArea || '',
+    author_state: item.author_state || item.authorState || '',
+    author_district: item.author_district || item.authorDistrict || '',
+    author_taluka: item.author_taluka || item.authorTaluka || '',
     author_has_blue_tick: Boolean(item.author_has_blue_tick || item.authorHasBlueTick || item.createdByBlueTick || false),
     author_is_premium: Boolean(item.author_is_premium || item.createdByPremium || false),
     author_is_subscriber: Boolean(item.author_is_subscriber || item.author_is_premium || item.createdBySubscriber || false),
@@ -1022,6 +1027,14 @@ const toSafeDateString = (value) => {
     return firstDateLike || '';
   }
   return '';
+};
+
+const toApiCount = (...values) => {
+  for (const value of values) {
+    const count = Number(value);
+    if (Number.isFinite(count) && count >= 0) return count;
+  }
+  return 0;
 };
 
 const mapApiNewsToFeedItem = (apiItem = {}) => {
@@ -1100,6 +1113,11 @@ images: mediaType === 'Image' ? collectedImages : [],
     // same Premium Plan-only badge rule to an existing post.
     author_subscription_plan: author.subscription_plan || author.active_plan || apiItem.author_subscription_plan || null,
     author_subscription_type: author.subscription_type || apiItem.author_subscription_type || '',
+    author_mobile: author.mobile || author.mobile_number || author.phone || author.phone_number || apiItem.author_mobile || '',
+    author_area: author.area || authorSeat.area || authorSeat.area_name || apiItem.author_area || '',
+    author_state: author.state || apiItem.author_state || '',
+    author_district: author.district || apiItem.author_district || '',
+    author_taluka: author.taluka || apiItem.author_taluka || '',
     author_has_blue_tick: hasBlueTick(author),
     author_is_premium: Boolean(author.is_premium),
     author_is_subscriber: Boolean(author.is_subscriber),
@@ -1108,9 +1126,13 @@ images: mediaType === 'Image' ? collectedImages : [],
     author_seat_id: String(authorSeat.seat_id || apiItem.author_seat_id || '').trim(),
     author_seat_name: String(authorSeat.seat_name || apiItem.author_seat_name || '').trim(),
     author_role_label: author.role_label || apiItem.author_role_label || '',
+    author_role: author.role || apiItem.author_role || '',
     date: toSafeDateString(apiItem.created_at ?? apiItem.date),
     createdAt: toSafeDateString(apiItem.created_at ?? apiItem.date),
-    views: Number(apiItem.views || 0),
+    publishedAgo: getRelativeTimeLabel(apiItem.created_at ?? apiItem.date),
+    // The API's view total is authoritative. Different deployments use
+    // different field names, so preserve all common response variants.
+    views: toApiCount(apiItem.views, apiItem.views_count, apiItem.view_count, apiItem.total_views),
      shares: Number(apiItem.share_count ?? apiItem.shares ?? 0),
     likes: Number(apiItem.likes || apiItem.likes_count || 0),
     comments: Number(apiItem.comments || apiItem.comments_count || 0),
@@ -1583,9 +1605,22 @@ const getRoleSubscriptionPlan = (user = {}) => (
 );
 const hasBlueTick = (user = {}) => {
   if (!user) return false;
+  // A locally known expiry wins over an old cached/server flag, so a badge
+  // cannot remain visible after the subscription has ended.
+  const plan = getRoleSubscriptionPlan(user);
+  const expiresAt = plan?.expires_at || plan?.expiry || plan?.end_date;
+  if (expiresAt && isExpiredValue(expiresAt)) return false;
+  // A new role plan replaces the old Premium entitlement. A stale true flag
+  // must never keep the tick after the user buys a non-Premium role plan.
+  const hasCurrentPlan = Boolean(plan && (plan.plan_id || plan.id || plan.plan_name || plan.name || plan.title));
+  if (hasCurrentPlan) return Boolean(isPremiumPlan(plan) && hasActiveSubscription(user));
   // Backend ka seedha flag (server plan + expiry khud check karke bhejta hai) — sabse pehle
+  // BACKEND = SINGLE SOURCE OF TRUTH: agar server ne flag bheja hai (true YA false),
+  // wahi final hai. Purana plan/cache usko override nahi karega.
   const serverFlag = user.has_blue_tick ?? user.is_blue_tick ?? user.blue_tick;
-  if (serverFlag === true || serverFlag === 1 || serverFlag === '1') return true;
+  if (serverFlag !== undefined && serverFlag !== null && serverFlag !== '') {
+    return serverFlag === true || serverFlag === 1 || serverFlag === '1' || serverFlag === 'true';
+  }
   // Sirf asli Premium plan (backend is_premium) + active subscription = blue tick.
   return Boolean(
     (isPremiumPlan(getRoleSubscriptionPlan(user)) || hasPremiumAccess(user)) &&
@@ -1697,6 +1732,9 @@ const CREDIT_VALIDITY_DAYS = 30;
 
 // ✅ Web/other device pe kiya purchase is device pe laane ke liye (backend /my-subscriptions se)
 let lastCreditSyncAt = 0;
+// Blocked-users list ek hi load me 2-3 baar mangi jaati thi (news + ads). Ab 30 sec tak ek hi network call.
+let blockedUsersCache = { at: 0, promise: null };
+const BLOCKED_USERS_TTL_MS = 30000;
 const pickNum = (...vals) => {
   for (const v of vals) {
     if (v !== undefined && v !== null && v !== '') {
@@ -1791,7 +1829,15 @@ const normalizeUser = (user = {}) => {
     role_label:          getRoleLabel(role),
     // ✅ FIX: raw user.role/user.is_subscribed ki jagah derived role + isSubscribed
     // pass karo, taaki premium subscription lete hi blue tick turant milna shuru ho.
-    has_blue_tick:       hasBlueTick({ ...user, role, is_subscribed: isSubscribed }),
+    // Backend ne flag bheja ho to wahi rakho; nahi bheja to plan se compute karo
+    // (purana cached flag compute me shamil nahi hoga — warna tick hamesha sticky rehta tha).
+    has_blue_tick: (() => {
+      const { has_blue_tick: _hb, is_blue_tick: _ib, blue_tick: _bt, ...userNoFlag } = user;
+      const explicit = [_hb, _ib, _bt].some((v) => v !== undefined && v !== null && v !== '');
+      return explicit
+        ? hasBlueTick(user)
+        : hasBlueTick({ ...userNoFlag, role, is_subscribed: isSubscribed });
+    })(),
     is_subscribed:       isSubscribed,
     village:             user.village             || '',
     bio:                 user.bio                 || '',
@@ -2946,6 +2992,7 @@ consumeQuizAttempt: async () => {
               subscription_type: 'free',
               subscription_plan: null,
               state_seat: null,
+              has_blue_tick: false,
             }) || found;
           }
         }
@@ -3340,6 +3387,7 @@ syncRoleSubscriptionV3: async (existingUser) => {
             subscription_type: 'free',
             subscription_plan: null,
             state_seat: null,
+            has_blue_tick: false,
           });
           return downgraded || user;
         }
@@ -3438,6 +3486,10 @@ syncRoleSubscriptionV3: async (existingUser) => {
         role: newRole,
         role_label: getRoleLabel(newRole),
         is_subscribed: true,
+        // A replacement plan must fully replace the old plan's benefits.
+        // This prevents a previously saved Premium tick from sticking to a
+        // non-Premium plan.
+        has_blue_tick: isPremiumPlan(mergedPlan),
       });
       return updatedUser || user;
     } catch (err) {
@@ -4076,6 +4128,8 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
         role: newRole,
         role_label: getRoleLabel(newRole),
         is_subscribed: true,
+        // New plan replaces the old plan's premium entitlement immediately.
+        has_blue_tick: isPremiumPlan(activePlan),
         // Role subscription ke baad free-limit hint stale ho jaata hai — clear karo.
         // (Backend har POST par live check karta hai, isliye extra flag nahi.)
         free_news_credits: null,
@@ -4318,13 +4372,21 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
       const feedContentType = options?.type === 1 || options?.type === 2 ? options.type : undefined; // 1 news, 2 reels
       const feedPerPage = options?.perPage || 10;
       let feedPagination = null;
+      // ✅ SPEED: blocked-users request news request ke saath hi shuru, baad me sirf await
+      const blockedPromise = skipBlockedUsers
+        ? Promise.resolve({ ok: true, list: [] })
+        : UserStore.getBlockedUsers().catch(() => ({ ok: true, list: [] }));
       const currentUser = await UserStore.getCurrentUser();
 
       // ── Real news ab yahan se aati hai (dummy defaultNewsFeed hata diya) ──
       let apiItems = [];
       try {
         if (feedType === 'feeds') {
-          const apiRes = await AuthAPI.getFeeds({ per_page: feedPerPage, ...(feedCursor ? { cursor: feedCursor } : {}) });
+          const apiRes = await AuthAPI.getFeeds({
+            per_page: feedPerPage,
+            ...(feedCursor ? { cursor: feedCursor } : {}),
+            ...(options?.comments === 0 ? { comments: 0 } : {}),
+          });
           feedPagination = apiRes.pagination || null;
           if (apiRes.ok && Array.isArray(apiRes.news)) {
             apiItems = apiRes.news;
@@ -4442,7 +4504,7 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
         .filter((item) => !feedContentType || item.type === feedContentType);
       // A public-profile screen loads its own posts and must not make a
       // blocked-users request merely because the profile was opened.
-      const blockedRes = skipBlockedUsers ? { ok: true, list: [] } : await UserStore.getBlockedUsers();
+      const blockedRes = await blockedPromise;
       const blockedEmailsForFeed = new Set((blockedRes?.list || []).map((u) => u.email).filter(Boolean));
       const blockedIdsForFeed = new Set((blockedRes?.list || []).map((u) => (u.id != null ? String(u.id) : '')).filter(Boolean));
       const isBlockedFeedItem = (item) => {
@@ -4471,7 +4533,9 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
         ].filter(Boolean)));
         return images.length > 1 ? { ...item, images, image: item.image || images[0], thumbnail: item.thumbnail || images[0] } : item;
       });
-      const mergedItems = [...apiItemsWithLocalGallery, ...justSubmittedItems]
+      // Sirf server (API) ka real data dikhao. Local/stored record ab alag item ban kar nahi judta,
+      // wo sirf matching API item ki extra images enrich karne ke kaam aata hai (upar).
+      const mergedItems = [...apiItemsWithLocalGallery]
         .filter((item) => !isBlockedFeedItem(item))
         // ✅ FIX: id missing/undefined hone par pehle ye galti se doosri post ko bhi
         // "duplicate" samajh kar hata deta tha (kyunki String(undefined) dono ke liye
@@ -4511,7 +4575,7 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
 
          next.comments = baseComments;
          next.shares = baseShares;
-          next.views = baseViews + Number(stat.views || 0);
+          next.views = baseViews; // server view_count hi final hai (local SQLite views add nahi hote)
 
           // ✅ FIX: likes ab sirf backend API se aate hain — local SQLite/
           // AsyncStorage wala count/liked-by-me flag ab merge nahi hota,
@@ -4679,7 +4743,7 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
             if (res.isAuth) return { ok: false, message: 'Session expired. Please login again.' };
             return { ok: false, message: res.message || 'Unable to unlike.' };
           }
-          return { ok: true, liked: false };
+          return { ok: true, liked: false, likesCount: Number.isFinite(res.likesCount) ? res.likesCount : null };
         }
 
         // News likes are authenticated by the bearer token. Android users can
@@ -4690,7 +4754,7 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
           if (res.isAuth) return { ok: false, message: 'Session expired. Please login again.' };
           return { ok: false, message: res.message || 'Unable to like.' };
         }
-        return { ok: true, liked: Boolean(res.liked) };
+        return { ok: true, liked: Boolean(res.liked), likesCount: Number.isFinite(res.likesCount) ? res.likesCount : null };
       }
 
       const user = await UserStore.getCurrentUser();
@@ -5794,6 +5858,7 @@ followUser: async (targetUserEmail, targetUserId) => {
       // ✅ FIX: sirf POST /users/block hit karo — koi doosri API call nahi.
       // Backend khud follow-relation hata deta hai jab block hota hai, isliye
       // yahan se separate POST /users/unfollow call karne ki zaroorat nahi thi.
+      blockedUsersCache = { at: 0, promise: null };
       const apiResult = await AuthAPI.blockUserApi(targetId);
       if (!apiResult.ok) return apiResult;
 
@@ -5825,6 +5890,7 @@ followUser: async (targetUserEmail, targetUserId) => {
         targetId = targetUser?.id ?? targetUser?.user_id ?? null;
       }
       if (!targetId) return { ok: false, message: 'Unable to resolve user id.' };
+      blockedUsersCache = { at: 0, promise: null };
       const apiResult = await AuthAPI.unblockUserApi(targetId);
       if (!apiResult.ok) return apiResult;
       return { ok: true, message: 'User unblocked.' };
@@ -5834,6 +5900,19 @@ followUser: async (targetUserEmail, targetUserId) => {
     }
   },
   getBlockedUsers: async () => {
+    const now = Date.now();
+    if (blockedUsersCache.promise && now - blockedUsersCache.at < BLOCKED_USERS_TTL_MS) {
+      return blockedUsersCache.promise;
+    }
+    const promise = UserStore.getBlockedUsersFresh();
+    blockedUsersCache = { at: now, promise };
+    // fail hua to cache mat rakho, agli baar dobara try ho
+    promise.then((r) => { if (!r?.ok && blockedUsersCache.promise === promise) blockedUsersCache = { at: 0, promise: null }; })
+      .catch(() => { if (blockedUsersCache.promise === promise) blockedUsersCache = { at: 0, promise: null }; });
+    return promise;
+  },
+
+  getBlockedUsersFresh: async () => {
     const result = await AuthAPI.getBlockedUsersApi();
     if (!result.ok) return result;
     const list = (Array.isArray(result.list) ? result.list : []).map((raw) => {
@@ -6086,6 +6165,7 @@ followUser: async (targetUserEmail, targetUserId) => {
         role: newRole,
         role_label: getRoleLabel(newRole),
         is_subscribed: true,
+        has_blue_tick: isPremiumPlan(activePlan),
         payment_history: [...normalizePaymentHistory(user.payment_history), newPayment],
         notifications: [...currentNotifications, roleNotification],
       });
@@ -6223,17 +6303,21 @@ getMyAdPosts: async () => {
 
 getActiveAdsFeed: async (options = {}) => {
   try {
-    const res = await AuthAPI.getAdsDetails(); // GET /ads-details — no login required
+    // ✅ SPEED: ads API, blocked-users aur current-user teeno ek saath (pehle ek ke baad ek chalte the)
+    const [res, blockedResRaw, currentUserForAds] = await Promise.all([
+      AuthAPI.getAdsDetails(), // GET /ads-details — no login required
+      options?.skipBlockedUsers
+        ? Promise.resolve({ ok: true, list: [] })
+        : UserStore.getBlockedUsers().catch(() => ({ ok: true, list: [] })),
+      UserStore.getCurrentUser().catch(() => null),
+    ]);
     if (!res.ok || !Array.isArray(res.ads)) return [];
 
     const today = new Date().toISOString().slice(0, 10);
 
-      const blockedRes = options?.skipBlockedUsers
-      ? { ok: true, list: [] }
-      : await UserStore.getBlockedUsers();
+    const blockedRes = blockedResRaw;
     const blockedEmailsForAds = new Set((blockedRes?.list || []).map((u) => u.email).filter(Boolean));
     const blockedIdsForAds = new Set((blockedRes?.list || []).map((u) => (u.id != null ? String(u.id) : '')).filter(Boolean));
-    const currentUserForAds = await UserStore.getCurrentUser().catch(() => null);
     const currentUserEmailForAds = String(currentUserForAds?.email || '').trim().toLowerCase();
     const currentUserHasBlueTickForAds = Boolean(currentUserForAds && hasBlueTick(currentUserForAds));
     const isBlockedAdOwner = (ad) => {
@@ -6311,20 +6395,21 @@ getActiveAdsFeed: async (options = {}) => {
 // getAdsDetailsFeed ab isi ko point kare — same function, ek jagah se maintain hoga
 getAdsDetailsFeed: async () => UserStore.getActiveAdsFeed(),
 
-refreshNewsCounts: async (postId) => {
-  const res = await AuthAPI.getNewsCounts({ newsId: postId });
-  if (!res.ok) return null;
-  return {
-    likes: Number(res.counts?.likes || 0),
-    comments: Number(res.counts?.comments || 0),
-    shares: Number(res.counts?.shares || 0),
-    views: Number(res.counts?.views || 0),
-  };
-},
-
 recordAdImpression: async (adsId) => {
   if (!adsId) return { ok: false };
   return AuthAPI.recordAdView(adsId);
+},
+
+// News view count: news dikhne par ek baar backend ko batata hai
+recordNewsView: async (newsId) => {
+  if (!newsId) return { ok: false };
+  const res = await AuthAPI.recordNewsView(newsId);
+  if (!res?.ok) return res;
+  // POST /counts response se total view_count nikaalo (null = response me nahi aaya)
+  const c = res.counts || {};
+  const raw = c.view_count ?? c.views_count ?? c.views ?? c.total_views;
+  const n = Number(raw);
+  return { ...res, views: raw != null && raw !== '' && Number.isFinite(n) ? n : null };
 },
 
 

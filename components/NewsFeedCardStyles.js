@@ -370,7 +370,7 @@ storyFollowBtnWrap: {
   // ── Video overlays ──
   videoLoadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    backgroundColor: 'transparent', // video ke upar kala shade nahi
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -389,7 +389,7 @@ storyFollowBtnWrap: {
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(15, 23, 42, 0.28)',
+    backgroundColor: 'transparent', // video saaf dikhe — dark overlay hata diya
   },
   storyVideoPlayBadge: {
     width: 58,

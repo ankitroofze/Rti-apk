@@ -61,7 +61,9 @@ function isPlayableVideoSource(uri) {
   if (Platform.OS !== 'web') return true;
   if (/^(blob:|data:)/i.test(uri)) return true;
   if (isIdbMediaUri(uri)) return true;
-  return /^https?:/i.test(uri) && /\.(mp4|m4v|mov|webm|ogv|m3u8)(\?.*)?$/i.test(uri);
+  // Android se upload hue video ke URL me extension na ho ya alag ho (.3gp, bina extension) to bhi web par
+  // chalna chahiye. Ye function sirf video items ke liye bulaya jaata hai, isliye sirf saaf-saaf image/pdf URL reject karo.
+  return /^https?:/i.test(uri) && !/\.(jpe?g|png|gif|webp|bmp|svg|heic|avif|pdf)(\?.*)?(#.*)?$/i.test(uri);
 }
 
 function buildPlaceholderImage(seedKey) {
@@ -490,6 +492,16 @@ export default function NewsDetailsScreen({ route, navigation }) {
   const [isFollowingAuthor, setIsFollowingAuthor] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   const [showFullBody, setShowFullBody] = useState(false);
+  // Backend se live author profile — tick isi se decide hoga (article ka purana flag nahi)
+  const [liveAuthor, setLiveAuthor] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    const aid = String(article?.author_id ?? '').trim();
+    if (!/^\d+$/.test(aid)) { setLiveAuthor(null); return undefined; }
+    UserStore.getPublicProfileById(aid).then((p) => { if (!cancelled) setLiveAuthor(p || null); });
+    return () => { cancelled = true; };
+  }, [article?.author_id]);
+  const authorVerified = liveAuthor ? Boolean(UserStore.hasBlueTick(liveAuthor)) : Boolean(article.author_has_blue_tick);
 
   const resolvedHeroImage = useResolvedImageUri(article.image);
   const resolvedGalleryImages = useResolvedImageUris(article.images);
@@ -989,7 +1001,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
                     <View style={styles.storyAuthorTextWrap}>
                       <View style={styles.storyAuthorNameRow}>
                         <Text style={styles.storyAuthorName}>{article.author_name}</Text>
-                        {article.author_has_blue_tick ? <VerifiedBadge size={20} /> : null}
+                        {authorVerified ? <VerifiedBadge size={20} /> : null}
                       </View>
                       <Text style={styles.storyAuthorRoleText}>
                         {(() => {

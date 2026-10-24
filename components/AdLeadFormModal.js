@@ -356,7 +356,7 @@
 
 import React, { useEffect, useState } from 'react';
 import {
-  Modal, Platform, ScrollView, StyleSheet, Text, TextInput,
+  KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput,
   TouchableOpacity, View, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -451,7 +451,11 @@ export default function AdLeadFormModal({ visible, ad, onClose }) {
   );
 
   const formBody = (
-    <ScrollView contentContainerStyle={styles.formContent} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      contentContainerStyle={styles.formContent}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
+    >
       <View style={styles.productInfoBox}>
         <View style={styles.productInfoIcon}>
           <Ionicons name="megaphone-outline" size={18} color={C.primary} />
@@ -524,6 +528,10 @@ export default function AdLeadFormModal({ visible, ad, onClose }) {
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
       <View style={styles.sheetOverlay}>
         <View style={[styles.sheet, { maxHeight: '90%' }]}>
           <View style={styles.handle} />
@@ -536,6 +544,7 @@ export default function AdLeadFormModal({ visible, ad, onClose }) {
           {body}
         </View>
       </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

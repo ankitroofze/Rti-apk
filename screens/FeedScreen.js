@@ -4,7 +4,7 @@ import {
   View, Text, TouchableOpacity, StyleSheet,
   FlatList, Image, Dimensions, Modal, TextInput,
   KeyboardAvoidingView, Platform, ScrollView, Alert, Keyboard,
-  Animated, useWindowDimensions, Share, Linking,
+  Animated, useWindowDimensions, Share, Linking, BackHandler,
 } from 'react-native';
 import styles from './FeedScreenStyles';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
@@ -21,6 +21,7 @@ import { UserStore } from '../store/UserStore';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl, storeWebUriToIdbMedia } from '../utils/webMediaStore';
 import { safePause, safePlay, safeSetMuted } from '../utils/videoPlayerSafe';
+import { useGlobalMuted, getGlobalMuted } from '../utils/Globalmutestore';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
 import { getAdRedirectMeta, openAdRedirect } from '../utils/adRedirect';
 
@@ -70,7 +71,9 @@ function isPlayableVideoSource(uri) {
 
   if (Platform.OS !== 'web') return true;
   if (/^(blob:|data:|idb-media:)/i.test(uri)) return true;
-  return /^https?:/i.test(uri) && /\.(mp4|m4v|mov|webm|ogv|m3u8)(\?.*)?$/i.test(uri);
+  // Android se upload hue video ke URL me extension na ho ya alag ho (.3gp, bina extension) to bhi web par
+  // chalna chahiye. Ye function sirf video items ke liye bulaya jaata hai, isliye sirf saaf-saaf image/pdf URL reject karo.
+  return /^https?:/i.test(uri) && !/\.(jpe?g|png|gif|webp|bmp|svg|heic|avif|pdf)(\?.*)?(#.*)?$/i.test(uri);
 }
 
 // Share Handler
@@ -323,14 +326,17 @@ function DescriptionModal({ visible, onClose, post, onShare, onAddComment, curre
   const currentUserHasBlueTick = Boolean(currentUser && UserStore.hasBlueTick(currentUser));
   const currentUserAvatar = String(currentUser?.avatar || currentUser?.profile_image || '').trim();
   const authorEmail = String(post?.createdBy || post?.created_by || '').trim().toLowerCase();
-  const verified = Boolean(
-    post?.verified ||
-    post?.author_has_blue_tick ||
-    post?.has_blue_tick ||
-    post?.authorHasBlueTick ||
-    post?.createdByBlueTick ||
-    (authorEmail && currentUserEmail && authorEmail === currentUserEmail && currentUserHasBlueTick)
-  );
+  const isOwnPost = Boolean(authorEmail && currentUserEmail && authorEmail === currentUserEmail);
+  // Apni post: current (backend-synced) user ka status. Dusron ki: feed ka backend flag.
+  const verified = isOwnPost
+    ? currentUserHasBlueTick
+    : Boolean(
+        post?.verified ||
+        post?.author_has_blue_tick ||
+        post?.has_blue_tick ||
+        post?.authorHasBlueTick ||
+        post?.createdByBlueTick
+      );
 
   useEffect(() => {
     if (visible) setText('');
@@ -342,7 +348,7 @@ function DescriptionModal({ visible, onClose, post, onShare, onAddComment, curre
     <Modal visible={visible} animationType="slide" transparent statusBarTranslucent>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
       >
         <View style={{ flex: 1, backgroundColor: 'transparent' }}>
@@ -576,6 +582,7 @@ function feedPostFromNewsItem(item = {}, currentEmail = '') {
     shares: Number(item.shares || 0),
     comments: commentsList,
     commentsCount: Number(item.comments ?? commentsList.length ?? 0),
+    views: Number(item.views ?? item.views_count ?? item.view_count ?? 0),
     liked: Boolean(currentEmail && likedBy.includes(currentEmail)),
     bookmarked: Boolean(item.bookmarked),
     tag: String(item.report_type || item.category || item.state || 'General'),
@@ -761,7 +768,12 @@ function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditC
   const [currentUserName, setCurrentUserName] = useState(null);
   const [currentUserAvatar, setCurrentUserAvatar] = useState('');
   const keyboardInset = useKeyboardInset();
-  const { height: WH } = useWindowDimensions();
+  const { height: WH, width: WW } = useWindowDimensions();
+  // ✅ Web desktop par comments Instagram ki tarah RIGHT side panel me khulein (video dikhta rahe);
+  // mobile / chhoti screen par pehle jaisa bottom sheet.
+  const isDesktopWeb = Platform.OS === 'web' && WW >= 900;
+  const WEB_PANEL_TOP = 90; // top navbar ki height
+  const WEB_PANEL_WIDTH = Math.min(420, Math.max(340, WW * 0.28));
   const safeComments = Array.isArray(comments) ? comments : [];
 
   useEffect(() => {
@@ -847,9 +859,27 @@ function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditC
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
       >
-      <View style={styles.modalOverlay}>
+      <View style={[
+        styles.modalOverlay,
+        isDesktopWeb && { backgroundColor: 'transparent', flexDirection: 'row', justifyContent: 'flex-start' },
+      ]}>
         <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
-        <View style={[styles.commentsSheet, { height: WH * 0.86 }]}>
+        <View style={[
+          styles.commentsSheet,
+          isDesktopWeb
+            ? {
+                width: WEB_PANEL_WIDTH,
+                height: WH - WEB_PANEL_TOP,
+                maxHeight: WH - WEB_PANEL_TOP,
+                minHeight: 0,
+                marginTop: WEB_PANEL_TOP,
+                borderTopLeftRadius: 16,
+                borderTopRightRadius: 0,
+                borderBottomLeftRadius: 0,
+                boxShadow: '-6px 0 24px rgba(0,0,0,0.45)',
+              }
+            : { height: WH * 0.86 },
+        ]}>
           <View style={styles.sheetHandle} />
           <Text style={styles.sheetTitle}>Comments {totalCount ? `(${totalCount})` : ''}</Text>
           {post ? (
@@ -1109,6 +1139,7 @@ function ActionColumn({ post, onLike, onComment, onShare, onBookmark, onDescript
   const likeCount    = formatCount(Number(post.likes));
   const shareCount   = formatCount(Number(post.shares));
   const commentCount = post.commentsCount ?? (Array.isArray(post.comments) ? post.comments.length : 0);
+  const viewCount    = formatCount(Number(post.views || 0));
 
   const sz = isMobileLayout ? 44 : 52;
   const iconSz = isMobileLayout ? 22 : 26;
@@ -1152,15 +1183,21 @@ function ActionColumn({ post, onLike, onComment, onShare, onBookmark, onDescript
         {!isMobileLayout ? <Text style={labelStyle}>Share</Text> : null}
       </TouchableOpacity>
 
-      <TouchableOpacity style={btn} onPress={() => onBookmark(post.id)} activeOpacity={0.75}>
-        <View style={circle(post.bookmarked ? 'rgba(249,115,22,0.3)' : 'rgba(0,0,0,0.5)')}>
-          <BookmarkIcon filled={post.bookmarked} size={iconSz} />
+      {!post.isAd ? (
+        <View style={btn}>
+          <View style={circle('rgba(0,0,0,0.5)')}><Ionicons name="eye-outline" size={iconSz} color="#fff" /></View>
+          <Text style={countStyle}>{viewCount}</Text>
+          {!isMobileLayout ? <Text style={labelStyle}>Views</Text> : null}
         </View>
-        {!isMobileLayout ? <Text style={labelStyle}>Save</Text> : null}
-      </TouchableOpacity>
+      ) : null}
+
+      {/* Save (bookmark) button abhi ke liye hata diya gaya hai */}
     </View>
   );
 }
+
+// Is session me jin reels ka view record ho chuka hai
+const feedViewedIds = new Set();
 
 // Reel Card
 function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription, onProfilePress, onAdPress, onFollow, isActive, cardWidth, cardHeight, isMobileLayout }) {
@@ -1168,7 +1205,8 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription,
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const flashAnim = useRef(new Animated.Value(0)).current; // resume par center me pause icon flash
   const [captionExpanded, setCaptionExpanded] = useState(false);
- const [muted, setMuted] = useState(true);
+  // Mute/unmute ab GLOBAL hai — ek video par badlo to saare reels par same state lagti hai
+  const [muted, , toggleMuted] = useGlobalMuted();
   const [paused, setPaused] = useState(false);
   const [showPoster, setShowPoster] = useState(true);
   const [thumbnailError, setThumbnailError] = useState(false);
@@ -1188,6 +1226,16 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription,
   const role        = String(safePost.role || safePost.author_role || '');
   const time        = String(safePost.time || '');
     const postId      = String(safePost.id || '');
+  // View API: reel active hone par ek baar view record
+  const [viewBump, setViewBump] = useState(0);
+  useEffect(() => {
+    if (!isActive || !postId || safePost.isAd) return undefined;
+    if (feedViewedIds.has(postId)) return undefined;
+    feedViewedIds.add(postId);
+    let alive = true;
+    UserStore.recordNewsView(postId).then((r) => { if (alive && r?.ok) setViewBump(1); }).catch(() => {});
+    return () => { alive = false; };
+  }, [isActive, postId]);
   const authorEmail = String(safePost.createdBy || safePost.created_by || '').trim().toLowerCase();
   const authorId     = safePost.author_id ?? safePost.authorId ?? null;
   const verified    = Boolean(
@@ -1348,7 +1396,7 @@ return t || '';
   // ✅ FIX: useVideoPlayer uses videoSource — re-initializes when blob URL ready
   const player = useVideoPlayer(videoSource, (p) => {
   p.loop = true;
-  p.muted = false;   // ✅ start unmuted
+  p.muted = getGlobalMuted();   // global mute state se start
   p.volume = 1;      // ✅ full volume
   p.autoplay = false;
 
@@ -1455,7 +1503,7 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
     ? (Platform.OS === 'web' ? 80 : navbarH + safeBot + 12) 
     : 28;
   // const bottomRight = isMobileLayout ? 60 : 14;
-  const bottomRight = isMobileLayout ? 80 : 14;
+  const bottomRight = 80; // icons ab video ke upar right me hain — caption unse na takraye
 
   const showPlayOverlay = paused && playerReady;
 
@@ -1566,7 +1614,7 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
           <View style={styles.reelTopBar}>
             <TouchableOpacity
               style={[styles.muteBtn, { backgroundColor: muted ? 'rgba(249,115,22,0.8)' : 'rgba(0,0,0,0.5)' }]}
-              onPress={() => setMuted(v => !v)}
+              onPress={toggleMuted}
               activeOpacity={0.8}
             >
               <MuteIcon muted={muted} size={20} />
@@ -1574,14 +1622,12 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
           </View>
         ) : null}
 
-        {isMobileLayout ? (
-          <ActionColumn
-            post={{ ...safePost, likes: Number(safePost.likes || 0), shares, comments, commentsCount: safePost.commentsCount ?? comments.length }}
-            onLike={handleLikePress} onComment={onComment} onShare={onShare}
-            onBookmark={onBookmark} onDescription={onDescription}
-            scaleAnim={scaleAnim} isMobileLayout={true}
-          />
-        ) : null}
+        <ActionColumn
+          post={{ ...safePost, likes: Number(safePost.likes || 0), shares, comments, commentsCount: safePost.commentsCount ?? comments.length, views: Number(safePost.views || 0) + viewBump }}
+          onLike={handleLikePress} onComment={onComment} onShare={onShare}
+          onBookmark={onBookmark} onDescription={onDescription}
+          scaleAnim={scaleAnim} isMobileLayout={true}
+        />
 
         <View style={[styles.reelBottom, { bottom: bottomBottom, right: bottomRight }]}>
           {safePost.tag ? (
@@ -1664,14 +1710,6 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
         </View>
       </View>
 
-      {!isMobileLayout && (
-        <ActionColumn
-          post={{ ...safePost, likes: Number(safePost.likes || 0), shares, comments }}
-          onLike={handleLikePress} onComment={onComment} onShare={onShare}
-          onBookmark={onBookmark} onDescription={onDescription}
-          scaleAnim={scaleAnim} isMobileLayout={false}
-        />
-      )}
     </View>
   );
 }
@@ -1690,6 +1728,11 @@ export default function FeedScreen({ navigation }) {
   const [commentProfilesByEmail, setCommentProfilesByEmail] = useState({});
   const [feedViewportHeight, setFeedViewportHeight] = useState(0);
   const isScreenFocused = useIsFocused();
+  const feedCursorRef = useRef(null);
+  const feedHasMoreRef = useRef(false);
+  const feedLoadingRef = useRef(false);
+  const feedRequestIdRef = useRef(0);
+  const loadMoreFeedRef = useRef(() => {});
 
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
@@ -1711,15 +1754,21 @@ const APPROX_NAVBAR_H = Platform.OS === 'web' ? 56 : (Platform.OS === 'ios' ? 94
 const MOBILE_CHROME_BAR = (Platform.OS === 'web' && isMobileLayout) ? 0 : 0;
 const browserHeight = typeof window !== 'undefined' ? window.innerHeight : windowHeight;
 const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
+  const feedListRef = useRef(null);
+  const snapOffsets = useMemo(
+    () => Array.from({ length: Math.max(posts.length, 1) }, (_, i) => i * cardHeight),
+    [posts.length, cardHeight]
+  );
 
-  const cardWidth = isMobileLayout ? responsiveWidth : Math.min(responsiveWidth * 0.65, 560);
+  const cardWidth = isMobileLayout ? responsiveWidth : Math.min(responsiveWidth * 0.6, 580);
   // ✅ YAHAN ADD KARO — cardWidth ke bilkul baad:
   const effectiveCardWidth = isMobileLayout && Platform.OS === 'web' && typeof window !== 'undefined'
     ? window.innerWidth
     : cardWidth;
 
-  const syncPostComments = useCallback(async (id) => {
+  const syncPostComments = useCallback(async (id, opts = {}) => {
     try {
+      const { keepIfEmpty = false, ensureComment = null } = opts || {};
       const summary = await UserStore.getNewsFeedSummary({ focusItemId: id });
       const item = summary?.items?.find((entry) => String(entry.id) === String(id));
       const rawComments = Array.isArray(item?.comments_list) ? item.comments_list : [];
@@ -1727,15 +1776,23 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
         normalizeFeedComment(comment, `cmt-${index + 1}`, commentProfilesByEmail)
       );
 
-      setPosts((prev) => prev.map((post) => (
-        post.id === id
-          ? {
-              ...post,
-              comments: normalizedComments,
-              commentsCount: countFeedComments(normalizedComments),
-            }
-          : post
-      )));
+      setPosts((prev) => prev.map((post) => {
+        if (post.id !== id) return post;
+        let next = normalizedComments;
+        // ✅ FIX: server list khali / fail aaye (list endpoint lag ya error) to local comments mat udao
+        if (keepIfEmpty && next.length === 0 && Array.isArray(post.comments) && post.comments.length) {
+          next = post.comments;
+        }
+        // ✅ FIX: abhi add kiya hua comment server list me na dikhe to bhi rakho
+        if (ensureComment) {
+          const exists = next.some((c) =>
+            String(c.id) === String(ensureComment.id) ||
+            (c.text === ensureComment.text && String(c.author_email || '') === String(ensureComment.author_email || ''))
+          );
+          if (!exists) next = [...next, ensureComment];
+        }
+        return { ...post, comments: next, commentsCount: countFeedComments(next) };
+      }));
     } catch {}
   }, [commentProfilesByEmail]);
 
@@ -1772,7 +1829,10 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       const result = await UserStore.updateNewsFeedItem(id, 'like', { liked: originalLiked });
       if (result?.ok && typeof result.liked === 'boolean') {
         const finalLiked = result.liked;
-        const finalLikes = Math.max(0, originalLikes + (finalLiked ? 1 : -1));
+        // Server ka likes_count final truth; na aaye to hi local ±1 fallback
+        const finalLikes = Number.isFinite(result.likesCount)
+          ? Math.max(0, result.likesCount)
+          : Math.max(0, originalLikes + (finalLiked ? 1 : -1));
         setPosts(prev => prev.map(p => p.id === id
           ? { ...p, liked: finalLiked, likes: finalLikes }
           : p));
@@ -1781,6 +1841,9 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
         setPosts(prev => prev.map(p => p.id === id
           ? { ...p, liked: originalLiked, likes: originalLikes }
           : p));
+        // Asli error dikhao (pehle chup-chaap revert hota tha, isliye unlike fail hone ka reason pata nahi chalta tha)
+        console.warn('[Feed like] failed', { id, wasLiked: originalLiked, result });
+        if (result?.message) Alert.alert(originalLiked ? 'Unlike failed' : 'Like failed', result.message);
       }
     } catch {
       setPosts(prev => prev.map(p => p.id === id
@@ -1858,16 +1921,34 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     );
 
     try {
-      if (replyToId) {
-        await UserStore.replyNewsComment(targetPostId, replyToId, text);
-      } else {
-        await UserStore.addNewsComment(targetPostId, text);
+      const result = replyToId
+        ? await UserStore.replyNewsComment(targetPostId, replyToId, text)
+        : await UserStore.addNewsComment(targetPostId, text);
+
+      if (!result?.ok) {
+        // ✅ FIX: comment server par save nahi hua — chup-chaap gayab karne ke bajay asli error dikhao
+        console.warn('[Feed comment] failed', { targetPostId, replyToId, result });
+        setPosts(prev => prev.map(p => {
+          if (p.id !== targetPostId) return p;
+          const strip = (list) => (Array.isArray(list) ? list : [])
+            .filter((c) => c.id !== tempId)
+            .map((c) => (Array.isArray(c.replies) ? { ...c, replies: c.replies.filter((r) => r.id !== tempId) } : c));
+          const nextComments = strip(p.comments);
+          return { ...p, comments: nextComments, commentsCount: countFeedComments(nextComments) };
+        }));
+        Alert.alert('Comment failed', result?.message || 'Unable to post comment. Please try again.');
+        return;
       }
-      await syncPostComments(targetPostId);
+
+      // Server ka real comment (real id ke saath) — temp comment ki jagah wahi rakho
+      const saved = result.comment
+        ? normalizeFeedComment({ ...newComment, ...result.comment, text: result.comment.text || text }, `cmt-${tempId}`, commentProfilesByEmail)
+        : null;
+      await syncPostComments(targetPostId, { keepIfEmpty: true, ensureComment: replyToId ? null : saved });
     } catch {
-      await syncPostComments(targetPostId);
+      await syncPostComments(targetPostId, { keepIfEmpty: true });
     }
-  }, [commentPost, currentUser.avatar, currentUser.name, currentUser.profile_image, currentUserEmail, descPost, syncPostComments]);
+  }, [commentPost, currentUser.avatar, currentUser.name, currentUser.profile_image, currentUserEmail, descPost, syncPostComments, commentProfilesByEmail]);
 
   const handleEditComment = useCallback(async (commentId, newText) => {
     setPosts(prev =>
@@ -2035,16 +2116,40 @@ const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
     }
   }, [isScreenFocused]);
 
+  // ✅ FIX: Android back button se app band ho jaata tha (Feed stack ka root ban jaata hai).
+  // Ab back = pichli screen, aur agar pichli screen nahi hai to Home. App tabhi band hoga
+  // jab user Home par ho. Sirf Feed focus me ho tab active rehta hai.
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS !== 'android') return undefined;
+      const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+        if (navigation?.canGoBack?.()) navigation.goBack();
+        else navigation?.navigate?.('Home');
+        return true;
+      });
+      return () => sub.remove();
+    }, [navigation])
+  );
+
   useFocusEffect(
     useCallback(() => {
       let active = true;
-      const fetchFeed = async () => {
+      const fetchFeed = async ({ loadMore = false } = {}) => {
+        if (feedLoadingRef.current || (loadMore && (!feedHasMoreRef.current || !feedCursorRef.current))) return;
+        feedLoadingRef.current = true;
+        const requestId = ++feedRequestIdRef.current;
         try {
           let nextProfileMap = {};
           // GET /api/feeds — sirf feed/reel posts (type 2). Response key: `news`
-          const summaryValue = await UserStore.getNewsFeedSummary({ type: 2, feedType: 'feeds' });
+          const summaryValue = await UserStore.getNewsFeedSummary({
+            type: 2,
+            feedType: 'feeds',
+            perPage: 10,
+            comments: 0,
+            ...(loadMore && feedCursorRef.current ? { cursor: feedCursorRef.current } : {}),
+          });
           const userProfileValue = summaryValue?.currentUser || await UserStore.getCurrentUser();
-          if (!active) return;
+          if (!active || requestId !== feedRequestIdRef.current) return;
 
           const profileData = userProfileValue;
           if (profileData) {
@@ -2117,7 +2222,15 @@ const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
     image: imageUri,
     images: imagesList,
     avatar: item.avatar || item.author_profile_image || '',
-    liked: Boolean(item.liked),
+    // ✅ FIX: liked ab server ke `liked_by_me` (ya liked_by me apni email) se aata hai —
+    // pehle yahan sirf item.liked padha jata tha jo API se kabhi set hi nahi hota tha,
+    // isliye screen se wapas aane par like hamesha hat jaata tha.
+    liked: Boolean(
+      item.liked_by_me === true ||
+      item.liked === true ||
+      (currentEmail && Array.isArray(item.liked_by) &&
+        item.liked_by.some((e) => String(e || '').trim().toLowerCase() === currentEmail))
+    ),
     bookmarked: Boolean(item.bookmarked),
     likes: Number(item.likes) || 0,
     shares: Number(item.shares) || 0,
@@ -2152,14 +2265,36 @@ image: item.image || null,
   bookmarked: Boolean(item.bookmarked),
 };
             });
-            setPosts(cleanedPosts);
+            setPosts((prevPosts) => {
+              if (loadMore) {
+                const seen = new Set(prevPosts.map((post) => String(post.id)));
+                return [...prevPosts, ...cleanedPosts.filter((post) => !seen.has(String(post.id)))];
+              }
+              return cleanedPosts.map((np) => {
+                const old = prevPosts.find((op) => String(op.id) === String(np.id));
+                return (old && Array.isArray(old.comments) && old.comments.length && !(np.comments && np.comments.length))
+                  ? { ...np, comments: old.comments }
+                  : np;
+              });
+            });
           } else {
-            setPosts([]);
+            if (!loadMore) setPosts([]);
           }
+          const pagination = summaryValue?.pagination || {};
+          feedCursorRef.current = pagination.next_cursor || null;
+          feedHasMoreRef.current = Boolean(pagination.has_more && pagination.next_cursor);
         } catch (e) { console.log('Feed fetch error:', e); }
+        finally {
+          if (requestId === feedRequestIdRef.current) feedLoadingRef.current = false;
+        }
       };
+      feedRequestIdRef.current += 1;
+      feedLoadingRef.current = false;
+      feedCursorRef.current = null;
+      feedHasMoreRef.current = false;
+      loadMoreFeedRef.current = () => fetchFeed({ loadMore: true });
       fetchFeed();
-      return () => { active = false; };
+      return () => { active = false; loadMoreFeedRef.current = () => {}; };
     }, [])
   );
 
@@ -2170,8 +2305,10 @@ image: item.image || null,
       <View
   style={{ flex: 1, backgroundColor: '#000', alignItems: isMobileLayout ? 'stretch' : 'center', justifyContent: 'flex-start', overflow: 'hidden' }}
   onLayout={(event) => {
-    const nextHeight = Math.round(event?.nativeEvent?.layout?.height || 0);
-    if (nextHeight > 0 && nextHeight !== feedViewportHeight) {
+    // ✅ FIX: height ko round NAHI karte. Android par real height fractional hoti hai (e.g. 764.57);
+    // round karne se card height aur list ki asli height me farq aa jaata tha aur reverse swipe snap-back hota tha.
+    const nextHeight = event?.nativeEvent?.layout?.height || 0;
+    if (nextHeight > 0 && Math.abs(nextHeight - feedViewportHeight) > 0.5) {
       setFeedViewportHeight(nextHeight);
     }
   }}
@@ -2234,17 +2371,29 @@ image: item.image || null,
                 isMobileLayout={isMobileLayout}
               />
             )}
-            pagingEnabled
-            snapToInterval={cardHeight}
-            snapToAlignment="start"
+            ref={feedListRef}
+            // ✅ FIX (Android reverse-scroll snap-back): pehle `pagingEnabled` + `snapToInterval` dono the —
+            // do snapping engines ek saath lad rahe the. Ab sirf ek: exact snapToOffsets.
+            snapToOffsets={snapOffsets}
+            disableIntervalMomentum
             decelerationRate="fast"
             showsVerticalScrollIndicator={false}
-viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
+            bounces={false}
+            overScrollMode="never"
+            nestedScrollEnabled
+            scrollEventThrottle={16}
+            onScrollToIndexFailed={(info) => {
+              setTimeout(() => feedListRef.current?.scrollToOffset?.({ offset: info.averageItemLength * info.index, animated: false }), 60);
+            }}
+            viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
             getItemLayout={(_, index) => ({ length: cardHeight, offset: cardHeight * index, index })}
             initialNumToRender={2}
-            maxToRenderPerBatch={2}
-            windowSize={3}
-            removeClippedSubviews={Platform.OS !== 'web'}
+            maxToRenderPerBatch={3}
+            windowSize={5}
+            // ✅ FIX: removeClippedSubviews Android par video cards ke saath scroll jump/blank deta hai
+            removeClippedSubviews={false}
+            onEndReached={() => loadMoreFeedRef.current?.()}
+            onEndReachedThreshold={0.5}
             style={{ flex: 1 }}
             contentContainerStyle={{ flexGrow: 0 }}
           />

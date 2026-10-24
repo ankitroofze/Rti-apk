@@ -55,7 +55,7 @@ export default function ForgotPasswordScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.flex} edges={[]}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ImageBackground source={require('../assets/images/profile-red.png')} resizeMode="cover" style={styles.root}>
           <ScrollView
             style={styles.scrollView}

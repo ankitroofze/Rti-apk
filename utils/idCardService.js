@@ -153,11 +153,14 @@ export function clearIdCardVerification() {
 }
 
 // React hook — component me use karo.
-export function useIdCardVerification() {
-  const [data, setData] = useState(cache);
-  const [loading, setLoading] = useState(!cache);
+export function useIdCardVerification({ enabled = true } = {}) {
+  // enabled=false -> kisi aur ka profile dekh rahe hain: viewer ke token se /id-cards
+  // call NAHI hona chahiye (warna viewer ka apna card/QR dikhta, ya viewer ke naam POST ho jata).
+  const [data, setData] = useState(enabled ? cache : null);
+  const [loading, setLoading] = useState(enabled && !cache);
 
   useEffect(() => {
+    if (!enabled) return undefined;
     let alive = true;
     let tries = 0;
     const run = async () => {
@@ -175,16 +178,29 @@ export function useIdCardVerification() {
     };
     run();
     return () => { alive = false; };
-  }, []);
+  }, [enabled]);
 
   const refresh = useCallback(async () => {
+    if (!enabled) return null;
     createTried = false;
     setLoading(true);
     const res = await getIdCardVerification({ force: true });
     setData(res);
     setLoading(false);
     return res;
-  }, []);
+  }, [enabled]);
 
   return { idCard: data, loading, refresh };
+}
+
+// Public profile API se aaye id-card fields (agar backend bheje) -> same shape.
+export function cardFromProfile(profile = {}) {
+  const src = profile?.id_card || profile?.idCard || (Array.isArray(profile?.id_cards) ? profile.id_cards[0] : null) || {};
+  const merged = {
+    ...src,
+    id_number: src.id_number || src.idNumber || profile?.id_number || profile?.member_id || '',
+    valid_until: src.valid_until || src.validUntil || profile?.id_card_valid_until || '',
+  };
+  const card = normalizeCard(merged);
+  return card.id_number || card.qr_payload || card.valid_until ? card : null;
 }

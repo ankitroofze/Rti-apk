@@ -720,7 +720,7 @@ function QuickMenuMobile({ navigation }) {
                       <Ionicons name={item.icon} size={30} color={style.color} />
                     </View>
                   )}
-                                    <View style={{ flex: 1, justifyContent: 'center' }}>
+                                    <View style={{ flex: 1, justifyContent: 'center', alignSelf: 'stretch' }}>
                     <Text style={[styles.label, item.isDestructive && styles.labelDestructive, isEcome && styles.ecomeLabel, isLive && styles.liveLabel]}>
                       {item.label}
                     </Text>
@@ -853,12 +853,16 @@ const styles = StyleSheet.create({
     height: 48, 
     alignItems: 'center', 
     justifyContent: 'center', 
+    alignSelf: 'center',
   },
  label: { 
-  flex: 1, 
-  fontSize: 17,              // bada kiya (16/14 se)
-  lineHeight: 20,             // 👈 ye add karo — vertical center thik karega
-  fontWeight: '500',          // thoda bold ("font width bada")
+  // FIX: pehle flex:1 tha — column wrapper me Text poori height le leta tha aur text upar chipak jaata tha
+  // (icon neeche, naam upar). Ab text apni line-height me hi rehta hai aur wrapper use center karta hai.
+  fontSize: 17,
+  lineHeight: 22,
+  includeFontPadding: false,  // Android ka extra top/bottom padding hataya
+  textAlignVertical: 'center',
+  fontWeight: '500',
   color: '#1e293b',
   fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
 },
@@ -868,10 +872,12 @@ const styles = StyleSheet.create({
   badge: { 
     paddingHorizontal: 8, 
     paddingVertical: 2, 
-    borderRadius: 20 
+    borderRadius: 20,
+    alignSelf: 'center',
   },
   badgeText: { 
     fontSize: 10, 
+    includeFontPadding: false,
     fontWeight: '600', // ✅ Weight 600
     fontFamily: FONT_FAMILY,
   },

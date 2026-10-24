@@ -106,7 +106,7 @@ export default function LoginScreen({ navigation, route }) {
         const result = await AuthAPI.login({ email: value.toLowerCase(), password });
         if (result.ok) { await finishLogin(value.toLowerCase(), result.user); return; }
         // ✅ NEW: deleted account -> reactivate ka option do
-        if (result.code === 'account_deleted') { confirmReactivate(value.toLowerCase()); return; }
+        if (result.code === 'account_deleted') { setErrors((prev) => ({ ...prev, general: 'Your account has been deleted. Please register with a new account.' })); return; }
         if (!result.isNetwork) { setErrors((prev) => ({ ...prev, general: result.message || 'Invalid credentials.' })); return; }
       }
       const mobile = value.replace(/\s/g, '');

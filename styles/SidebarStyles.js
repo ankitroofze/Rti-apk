@@ -131,6 +131,8 @@ export default StyleSheet.create({
 
   menuText: {
     flex: 1,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
     fontSize: 14,
     fontWeight: '600', // ✅ Weight 600
     color: '#475569',
