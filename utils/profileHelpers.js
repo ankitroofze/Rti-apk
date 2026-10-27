@@ -234,3 +234,38 @@ export function resolveAreaText(profile = {}) {
   const sn = String(seat?.seat_name || profile?.seat_name || profile?.author_seat_name || '').trim();
   return sn && !isKnownRoleName(sn) ? sn : '';
 }
+
+// ID card / contact me dikhane ke liye mobile number — backend kisi bhi key / nested object me bheje, mil jaayega.
+// (pehle sirf kuch fixed keys padhi jaati thi, isliye public profile ke ID card me number gayab rehta tha.)
+export function pickPhoneNumber(profile = {}) {
+  const p = profile || {};
+  const nestedSources = [p, p.user, p.data, p.profile, p.details, p.contact_info, p.contact, p.author, p.owner, p.state_seat, p.seat];
+  const KEYS = [
+    'phone', 'mobile', 'mobile_number', 'mobileNumber', 'phone_number', 'phoneNumber',
+    'contact_number', 'contactNumber', 'contact_no', 'mobile_no', 'phone_no', 'whatsapp', 'whatsapp_number',
+    'author_mobile', 'author_phone',
+  ];
+  const clean = (v) => {
+    if (v == null || typeof v === 'object') return '';
+    const t = String(v).trim();
+    return t.replace(/\D/g, '').length >= 7 ? t : '';
+  };
+  for (const src of nestedSources) {
+    if (!src || typeof src !== 'object') continue;
+    for (const k of KEYS) {
+      const v = clean(src[k]);
+      if (v) return v;
+    }
+  }
+  // last resort: koi bhi key jisme phone/mobile likha ho (email wali keys chhod ke)
+  for (const src of nestedSources) {
+    if (!src || typeof src !== 'object') continue;
+    for (const k of Object.keys(src)) {
+      if (/(phone|mobile|whatsapp)/i.test(k) && !/(email|verified|country|code|otp)/i.test(k)) {
+        const v = clean(src[k]);
+        if (v) return v;
+      }
+    }
+  }
+  return '';
+}

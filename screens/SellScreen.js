@@ -1,5 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Keyboard, findNodeHandle } from 'react-native';
+import KeyboardAwareScroll from '../components/KeyboardAwareScroll';
+import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import {
   View,
   Text,
@@ -398,7 +400,6 @@ function EcomeSellMobile({ navigation }) {
     const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const s = Keyboard.addListener(showEvt, (e) => {
       setKbHeight(e.endCoordinates?.height || 0);
-      scrollToFocusedInput();
     });
     const h = Keyboard.addListener(hideEvt, () => setKbHeight(0));
     return () => { s.remove(); h.remove(); };
@@ -406,7 +407,7 @@ function EcomeSellMobile({ navigation }) {
 
   return (
         <View style={styles.root}>
-       <StatusBar barStyle={Platform.OS === 'android' ? 'dark-content' : 'light-content'} backgroundColor="transparent" translucent />
+       {Platform.OS === 'android' ? null : <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />}
 
       {form.showSubscriptionAlert && (
         <View style={styles.alertBox}>
@@ -423,7 +424,9 @@ function EcomeSellMobile({ navigation }) {
         </View>
       )}
 
-           {Platform.OS === 'android' ? null : (
+           {Platform.OS === 'android' ? (
+<ModuleAndroidHeader title="Sell" subtitle="Ecome (buy / sell)" onBack={() => navigation.goBack()} />
+) : (
 <>
 <ImageBackground
         source={require('../assets/images/profile-red.png')}
@@ -441,10 +444,10 @@ function EcomeSellMobile({ navigation }) {
       </ImageBackground>
 </>
 )}
-      <ScrollView
+      <KeyboardAwareScroll
         ref={scrollRef}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.formContainer, Platform.OS === 'android' && { paddingTop: insets.top + 22 }, { paddingBottom: insets.bottom + 120 + kbHeight }]}
+        contentContainerStyle={[styles.formContainer, { paddingBottom: insets.bottom + 120 }]}
         keyboardShouldPersistTaps="handled"
             keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
       >
@@ -528,7 +531,7 @@ function EcomeSellMobile({ navigation }) {
         <TouchableOpacity style={styles.submitBtnFull} onPress={form.handleSubmit} activeOpacity={0.85}>
           <Text style={styles.submitBtnFullText}>Next</Text>
         </TouchableOpacity>
-      </ScrollView>
+      </KeyboardAwareScroll>
 
       <ConfirmPlanModal
         plan={form.confirmPlan}

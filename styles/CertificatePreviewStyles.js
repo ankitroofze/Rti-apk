@@ -135,7 +135,7 @@ export default StyleSheet.create({
     right: '0%',
     width: '100%',
     height: '9%',
-
+    transform: [{ scale: 1.53 }],
   },
 headerUserName: {
   position: 'absolute',

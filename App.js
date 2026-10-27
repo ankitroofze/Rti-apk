@@ -35,27 +35,40 @@ if (typeof document !== 'undefined') {
   observer.observe(document.body, { attributes: true, subtree: true, attributeFilter: ['aria-hidden'] });
 }
 
-const originalConsoleError = console.error;
-console.error = (...args) => {
-  if (typeof args[0] === 'string' && args[0].includes('Text strings must be rendered')) {
-    console.log('\n🔴🔴🔴 TEXT ERROR CAUGHT! 🔴🔴🔴');
-    console.log('ARG1:', args[1]);
-    console.log('ARG2:', args[2]);
-    console.log('ARG3:', JSON.stringify(args[3]));
-  }
-  originalConsoleError(...args);
-};
+// Debug-only: production APK me console.error ko wrap/log nahi karte (startup + runtime dono halka rehta hai)
+if (__DEV__) {
+  const originalConsoleError = console.error;
+  console.error = (...args) => {
+    if (typeof args[0] === 'string' && args[0].includes('Text strings must be rendered')) {
+      console.log('\n🔴🔴🔴 TEXT ERROR CAUGHT! 🔴🔴🔴');
+      console.log('ARG1:', args[1]);
+      console.log('ARG2:', args[2]);
+      console.log('ARG3:', JSON.stringify(args[3]));
+    }
+    originalConsoleError(...args);
+  };
+}
+
+// ✅ SPEED: Android/iOS par icon fonts (Ionicons, FontAwesome, ...) app.json ke
+// "expo-font" plugin se APK ke andar hi embedded hain — unhe runtime par dobara
+// load karke splash rokne ki zarurat nahi. Sirf web par ye TTF files chahiye.
+const ICON_FONTS = Platform.OS === 'web'
+  ? {
+      'Ionicons':               require('./public/fonts/Ionicons.ttf'),
+      'MaterialIcons':          require('./public/fonts/MaterialIcons.ttf'),
+      'FontAwesome':            require('./public/fonts/FontAwesome.ttf'),
+      'FontAwesome5_Regular':   require('./public/fonts/FontAwesome5_Regular.ttf'),
+      'FontAwesome5_Solid':     require('./public/fonts/FontAwesome5_Solid.ttf'),
+      'FontAwesome5_Brands':    require('./public/fonts/FontAwesome5_Brands.ttf'),
+      'MaterialCommunityIcons': require('./public/fonts/MaterialCommunityIcons.ttf'),
+      'AntDesign':              require('./public/fonts/AntDesign.ttf'),
+      'Feather':                require('./public/fonts/Feather.ttf'),
+    }
+  : {};
+
 export default function App() {
   const [fontsLoaded, fontError] = useFonts({
-    'Ionicons':               require('./public/fonts/Ionicons.ttf'),
-    'MaterialIcons':          require('./public/fonts/MaterialIcons.ttf'),
-    'FontAwesome':            require('./public/fonts/FontAwesome.ttf'),
-    'FontAwesome5_Regular':   require('./public/fonts/FontAwesome5_Regular.ttf'),
-    'FontAwesome5_Solid':     require('./public/fonts/FontAwesome5_Solid.ttf'),
-    'FontAwesome5_Brands':    require('./public/fonts/FontAwesome5_Brands.ttf'),
-    'MaterialCommunityIcons': require('./public/fonts/MaterialCommunityIcons.ttf'),
-    'AntDesign':              require('./public/fonts/AntDesign.ttf'),
-    'Feather':                require('./public/fonts/Feather.ttf'),
+    ...ICON_FONTS,
     Roboto_400Regular,
     Roboto_500Medium,
     Roboto_700Bold,

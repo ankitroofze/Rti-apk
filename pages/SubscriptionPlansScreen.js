@@ -1,3 +1,4 @@
+import { smartGoBack } from '../utils/smartBack';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -31,55 +32,64 @@ import { INDIAN_STATES, getDistricts, getTalukas, getVillages } from './location
 // LocationFilterDropdown — State/District/Taluka filter chip
 // (web/Android/iOS teeno par same dikhta hai, koi Platform check nahi)
 // ─────────────────────────────────────────────
-function LocationFilterDropdown({ label, value, options, onChange, placeholder = 'All', disabled = false }) {
+function LocationFilterDropdown({ label, value, options, onChange, placeholder = 'All', disabled = false, cellStyle }) {
   const [open, setOpen] = useState(false);
+  const active = !!value;
   return (
-        <View style={{ ...(Platform.OS !== 'web' ? { width: '100%' } : { flex: 1 }), position: 'relative', zIndex: open ? 20 : 1, elevation: open ? 20 : 1 }}>
+    <View style={[{ position: 'relative', zIndex: open ? 30 : 1, elevation: open ? 30 : 1 }, cellStyle]}>
       <TouchableOpacity
         activeOpacity={disabled ? 1 : 0.7}
         onPress={() => !disabled && setOpen((o) => !o)}
         style={{
           flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-          borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10,
-          paddingHorizontal: 12, paddingVertical: 10,
-          backgroundColor: disabled ? '#F3F4F6' : '#fff',
+          height: 42, paddingHorizontal: 10,
+          borderWidth: 1, borderRadius: 10,
+          borderColor: open ? '#dc2626' : active ? '#fecaca' : '#E5E7EB',
+          backgroundColor: disabled ? '#F3F4F6' : active ? '#FEF2F2' : '#fff',
         }}
       >
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 10, color: '#9CA3AF', fontWeight: '700', textTransform: 'uppercase', marginBottom: 1 }}>{label}</Text>
-          <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: '600', color: value ? '#111827' : '#9CA3AF' }}>
+        <View style={{ flex: 1, marginRight: 6 }}>
+          <Text style={{ fontSize: 9, lineHeight: 11, color: '#9CA3AF', fontWeight: '700', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+            {label}
+          </Text>
+          <Text
+            numberOfLines={1}
+            style={{ fontSize: 12.5, lineHeight: 17, fontWeight: '600', color: disabled ? '#C0C5CE' : value ? '#111827' : '#6B7280' }}
+          >
             {value || placeholder}
           </Text>
         </View>
-        <Feather name={open ? 'chevron-up' : 'chevron-down'} size={16} color="#6B7280" />
+        <Feather name={open ? 'chevron-up' : 'chevron-down'} size={14} color={disabled ? '#C0C5CE' : '#6B7280'} />
       </TouchableOpacity>
 
       {open && !disabled && (
-           <View
+        <View
           style={{
-            marginTop: 6, maxHeight: 220,
+            position: 'absolute', top: 46, left: 0, right: 0, zIndex: 40, elevation: 40,
+            maxHeight: 200,
             backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10,
             paddingVertical: 4, overflow: 'hidden',
+            shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 4 },
           }}
         >
-          <ScrollView style={{ maxHeight: 220 }} nestedScrollEnabled>
+          <ScrollView style={{ maxHeight: 192 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
             {value ? (
-              <TouchableOpacity style={{ paddingVertical: 9, paddingHorizontal: 14 }} onPress={() => { onChange(''); setOpen(false); }}>
-                <Text style={{ fontSize: 13, color: '#EF4444', fontWeight: '700' }}>Clear ({placeholder})</Text>
+              <TouchableOpacity style={{ paddingVertical: 8, paddingHorizontal: 12 }} onPress={() => { onChange(''); setOpen(false); }}>
+                <Text style={{ fontSize: 12.5, color: '#EF4444', fontWeight: '700' }}>Clear ({placeholder})</Text>
               </TouchableOpacity>
             ) : null}
-                  {options.length === 0 ? (
-              <Text style={{ fontSize: 13, color: '#9CA3AF', paddingVertical: 9, paddingHorizontal: 14 }}>
-                      {label === 'Village' ? 'No villages found' : 'No data found'}
+            {options.length === 0 ? (
+              <Text style={{ fontSize: 12.5, color: '#9CA3AF', paddingVertical: 8, paddingHorizontal: 12 }}>
+                {label === 'Village' ? 'No villages found' : 'No data found'}
               </Text>
             ) : null}
             {options.map((opt) => (
               <TouchableOpacity
                 key={opt}
-                style={{ paddingVertical: 9, paddingHorizontal: 14 }}
+                style={{ paddingVertical: 8, paddingHorizontal: 12 }}
                 onPress={() => { onChange(opt); setOpen(false); }}
               >
-                <Text style={{ fontSize: 13, color: opt === value ? '#dc2626' : '#374151', fontWeight: opt === value ? '700' : '500' }}>
+                <Text style={{ fontSize: 12.5, color: opt === value ? '#dc2626' : '#374151', fontWeight: opt === value ? '700' : '500' }}>
                   {opt}
                 </Text>
               </TouchableOpacity>
@@ -127,6 +137,21 @@ export default function SubscriptionPlansScreen({ navigation, route }) {
   const [filterDistrict, setFilterDistrict] = useState('');
   const [filterTaluka, setFilterTaluka] = useState('');
   const [filterVillage, setFilterVillage] = useState('');
+  // ✅ Level plans: user ki profile location (state/district/taluka/village) se filters pehle se bhare aate
+  // hain, taaki user ko apne gaon/taluka/district/state ke hisaab se plans + Sold status turant dikhe.
+  // User chahe to dropdown se badal sakta hai. `LOCK_TO_PROFILE_LOCATION = true` karoge to sirf
+  // apni profile wali location par hi kharid payega.
+  const LOCK_TO_PROFILE_LOCATION = false;
+  const prefilledRef = useRef(false);
+  useEffect(() => {
+    const u = subscriptionData.currentUser;
+    if (prefilledRef.current || !u?.state) return;
+    prefilledRef.current = true;
+    setFilterState(u.state || '');
+    setFilterDistrict(u.district || '');
+    setFilterTaluka(u.taluka || '');
+    setFilterVillage(u.village || '');
+  }, [subscriptionData.currentUser]);
   const filterDistrictOptions = filterState ? getDistricts(filterState) : [];
     const filterTalukaOptions   = filterState && filterDistrict ? getTalukas(filterState, filterDistrict) : [];
   // ✅ UPDATED: ab village bhi wahi master LGD list se aata hai jo Register flow
@@ -145,7 +170,11 @@ export default function SubscriptionPlansScreen({ navigation, route }) {
     if (ap.expires_at && UserStore.isExpired(ap.expires_at)) return null;
     return ap;
   })();
+  const LEVEL_LABEL = { state: 'State', district: 'District', taluka: 'Taluka', village: 'Village' };
   const filteredPlans = subscriptionData.plans.filter((plan) => {
+    // ✅ NEW: level plan (admin ne ek baar banaya) sabhi locations ke liye hamesha dikhta hai —
+    // location user Pay Now se pehle khud chunta hai, Sold check usi location par hota hai.
+    if (plan.location_level) return true;
     const matchState    = !plan.state    || (filterState    && String(plan.state).trim().toLowerCase()    === filterState.toLowerCase());
     const matchDistrict = !plan.district || (filterDistrict && String(plan.district).trim().toLowerCase() === filterDistrict.toLowerCase());
     const matchTaluka   = !plan.taluka   || (filterTaluka   && String(plan.taluka).trim().toLowerCase()   === filterTaluka.toLowerCase());
@@ -238,15 +267,45 @@ const restrictedSeats = (seatSummary?.seats || []).map((seat) =>
 );
 
 // ✅ Seat location: plan ki fixed location > screen ka filter > profile
-const getSeatLocation = (plan) => ({
-  seatState:    plan?.state    || filterState    || stateName,
-  planDistrict: plan?.district || filterDistrict || subscriptionData.currentUser?.district || '',
-  planTaluka:   plan?.taluka   || filterTaluka   || subscriptionData.currentUser?.taluka   || '',
-  planVillage:  plan?.village  || filterVillage  || subscriptionData.currentUser?.village  || '',
-});
+const getSeatLocation = (plan) => {
+  // ✅ NEW: level plan par location SIRF screen ke filter se aati hai (profile se nahi),
+  // aur plan ke level tak trim hoti hai (district plan = state + district).
+  if (plan?.location_level) {
+    const t = UserStore.trimLocationToLevel(plan.location_level, {
+      state: filterState, district: filterDistrict, taluka: filterTaluka, village: filterVillage,
+    });
+    return { seatState: t.state, planDistrict: t.district, planTaluka: t.taluka, planVillage: t.village };
+  }
+  return {
+    seatState:    plan?.state    || filterState    || stateName,
+    planDistrict: plan?.district || filterDistrict || subscriptionData.currentUser?.district || '',
+    planTaluka:   plan?.taluka   || filterTaluka   || subscriptionData.currentUser?.taluka   || '',
+    planVillage:  plan?.village  || filterVillage  || subscriptionData.currentUser?.village  || '',
+  };
+};
+// ✅ NEW: level plan ke liye abhi kaun si location chunni baaki hai ('' = poori chuni hui)
+const missingLocationFor = (plan) => (plan?.location_level
+  ? UserStore.getMissingLocationField(plan.location_level, {
+      state: filterState, district: filterDistrict, taluka: filterTaluka, village: filterVillage,
+    })
+  : '');
+// ✅ NEW: level plan "currently active" sirf usi location par jahan kharida gaya hai
+const isPlanActiveHere = (plan) => {
+  if (!plan || String(activePlanLive?.plan_id) !== String(plan.plan_id)) return false;
+  if (!plan.location_level) return true;
+  const ap = activePlanLive || {};
+  if (!ap.state && !ap.district && !ap.taluka && !ap.village) return true; // location info nahi mili
+  const l = getSeatLocation(plan);
+  const eq = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  return eq(ap.state, l.seatState) && eq(ap.district, l.planDistrict) && eq(ap.taluka, l.planTaluka) && eq(ap.village, l.planVillage);
+};
 const soldKeyFor = (plan) => {
   const l = getSeatLocation(plan);
-  return [plan?.plan_id, l.seatState, l.planDistrict, l.planTaluka, l.planVillage]
+  // ✅ Seat = ROLE + LOCATION. Ek village me 5 roles hain, har role ka ek hi user ho sakta hai.
+  // Isliye level plan par key role_id se banti hai (plan_id se nahi) — same role ke do plan hon
+  // tab bhi ek hi seat maani jaayegi.
+  const seatIdentity = plan?.location_level ? `role:${plan.role_id_raw}` : plan?.plan_id;
+  return [seatIdentity, l.seatState, l.planDistrict, l.planTaluka, l.planVillage]
     .map((v) => String(v || '').trim().toLowerCase()).join('|');
 };
 // Premium par seat lock nahi — wo kabhi Sold nahi hota. Active plan bhi Sold nahi dikhega.
@@ -255,7 +314,9 @@ const isPlanSold = (plan) => {
   // ✅ Premium plan kabhi Sold nahi dikhega (seat lock nahi hota) — backend is_sold bheje tab bhi nahi
   if (UserStore.isPremiumPlan(plan)) return false;
   // Apna active plan Sold nahi dikhega ("Currently active" dikhega)
-  if (activePlanLive?.plan_id === plan.plan_id) return false;
+  if (isPlanActiveHere(plan)) return false;
+  // ✅ NEW: level plan par location poori chuni ho tabhi Sold/Available decide hota hai
+  if (missingLocationFor(plan)) return false;
   // Baaki saare role plans: backend ka is_sold ya 409 seat_unavailable ke baad local sold key
   return Boolean(plan.is_sold) || soldKeys.includes(soldKeyFor(plan));
 };
@@ -388,12 +449,29 @@ const handleBuyPlan = (plan) => {
     showPopup('This seat is already taken. Please choose another location.', 'error');
     return;
   }
+  // ✅ NEW: level plan — pehle uski location (state/district/taluka/village) chuno
+  const missing = missingLocationFor(plan);
+  if (missing) {
+    showPopup(`Please select ${LEVEL_LABEL[missing]} above to buy this ${LEVEL_LABEL[plan.location_level]}-level plan.`, 'error');
+    return;
+  }
+  // ✅ Optional: sirf apni profile wali location par kharid (LOCK_TO_PROFILE_LOCATION = true)
+  if (LOCK_TO_PROFILE_LOCATION && plan.location_level) {
+    const u = subscriptionData.currentUser || {};
+    const mine = UserStore.trimLocationToLevel(plan.location_level, u);
+    const l = getSeatLocation(plan);
+    const eq = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+    if (!(eq(mine.state, l.seatState) && eq(mine.district, l.planDistrict) && eq(mine.taluka, l.planTaluka) && eq(mine.village, l.planVillage))) {
+      showPopup('You can buy this plan only for your own registered location.', 'error');
+      return;
+    }
+  }
   // ✅ Premium par seat lock nahi — state check / seat ke bina seedha payment
   if (UserStore.isPremiumPlan(plan)) {
     startSubscriptionPayment(plan, '');
     return;
   }
-  if (!stateName) {
+  if (!stateName && !plan.location_level) {
     showPopup('Please select your state first.', 'error', {
       primaryLabel: 'Open',
       secondaryLabel: 'Cancel',
@@ -435,6 +513,9 @@ const handleBuyPlan = (plan) => {
   // taaki active card hamesha themed (red) dikhe — plain white kabhi na ho
   const activePlanTheme = getCardTheme(activePlanIndex >= 0 ? activePlanIndex : 1);
 
+  // ✅ filter cell width: wide web = 4 in a row, baaki sab jagah 2x2
+  const filterCellStyle = (isWeb && !isCompactWeb) ? { flex: 1 } : { width: '48.5%' };
+
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['left', 'right', 'bottom']}>
     <View style={S.root}>
@@ -445,7 +526,7 @@ const handleBuyPlan = (plan) => {
         <ModuleWebHeader title="Upgrade Your Role" navigation={navigation} />
       ) : (
          Platform.OS !== 'web' ? (
-<ModuleAndroidHeader title="Upgrade Your Role" onBack={() => navigation.navigate('QuickMenu')} />
+<ModuleAndroidHeader title="Upgrade Your Role" onBack={() => smartGoBack(navigation, 'QuickMenu')} />
 ) : (
 <ImageBackground
         source={HEADER_BG_IMAGE}
@@ -497,15 +578,35 @@ const handleBuyPlan = (plan) => {
         ) : null}
 
              {/* Plans — 2x2 static grid (screenshot jaisa), no horizontal scroll */}
-        <Text style={S.sectionTitle}>Our Premium Plans</Text>
+        {/* Title + Reset (sirf tab dikhta hai jab koi filter laga ho) */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <Text style={[S.sectionTitle, { marginBottom: 0 }]}>Our Premium Plans</Text>
+          {(filterState || filterDistrict || filterTaluka || filterVillage) ? (
+            <TouchableOpacity
+              onPress={() => { setFilterState(''); setFilterDistrict(''); setFilterTaluka(''); setFilterVillage(''); }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={{ flexDirection: 'row', alignItems: 'center' }}
+            >
+              <Feather name="x" size={13} color="#dc2626" />
+              <Text style={{ fontSize: 12, fontWeight: '700', color: '#dc2626', marginLeft: 3 }}>Reset</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
 
-               {/* ✅ NEW: State / District / Taluka / Village filter row */}
-              <View style={{ flexDirection: Platform.OS === 'web' ? 'row' : 'column', gap: 10, marginBottom: 18, position: 'relative', zIndex: 50, elevation: 50 }}>
+        {/* ✅ Compact filter grid — mobile par 2x2, wide web par ek hi row me 4 */}
+        <View
+          style={{
+            flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between',
+            rowGap: 8, columnGap: 8, marginBottom: 12,
+            position: 'relative', zIndex: 50, elevation: 50,
+          }}
+        >
           <LocationFilterDropdown
             label="State"
             value={filterState}
             options={INDIAN_STATES}
             placeholder="All States"
+            cellStyle={filterCellStyle}
             onChange={(v) => { setFilterState(v); setFilterDistrict(''); setFilterTaluka(''); setFilterVillage(''); }}
           />
           <LocationFilterDropdown
@@ -514,6 +615,7 @@ const handleBuyPlan = (plan) => {
             options={filterDistrictOptions}
             placeholder="All Districts"
             disabled={!filterState}
+            cellStyle={filterCellStyle}
             onChange={(v) => { setFilterDistrict(v); setFilterTaluka(''); setFilterVillage(''); }}
           />
           <LocationFilterDropdown
@@ -522,6 +624,7 @@ const handleBuyPlan = (plan) => {
             options={filterTalukaOptions}
             placeholder="All Talukas"
             disabled={!filterDistrict}
+            cellStyle={filterCellStyle}
             onChange={(v) => { setFilterTaluka(v); setFilterVillage(''); }}
           />
           <LocationFilterDropdown
@@ -530,6 +633,7 @@ const handleBuyPlan = (plan) => {
             options={filterVillageOptions}
             placeholder="All Villages"
             disabled={!filterTaluka}
+            cellStyle={filterCellStyle}
             onChange={setFilterVillage}
           />
         </View>
@@ -539,7 +643,7 @@ const handleBuyPlan = (plan) => {
         ) : null}
 
             {!loading && subscriptionData.plans.length > filteredPlans.length ? (
-          <Text style={[S.loadingText, { marginBottom: 10 }]}>
+          <Text style={[S.loadingText, { marginBottom: 10, paddingVertical: 0, fontSize: 11.5, lineHeight: 16 }]}>
             {subscriptionData.plans.length - filteredPlans.length} more plan(s) are available for specific locations. Select State / District / Taluka above to see them.
           </Text>
         ) : null}
@@ -553,8 +657,9 @@ const handleBuyPlan = (plan) => {
         ) : (
           <View style={S.plansGrid}>
             {filteredPlans.map((plan, index) => {
-              const isActive = activePlanLive?.plan_id === plan.plan_id;
+              const isActive = isPlanActiveHere(plan);
               const isSold = isPlanSold(plan);
+              const needLoc = !isActive && !isSold ? missingLocationFor(plan) : '';
               const isSelected = selectedPlanId === plan.plan_id;
               const theme = getCardTheme(index);
                         return (
@@ -569,6 +674,11 @@ const handleBuyPlan = (plan) => {
                       {plan.plan_name}
                     </Text>
                     <Text style={[S.planDuration, { color: theme.mutedColor }]}>{plan.duration}</Text>
+                    {plan.location_level ? (
+                      <Text style={{ color: theme.mutedColor, fontSize: 11, fontWeight: '700', marginBottom: 4 }}>
+                        {`Per ${LEVEL_LABEL[plan.location_level]} • same price for every ${LEVEL_LABEL[plan.location_level].toLowerCase()}`}
+                      </Text>
+                    ) : null}
 
                     <View style={S.planPriceRow}>
                       <Text style={[S.planPrice, { color: theme.textColor }]}>₹{plan.price}</Text>
@@ -607,7 +717,7 @@ const handleBuyPlan = (plan) => {
                       style={[S.selectPlanBtn, isSelected && S.selectPlanBtnActive, isSold && { opacity: 0.6, backgroundColor: '#e5e7eb' }, paying && !isActive && !isSold && { opacity: 0.6 }]}
                     >
                       <Text style={[S.selectPlanBtnText, isSold && { color: '#6b7280' }]}>
-                        {isActive ? 'Currently active' : isSold ? 'Sold' : paying ? 'Please wait…' : 'Pay Now'}
+                        {isActive ? 'Currently active' : isSold ? 'Sold' : paying ? 'Please wait…' : needLoc ? `Select ${LEVEL_LABEL[needLoc]}` : 'Pay Now'}
                       </Text>
                       {!isActive && !isSold && <Feather name="chevron-right" size={14} color="#b91c1c" />}
                     </TouchableOpacity>

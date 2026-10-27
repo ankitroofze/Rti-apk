@@ -4,6 +4,7 @@ import {
   Image, ImageBackground, KeyboardAvoidingView, Linking, Modal, Platform, ScrollView, Share,
   StatusBar, Text, TextInput, TouchableOpacity, View, Alert, BackHandler, StyleSheet, useWindowDimensions
 } from 'react-native';
+import KeyboardAwareScroll from '../components/KeyboardAwareScroll';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
@@ -447,7 +448,7 @@ const EditNewsModal = ({ visible, newsItem, onClose, onUpdate, showToast }) => {
               <Feather name="x" size={20} color={C.neutral400} />
             </TouchableOpacity>
           </View>
-          <ScrollView style={styles.editModalScroll} showsVerticalScrollIndicator={false}>
+          <KeyboardAwareScroll style={styles.editModalScroll} showsVerticalScrollIndicator={false}>
             <TextInput
               style={styles.editInput}
               placeholder="Title *"
@@ -500,7 +501,7 @@ const EditNewsModal = ({ visible, newsItem, onClose, onUpdate, showToast }) => {
               <Feather name="check-circle" size={16} color={C.white} />
               <Text style={styles.addNewsButtonText}>{loading ? 'Updating...' : 'Update News'}</Text>
             </TouchableOpacity>
-          </ScrollView>
+          </KeyboardAwareScroll>
         </View>
       </View>
     </Modal>

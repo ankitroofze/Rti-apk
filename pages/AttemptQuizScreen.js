@@ -329,27 +329,27 @@ if (!userId || !quizTypeId) {
             );
           })}
 
-       <View style={{ flexDirection: 'row', gap: 10 }}>
+       <View style={{ flexDirection: 'row', gap: 8 }}>
             <TouchableOpacity
-              style={[AttemptQuizStyles.nextBtn, { flex: 1, backgroundColor: '#9CA3AF' }]}
+              style={[AttemptQuizStyles.nextBtn, { flex: 1, minWidth: 0, paddingHorizontal: 8, gap: 6, backgroundColor: '#9CA3AF' }]}
               onPress={currentQIndex > 0 ? handlePrevious : () => navigation.goBack()}
               disabled={submitting}
             >
               <Feather name="arrow-left" size={16} color="#fff" />
-              <Text style={AttemptQuizStyles.nextBtnText}>Back</Text>
+              <Text style={AttemptQuizStyles.nextBtnText} numberOfLines={1}>Back</Text>
             </TouchableOpacity>
             {currentQIndex < questions.length - 1 && (
               <TouchableOpacity
-                style={[AttemptQuizStyles.nextBtn, { flex: 1, backgroundColor: '#fca5a5' }]}
+                style={[AttemptQuizStyles.nextBtn, { flex: 1, minWidth: 0, paddingHorizontal: 8, gap: 6, backgroundColor: '#fca5a5' }]}
                 onPress={handleSkip}
                 disabled={submitting}
               >
-                <Text style={AttemptQuizStyles.nextBtnText}>Skip</Text>
+                <Text style={AttemptQuizStyles.nextBtnText} numberOfLines={1}>Skip</Text>
               </TouchableOpacity>
             )}
 
             <TouchableOpacity
-              style={[AttemptQuizStyles.nextBtn, { flex: 1 }, submitting && AttemptQuizStyles.nextBtnDisabled]}
+              style={[AttemptQuizStyles.nextBtn, { flex: 1, minWidth: 0, paddingHorizontal: 8, gap: 6 }, submitting && AttemptQuizStyles.nextBtnDisabled]}
               onPress={currentQIndex === questions.length - 1 ? handleSubmitPress : handleNext}
               disabled={submitting}
             >
@@ -357,8 +357,8 @@ if (!userId || !quizTypeId) {
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
                 <>
-                  <Text style={AttemptQuizStyles.nextBtnText}>
-                    {currentQIndex === questions.length - 1 ? 'Submit Quiz' : 'Next Question'}
+                  <Text style={AttemptQuizStyles.nextBtnText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+                    {currentQIndex === questions.length - 1 ? 'Submit' : 'Next'}
                   </Text>
                   <Feather
                     name={currentQIndex === questions.length - 1 ? 'check' : 'arrow-right'}

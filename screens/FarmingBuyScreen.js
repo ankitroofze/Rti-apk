@@ -18,6 +18,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import KeyboardAwareScroll from '../components/KeyboardAwareScroll';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -288,6 +289,8 @@ const InfoRow = ({ icon, label, value }) => {
 
 const EnquiryFormModal = ({ product, onClose, onSaved }) => {
   const { showToast } = useToast();
+  const modalInsets = useSafeAreaInsets();
+  const modalBottomPad = (modalInsets.bottom || (Platform.OS === 'android' ? 48 : 0)) + 8;
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -346,14 +349,14 @@ const EnquiryFormModal = ({ product, onClose, onSaved }) => {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
       <Pressable style={styles.modalBackdrop} onPress={onClose}>
-        <Pressable style={[styles.detailSheet, { maxHeight: '82%' }]} onPress={() => {}}>
+        <Pressable style={[styles.detailSheet, { maxHeight: '82%', paddingBottom: modalBottomPad }]} onPress={() => {}}>
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>Send Enquiry</Text>
             <TouchableOpacity onPress={onClose} style={styles.modalCloseBtn} activeOpacity={0.8}>
               <Ionicons name="close" size={18} color="#64748b" />
             </TouchableOpacity>
           </View>
-          <ScrollView
+          <KeyboardAwareScroll
             contentContainerStyle={styles.formContent}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
@@ -402,7 +405,7 @@ const EnquiryFormModal = ({ product, onClose, onSaved }) => {
                 </>
               )}
             </TouchableOpacity>
-          </ScrollView>
+          </KeyboardAwareScroll>
         </Pressable>
       </Pressable>
       </KeyboardAvoidingView>
@@ -410,12 +413,15 @@ const EnquiryFormModal = ({ product, onClose, onSaved }) => {
   );
 };
 
-export default function FarmingBuyScreen({ navigation }) {
+export default function FarmingBuyScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
+  // Android nav bar (back/home/recent) ke neeche buttons na jaayein — isliye extra bottom space
+  const sheetBottomPad = (insets.bottom || (Platform.OS === 'android' ? 48 : 0)) + 12;
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
     const isWideWeb = isWeb && width >= 900;
     const isWideModal = isWeb && width >= 760;
+  const compactCards = !isWideWeb; // mobile/narrow: ek line me 2 chhote cards
   const [sidebarVisible, setSidebarVisible] = useState(false);
 
   const [loading, setLoading] = useState(true);
@@ -483,6 +489,18 @@ export default function FarmingBuyScreen({ navigation }) {
     return result;
   }, [listings, activeCategory, searchQuery, minPrice, maxPrice, sortBy]);
 
+  // Home ke Ecom card se aaye to us listing ka detail sheet seedha khol do
+  const openListingId = route?.params?.openListingId;
+  useEffect(() => {
+    if (!openListingId || loading || !listings.length) return;
+    const found = listings.find((l) => String(l.id) === String(openListingId));
+    if (found) {
+      setSelectedImageIndex(0);
+      setSelectedProduct(found);
+      navigation?.setParams?.({ openListingId: undefined });
+    }
+  }, [openListingId, loading, listings, navigation]);
+
   const handleCall = (contact) => {
     const phone = String(contact || '').replace(/\D/g, '');
     if (!phone) { notify('No contact', 'Seller phone number is not available.'); return; }
@@ -534,19 +552,25 @@ export default function FarmingBuyScreen({ navigation }) {
 <ModuleAndroidHeader title="Ecome Marketplace" onBack={() => navigation.goBack()} />
 ) : null}
 {/* White native header removed — red ModuleAndroidHeader hi use hota hai */}
-      {/* Search row — kept on its own line under the header so search functionality isn't lost
+      {/* Search row — header ke neeche, apni line me */}
       <View style={styles.searchRow}>
-        <View style={[styles.searchWrap, isWideWeb && styles.searchWrapWide]}>
+        <View style={[styles.searchWrap, { flex: 0, width: '100%' }, isWideWeb && styles.searchWrapWide]}>
           <Ionicons name="search-outline" size={18} color="#94a3b8" />
           <TextInput
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search for products, sellers or categories..."
+            placeholder="Search products, city or category..."
             placeholderTextColor="#94a3b8"
+            returnKeyType="search"
             style={[styles.searchInput, isWideWeb && styles.searchInputWide]}
           />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} accessibilityLabel="Clear search">
+              <Ionicons name="close-circle" size={18} color="#94a3b8" />
+            </TouchableOpacity>
+          ) : null}
         </View>
-      </View> */}
+      </View>
 
       <ScrollView
         style={styles.scroll}
@@ -717,11 +741,11 @@ export default function FarmingBuyScreen({ navigation }) {
                 <Text style={styles.stateText}>Loading products...</Text>
               </View>
             ) : filteredListings.length ? (
-              <View style={styles.listingsGrid}>
+              <View style={[styles.listingsGrid, compactCards && styles.listingsGridCompact]}>
                 {filteredListings.map((item) => (
                   <TouchableOpacity
                     key={`${item.owner_email}-${item.id}`}
-                    style={[styles.card, isWideWeb && styles.cardWeb]}
+                    style={[styles.card, isWideWeb && styles.cardWeb, compactCards && styles.cardCompact]}
                     onPress={() => {
                       setSelectedImageIndex(0);
                       setSelectedProduct(item);
@@ -736,7 +760,7 @@ export default function FarmingBuyScreen({ navigation }) {
                           setSelectedProduct(item);
                         }}
                       />
-                      <View style={styles.verifiedRibbon}>
+                      <View style={[styles.verifiedRibbon, compactCards && styles.verifiedRibbonCompact]}>
                         <Text style={styles.verifiedRibbonText}>Verified Seller</Text>
                       </View>
                       <TouchableOpacity
@@ -751,39 +775,39 @@ export default function FarmingBuyScreen({ navigation }) {
                         />
                       </TouchableOpacity>
                     </View>
-                    <View style={styles.cardBody}>
+                    <View style={[styles.cardBody, compactCards && styles.cardBodyCompact]}>
                       {item.sector ? (
-                        <View style={styles.categoryPill}>
+                        <View style={[styles.categoryPill, compactCards && styles.categoryPillCompact]}>
                           <Text style={styles.categoryPillText}>
                             {item.sector.charAt(0).toUpperCase() + item.sector.slice(1).toLowerCase()}
                           </Text>
                         </View>
                       ) : null}
-                      <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
-                      <Text style={styles.cardDesc} numberOfLines={2}>{item.description || 'No description added.'}</Text>
+                      <Text style={[styles.cardTitle, compactCards && styles.cardTitleCompact]} numberOfLines={2}>{item.title}</Text>
+                      <Text style={[styles.cardDesc, compactCards && { fontSize: 11.5, lineHeight: 15 }]} numberOfLines={compactCards ? 1 : 2}>{item.description || 'No description added.'}</Text>
                       {item.city ? (
                         <View style={styles.cardCityRow}>
                           <Ionicons name="location-outline" size={13} color="#64748b" />
                           <Text style={styles.cardCityText} numberOfLines={1}>{item.city}</Text>
                         </View>
                       ) : null}
-                      <Text style={styles.cardPrice}>{money(item.price)}</Text>
-                      <View style={styles.cardBottomRow}>
+                      <Text style={[styles.cardPrice, compactCards && styles.cardPriceCompact]}>{money(item.price)}</Text>
+                      <View style={[styles.cardBottomRow, compactCards && styles.cardBottomRowCompact]}>
                         <TouchableOpacity
                           style={styles.callBtn}
                           onPress={(e) => { e.stopPropagation?.(); handleCall(item.contact); }}
                           activeOpacity={0.85}
                         >
-                          <Ionicons name="call-outline" size={14} color={BRAND.primaryDark} />
-                          <Text style={styles.callBtnText}>Call</Text>
+                          {compactCards ? null : <Ionicons name="call-outline" size={14} color={BRAND.primaryDark} />}
+                          <Text style={[styles.callBtnText, compactCards && styles.btnTextCompact]}>Call</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           style={styles.enquireBtn}
                           onPress={(e) => { e.stopPropagation?.(); openEnquiry(item); }}
                           activeOpacity={0.85}
                         >
-                          <Ionicons name="chatbubble-ellipses-outline" size={14} color="#fff" />
-                          <Text style={styles.actionBtnText}>Enquire</Text>
+                          {compactCards ? null : <Ionicons name="chatbubble-ellipses-outline" size={14} color="#fff" />}
+                          <Text style={[styles.actionBtnText, compactCards && styles.btnTextCompact]}>Enquire</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -890,7 +914,8 @@ export default function FarmingBuyScreen({ navigation }) {
                     </View>
                   </View>
                 ) : (
-                  <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 24 }}>
+                  <>
+                  <ScrollView style={{ flexShrink: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 16 }}>
                   <ProductGallery
                     item={selectedProduct}
                     selectedIndex={selectedImageIndex}
@@ -937,6 +962,9 @@ export default function FarmingBuyScreen({ navigation }) {
                       <InfoRow icon="call-outline" label="Contact" value={selectedProduct.contact} />
                       <InfoRow icon="time-outline" label="Listed" value={selectedProduct.createdAt ? getRelativeTime(selectedProduct.createdAt) : null} />
                     </View>
+                  </View>
+                  </ScrollView>
+                  <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: sheetBottomPad, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#e2e8f0' }}>
                     <View style={styles.modalActions}>
                       <TouchableOpacity style={styles.modalCallBtn} onPress={() => handleCall(selectedProduct.contact)} activeOpacity={0.85}>
                         <Ionicons name="call" size={18} color="#dc2626" />
@@ -952,7 +980,7 @@ export default function FarmingBuyScreen({ navigation }) {
                       <Text style={styles.modalActionText}>Send Enquiry</Text>
                     </TouchableOpacity>
                   </View>
-                  </ScrollView>
+                  </>
                 )}
               </>
             ) : null}
@@ -1351,6 +1379,21 @@ const styles = StyleSheet.create(withRobotoOnIOS({
     gap: 16,
   },
 
+  // ── Compact (mobile): ek line me 2 chhote cards ──
+  listingsGridCompact: { gap: 0, columnGap: 0, rowGap: 10, justifyContent: 'space-between' },
+  cardCompact: {
+    width: '48.5%',
+    marginBottom: 0,
+    borderRadius: 10,
+  },
+  cardBodyCompact: { padding: 8 },
+  categoryPillCompact: { paddingHorizontal: 6, paddingVertical: 2, marginBottom: 4 },
+  cardTitleCompact: { fontSize: 13, lineHeight: 17 },
+  cardPriceCompact: { fontSize: 13.5, marginTop: 3 },
+  cardBottomRowCompact: { gap: 6, marginTop: 8 },
+  btnTextCompact: { fontSize: 11.5 },
+  verifiedRibbonCompact: { top: 6, left: 6, paddingHorizontal: 5, paddingVertical: 2 },
+
   card: {
     backgroundColor: '#fff',
     borderRadius: 8,
@@ -1436,7 +1479,7 @@ const styles = StyleSheet.create(withRobotoOnIOS({
   },
 heroBannerImage: {
   width: '100%',
-  	...(Platform.OS === 'web' ? { height: 350 } : {}),
+    ...(Platform.OS === 'web' ? { height: 350 } : {}),
   aspectRatio: Platform.OS === 'web' ? 5.55 : 1314 / 370,
   borderRadius: 16,
   marginBottom: 16,

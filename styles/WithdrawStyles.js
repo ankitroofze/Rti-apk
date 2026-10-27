@@ -40,27 +40,39 @@ const WithdrawStyles = StyleSheet.create({
     fontFamily: FONT_FAMILY,
   },
 
-   heroCard: {
-    borderRadius: 6, // ✅ Border radius 6px
-    padding: 22,
-    marginBottom: 14, 
+  heroCard: {
+    borderRadius: 14,
+    padding: 20,
+    marginBottom: 6,
     marginTop: 14,
     overflow: 'hidden',
     shadowColor: PINK, shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.28, shadowRadius: 14, elevation: 6,
+    shadowOpacity: 0.25, shadowRadius: 14, elevation: 6,
+  },
+  heroRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  heroIconWrap: {
+    width: 46, height: 46, borderRadius: 23,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center', justifyContent: 'center',
   },
   heroEyebrow: {
-    fontSize: 11, 
-    color: 'rgba(255,255,255,0.78)', 
-    fontWeight: '600', // ✅ Weight 600
-    textTransform: 'uppercase', 
-    letterSpacing: 1.5, 
-    marginBottom: 4,
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.85)',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+    marginBottom: 2,
     fontFamily: FONT_FAMILY,
   },
-  heroTitle: { 
-    fontSize: 22, 
-    fontWeight: '600', // ✅ Weight 600
+  heroBalance: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#ffffff',
+    fontFamily: FONT_FAMILY,
+  },
+  heroTitle: {
+    fontSize: 22,
+    fontWeight: '600',
     color: '#ffffff',
     fontFamily: FONT_FAMILY,
   },
@@ -97,8 +109,9 @@ const WithdrawStyles = StyleSheet.create({
 
   card: {
     backgroundColor: '#ffffff', 
-    borderRadius: 6, // ✅ Border radius 6px
-    padding: 18, 
+    borderRadius: 12,
+    padding: 16, 
+    marginTop: 14,
     marginBottom: 14,
     borderWidth: 1, 
     borderColor: '#eef0f5',
@@ -121,7 +134,7 @@ const WithdrawStyles = StyleSheet.create({
   },
   recordCount: { 
     fontSize: 12, 
-    color: '#b0b8cc', 
+    color: '#9CA3AF', 
     fontWeight: '600',
     fontFamily: FONT_FAMILY,
   },
@@ -243,25 +256,29 @@ const WithdrawStyles = StyleSheet.create({
   },
 
   requestCard: {
-    borderWidth: 1, borderColor: '#eef0f5', borderRadius: 6, // ✅ Border radius 6px
+    borderWidth: 1, borderColor: '#eef0f5', borderLeftWidth: 4, borderLeftColor: '#f59e0b',
+    borderRadius: 10,
     padding: 14, marginBottom: 10, backgroundColor: '#ffffff',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04, shadowRadius: 4, elevation: 1,
   },
-  requestCardEven: { backgroundColor: '#fafbfd' },
+  requestCardEven: { backgroundColor: '#ffffff' },
   requestCardLast: { marginBottom: 0 },
   requestTopRow: {
     flexDirection: 'row', justifyContent: 'space-between',
     alignItems: 'center', marginBottom: 10,
   },
   requestAmount: { 
-    fontSize: 20, 
-    fontWeight: '600', // ✅ Weight 600
+    fontSize: 22, 
+    fontWeight: '700',
     color: '#0f172a',
     fontFamily: FONT_FAMILY,
   },
 
-  statusBadge: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999 },
+  statusBadge: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: 999 },
   statusPending:  { backgroundColor: '#fff4e0' },
   statusApproved: { backgroundColor: '#e6faf3' },
+  statusCancelled: { backgroundColor: '#F3F4F6' },
   statusRejected: { backgroundColor: PINK_LIGHT },
   statusText: { 
     fontSize: 11, 
@@ -271,12 +288,13 @@ const WithdrawStyles = StyleSheet.create({
   },
   statusTextPending:  { color: '#c47a00' },
   statusTextApproved: { color: '#14b87a' },
+  statusTextCancelled: { color: '#6B7280' },
   statusTextRejected: { color: PINK },
 
   requestMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
   requestMeta: { 
     fontSize: 13, 
-    color: '#94a3b8',
+    color: '#6B7280',
     fontFamily: FONT_FAMILY,
   },
   requestMetaBold: { 
@@ -636,7 +654,8 @@ const WithdrawStyles = StyleSheet.create({
   },
 
   webRequestCard: {
-    borderWidth: 1, borderColor: '#eef0f5', borderRadius: 6, // ✅ Border radius 6px
+    borderWidth: 1, borderColor: '#eef0f5', borderLeftWidth: 4, borderLeftColor: '#f59e0b',
+    borderRadius: 10,
     padding: 14, marginBottom: 10, backgroundColor: '#ffffff',
   },
   webRequestCardEven: { backgroundColor: '#fafbfd' },

@@ -1,3 +1,4 @@
+import { smartGoBack } from '../utils/smartBack';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useCallback, useRef, useState } from 'react';
 import {
@@ -149,7 +150,7 @@ export default function LiveStreamingScreen({ navigation }) {
   <ModuleWebHeader title="Live Streaming" navigation={navigation} />
 ) : (
 Platform.OS !== 'web' ? (
-<ModuleAndroidHeader title="Live Streaming" onBack={() => navigation.navigate('QuickMenu')} />
+<ModuleAndroidHeader title="Live Streaming" onBack={() => smartGoBack(navigation, 'QuickMenu')} />
 ) : (
 <ImageBackground
   source={require('../assets/images/profile-red.png')}
@@ -157,7 +158,7 @@ Platform.OS !== 'web' ? (
   imageStyle={H.headerImg}
   style={[H.header, { paddingTop: insets.top + 8 }]}
 >
-  <TouchableOpacity onPress={() => navigation.navigate('QuickMenu')} style={H.backBtn} activeOpacity={0.7}>
+  <TouchableOpacity onPress={() => smartGoBack(navigation, 'QuickMenu')} style={H.backBtn} activeOpacity={0.7}>
     <Ionicons name="chevron-back" size={24} color="#ffffff" />
   </TouchableOpacity>
   <Text style={H.title}>Live Streaming</Text>

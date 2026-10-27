@@ -30,7 +30,7 @@ export default function NewsCameraModal({
   chips = [],           // e.g. REPORT_TYPES
   selectedChip = '',
   onSelectChip,
-  hint = 'आपल्या आजूबाजूला एखादा अपघात, स्थानिक समस्या किंवा महत्त्वाची घटना दिसल्यास लगेच फोटो/व्हिडिओ घ्या',
+  hint = 'See an accident, local issue or important event nearby? Capture a photo/video right away',
 }) {
   const insets = useSafeAreaInsets();
   const cameraRef = useRef(null);
@@ -221,10 +221,10 @@ export default function NewsCameraModal({
 
           <View style={s.modeRow}>
             <TouchableOpacity onPress={() => !recording && setMode('photo')} style={s.modeBtn}>
-              <Text style={[s.modeText, mode === 'photo' && s.modeTextOn]}>फोटो</Text>
+              <Text style={[s.modeText, mode === 'photo' && s.modeTextOn]}>Photo</Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => !recording && setMode('video')} style={s.modeBtn}>
-              <Text style={[s.modeText, mode === 'video' && s.modeTextOn]}>व्हिडिओ</Text>
+              <Text style={[s.modeText, mode === 'video' && s.modeTextOn]}>Video</Text>
             </TouchableOpacity>
           </View>
         </View>

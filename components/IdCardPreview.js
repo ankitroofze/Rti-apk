@@ -3,7 +3,7 @@ import IdCardQr from './IdCardQr';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
 import IdCardStyles from '../styles/IdCardStyles';
 import { useIdCardVerification, cardFromProfile, buildFallbackQrUrl, buildPageVerifyUrl, formatCardDate } from '../utils/idCardService';
-import { getIssueDate, resolveRoleTitle, resolveAreaText } from '../utils/profileHelpers';
+import { getIssueDate, resolveRoleTitle, resolveAreaText, pickPhoneNumber } from '../utils/profileHelpers';
 import { UserStore } from '../store/UserStore';
 
 const CERT_LOGO = require('../assets/images/certificate_logo.jpg');
@@ -56,16 +56,14 @@ export default function AutoIdCardPreview({ profile, viewOnly = false }) {
   })();
   const designation = resolveRoleTitle(safeProfile, planRoleNames, (id) => { try { return UserStore.getSeatRoleNameForPlanRoleId?.(id) || ''; } catch { return ''; } }) || `${rank.label} - RTI News Member`;
   const area = resolveAreaText(safeProfile);
-  const mobile = String(
-    safeProfile?.phone || safeProfile?.mobile_number || safeProfile?.mobile ||
-    safeProfile?.phone_number || safeProfile?.contact_number || safeProfile?.contact ||
-    safeProfile?.author_mobile || safeProfile?.author_phone || ''
-  ).trim();
+  // ✅ FIX: mobile number ab har naam / nested object se uthaya jaata hai (public profile me bhi dikhega)
+  const mobile = pickPhoneNumber(safeProfile);
   const issueDate = getIssueDate(profile);
   const own = useIdCardVerification({ enabled: !viewOnly }); // sirf apne profile par backend /id-cards
   const idCard = viewOnly ? cardFromProfile(safeProfile) : own.idCard;
   // ID No + Valid Upto sirf /id-cards API se (fallback purana logic)
   const memberId = idCard?.id_number || safeProfile.id_number || safeProfile.id_card_number ||
+    safeProfile.idcard_number || safeProfile.card_number || safeProfile.id_card?.id_number ||
     safeProfile.member_id || safeProfile.memberId || safeProfile.user_id ||
     (safeProfile.email ? generateMemberId(safeProfile.email) : (safeProfile.id != null && safeProfile.id !== '' ? `#${safeProfile.id}` : 'N/A'));
   const planExpiry = formatCardDate(safeProfile?.subscription_plan?.expires_at || safeProfile?.subscription_plan?.expiry || safeProfile?.subscription_plan?.end_date);
@@ -139,7 +137,7 @@ export default function AutoIdCardPreview({ profile, viewOnly = false }) {
         ) : null}
 
         {/* ID No + Valid Upto — ek hi row me */}
-     <View style={[IdCardStyles.idCardRow, { marginBottom: 6 }]}>
+     <View style={[IdCardStyles.idCardRow, { marginBottom: 6, flexWrap: 'wrap' }]}>
           <Text style={IdCardStyles.idCardKeyLight}>ID No:-</Text>
           <Text style={{ fontSize: 15, fontWeight: Platform.OS === 'web' ? '900' : 'normal', color: '#cc2200', fontFamily: ID_CARD_FONT_BLACK }}>{memberId}</Text>
          <Text style={{ fontSize: 15, color: '#15803d', fontWeight: Platform.OS === 'web' ? '900' : 'normal', marginLeft: 10, fontFamily: ID_CARD_FONT_BLACK }}>Valid Upto:</Text>

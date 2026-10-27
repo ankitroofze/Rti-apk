@@ -59,18 +59,25 @@ export function ProfileCompletionRow({ percent = 0, onPress }) {
   );
 }
 
-export function ReferralRow({ referralCode, onCopy }) {
+// color = Edit Profile button ka shade (subscription/tier ke hisaab se badalta hai).
+// Icon, referral code aur Copy button sab isi color me dikhenge.
+export function ReferralRow({ referralCode, onCopy, color = '#F97316' }) {
   return (
     <View style={ProfileStyles.metricRowCard}>
-      <View style={[ProfileStyles.metricIconWrap, { backgroundColor: '#FFF7ED' }]}>
-        <Feather name="gift" size={17} color="#F97316" />
+      <View style={[ProfileStyles.metricIconWrap, { backgroundColor: `${color}1F` }]}>
+        <Feather name="gift" size={17} color={color} />
       </View>
       <View style={ProfileStyles.metricBody}>
         <Text style={ProfileStyles.metricLabel}>Referral Code</Text>
-        <Text style={[ProfileStyles.metricValue, { color: '#F97316' }]}>{referralCode || 'Generating...'}</Text>
+        <Text style={[ProfileStyles.metricValue, { color }]}>{referralCode || 'Generating...'}</Text>
       </View>
-      <TouchableOpacity style={ProfileStyles.metricCopyBtn} onPress={onCopy} disabled={!referralCode} activeOpacity={0.8}>
-        <Text style={ProfileStyles.metricCopyBtnText}>Copy</Text>
+      <TouchableOpacity
+        style={[ProfileStyles.metricCopyBtn, { borderColor: color }]}
+        onPress={onCopy}
+        disabled={!referralCode}
+        activeOpacity={0.8}
+      >
+        <Text style={[ProfileStyles.metricCopyBtnText, { color }]}>Copy</Text>
       </TouchableOpacity>
     </View>
   );

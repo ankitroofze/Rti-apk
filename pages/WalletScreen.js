@@ -1,3 +1,4 @@
+import { smartGoBack } from '../utils/smartBack';
 import React, { useCallback, useMemo, useState } from 'react';
 import { ScrollView, Text, View, TouchableOpacity, Platform, useWindowDimensions, StatusBar, StyleSheet, ImageBackground, BackHandler } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -401,8 +402,14 @@ heroCard: {
   introTitle: { fontSize: 18, fontWeight: '800', color: '#111111', marginTop: 2, fontFamily: F_BOLD },
   introSub:   { fontSize: 12, color: '#888888', marginTop: 3, fontFamily: F_REG },
 
+  // 2 x 2 grid — 2 cards per row, gap responsive (width % + gap)
+  statGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between',
+    rowGap: 12, columnGap: 12, marginBottom: 14,
+  },
   statCard: {
-    backgroundColor: '#ffffff', borderRadius: 14, padding: 16, marginBottom: 12,
+    width: '47.5%', flexGrow: 1, flexShrink: 1, minWidth: 140,
+    backgroundColor: '#ffffff', borderRadius: 14, padding: 14,
     borderWidth: 1, borderColor: '#EDE8E1',
   },
   statTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
@@ -418,14 +425,14 @@ heroCard: {
     width: 34, height: 34, borderRadius: 17, backgroundColor: '#FDEBEE',
     alignItems: 'center', justifyContent: 'center',
   },
-  statBadgeCredit: { backgroundColor: '#E7F7EE', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
+  statBadgeCredit: { backgroundColor: '#E7F7EE', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
   statBadgeCreditTxt: { fontSize: 11, fontWeight: '700', color: '#1FA35C', fontFamily: F_BOLD },
-  statBadgeDebit: { backgroundColor: '#FDEBEE', borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 },
+  statBadgeDebit: { backgroundColor: '#FDEBEE', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
   statBadgeDebitTxt: { fontSize: 11, fontWeight: '700', color: '#E15252', fontFamily: F_BOLD },
   statLbl:   { fontSize: 11, fontWeight: '700', color: '#888888', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 6, fontFamily: F_MED },
   statTitle: { fontSize: 12, fontWeight: '700', color: '#333333', marginBottom: 6, fontFamily: F_BOLD },
-  statVal:   { fontSize: 26, fontWeight: '800', color: '#111111', letterSpacing: -0.5, marginBottom: 4, fontFamily: F_BLACK },
-  statHint:  { fontSize: 12, color: '#888888', fontFamily: F_REG },
+  statVal:   { fontSize: 22, fontWeight: '800', color: '#111111', letterSpacing: -0.5, marginBottom: 4, fontFamily: F_BLACK },
+  statHint:  { fontSize: 11, color: '#888888', fontFamily: F_REG },
 
   promoCard: {
     borderRadius: 14, padding: 18, marginTop: 2, marginBottom: 16,
@@ -450,9 +457,8 @@ export default function WalletScreen({ navigation, route }) {
   // Jahan se Wallet khola gaya wahi back par khule: 'Profile' / 'QuickMenu' / 'Settings'
   const returnTo = route?.params?.returnTo || 'QuickMenu';
   const goBackToOrigin = useCallback(() => {
-    if (returnTo === 'Settings') navigation.navigate('Settings');
-    else if (returnTo === 'Profile') navigation.navigate('Profile');
-    else navigation.navigate('QuickMenu');
+    // breadcrumb: pichli screen par; history na ho to returnTo ke hisaab se
+    smartGoBack(navigation, returnTo === 'Settings' ? 'Settings' : returnTo === 'Profile' ? 'Profile' : 'QuickMenu');
   }, [navigation, returnTo]);
   // Android hardware back button bhi usi screen par le jaaye
   useFocusEffect(useCallback(() => {
@@ -784,57 +790,59 @@ export default function WalletScreen({ navigation, route }) {
         </View>
 
         {/* ── TOTAL BALANCE / CREDIT / DEBIT CARDS (web jaisa) ── */}
-        <View style={m.statCard}>
-          <View style={m.statTop}>
-            <View style={m.statIconWrapPink}>
-              <Feather name="credit-card" size={16} color="#C62828" />
+        <View style={m.statGrid}>
+          <View style={m.statCard}>
+            <View style={m.statTop}>
+              <View style={m.statIconWrapPink}>
+                <Feather name="credit-card" size={16} color="#C62828" />
+              </View>
             </View>
+            <Text style={m.statLbl}>Total Balance</Text>
+            <Text style={m.statVal} numberOfLines={1} adjustsFontSizeToFit>₹{summary.total_balance.toLocaleString()}</Text>
+            <Text style={m.statHint}>Wallet balance + commission</Text>
           </View>
-          <Text style={m.statLbl}>Total Balance</Text>
-          <Text style={m.statVal}>₹{summary.total_balance.toLocaleString()}</Text>
-          <Text style={m.statHint}>Wallet balance + commission</Text>
-        </View>
 
-        <View style={m.statCard}>
-          <View style={m.statTop}>
-            <View style={m.statIconWrapGreen}>
-              <Feather name="arrow-down-circle" size={16} color={O[400]} />
+          <View style={m.statCard}>
+            <View style={m.statTop}>
+              <View style={m.statIconWrapGreen}>
+                <Feather name="arrow-down-circle" size={16} color={O[400]} />
+              </View>
+              <View style={m.statBadgeCredit}>
+                <Text style={m.statBadgeCreditTxt}>Received</Text>
+              </View>
             </View>
-            <View style={m.statBadgeCredit}>
-              <Text style={m.statBadgeCreditTxt}>Received</Text>
-            </View>
+            <Text style={m.statTitle}>Total Credit</Text>
+            <Text style={m.statVal} numberOfLines={1} adjustsFontSizeToFit>₹{summary.total_credit.toLocaleString()}</Text>
+            <Text style={m.statHint}>Amount received</Text>
           </View>
-          <Text style={m.statTitle}>Total Credit</Text>
-          <Text style={m.statVal}>₹{summary.total_credit.toLocaleString()}</Text>
-          <Text style={m.statHint}>Amount received</Text>
-        </View>
 
-        <View style={m.statCard}>
-          <View style={m.statTop}>
-            <View style={m.statIconWrapRed}>
-              <Feather name="arrow-up-circle" size={16} color="#E15252" />
+          <View style={m.statCard}>
+            <View style={m.statTop}>
+              <View style={m.statIconWrapRed}>
+                <Feather name="arrow-up-circle" size={16} color="#E15252" />
+              </View>
+              <View style={m.statBadgeDebit}>
+                <Text style={m.statBadgeDebitTxt}>Spent</Text>
+              </View>
             </View>
-            <View style={m.statBadgeDebit}>
-              <Text style={m.statBadgeDebitTxt}>Spent</Text>
-            </View>
+            <Text style={m.statTitle}>Total Debit</Text>
+            <Text style={m.statVal} numberOfLines={1} adjustsFontSizeToFit>₹{summary.total_debit.toLocaleString()}</Text>
+            <Text style={m.statHint}>Amount spent</Text>
           </View>
-          <Text style={m.statTitle}>Total Debit</Text>
-          <Text style={m.statVal}>₹{summary.total_debit.toLocaleString()}</Text>
-          <Text style={m.statHint}>Amount spent</Text>
-        </View>
 
-        <View style={m.statCard}>
-          <View style={m.statTop}>
-            <View style={m.statIconWrapGreen}>
-              <Feather name="users" size={16} color="#7C3AED" />
+          <View style={m.statCard}>
+            <View style={m.statTop}>
+              <View style={m.statIconWrapGreen}>
+                <Feather name="users" size={16} color="#7C3AED" />
+              </View>
+              <View style={m.statBadgeCredit}>
+                <Text style={m.statBadgeCreditTxt}>Network</Text>
+              </View>
             </View>
-            <View style={m.statBadgeCredit}>
-              <Text style={m.statBadgeCreditTxt}>Network</Text>
-            </View>
+            <Text style={m.statTitle}>Total Commission</Text>
+            <Text style={m.statVal} numberOfLines={1} adjustsFontSizeToFit>₹{(summary.expected_commission || 0).toLocaleString()}</Text>
+            <Text style={m.statHint}>Expected from your network</Text>
           </View>
-          <Text style={m.statTitle}>Total Commission</Text>
-          <Text style={m.statVal}>₹{(summary.expected_commission || 0).toLocaleString()}</Text>
-          <Text style={m.statHint}>Expected from your network</Text>
         </View>
 
         {/* ── PAYMENT HISTORY PROMO CARD (web jaisa) ── */}

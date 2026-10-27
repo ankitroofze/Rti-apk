@@ -87,10 +87,22 @@ const styles = StyleSheet.create(withRobotoFont({
     justifyContent: 'flex-end',
     zIndex: 10,
   },
+  // Instagram jaisa: video ke bilkul beech me, play/pause badge (84px) ke JUST upar. Sirf icon, koi background nahi.
+  reelMuteCenter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: '50%',
+    marginTop: -(42 + 12 + 44), // badge ka aadha (42) + gap (12) + button height (44)
+    alignItems: 'center',
+    zIndex: 10,
+  },
   muteBtn: {
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    padding: 8,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
   },
 
   // ── Tag Badge ──────────────────────────────────────────────────────────────

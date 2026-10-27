@@ -15,6 +15,7 @@
 //  mobile me koi change nahi.
 // ═══════════════════════════════════════════════════════════════════════════
 
+import { smartGoBack } from '../utils/smartBack';
 import React, { useEffect, useState } from 'react';
 import { Platform, View, Text, TouchableOpacity, ImageBackground, Image } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -114,7 +115,7 @@ export default function ModuleWebHeader({
 
   const handleBack = () => {
     if (onBack) return onBack();
-    go('QuickMenu');
+    smartGoBack(navigation, 'QuickMenu');
   };
   const readableColor = highContrast ? '#14532D' : '#FFFFFF';
   const controlSurface = highContrast ? 'rgba(255,255,255,0.62)' : 'rgba(255,255,255,0.16)';

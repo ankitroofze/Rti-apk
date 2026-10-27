@@ -1,3 +1,4 @@
+import { smartGoBack } from '../utils/smartBack';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -257,7 +258,7 @@ const handleAttemptQuiz = useCallback((item) => {
   <ModuleWebHeader title="Certification" navigation={navigation} />
 ) : (
 (Platform.OS === 'android' || Platform.OS === 'ios') ? (
-<ModuleAndroidHeader title="Certification" onBack={() => navigation.navigate('QuickMenu')} />
+<ModuleAndroidHeader title="Certification" onBack={() => smartGoBack(navigation, 'QuickMenu')} />
 ) : (
 <View
   style={{

@@ -30,6 +30,7 @@ export default function AutoFitAdImage({ uri, maxWidth, maxHeight, radius = 0, s
         style={[{ width: maxWidth, height: maxHeight, borderRadius: radius }, style]}
         resizeMode="cover"
         fadeDuration={0}
+        resizeMethod="resize"
       />
     );
   }
@@ -53,6 +54,7 @@ export default function AutoFitAdImage({ uri, maxWidth, maxHeight, radius = 0, s
         style={[{ width, height, borderRadius: radius }, style]}
         resizeMode="contain"
         fadeDuration={0}
+        resizeMethod="resize"
       />
     </View>
   );

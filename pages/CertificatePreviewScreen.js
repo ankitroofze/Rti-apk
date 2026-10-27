@@ -42,6 +42,10 @@ const EMAIL_BANNER    = require('../assets/images/email_banner.png'); // email f
 // ✅ Signer fixed — certificate par hamesha yahi naam aayega (user ka naam nahi)
 const SIGNER_NAME = 'Hon. Mr. Shoukat Abdulkalam Naikwadi';
 
+// ✅ Email banner ka original aspect ratio (squash na ho isliye)
+const _emailSrc = Image.resolveAssetSource(EMAIL_BANNER);
+const EMAIL_ASPECT = _emailSrc && _emailSrc.width && _emailSrc.height ? _emailSrc.width / _emailSrc.height : 3.4;
+
 const CERT_WIDTH = 1024;
 const CERT_HEIGHT = 1536;
 const FONT_SCALE = CERT_WIDTH / 375;
@@ -169,7 +173,7 @@ const buildCertificateHtml = ({ images, userName, issueDate, photoUri, resultTie
     .logo-left { top: 6%; left: 15%; width: 21%; height: 10%; object-fit: contain; }
     .logo-center { top: 5%; left: 37%; width: 26%; height: 11%; object-fit: contain; }
     .logo-right { top: 6%; right: 12%; width: 26%; height: 10%; object-fit: contain; }
-    .header-image { top: 15%; left: 0; width: 100%; height: 9%; object-fit: contain; }
+    .header-image { top: 15%; left: 0; width: 100%; height: 9%; object-fit: contain; transform: scale(1.53); transform-origin: center center; }
     .header-user {
       top: 24%; left: 10%; right: 10%;
       color: #8b0000; text-align: center;
@@ -245,10 +249,10 @@ const buildCertificateHtml = ({ images, userName, issueDate, photoUri, resultTie
       font-size: ${8 * FONT_SCALE}px;
     }
     .email-wrap {
-      position: absolute; left: 15%; right: 15%; bottom: 7%;
-      height: ${15 * FONT_SCALE}px;
+      position: absolute; left: 15%; width: 70%; bottom: 8%;
+      transform: translateY(50%);
     }
-    .email-banner { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: fill; }
+    .email-banner { display: block; width: 100%; height: auto; }
 
     :root { --scale: 1; }
     body.preview {
@@ -708,10 +712,23 @@ export default function CertificatePreviewScreen({ navigation, route }) {
               </Text>
 
               {/* ── EMAIL BANNER ── */}
-              <View style={[styles.emailBannerWrapper, sc.emailBannerWrapper]}>
-                <Image source={EMAIL_BANNER} style={styles.emailBannerImg} resizeMode="stretch" />
-               
-              </View>
+              {(() => {
+                const emailW = cardWidth * 0.70;
+                const emailH = emailW / EMAIL_ASPECT;
+                return (
+                  <View
+                    style={{
+                      position: 'absolute',
+                      left: '15%',
+                      width: emailW,
+                      height: emailH,
+                      bottom: cardWidth * (CERT_HEIGHT / CERT_WIDTH) * 0.08 - emailH / 2,
+                    }}
+                  >
+                    <Image source={EMAIL_BANNER} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
+                  </View>
+                );
+              })()}
 
             </View>
           </ImageBackground>

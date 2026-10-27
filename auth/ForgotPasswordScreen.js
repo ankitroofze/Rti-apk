@@ -7,6 +7,7 @@ import {
   ActivityIndicator, ImageBackground, KeyboardAvoidingView, Platform, ScrollView,
   StatusBar, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
+import KeyboardAwareScroll from '../components/KeyboardAwareScroll';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -57,7 +58,7 @@ export default function ForgotPasswordScreen({ navigation }) {
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <ImageBackground source={require('../assets/images/profile-red.png')} resizeMode="cover" style={styles.root}>
-          <ScrollView
+          <KeyboardAwareScroll
             style={styles.scrollView}
             contentContainerStyle={[styles.formScroll, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 40 }]}
             keyboardShouldPersistTaps="handled"
@@ -126,7 +127,7 @@ export default function ForgotPasswordScreen({ navigation }) {
                 </Text>
               </TouchableOpacity>
             </View>
-          </ScrollView>
+          </KeyboardAwareScroll>
 
           {/* OTP popup — screen ke center me card */}
           <OtpModal

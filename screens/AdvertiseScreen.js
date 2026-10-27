@@ -4,6 +4,7 @@ import {
   StyleSheet, Image, Alert, Modal, Dimensions, Platform, StatusBar,
   useWindowDimensions, KeyboardAvoidingView, Keyboard,
 } from 'react-native';
+import KeyboardAwareScroll from '../components/KeyboardAwareScroll';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -1220,7 +1221,7 @@ const editAd = route?.params?.editAd || null;
        <Text style={[s.headerTitle, { color: '#fff' }]}>Fill advertisement information below</Text>
       </View>
 
-      <ScrollView ref={mobileScrollRef} style={s.scroll} contentContainerStyle={[s.scrollContent, Platform.OS === 'android' && kbHeight > 0 && { paddingBottom: kbHeight + 48 }]} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="none">
+      <KeyboardAwareScroll ref={mobileScrollRef} style={s.scroll} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="none">
         <View style={s.videoWrapper}>
           <VideoView player={tutorialPlayer} style={s.video} nativeControls contentFit="cover" />
           <View style={s.videoTag}>
@@ -1321,7 +1322,7 @@ const editAd = route?.params?.editAd || null;
          <LinearGradient colors={ADV_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
           <Text style={s.nextBtnText}>Next</Text>
         </TouchableOpacity>
-      </ScrollView>
+      </KeyboardAwareScroll>
 
       <AdPreviewModal
         visible={showPreview}

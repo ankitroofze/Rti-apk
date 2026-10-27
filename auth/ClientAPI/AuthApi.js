@@ -82,7 +82,7 @@ const fetchWithDebug = async (endpoint, options = {}, debugBody = null, customTi
     timeoutMs: effectiveTimeoutMs,
   };
 
-  console.log('[AuthAPI] Request:', {
+  if (__DEV__) console.log('[AuthAPI] Request:', {
     ...context,
     headers: redactHeaders(options.headers),
   });
@@ -101,7 +101,7 @@ const fetchWithDebug = async (endpoint, options = {}, debugBody = null, customTi
       data,
     };
 
-    console.log('[AuthAPI] Response:', {
+    if (__DEV__) console.log('[AuthAPI] Response:', {
       ...context,
       status: result.status,
       ok: result.ok,

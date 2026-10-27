@@ -15,6 +15,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import KeyboardAwareScroll from '../components/KeyboardAwareScroll';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { CommonActions } from '@react-navigation/native';
@@ -1259,7 +1260,7 @@ console.log("Platform:", Platform.OS);
       </ImageBackground>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
-        <ScrollView
+        <KeyboardAwareScroll
           style={s.scroll}
           contentContainerStyle={s.scrollContent}
           keyboardShouldPersistTaps="always"
@@ -1408,7 +1409,7 @@ console.log("Platform:", Platform.OS);
               <Text style={s.submitBtnText}>{submitLabel}</Text>
             </LinearGradient>
           </TouchableOpacity>
-        </ScrollView>
+        </KeyboardAwareScroll>
       </KeyboardAvoidingView>
 
       <VideoAudioEditorModal

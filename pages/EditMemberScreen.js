@@ -8,6 +8,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
+import KeyboardAwareScroll from '../components/KeyboardAwareScroll';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import EditMemberStyles from '../styles/Editmemberstyles';
@@ -80,7 +81,7 @@ export default function EditMemberScreen({ route, navigation }) {
         <View style={{ width: 36 }} />
       </View>
 
-      <ScrollView
+      <KeyboardAwareScroll
         style={EditMemberStyles.scrollView}
         contentContainerStyle={EditMemberStyles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -156,7 +157,7 @@ export default function EditMemberScreen({ route, navigation }) {
         >
           <Text style={EditMemberStyles.cancelBtnText}>Cancel</Text>
         </TouchableOpacity>
-      </ScrollView>
+      </KeyboardAwareScroll>
     </View>
     </SafeAreaView>
   );

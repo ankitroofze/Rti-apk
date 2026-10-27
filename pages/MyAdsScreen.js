@@ -1,3 +1,4 @@
+import { smartGoBack } from '../utils/smartBack';
 import React, { useState, useCallback } from 'react';
 import {
   View, ScrollView, TouchableOpacity,
@@ -392,7 +393,7 @@ export default function MyAdsScreen({ navigation }) {
         <ModuleWebHeader
           title="My Ads"
           navigation={navigation}
-          onBack={() => navigation.navigate('Settings')}
+          onBack={() => smartGoBack(navigation, 'Settings')}
         />
 
         <ScrollView
@@ -517,7 +518,7 @@ export default function MyAdsScreen({ navigation }) {
       <ModuleMobileHeader
         title="My Advertisements"
         navigation={navigation}
-        onBack={() => navigation.navigate('Settings')}
+        onBack={() => smartGoBack(navigation, 'Settings')}
         rightExtra={(
           <TouchableOpacity
             style={s.headerBuyBtn}

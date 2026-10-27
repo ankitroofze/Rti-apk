@@ -204,7 +204,14 @@ function MuteIcon({ muted, size = 20 }) {
       </svg>
     );
   }
-  return <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={size} color="#fff" />;
+  return (
+    <Ionicons
+      name={muted ? 'volume-mute' : 'volume-high'}
+      size={size}
+      color="#fff"
+      style={{ textShadowColor: 'rgba(0,0,0,0.65)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 }}
+    />
+  );
 }
 
 // Share Modal
@@ -1129,7 +1136,7 @@ function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditC
 }
 
 // Action Column
-function ActionColumn({ post, onLike, onComment, onShare, onBookmark, onDescription, scaleAnim, isMobileLayout }) {
+function ActionColumn({ post, onLike, onComment, onShare, onBookmark, onDescription, scaleAnim, isMobileLayout, bottomInset = 0 }) {
   const formatCount = (n) =>
     n >= 1_000_000 ? (n / 1_000_000).toFixed(1) + 'M' :
     n >= 1_000 ? (n / 1_000).toFixed(1) + 'K' : String(n);
@@ -1154,7 +1161,7 @@ function ActionColumn({ post, onLike, onComment, onShare, onBookmark, onDescript
     : {};
 
   const containerStyle = isMobileLayout
-  ? { position: 'absolute', right: 6, bottom: 100, alignItems: 'center', gap: 14, zIndex: 20 }
+  ? { position: 'absolute', right: 6, bottom: bottomInset > 0 ? bottomInset + 20 : 100, alignItems: 'center', gap: 14, zIndex: 20 }
     : { width: 90, paddingLeft: 16, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', height: '100%', gap: 22, flexShrink: 0 };
 
   const btn          = { alignItems: 'center', gap: 2 };
@@ -1200,7 +1207,7 @@ function ActionColumn({ post, onLike, onComment, onShare, onBookmark, onDescript
 const feedViewedIds = new Set();
 
 // Reel Card
-function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription, onProfilePress, onAdPress, onFollow, isActive, cardWidth, cardHeight, isMobileLayout }) {
+function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription, onProfilePress, onAdPress, onFollow, isActive, isNear = true, bottomInset = 0, cardWidth, cardHeight, isMobileLayout }) {
   const safePost = post || {};
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const flashAnim = useRef(new Animated.Value(0)).current; // resume par center me pause icon flash
@@ -1287,32 +1294,28 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription,
   }, [authorEmail, onFollow]);
 
   const handleFollowPress = async () => {
-    if (!authorEmail || followLoading) return;
+    if (!authorEmail) return;
+    // ✅ FAST: pehle button badlo (optimistic), API peeche chale; fail ho to wapas.
+    const next = !isFollowing;
+    setIsFollowing(next);
     try {
       const currentUser = await UserStore.getCurrentUser();
       if (currentUser && currentUser.email === authorEmail) {
+        setIsFollowing(!next);
         Alert.alert('Cannot Follow', 'You cannot follow yourself.');
         return;
       }
-    } catch (error) {
-      console.error('Error getting current user:', error);
-      Alert.alert('Error', 'Unable to verify user. Please try again.');
-      return;
-    }
-      setFollowLoading(true);
-    try {
-      if (isFollowing) {
-        await UserStore.unfollowUser(authorEmail, authorId);
-        setIsFollowing(false);
-      } else {
-        await UserStore.followUser(authorEmail, authorId);
-        setIsFollowing(true);
+      const result = next
+        ? await UserStore.followUser(authorEmail, authorId)
+        : await UserStore.unfollowUser(authorEmail, authorId);
+      if (result?.ok === false) {
+        setIsFollowing(!next);
+        Alert.alert('Follow', result?.message || 'Unable to update follow status.');
       }
     } catch (error) {
       console.error('Error updating follow status:', error);
+      setIsFollowing(!next);
       Alert.alert('Error', 'Unable to update follow status. Please try again.');
-    } finally {
-      setFollowLoading(false);
     }
   };
 
@@ -1393,43 +1396,48 @@ return t || '';
   // ✅ FIX: canPlayVideo derived from videoSource (not effectiveMediaUri)
   const canPlayVideo = Boolean(videoSource);
 
-  // ✅ FIX: useVideoPlayer uses videoSource — re-initializes when blob URL ready
-  const player = useVideoPlayer(videoSource, (p) => {
-  p.loop = true;
-  p.muted = getGlobalMuted();   // global mute state se start
-  p.volume = 1;      // ✅ full volume
-  p.autoplay = false;
+  // ✅ FIX (crash): har card ka apna native player hona = FlatList window me 5 ExoPlayer/AVPlayer ek saath.
+  // Kam RAM / kam hardware decoder wale phones par ye scroll karte waqt app band kar deta tha.
+  // Ab sirf ACTIVE card + uske aas-paas ke (agle/pichle) cards ko source milta hai (max 3 player).
+  const activeSource = isNear ? videoSource : null;
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
-    p.addListener('statusChange', ({ status }) => {
-      if (status === 'readyToPlay') {
-        setPlayerReady(true);
-      }
-    });
-
-    p.addListener('playbackStateChange', ({ playbackState }) => {
-      if (playbackState === 'playing') {
-        setShowPoster(false);
-      }
-    });
+  const player = useVideoPlayer(activeSource, (p) => {
+    try {
+      p.loop = true;
+      p.muted = getGlobalMuted();   // global mute state se start
+      p.volume = 1;
+      p.autoplay = false;
+      p.addListener('statusChange', ({ status }) => {
+        if (status === 'readyToPlay' && mountedRef.current) setPlayerReady(true);
+      });
+      p.addListener('playbackStateChange', ({ playbackState }) => {
+        if (playbackState === 'playing' && mountedRef.current) setShowPoster(false);
+      });
+    } catch (_) { /* player release ho chuka ho to ignore */ }
   });
 
   // Reset poster/ready when video source changes
   useEffect(() => {
     setShowPoster(true);
     setPlayerReady(false);
-  }, [videoSource]);
+  }, [activeSource]);
 
   useEffect(() => { setCaptionExpanded(false); }, [postId]);
 
   // Apply muted state to player
   useEffect(() => {
-    if (!canPlayVideo || !player) return;
+    if (!canPlayVideo || !player || !activeSource) return;
     safeSetMuted(player, muted);
-  }, [canPlayVideo, muted, player]);
+  }, [canPlayVideo, activeSource, muted, player]);
 
   // Handle play/pause based on active state + player readiness
   useEffect(() => {
-    if (!canPlayVideo || !player || !playerReady) return;
+    if (!canPlayVideo || !player || !activeSource || !playerReady) return;
 
     const playVideo = async () => {
       if (isActive && !paused) {
@@ -1445,16 +1453,14 @@ return t || '';
     };
 
     playVideo();
-  }, [canPlayVideo, isActive, paused, player, playerReady]);
+  }, [canPlayVideo, activeSource, isActive, paused, player, playerReady]);
 
   // Cleanup on unmount
+  // ✅ FIX (crash): expo-video unmount par player ko khud release kar deta hai. Release ho chuke
+  // player par `removeAllListeners()` call karne se native exception aata tha (upar scroll / card
+  // unmount par app band). Ab sirf safe pause — listeners player ke saath khud hat jaate hain.
   useEffect(() => {
-    return () => {
-      if (player) {
-        safePause(player);
-        player.removeAllListeners();
-      }
-    };
+    return () => { safePause(player); };
   }, [player]);
 
   // Pause video when card scrolls out of view
@@ -1462,6 +1468,7 @@ return t || '';
     if (!canPlayVideo || !player) return;
     if (!isActive) {
       safePause(player);
+      try { player.currentTime = 0; } catch (_) { /* released player */ }
       setPaused(false);
       setShowPoster(true);
     }
@@ -1472,7 +1479,7 @@ return t || '';
       onAdPress?.(safePost);
       return;
     }
-    if (!canPlayVideo || !player || !playerReady) return;
+    if (!canPlayVideo || !player || !activeSource || !playerReady) return;
 
     if (paused) {
       setPaused(false);
@@ -1487,7 +1494,7 @@ return t || '';
       setPaused(true);
       // poster wapas mat lagao — warna ▶ icon chhup jaata hai aur frame hat jaata hai
     }
-  }, [canPlayVideo, isAd, onAdPress, paused, player, playerReady, safePost, flashAnim]);
+  }, [canPlayVideo, activeSource, isAd, onAdPress, paused, player, playerReady, safePost, flashAnim]);
 
   const handleLikePress = () => {
     Animated.sequence([
@@ -1499,8 +1506,9 @@ return t || '';
 
   const navbarH = Platform.OS === 'ios' ? 60 : 56;
 const safeBot = Platform.OS === 'ios' ? 34 : 0;
-  const bottomBottom = isMobileLayout 
-    ? (Platform.OS === 'web' ? 80 : navbarH + safeBot + 12) 
+  // Navbar ab video ke UPAR overlay hai (video uske peeche tak jaata hai), isliye offset navbar ki real height se.
+  const bottomBottom = isMobileLayout
+    ? (Platform.OS === 'web' ? 80 : (bottomInset > 0 ? bottomInset + 12 : navbarH + safeBot + 12))
     : 28;
   // const bottomRight = isMobileLayout ? 60 : 14;
   const bottomRight = 80; // icons ab video ke upar right me hain — caption unse na takraye
@@ -1610,14 +1618,15 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
           </Animated.View>
         ) : null}
 
-        {canPlayVideo ? (
-          <View style={styles.reelTopBar}>
+        {canPlayVideo && (muted || paused) ? (
+          <View pointerEvents="box-none" style={styles.reelMuteCenter}>
             <TouchableOpacity
-              style={[styles.muteBtn, { backgroundColor: muted ? 'rgba(249,115,22,0.8)' : 'rgba(0,0,0,0.5)' }]}
+              style={styles.muteBtn}
               onPress={toggleMuted}
-              activeOpacity={0.8}
+              activeOpacity={0.7}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             >
-              <MuteIcon muted={muted} size={20} />
+              <MuteIcon muted={muted} size={28} />
             </TouchableOpacity>
           </View>
         ) : null}
@@ -1626,7 +1635,7 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
           post={{ ...safePost, likes: Number(safePost.likes || 0), shares, comments, commentsCount: safePost.commentsCount ?? comments.length, views: Number(safePost.views || 0) + viewBump }}
           onLike={handleLikePress} onComment={onComment} onShare={onShare}
           onBookmark={onBookmark} onDescription={onDescription}
-          scaleAnim={scaleAnim} isMobileLayout={true}
+          scaleAnim={scaleAnim} isMobileLayout={true} bottomInset={bottomInset}
         />
 
         <View style={[styles.reelBottom, { bottom: bottomBottom, right: bottomRight }]}>
@@ -1657,7 +1666,7 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
                 activeOpacity={0.8}
               >
                 <Text style={[styles.followBtnText, isFollowing && styles.followBtnTextFollowing]}>
-                  {followLoading ? '...' : (isFollowing ? 'Following' : 'Follow')}
+                  {isFollowing ? 'Following' : 'Follow'}
                 </Text>
               </TouchableOpacity>
             ) : null}
@@ -1727,6 +1736,7 @@ export default function FeedScreen({ navigation }) {
   const [currentUserEmail, setCurrentUserEmail] = useState(null);
   const [commentProfilesByEmail, setCommentProfilesByEmail] = useState({});
   const [feedViewportHeight, setFeedViewportHeight] = useState(0);
+  const [navBarH, setNavBarH] = useState(0); // neeche wale curved navbar ki real height
   const isScreenFocused = useIsFocused();
   const feedCursorRef = useRef(null);
   const feedHasMoreRef = useRef(false);
@@ -2366,6 +2376,8 @@ image: item.image || null,
                 })}
                 onFollow={true}
                 isActive={index === activeIndex && isScreenFocused}
+                isNear={activeIndex >= 0 && Math.abs(index - activeIndex) <= 1 && isScreenFocused}
+                bottomInset={isWebPlatform ? 0 : navBarH}
                 cardWidth={effectiveCardWidth}
                 cardHeight={cardHeight}
                 isMobileLayout={isMobileLayout}
@@ -2388,8 +2400,9 @@ image: item.image || null,
             viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
             getItemLayout={(_, index) => ({ length: cardHeight, offset: cardHeight * index, index })}
             initialNumToRender={2}
-            maxToRenderPerBatch={3}
-            windowSize={5}
+            maxToRenderPerBatch={2}
+            updateCellsBatchingPeriod={60}
+            windowSize={3}
             // ✅ FIX: removeClippedSubviews Android par video cards ke saath scroll jump/blank deta hai
             removeClippedSubviews={false}
             onEndReached={() => loadMoreFeedRef.current?.()}
@@ -2444,11 +2457,22 @@ image: item.image || null,
       />
 
       {!isWebPlatform && (
-        <AppNavbar
-          navigation={navigation}
-          activeScreen="Feed"
-          hideTopHeader={true}
-        />
+        // ✅ FIX: navbar pehle video ke NEECHE alag row me tha, isliye uske curved corners me peeche ka
+        // black background dikhta tha. Ab navbar video ke upar overlay hai — corners me video hi dikhega.
+        <View
+          pointerEvents="box-none"
+          style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}
+          onLayout={(e) => {
+            const h = e?.nativeEvent?.layout?.height || 0;
+            if (h > 0 && Math.abs(h - navBarH) > 0.5) setNavBarH(h);
+          }}
+        >
+          <AppNavbar
+            navigation={navigation}
+            activeScreen="Feed"
+            hideTopHeader={true}
+          />
+        </View>
       )}
     </View>
   );

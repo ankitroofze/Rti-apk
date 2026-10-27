@@ -19,6 +19,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import KeyboardAwareScroll from '../components/KeyboardAwareScroll';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold } from '@expo-google-fonts/roboto';
@@ -389,7 +390,7 @@ export default function RegisterScreen({ navigation }) {
           style={styles.root}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          <ScrollView
+          <KeyboardAwareScroll
             style={styles.scrollView}
             contentContainerStyle={styles.formScroll}
             keyboardShouldPersistTaps="handled"
@@ -656,7 +657,7 @@ export default function RegisterScreen({ navigation }) {
                 </>
               )}
             </View>
-          </ScrollView>
+          </KeyboardAwareScroll>
 
           <Toast toast={toast} opacity={opacity} translateY={translateY} />
 

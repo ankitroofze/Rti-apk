@@ -1,3 +1,4 @@
+import { smartGoBack } from '../utils/smartBack';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -10,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useToast } from '../components/ui/ToastProvider';
 import styles, { C } from '../styles/NotificationsStyles';
@@ -80,6 +82,9 @@ const WebContentWrapper = ({ children, isMobile }) => {
 export default function NotificationsScreen({ navigation }) {
   const { width: windowWidth } = useWindowDimensions();
   const isMobileWeb = Platform.OS === 'web' && windowWidth <= 760;
+  const insets = useSafeAreaInsets();
+  // Android / iOS phone (chhoti screen) par hero + stats compact layout me
+  const isCompact = Platform.OS !== 'web' && windowWidth < 600;
   const { showToast } = useToast();
   const [loading, setLoading] = useState(true);
   const [notificationData, setNotificationData] = useState({
@@ -185,7 +190,7 @@ export default function NotificationsScreen({ navigation }) {
       <View style={styles.root}>
         {/* Header */}
         {Platform.OS === 'android' ? (
-<ModuleAndroidHeader title="Notifications" onBack={() => navigation.navigate('QuickMenu')} />
+<ModuleAndroidHeader title="Notifications" onBack={() => smartGoBack(navigation, 'QuickMenu')} />
 ) : (
 <>
 <View style={styles.customHeader}>
@@ -217,22 +222,25 @@ export default function NotificationsScreen({ navigation }) {
           contentContainerStyle={[
             styles.scrollContent,
             Platform.OS === 'web' && { paddingHorizontal: 0, alignItems: 'stretch' },
+            Platform.OS !== 'web' && { paddingBottom: 96 + insets.bottom },
           ]}
           showsVerticalScrollIndicator={false}
         >
           <WebContentWrapper isMobile={isMobileWeb}>
             {/* Hero card */}
-            <View style={styles.heroCard}>
-              <View style={styles.heroIconWrap}>
-                <Feather name="bell" size={22} color={C.accent} />
-              </View>
-              <View style={styles.heroTextWrap}>
-                <Text style={styles.heroEyebrow}>INBOX CENTER</Text>
-                <Text style={styles.heroTitle}>Stay updated with every activity</Text>
-                <Text style={styles.heroSubtitle}>Account alerts, plan updates</Text>
+            <View style={[styles.heroCard, isCompact && styles.heroCardCompact]}>
+              <View style={styles.heroMainRow}>
+                <View style={styles.heroIconWrap}>
+                  <Feather name="bell" size={22} color={C.accent} />
+                </View>
+                <View style={styles.heroTextWrap}>
+                  <Text style={styles.heroEyebrow}>INBOX CENTER</Text>
+                  <Text style={[styles.heroTitle, isCompact && styles.heroTitleCompact]}>Stay updated with every activity</Text>
+                  <Text style={styles.heroSubtitle}>Account alerts, plan updates</Text>
+                </View>
               </View>
               {!isMobileWeb && (currentUser?.name || currentUser?.email) ? (
-                <View style={styles.heroOwner}>
+                <View style={[styles.heroOwner, isCompact && styles.heroOwnerCompact]}>
                   <Text style={styles.ownerName} numberOfLines={1}>{currentUser?.name || 'RTI User'}</Text>
                   <Text style={styles.ownerEmail} numberOfLines={1}>{currentUser?.email || ''}</Text>
                 </View>
@@ -240,30 +248,30 @@ export default function NotificationsScreen({ navigation }) {
             </View>
 
             {/* Stats row */}
-            <View style={styles.statsRow}>
-              <View style={[styles.statCard, styles.statCardMessages]}>
+            <View style={[styles.statsRow, isCompact && styles.statsRowCompact]}>
+              <View style={[styles.statCard, styles.statCardMessages, isCompact && styles.statCardCompact]}>
                 <View style={[styles.statIconWrap, styles.statIconMessages]}>
                   <Feather name="inbox" size={20} color={C.blue} />
                 </View>
-                <View style={styles.statTextWrap}>
+                <View style={[styles.statTextWrap, isCompact && styles.statTextCompact]}>
                   <Text style={styles.statValue}>{notificationData.items.length}</Text>
                   <Text style={styles.statLabel}>Total</Text>
                 </View>
               </View>
-              <View style={[styles.statCard, styles.statCardUnread]}>
+              <View style={[styles.statCard, styles.statCardUnread, isCompact && styles.statCardCompact]}>
                 <View style={[styles.statIconWrap, styles.statIconUnread]}>
                   <Feather name="bell" size={20} color={C.red} />
                 </View>
-                <View style={styles.statTextWrap}>
+                <View style={[styles.statTextWrap, isCompact && styles.statTextCompact]}>
                   <Text style={styles.statValue}>{notificationData.unreadCount}</Text>
                   <Text style={styles.statLabel}>Unread</Text>
                 </View>
               </View>
-              <View style={[styles.statCard, styles.statCardRead]}>
+              <View style={[styles.statCard, styles.statCardRead, isCompact && styles.statCardCompact]}>
                 <View style={[styles.statIconWrap, styles.statIconRead]}>
                   <Feather name="check-circle" size={20} color={C.green} />
                 </View>
-                <View style={styles.statTextWrap}>
+                <View style={[styles.statTextWrap, isCompact && styles.statTextCompact]}>
                   <Text style={styles.statValue}>{notificationData.readCount}</Text>
                   <Text style={styles.statLabel}>Read</Text>
                 </View>
@@ -271,7 +279,7 @@ export default function NotificationsScreen({ navigation }) {
             </View>
 
             {/* Notifications list card */}
-            <View style={styles.listCard}>
+            <View style={[styles.listCard, isCompact && styles.listCardCompact]}>
               <View style={styles.listHeaderRow}>
                 <View style={styles.listTitleWrap}>
                   <Text style={styles.listTitle}>Recent Notifications</Text>

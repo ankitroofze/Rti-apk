@@ -1,3 +1,4 @@
+import { smartGoBack } from '../utils/smartBack';
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import {
   Alert, Image, ImageBackground, Modal, Platform, ScrollView, Text, TextInput,
@@ -691,7 +692,7 @@ const [reporterDate, setReporterDate] = useState('');
         <ModuleMobileHeader
           title="E-Paper"
           navigation={navigation}
-          onBack={() => navigation.navigate('QuickMenu')}
+          onBack={() => smartGoBack(navigation, 'QuickMenu')}
         />
 
         {successMsg ? (

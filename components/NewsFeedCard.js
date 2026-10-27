@@ -16,6 +16,7 @@ import { CATEGORY_COLOR_MAP } from '../constants/homeData';
 import { isValidImageUrl, buildPlaceholderImage, getLocalizedCategoryLabel, getLocalizedSeatLabel } from '../utils/storyHelpers';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 import { safePause, safePlay, safeSetMuted } from '../utils/videoPlayerSafe';
+import { subscribeFeedScroll } from '../utils/feedScrollBus';
 import { useGlobalMuted, getGlobalMuted, setGlobalMuted } from '../utils/Globalmutestore';
 import PostGridThumb from './PostGridThumb';
 import { UserStore } from '../store/UserStore';
@@ -177,7 +178,8 @@ function CommentItem({
               placeholderTextColor="#94a3b8"
               multiline
               maxLength={1000}
-              autoFocus={true}
+              autoFocus={Platform.OS !== 'web'}
+              ref={(node) => { if (node && Platform.OS === 'web' && !node.__replyFocused) { node.__replyFocused = true; try { node.focus({ preventScroll: true }); } catch (_) {} } }}
             />
             <View style={styles.commentReplyActions}>
               <TouchableOpacity style={styles.commentReplyBtn} onPress={onSubmitReply} activeOpacity={0.8}>
@@ -315,6 +317,31 @@ function useVideoThumbnail(videoUri) {
   }, [videoUri]);
 
   return { thumbnail, capturing };
+}
+
+// Native (Android/iOS): card screen se bahar scroll ho jaye to false. Sirf tab measure karta hai jab `active`
+// (yani video play ho raha ho), isliye baaki cards par koi extra kharch nahi.
+function useNativeInView(ref, active, threshold = 0.3) {
+  const [inView, setInView] = useState(true);
+  const { height: winH } = useWindowDimensions();
+  useEffect(() => {
+    if (Platform.OS === 'web') return undefined;
+    if (!active) { setInView(true); return undefined; }
+    let alive = true;
+    const check = () => {
+      const node = ref?.current;
+      if (!node || typeof node.measureInWindow !== 'function') return;
+      node.measureInWindow((x, y, w, h) => {
+        if (!alive || !h) return;
+        const visiblePx = Math.min(y + h, winH) - Math.max(y, 0);
+        setInView(visiblePx / h >= threshold);
+      });
+    };
+    const unsub = subscribeFeedScroll(check);
+    check();
+    return () => { alive = false; unsub(); };
+  }, [ref, active, winH, threshold]);
+  return inView;
 }
 
 function useCardVisibility(ref, threshold = 0.3) {
@@ -924,9 +951,15 @@ const safeImage = isValidImageUrl(effectiveImageUri)
   );
 
   const [videoPaused, setVideoPaused] = useState(true);
+  const isNativeInView = useNativeInView(cardRef, canPlayVideo && !videoPaused);
   const [showVideoPoster, setShowVideoPoster] = useState(true);
 
-  const player = useVideoPlayer(canPlayVideo ? { uri: effectiveVideoUri } : null, (p) => {
+  // ✅ SPEED: video player (aur uska download/buffering) ab tabhi banta hai jab user play dabaye.
+  // Pehle feed ke har video card par turant player ban jata tha — 10 video = 10 players ek saath
+  // network + memory kha rahe the, isliye images aur baaki feed slow load hoti thi.
+  const [videoActivated, setVideoActivated] = useState(false);
+  const [videoBuffering, setVideoBuffering] = useState(false);
+  const player = useVideoPlayer(canPlayVideo && videoActivated ? { uri: effectiveVideoUri } : null, (p) => {
     p.loop = false;
     p.muted = getGlobalMuted();
   });
@@ -949,18 +982,21 @@ const safeImage = isValidImageUrl(effectiveImageUri)
 
   useEffect(() => {
     if (!canPlayVideo) return;
-    if (!isCardVisible && !videoPaused) {
+    // web: IntersectionObserver (isCardVisible), Android/iOS: scroll par measure (isNativeInView)
+    if ((!isCardVisible || !isNativeInView) && !videoPaused) {
       safePause(player);
       setVideoPaused(true);
       setShowVideoPoster(true);
     }
-  }, [canPlayVideo, isCardVisible, player, videoPaused]);
+  }, [canPlayVideo, isCardVisible, isNativeInView, player, videoPaused]);
 
   useEffect(() => {
+    // sirf video URL badalne par reset (player naya banne par nahi — warna play turant ruk jata)
     setVideoPaused(true);
     setShowVideoPoster(true);
-    if (canPlayVideo) safePause(player);
-  }, [canPlayVideo, effectiveVideoUri, player]);
+    setVideoActivated(false);
+    setVideoBuffering(false);
+  }, [canPlayVideo, effectiveVideoUri]);
 
   useEffect(() => {
     if (!canPlayVideo || !player) return;
@@ -1002,6 +1038,7 @@ const safeImage = isValidImageUrl(effectiveImageUri)
       const dur = Number(player?.duration || 0);
       if (dur > 0 && Number(player?.currentTime || 0) >= dur - 0.2) player.currentTime = 0;
     } catch (_) {}
+    if (!videoActivated) { setVideoActivated(true); setVideoBuffering(true); } // pehli baar: player ab banega
     setShowVideoPoster(false);
     setVideoPaused(false);
     safePlay(player); // state pehle se false ho tab bhi seedha play karo
@@ -1432,31 +1469,29 @@ const handleLike = async () => {
 
   const handleToggleFollowAuthor = async (event) => {
     event?.stopPropagation?.();
-    if (followLoading || followActionInFlightRef.current) return;
     if (!currentEmail) { showActionResult('Login required', 'Please login to follow this user.'); return; }
     if (!hasFollowTarget || isOwnStory) return;
 
-    followActionInFlightRef.current = true;
+    // ✅ FAST: button turant badal jaata hai (optimistic). API peeche chalti hai,
+    // koi loading/disabled/toast nahi. Sirf fail hone par wapas purani state + error.
+    // Fast double tap par har tap queue hota hai taaki final state hamesha sahi rahe.
     const nextFollowing = !isFollowingAuthor;
-    setFollowLoading(true);
     setIsFollowingAuthor(nextFollowing);
-    try {
-       const result = nextFollowing
-        ? await UserStore.followUser(storyAuthorEmail, storyAuthorId)
-        : await UserStore.unfollowUser(storyAuthorEmail, storyAuthorId);
-      if (result?.ok === false) {
+    const prevChain = followActionInFlightRef.current || Promise.resolve();
+    followActionInFlightRef.current = prevChain.then(async () => {
+      try {
+        const result = nextFollowing
+          ? await UserStore.followUser(storyAuthorEmail, storyAuthorId)
+          : await UserStore.unfollowUser(storyAuthorEmail, storyAuthorId);
+        if (result?.ok === false) {
+          setIsFollowingAuthor(!nextFollowing);
+          showActionResult('Follow', result?.message || 'Unable to update follow status.');
+        }
+      } catch {
         setIsFollowingAuthor(!nextFollowing);
-        showActionResult('Follow', result?.message || 'Unable to update follow status.');
-        return;
+        showActionResult('Follow', 'Unable to update follow status.');
       }
-      setIsFollowingAuthor(Boolean(result?.isFollowing));
-    } catch {
-      setIsFollowingAuthor(!nextFollowing);
-      showActionResult('Follow', 'Unable to update follow status.');
-    } finally {
-      followActionInFlightRef.current = false;
-      setFollowLoading(false);
-    }
+    });
   };
 
   const showPosterOverlay = videoPaused && showVideoPoster;
@@ -1547,7 +1582,7 @@ const handleLike = async () => {
   if (isBlockedNow) return null;
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <View>
       {shareJob && Platform.OS !== 'web' ? (
         <View pointerEvents="none" style={{ position: 'absolute', left: -5000, top: 0 }}>
           <ShareBrandFrame
@@ -1621,13 +1656,9 @@ const handleLike = async () => {
           {/* ── Follow Button ── */}
        {hasFollowTarget && !isOwnStory ? (
             <TouchableOpacity
-              style={[
-                styles.storyFollowBtnWrap,
-                followLoading && styles.storyFollowBtnDisabled,
-              ]}
+              style={styles.storyFollowBtnWrap}
               onPress={handleToggleFollowAuthor}
               activeOpacity={0.84}
-              disabled={followLoading}
             >
               <View style={styles.storyFollowBtn}>
                 <Ionicons
@@ -1636,7 +1667,7 @@ const handleLike = async () => {
                   color="#dc2626"
                 />
                 <Text style={styles.storyFollowBtnText}>
-                  {followLoading ? '...' : (isFollowingAuthor ? 'Following' : 'Follow')}
+                  {isFollowingAuthor ? 'Following' : 'Follow'}
                 </Text>
               </View>
             </TouchableOpacity>
@@ -1671,7 +1702,12 @@ const handleLike = async () => {
      >
           {canPlayVideo ? (
             <>
-              <VideoView player={player} style={[StyleSheet.absoluteFill, { width: '100%', height: '100%' }]} contentFit="cover" nativeControls={false} fullscreenOptions={{ enabled: false }} playsInline onFirstFrameRender={() => setShowVideoPoster(false)} />
+              {player ? (
+                <VideoView player={player} style={[StyleSheet.absoluteFill, { width: '100%', height: '100%' }]} contentFit="cover" nativeControls={false} fullscreenOptions={{ enabled: false }} playsInline onFirstFrameRender={() => { setShowVideoPoster(false); setVideoBuffering(false); }} />
+              ) : null}
+              {videoBuffering && !videoPaused ? (
+                <View style={styles.videoLoadingOverlay} pointerEvents="none"><ActivityIndicator size="large" color="#ffffff" /></View>
+              ) : null}
               {showPosterOverlay && (
                 posterReady ? (
                   <Image source={{ uri: videoThumbnail }} style={StyleSheet.absoluteFill} resizeMode="cover" />
@@ -1849,9 +1885,9 @@ const handleLike = async () => {
         {/* ── Like / Comment / Share — Shuru-style bordered pill buttons ── */}
         <View style={styles.singleActionRow}>
           {!isAdStory ? (
-            <View style={styles.singleActionItem} accessible accessibilityLabel={`${viewsCount} views`}>
+            <View style={[styles.singleActionItem, styles.singleActionItemViews]} accessible accessibilityLabel={`${viewsCount} views`}>
               <Ionicons name="eye-outline" size={16} color="#475569" />
-              <Text style={styles.singleActionText}>{viewsCount.toLocaleString('en-IN')}</Text>
+              <Text style={styles.singleActionText} numberOfLines={1}>{viewsCount.toLocaleString('en-IN')}</Text>
             </View>
           ) : null}
           <TouchableOpacity 
@@ -1864,7 +1900,7 @@ const handleLike = async () => {
               size={16} 
               color={isLiked ? '#ef4444' : '#475569'} 
             />
-                      <Text style={[styles.singleActionText, isLiked && styles.singleActionTextActive]}>
+                      <Text style={[styles.singleActionText, isLiked && styles.singleActionTextActive]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
               Like{likesCount > 0 ? ` (${likesCount})` : ''}
             </Text>
           </TouchableOpacity>
@@ -1875,7 +1911,7 @@ const handleLike = async () => {
             activeOpacity={0.8}
           >
             <Ionicons name="chatbubble-outline" size={16} color="#475569" />
-            <Text style={styles.singleActionText}>Comment{commentsCount > 0 ? ` (${commentsCount})` : ''}</Text>
+            <Text style={styles.singleActionText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>Comment{commentsCount > 0 ? ` (${commentsCount})` : ''}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity 
@@ -1884,7 +1920,7 @@ const handleLike = async () => {
             activeOpacity={0.8}
           >
             <Ionicons name="arrow-redo-outline" size={16} color="#475569" />
-            <Text style={styles.singleActionText}>Share{sharesCount > 0 ? ` (${sharesCount})` : ''}</Text>
+            <Text style={styles.singleActionText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>Share{sharesCount > 0 ? ` (${sharesCount})` : ''}</Text>
           </TouchableOpacity>
 
         
@@ -2058,6 +2094,6 @@ const handleLike = async () => {
 
       {/* ── Thin separator between cards ── */}
       <View style={[styles.cardSeparator, Platform.OS !== 'web' && styles.androidCardSeparator]} />
-    </KeyboardAvoidingView>
+    </View>
   );
 }

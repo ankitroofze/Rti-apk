@@ -4,6 +4,7 @@ import {
   TextInput, TouchableOpacity, View, useWindowDimensions,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import AppNavbar from '../components/AppNavbar';
 import AppFooter from '../components/AppFooter';
@@ -111,6 +112,7 @@ function homeStoryFromEcome(item = {}) {
   return {
     id: `ecome-${item.id || item.ecom_id || Date.now()}`,
     isEcome: true,
+    ecomId: item.id || item.ecom_id || '',
     title: item.product_name || item.title || 'Ecome listing',
     description: item.description || '',
     image,
@@ -138,6 +140,29 @@ function interleaveHomeStories(news = [], ads = [], ecomeListings = []) {
   return [...result, ...ecomeListings.slice(ecomeIndex)];
 }
 
+// ✅ SPEED: Home feed ka last-successful snapshot phone me save hota hai. App khulte hi
+// wahi turant dikhta hai (internet ka wait nahi), phir fresh data aate hi chupchap badal jaata hai.
+const HOME_FEED_CACHE_KEY = 'home_feed_cache_v1';
+const HOME_FEED_CACHE_MAX_ITEMS = 16;
+function persistHomeFeedCache(stories, ads) {
+  try {
+    const slim = (Array.isArray(stories) ? stories : []).slice(0, HOME_FEED_CACHE_MAX_ITEMS).map((st) => {
+      if (!st || typeof st !== 'object') return st;
+      const copy = { ...st };
+      delete copy.comments_list;
+      return copy;
+    });
+    AsyncStorage.setItem(HOME_FEED_CACHE_KEY, JSON.stringify({ at: Date.now(), stories: slim, ads: Array.isArray(ads) ? ads : [] })).catch(() => {});
+  } catch (_) { /* ignore */ }
+}
+// Pehle kuch cards ki images pehle se download — scroll/open par turant dikhein
+function prefetchHomeImages(stories) {
+  (Array.isArray(stories) ? stories : []).slice(0, 6).forEach((st) => {
+    const uri = st?.image || st?.thumbnail || st?.images?.[0] || st?.photo;
+    if (typeof uri === 'string' && /^https?:/i.test(uri)) Image.prefetch(uri).catch(() => {});
+  });
+}
+
 // E-commerce cards use the same 5-second, swipeable image gallery as news and ads.
 function EcomeImageGallery({ item, style }) {
   const [width, setWidth] = useState(0);
@@ -150,9 +175,9 @@ function EcomeImageGallery({ item, style }) {
   );
 }
 
-function EcomeGridCard({ item, navigation }) {
+const EcomeGridCard = React.memo(function EcomeGridCard({ item, navigation, style }) {
   return (
-    <TouchableOpacity style={ecomeRowStyles.cell} activeOpacity={0.88} onPress={() => navigation.navigate('FarmingBuy')}>
+    <TouchableOpacity style={[ecomeRowStyles.cell, style]} activeOpacity={0.88} onPress={() => navigation.navigate('FarmingBuy', { openListingId: item.ecomId ? String(item.ecomId) : undefined })}>
       <EcomeImageGallery item={item} style={ecomeRowStyles.image} />
       <View style={ecomeRowStyles.body}>
         <View style={ecomeRowStyles.topRow}>
@@ -168,25 +193,95 @@ function EcomeGridCard({ item, navigation }) {
       </View>
     </TouchableOpacity>
   );
-}
+});
 
 // Ek line me 2 Ecom cards. Pehla card row banata hai, doosra (pair ka) null return karta hai.
-function EcomeHomeRow({ story, index, list, navigation }) {
+function EcomeHomeRow({ story, index, list, navigation, compact }) {
   let pos = 0;
   for (let k = index - 1; k >= 0 && list[k]?.isEcome; k -= 1) pos += 1;
   if (pos % 2 === 1) return null;
   const partner = list[index + 1]?.isEcome ? list[index + 1] : null;
   return (
-    <View style={ecomeRowStyles.row}>
+    <View style={[ecomeRowStyles.row, compact && ecomeRowStyles.rowCompact]}>
       <EcomeGridCard item={story} navigation={navigation} />
       {partner ? <EcomeGridCard item={partner} navigation={navigation} /> : <View style={ecomeRowStyles.cell} />}
     </View>
   );
 }
 
+// ✅ Top 5 Ecom products — heading + red "View All" (Buy list par le jaata hai),
+// niche horizontal auto-scroll cards. User haath se swipe kare to auto-scroll thodi der ruk jaata hai.
+const ECOME_CARD_W = 165;
+const ECOME_CARD_GAP = 10;
+const ECOME_SPEED = 32; // px per second — constant speed (marquee), koi ruk-ruk nahi
+function EcomeTopSection({ items = [], navigation, compact }) {
+  const scrollRef = useRef(null);
+  const posRef = useRef(0);          // hamari apni float position (scrollTo integer round karta hai)
+  const pausedUntilRef = useRef(0);
+  const top = items.slice(0, 5);
+  // ✅ SMOOTH: pehle har 2.5 sec me ek card ka jump (step) hota tha — isliye ruk-ruk kar chalta tha.
+  // Ab frame-by-frame (requestAnimationFrame) constant speed se chalta hai, aur cards 2 baar render hote
+  // hain taaki end par bina jhatke ke seamless loop ho. User swipe kare to ruk jaata hai, 3 sec baad phir chalta hai.
+  useEffect(() => {
+    if (top.length < 2) return undefined;
+    const loopW = (ECOME_CARD_W + ECOME_CARD_GAP) * top.length;
+    let raf = 0;
+    let last = 0;
+    const tick = (t) => {
+      if (!last) last = t;
+      const dt = Math.min(64, t - last); // tab switch / lag ke baad bada jump na ho
+      last = t;
+      if (Date.now() >= pausedUntilRef.current) {
+        let x = posRef.current + (ECOME_SPEED * dt) / 1000;
+        if (x >= loopW) x -= loopW;      // pehli copy khatam -> dusri copy se seamless wapas
+        posRef.current = x;
+        scrollRef.current?.scrollTo?.({ x, y: 0, animated: false });
+      }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [top.length]);
+  if (!top.length) return null;
+  const loopItems = top.length >= 2 ? [...top.map((i) => ({ ...i, __k: `${i.id}-a` })), ...top.map((i) => ({ ...i, __k: `${i.id}-b` }))] : top.map((i) => ({ ...i, __k: `${i.id}-a` }));
+  const holdAuto = () => { pausedUntilRef.current = Date.now() + 60000; };            // touch / drag ke dauran ruko
+  const resumeAuto = (e) => {
+    const x = e?.nativeEvent?.contentOffset?.x;
+    if (typeof x === 'number') posRef.current = x;                                      // user ne jahan chhoda wahin se
+    pausedUntilRef.current = Date.now() + 3000;
+  };
+  return (
+    <View style={[ecomeTopStyles.wrap, compact && ecomeTopStyles.wrapCompact]}>
+      <View style={ecomeTopStyles.headRow}>
+        <Text style={ecomeTopStyles.heading}>Top Ecom Products</Text>
+        <TouchableOpacity onPress={() => navigation.navigate('FarmingBuy', { openListingId: undefined })} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <Text style={ecomeTopStyles.viewAll}>View All</Text>
+        </TouchableOpacity>
+      </View>
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={ecomeTopStyles.listContent}
+        scrollEventThrottle={64}
+        nestedScrollEnabled
+        removeClippedSubviews={false}
+        onTouchStart={holdAuto}
+        onScrollBeginDrag={holdAuto}
+        onScrollEndDrag={resumeAuto}
+        onMomentumScrollEnd={resumeAuto}
+      >
+        {loopItems.map((item) => (
+          <EcomeGridCard key={item.__k} item={item} navigation={navigation} style={ecomeTopStyles.card} />
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
 function EcomeHomeCard({ item, navigation }) {
   return (
-    <TouchableOpacity style={ecomeStyles.card} activeOpacity={0.88} onPress={() => navigation.navigate('FarmingBuy')}>
+    <TouchableOpacity style={ecomeStyles.card} activeOpacity={0.88} onPress={() => navigation.navigate('FarmingBuy', { openListingId: item.ecomId ? String(item.ecomId) : undefined })}>
       <EcomeImageGallery item={item} style={ecomeStyles.image} />
       <View style={ecomeStyles.body}>
         <View style={ecomeStyles.topRow}><Text style={ecomeStyles.badge}>ECOME</Text><Text style={ecomeStyles.category}>{item.category}</Text></View>
@@ -680,6 +775,18 @@ export default function HomeScreen({ navigation, route }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [liveStories, setLiveStories] = useState([]);
   const [activeAds, setActiveAds] = useState([]);
+  const feedFreshRef = useRef(false); // fresh API data aa chuka ho to cache usko overwrite na kare
+  useEffect(() => {
+    let alive = true;
+    AsyncStorage.getItem(HOME_FEED_CACHE_KEY).then((raw) => {
+      if (!alive || feedFreshRef.current || !raw) return;
+      const cached = JSON.parse(raw);
+      if (!Array.isArray(cached?.stories) || !cached.stories.length) return;
+      setLiveStories(cached.stories);
+      if (Array.isArray(cached.ads) && cached.ads.length) setActiveAds(cached.ads);
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
   const [currentUser, setCurrentUser] = useState(null);
   const [leftRailHeight, setLeftRailHeight] = useState(0);
   const [rightRailHeight, setRightRailHeight] = useState(0);
@@ -758,7 +865,12 @@ export default function HomeScreen({ navigation, route }) {
 
       const news = [...newsStoriesRef.current].sort(sortByNewest);
       const mixed = [...news, ...groupAdStories(adStoriesRef.current)].sort(sortByNewest);
-      setLiveStories(interleaveHomeStories(mixed, [], ecomeStoriesRef.current));
+      const firstPageStories = interleaveHomeStories(mixed, [], ecomeStoriesRef.current);
+      setLiveStories(firstPageStories);
+      if (!loadMore) {
+        feedFreshRef.current = true;
+        if (pageStories.length) { persistHomeFeedCache(firstPageStories, adStoriesRef.current); prefetchHomeImages(firstPageStories); }
+      }
 
       // ecom aate hi feed dobara banao (news/ads pehle hi dikh chuke hain)
       if (!loadMore) {
@@ -767,7 +879,9 @@ export default function HomeScreen({ navigation, route }) {
           ecomeStoriesRef.current = Array.isArray(ecomRes?.listings) ? ecomRes.listings.map(homeStoryFromEcome) : [];
           const newsNow = [...newsStoriesRef.current].sort(sortByNewest);
           const mixedNow = [...newsNow, ...groupAdStories(adStoriesRef.current)].sort(sortByNewest);
-          setLiveStories(interleaveHomeStories(mixedNow, [], ecomeStoriesRef.current));
+          const withEcome = interleaveHomeStories(mixedNow, [], ecomeStoriesRef.current);
+          setLiveStories(withEcome);
+          if (newsNow.length) persistHomeFeedCache(withEcome, adStoriesRef.current);
         }).catch(() => {});
       }
     } catch {
@@ -1008,10 +1122,11 @@ const handleOpenLeadForm = useCallback((story) => {
   // active sponsored ad, styled like a big brand offer card. ────────────
   const homePromoAds = useMemo(() => (allAdsList || []).map((source) => {
     const image = source.image || source.photo || source.image_url || source.images?.[0] || source.photos?.[0];
-    if (!image) return null;
+    // ✅ video-only ad (image nahi) bhi popup me aaye
+    if (!image && !source.video) return null;
     const gallery = Array.isArray(source.images) && source.images.length
       ? source.images.slice(0, 3)
-      : [image];
+      : (image ? [image] : []);
     return {
       brandName: source.owner_name || 'Sponsored',
       headline: source.title || 'Great Deals. Bigger Savings.',
@@ -1168,7 +1283,9 @@ const handleOpenLeadForm = useCallback((story) => {
                         {story.isAd ? (
                           <InFeedAdSlot ad={story} onPress={handleSponsoredAdPress} />
                         ) : story.isEcome ? (
-                      <EcomeHomeRow story={story} index={index} list={visibleStories} navigation={navigation} />
+                      (visibleStories.findIndex((x) => x.isEcome) === index
+                        ? <EcomeTopSection items={visibleStories.filter((x) => x.isEcome)} navigation={navigation} compact={isMobileLayout} />
+                        : null)
                       ) : (
                                             <NewsFeedCard
                            key={story.id} story={story} isCompactLayout={isMobileLayout}
@@ -1371,6 +1488,7 @@ const styles = StyleSheet.create({
 
 const ecomeRowStyles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 10, marginBottom: 12, alignItems: 'stretch' },
+  rowCompact: { paddingHorizontal: 10, paddingTop: 10, marginBottom: 6 },
   cell: { flex: 1, minWidth: 0, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#d1d5db', borderRadius: 9, overflow: 'hidden' },
   image: { width: '100%', height: 120, backgroundColor: '#f3f4f6' },
   imageFallback: { alignItems: 'center', justifyContent: 'center' },
@@ -1382,6 +1500,16 @@ const ecomeRowStyles = StyleSheet.create({
   price: { color: '#e21111', fontSize: 14, fontWeight: '900', marginTop: 6, fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
   footer: { borderTopWidth: 1, borderTopColor: '#e5e7eb', marginTop: 8, paddingTop: 7, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 6 },
   seller: { flex: 1, color: '#64748b', fontSize: 10.5, fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
+});
+
+const ecomeTopStyles = StyleSheet.create({
+  wrap: { marginBottom: 12, backgroundColor: '#fff', paddingVertical: 10 },
+  wrapCompact: { marginBottom: 6 },
+  headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingHorizontal: 12, marginBottom: 8 },
+  heading: { color: '#0f172a', fontSize: 16, fontWeight: '800', fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
+  viewAll: { color: '#dc2626', fontSize: 13, fontWeight: '800', fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
+  listContent: { paddingHorizontal: 12, gap: ECOME_CARD_GAP },
+  card: { flex: 0, width: ECOME_CARD_W },
 });
 
 const ecomeStyles = StyleSheet.create({

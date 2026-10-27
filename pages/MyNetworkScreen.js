@@ -1,3 +1,4 @@
+import { smartGoBack } from '../utils/smartBack';
 import NameWithTick from '../components/NameWithTick';
 import React, { useCallback, useState, useMemo } from 'react';
 import { ScrollView, Text, View, TouchableOpacity, TextInput, Platform, useWindowDimensions, StatusBar, StyleSheet, ImageBackground } from 'react-native';
@@ -616,10 +617,10 @@ export default function MyNetworkScreen({ navigation }) {
           <>
             <View style={MyNetworkStyles.tableWrap}>
               <View style={MyNetworkStyles.tableHeader}>
-                <Text style={[MyNetworkStyles.headerCell, colUser]}>User</Text>
-                <Text style={[MyNetworkStyles.headerCell, colReferred]}>Referred By</Text>
-                <Text style={[MyNetworkStyles.headerCell, colLevel]}>Level</Text>
-                <Text style={[MyNetworkStyles.headerCell, colCommission]}>Commission</Text>
+                <Text style={[MyNetworkStyles.headerCell, colUser]} numberOfLines={1}>User</Text>
+                <Text style={[MyNetworkStyles.headerCell, colReferred]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>Referred By</Text>
+                <Text style={[MyNetworkStyles.headerCell, colLevel, MyNetworkStyles.headerCellCenter]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>Level</Text>
+                <Text style={[MyNetworkStyles.headerCell, colCommission, MyNetworkStyles.headerCellCenter]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>Commission</Text>
               </View>
 
               {pagedRows.map((row, index) => {
@@ -709,7 +710,7 @@ export default function MyNetworkScreen({ navigation }) {
       <ModuleMobileHeader
         title="My Network"
         navigation={navigation}
-        onBack={() => navigation.navigate('QuickMenu')}
+        onBack={() => smartGoBack(navigation, 'QuickMenu')}
       />
       <ScrollView
         style={MyNetworkStyles.scrollView}

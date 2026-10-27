@@ -740,14 +740,12 @@ export default function NewsDetailsScreen({ route, navigation }) {
     } catch {}
   }, [navigation]);
     const handleToggleFollowAuthor = useCallback(async () => {
-    if (followLoading) return;
     const authorEmail = String(article.createdBy || article.author_email || '').trim().toLowerCase();
     const authorId = article.author_id || article.userId || null;
     if (!currentUserEmail) { Alert.alert('Login required', 'Please login to follow this user.'); return; }
     if (!authorEmail || authorEmail === currentUserEmail) return;
 
     const nextFollowing = !isFollowingAuthor;
-    setFollowLoading(true);
     setIsFollowingAuthor(nextFollowing);
     try {
       const result = nextFollowing
@@ -758,12 +756,10 @@ export default function NewsDetailsScreen({ route, navigation }) {
         Alert.alert('Follow', result?.message || 'Unable to update follow status.');
         return;
       }
-      await refreshAuthorFollowState(authorEmail, currentUserEmail);
+      refreshAuthorFollowState(authorEmail, currentUserEmail).catch(() => {});
     } catch {
       setIsFollowingAuthor(!nextFollowing);
       Alert.alert('Follow', 'Unable to update follow status.');
-    } finally {
-      setFollowLoading(false);
     }
   }, [article.author_email, article.createdBy, currentUserEmail, followLoading, isFollowingAuthor, refreshAuthorFollowState]);
 

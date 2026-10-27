@@ -359,6 +359,7 @@ import {
   KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput,
   TouchableOpacity, View, ActivityIndicator,
 } from 'react-native';
+import KeyboardAwareScroll from './KeyboardAwareScroll';
 import { Ionicons } from '@expo/vector-icons';
 import { UserStore } from '../store/UserStore';
 import { useToast } from './ui/ToastProvider';
@@ -451,7 +452,7 @@ export default function AdLeadFormModal({ visible, ad, onClose }) {
   );
 
   const formBody = (
-    <ScrollView
+    <KeyboardAwareScroll
       contentContainerStyle={styles.formContent}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
@@ -501,7 +502,7 @@ export default function AdLeadFormModal({ visible, ad, onClose }) {
           </>
         )}
       </TouchableOpacity>
-    </ScrollView>
+    </KeyboardAwareScroll>
   );
 
   const body = submitted ? thankYouBody : formBody;
@@ -606,4 +607,3 @@ const styles = StyleSheet.create({
   doneBtn: { backgroundColor: C.primary, borderRadius: 100, paddingVertical: 13, paddingHorizontal: 40 },
   doneBtnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
 });
-

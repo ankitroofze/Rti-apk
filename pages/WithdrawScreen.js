@@ -1,3 +1,4 @@
+import { smartGoBack } from '../utils/smartBack';
 import React, { useCallback, useMemo, useState } from 'react';
 import { ScrollView, Text, View, TouchableOpacity, TextInput, Platform, useWindowDimensions, StatusBar, StyleSheet, ImageBackground } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -51,12 +52,12 @@ const TABLET_CONTENT_WRAP = { maxWidth: 720, width: '100%', alignSelf: 'center' 
 // screens/WithdrawScreen.js - Update the FS StyleSheet
 
 const FS = StyleSheet.create({
-  section:        { marginTop: 24 },
+  section:        { marginTop: 14, backgroundColor: '#ffffff', borderRadius: 12, borderWidth: 1, borderColor: '#EEF0F5', padding: 16 },
   labelRow:       { flexDirection: 'row', flexWrap: 'wrap' },
   labelText:      { 
-    fontSize: 14, 
-    fontWeight: '600', // ✅ Weight 600
-    color: '#353535',
+    fontSize: 15, 
+    fontWeight: '700',
+    color: '#1F2937',
     fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto',
   },
   required:       { color: '#dc2626' },
@@ -69,9 +70,9 @@ const FS = StyleSheet.create({
   },
     // ✅ Post News ke webInput jaisa exact: 1px #D1D5DB border, radius 8, white bg
     input:          {
-    marginTop: 10, minHeight: 48, borderRadius: 8,
+    marginTop: 10, minHeight: 48, borderRadius: 10,
     borderWidth: 1,
-    borderColor: PN_FIELD_BORDER, backgroundColor: '#ffffff',
+    borderColor: PN_FIELD_BORDER, backgroundColor: '#F9FAFB',
     paddingHorizontal: 12, paddingVertical: 14,
     fontSize: 13, color: '#111111',
     ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : null),
@@ -86,7 +87,7 @@ const FS = StyleSheet.create({
   },
   radioCard:      {
     marginTop: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderWidth: 1, borderColor: PN_FIELD_BORDER, borderRadius: 8,
+    borderWidth: 1.5, borderColor: PN_FIELD_BORDER, borderRadius: 10,
     backgroundColor: '#fff',
     paddingVertical: 12, paddingHorizontal: 14,
   },
@@ -125,7 +126,7 @@ const FS = StyleSheet.create({
   },
    // ✅ Post News ke submit button jaisa — pill shape + red gradient
    submitBtn:      {
-    marginTop: 28, marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    marginTop: 20, marginBottom: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: 8, borderRadius: 100,
     paddingVertical: 13, overflow: 'hidden',
   },
@@ -202,34 +203,47 @@ const maskAccount = (acc) => {
   return 'X'.repeat(acc.length - 4) + acc.slice(-4);
 };
 
+const statusKey = (status) => {
+  const k = status?.toLowerCase();
+  if (k === 'approved' || k === 'paid') return 'approved';
+  if (k === 'rejected') return 'rejected';
+  if (k === 'cancelled' || k === 'canceled') return 'cancelled';
+  return 'pending';
+};
+const STATUS_ACCENT = { approved: '#16a34a', rejected: '#dc2626', cancelled: '#9CA3AF', pending: '#f59e0b' };
+const statusAccent = (status) => STATUS_ACCENT[statusKey(status)];
 const statusStyle = (status) => {
-  switch (status?.toLowerCase()) {
-    case 'approved': return WithdrawStyles.statusApproved;
-    case 'rejected': return WithdrawStyles.statusRejected;
-    default:         return WithdrawStyles.statusPending;
+  switch (statusKey(status)) {
+    case 'approved':  return WithdrawStyles.statusApproved;
+    case 'rejected':  return WithdrawStyles.statusRejected;
+    case 'cancelled': return WithdrawStyles.statusCancelled;
+    default:          return WithdrawStyles.statusPending;
   }
 };
 const statusTextStyle = (status) => {
-  switch (status?.toLowerCase()) {
-    case 'approved': return WithdrawStyles.statusTextApproved;
-    case 'rejected': return WithdrawStyles.statusTextRejected;
-    default:         return WithdrawStyles.statusTextPending;
+  switch (statusKey(status)) {
+    case 'approved':  return WithdrawStyles.statusTextApproved;
+    case 'rejected':  return WithdrawStyles.statusTextRejected;
+    case 'cancelled': return WithdrawStyles.statusTextCancelled;
+    default:          return WithdrawStyles.statusTextPending;
   }
 };
 
 // ─── Web status badge styles (same logic, Shuru red theme) ──────────────────
 const webStatusStyle = (status) => {
-  switch (status?.toLowerCase()) {
-    case 'approved': return { backgroundColor: '#f0fdf4' };
-    case 'rejected': return { backgroundColor: '#fef2f2' };
-    default:         return { backgroundColor: '#fffbeb' };
+  switch (statusKey(status)) {
+    case 'approved':  return { backgroundColor: '#f0fdf4' };
+    case 'rejected':  return { backgroundColor: '#fef2f2' };
+    case 'cancelled': return { backgroundColor: '#F3F4F6' };
+    default:          return { backgroundColor: '#fffbeb' };
   }
 };
 const webStatusTextStyle = (status) => {
-  switch (status?.toLowerCase()) {
-    case 'approved': return { color: '#16a34a' };
-    case 'rejected': return { color: ORANGE };
-    default:         return { color: '#b45309' };
+  switch (statusKey(status)) {
+    case 'approved':  return { color: '#16a34a' };
+    case 'rejected':  return { color: ORANGE };
+    case 'cancelled': return { color: '#6B7280' };
+    default:          return { color: '#b45309' };
   }
 };
 
@@ -430,7 +444,7 @@ export default function WithdrawScreen({ navigation }) {
               <View style={{ flexDirection: 'row', gap: 8, backgroundColor: '#FFF8E1', borderWidth: 1, borderColor: '#FDE59A', borderRadius: 10, padding: 12, marginTop: 14 }}>
                 <Feather name="clock" size={16} color="#7A5B00" />
                 <Text style={{ color: '#7A5B00', fontSize: 13, fontWeight: '600', flex: 1 }}>
-                  Aapki {withdrawData.wallet.pending_withdrawal_count} withdrawal request process me hai.
+                  You have {withdrawData.wallet.pending_withdrawal_count} withdrawal request{withdrawData.wallet.pending_withdrawal_count > 1 ? 's' : ''} in process.
                 </Text>
               </View>
             ) : null}
@@ -453,7 +467,7 @@ export default function WithdrawScreen({ navigation }) {
                 value={form.amount}
                 onChangeText={(v) => handleChange('amount', v)}
                 placeholder="₹0"
-                placeholderTextColor="#ccc"
+                placeholderTextColor="#9CA3AF"
                 keyboardType="numeric"
               />
               {errors.amount ? <Text style={FS.errorText}>{errors.amount}</Text> : null}
@@ -512,7 +526,7 @@ export default function WithdrawScreen({ navigation }) {
                 value={form.pan_number}
                 onChangeText={(v) => handleChange('pan_number', v.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
                 placeholder="e.g. ABCDE1234F"
-                placeholderTextColor="#ccc"
+                placeholderTextColor="#9CA3AF"
                 autoCapitalize="characters"
                 maxLength={10}
               />
@@ -533,7 +547,7 @@ export default function WithdrawScreen({ navigation }) {
                   value={form.account_holder_name}
                   onChangeText={(v) => handleChange('account_holder_name', v)}
                   placeholder="Account Holder Name"
-                  placeholderTextColor="#ccc"
+                  placeholderTextColor="#9CA3AF"
                 />
                 {errors.account_holder_name ? <Text style={FS.errorText}>{errors.account_holder_name}</Text> : null}
 
@@ -542,7 +556,7 @@ export default function WithdrawScreen({ navigation }) {
                   value={form.bank_name}
                   onChangeText={(v) => handleChange('bank_name', v)}
                   placeholder="Bank Name — e.g. State Bank of India"
-                  placeholderTextColor="#ccc"
+                  placeholderTextColor="#9CA3AF"
                 />
                 {errors.bank_name ? <Text style={FS.errorText}>{errors.bank_name}</Text> : null}
 
@@ -551,7 +565,7 @@ export default function WithdrawScreen({ navigation }) {
                   value={form.account_number}
                   onChangeText={(v) => handleChange('account_number', v.replace(/\D/g, ''))}
                   placeholder="Account Number (9–18 digits)"
-                  placeholderTextColor="#ccc"
+                  placeholderTextColor="#9CA3AF"
                   keyboardType="numeric"
                   maxLength={18}
                 />
@@ -562,7 +576,7 @@ export default function WithdrawScreen({ navigation }) {
                   value={form.ifsc}
                   onChangeText={(v) => handleChange('ifsc', v.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
                   placeholder="IFSC Code — e.g. SBIN0001234"
-                  placeholderTextColor="#ccc"
+                  placeholderTextColor="#9CA3AF"
                   autoCapitalize="characters"
                   maxLength={11}
                 />
@@ -587,7 +601,7 @@ export default function WithdrawScreen({ navigation }) {
                   value={form.upi_id}
                   onChangeText={(v) => handleChange('upi_id', v)}
                   placeholder="e.g. name@upi"
-                  placeholderTextColor="#ccc"
+                  placeholderTextColor="#9CA3AF"
                   autoCapitalize="none"
                 />
                 {errors.upi_id ? <Text style={FS.errorText}>{errors.upi_id}</Text> : null}
@@ -615,7 +629,8 @@ export default function WithdrawScreen({ navigation }) {
 
           </View>
 
-          {/* ── Withdrawal History Card ── */}
+          {/* ── Withdrawal Status — sirf tab dikhega jab kam se kam 1 request ho ── */}
+          {!loading && withdrawData.requests.length > 0 ? (
           <View style={WithdrawStyles.webTableCard}>
             <View style={WithdrawStyles.webTableHeader}>
               <Text style={WithdrawStyles.webTableTitle}>Withdrawal Status</Text>
@@ -631,17 +646,17 @@ export default function WithdrawScreen({ navigation }) {
               ) : (
                 <>
                   <View style={WithdrawStyles.webSearchWrap}>
-                    <Feather name="search" size={15} color="#ccc" />
+                    <Feather name="search" size={15} color="#9CA3AF" />
                     <TextInput
                       style={WithdrawStyles.webSearchInput}
                       value={searchQuery}
                       onChangeText={(v) => { setSearchQuery(v); setCurrentPage(1); }}
                       placeholder="Search by amount, bank, status…"
-                      placeholderTextColor="#ccc"
+                      placeholderTextColor="#9CA3AF"
                     />
                     {searchQuery.length > 0 && (
                       <TouchableOpacity onPress={() => { setSearchQuery(''); setCurrentPage(1); }}>
-                        <Feather name="x" size={15} color="#ccc" />
+                        <Feather name="x" size={15} color="#9CA3AF" />
                       </TouchableOpacity>
                     )}
                   </View>
@@ -655,7 +670,7 @@ export default function WithdrawScreen({ navigation }) {
                           key={item.id ?? index}
                           style={[
                             WithdrawStyles.webRequestCard,
-                            index % 2 === 0 && WithdrawStyles.webRequestCardEven,
+                            { borderLeftColor: statusAccent(item.status) },
                           ]}
                         >
                           <View style={WithdrawStyles.webRequestTopRow}>
@@ -668,7 +683,7 @@ export default function WithdrawScreen({ navigation }) {
                           </View>
 
                           <View style={WithdrawStyles.webRequestMetaRow}>
-                            <Feather name="credit-card" size={12} color="#ccc" />
+                            <Feather name="credit-card" size={12} color="#9CA3AF" />
                             <Text style={WithdrawStyles.webRequestMeta}>
                               Mode:{' '}
                               <Text style={WithdrawStyles.webRequestMetaBold}>
@@ -680,13 +695,13 @@ export default function WithdrawScreen({ navigation }) {
                           {item.payment_mode === 'bank' ? (
                             <>
                               <View style={WithdrawStyles.webRequestMetaRow}>
-                                <Feather name="home" size={12} color="#ccc" />
+                                <Feather name="home" size={12} color="#9CA3AF" />
                                 <Text style={WithdrawStyles.webRequestMeta}>
                                   Bank: <Text style={WithdrawStyles.webRequestMetaBold}>{item.bank_name}</Text>
                                 </Text>
                               </View>
                               <View style={WithdrawStyles.webRequestMetaRow}>
-                                <Feather name="hash" size={12} color="#ccc" />
+                                <Feather name="hash" size={12} color="#9CA3AF" />
                                 <Text style={WithdrawStyles.webRequestMeta}>
                                   Account:{' '}
                                   <Text style={WithdrawStyles.webRequestMetaBold}>
@@ -695,7 +710,7 @@ export default function WithdrawScreen({ navigation }) {
                                 </Text>
                               </View>
                               <View style={WithdrawStyles.webRequestMetaRow}>
-                                <Feather name="tag" size={12} color="#ccc" />
+                                <Feather name="tag" size={12} color="#9CA3AF" />
                                 <Text style={WithdrawStyles.webRequestMeta}>
                                   IFSC: <Text style={WithdrawStyles.webRequestMetaBold}>{item.ifsc_code || item.ifsc}</Text>
                                 </Text>
@@ -703,7 +718,7 @@ export default function WithdrawScreen({ navigation }) {
                             </>
                           ) : (
                             <View style={WithdrawStyles.webRequestMetaRow}>
-                              <Feather name="smartphone" size={12} color="#ccc" />
+                              <Feather name="smartphone" size={12} color="#9CA3AF" />
                               <Text style={WithdrawStyles.webRequestMeta}>
                                 UPI ID: <Text style={WithdrawStyles.webRequestMetaBold}>{item.upi_id}</Text>
                               </Text>
@@ -792,6 +807,7 @@ export default function WithdrawScreen({ navigation }) {
               )}
             </View>
           </View>
+          ) : null}
 
         </ScrollView>
 
@@ -814,7 +830,7 @@ export default function WithdrawScreen({ navigation }) {
       <ModuleMobileHeader
         title="Withdraw Earnings"
         navigation={navigation}
-        onBack={() => navigation.navigate('QuickMenu')}
+        onBack={() => smartGoBack(navigation, 'QuickMenu')}
       />
 
       <ScrollView
@@ -823,27 +839,23 @@ export default function WithdrawScreen({ navigation }) {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        {/* ── Hero ── */}
+        {/* ── Hero: Available Balance (header me title already hai, isliye repeat nahi) ── */}
         <ImageBackground
           source={require('../assets/images/profile-red.png')}
           resizeMode="cover"
-          imageStyle={{ borderRadius: 6 }}
+          imageStyle={{ borderRadius: 14 }}
           style={WithdrawStyles.heroCard}
         >
-          <Text style={WithdrawStyles.heroEyebrow}>Earnings</Text>
-          <Text style={WithdrawStyles.heroTitle}>Withdraw Earnings</Text>
-        </ImageBackground>
-
-        {/* ── Available Balance ── */}
-        <View style={WithdrawStyles.balanceCard}>
-          <Feather name="credit-card" size={22} color="#fff" />
-          <View style={WithdrawStyles.balanceInfo}>
-            <Text style={WithdrawStyles.balanceLabel}>Available Balance</Text>
-            <Text style={WithdrawStyles.balanceValue}>
-              ₹{withdrawData.available_balance}
-            </Text>
+          <View style={WithdrawStyles.heroRow}>
+            <View style={WithdrawStyles.heroIconWrap}>
+              <Feather name="credit-card" size={20} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={WithdrawStyles.heroEyebrow}>Available Balance</Text>
+              <Text style={WithdrawStyles.heroBalance}>₹{withdrawData.available_balance}</Text>
+            </View>
           </View>
-        </View>
+        </ImageBackground>
 
         {withdrawData.wallet?.is_frozen ? (
           <View style={{ flexDirection: 'row', gap: 8, backgroundColor: '#FDECEC', borderWidth: 1, borderColor: '#F5B5B5', borderRadius: 10, padding: 12, marginBottom: 10 }}>
@@ -856,7 +868,7 @@ export default function WithdrawScreen({ navigation }) {
           <View style={{ flexDirection: 'row', gap: 8, backgroundColor: '#FFF8E1', borderWidth: 1, borderColor: '#FDE59A', borderRadius: 10, padding: 12, marginBottom: 10 }}>
             <Feather name="clock" size={15} color="#7A5B00" />
             <Text style={{ color: '#7A5B00', fontSize: 12, fontWeight: '600', flex: 1 }}>
-              Aapki {withdrawData.wallet.pending_withdrawal_count} withdrawal request process me hai.
+              You have {withdrawData.wallet.pending_withdrawal_count} withdrawal request{withdrawData.wallet.pending_withdrawal_count > 1 ? 's' : ''} in process.
             </Text>
           </View>
         ) : null}
@@ -882,7 +894,7 @@ export default function WithdrawScreen({ navigation }) {
               value={form.amount}
               onChangeText={(v) => handleChange('amount', v)}
               placeholder="₹0"
-              placeholderTextColor="#ccc"
+              placeholderTextColor="#9CA3AF"
               keyboardType="numeric"
             />
             {errors.amount ? <Text style={FS.errorText}>{errors.amount}</Text> : null}
@@ -941,7 +953,7 @@ export default function WithdrawScreen({ navigation }) {
               value={form.pan_number}
               onChangeText={(v) => handleChange('pan_number', v.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
               placeholder="e.g. ABCDE1234F"
-              placeholderTextColor="#ccc"
+              placeholderTextColor="#9CA3AF"
               autoCapitalize="characters"
               maxLength={10}
             />
@@ -962,7 +974,7 @@ export default function WithdrawScreen({ navigation }) {
                 value={form.account_holder_name}
                 onChangeText={(v) => handleChange('account_holder_name', v)}
                 placeholder="Account Holder Name"
-                placeholderTextColor="#ccc"
+                placeholderTextColor="#9CA3AF"
               />
               {errors.account_holder_name ? <Text style={FS.errorText}>{errors.account_holder_name}</Text> : null}
 
@@ -971,7 +983,7 @@ export default function WithdrawScreen({ navigation }) {
                 value={form.bank_name}
                 onChangeText={(v) => handleChange('bank_name', v)}
                 placeholder="Bank Name — e.g. State Bank of India"
-                placeholderTextColor="#ccc"
+                placeholderTextColor="#9CA3AF"
               />
               {errors.bank_name ? <Text style={FS.errorText}>{errors.bank_name}</Text> : null}
 
@@ -980,7 +992,7 @@ export default function WithdrawScreen({ navigation }) {
                 value={form.account_number}
                 onChangeText={(v) => handleChange('account_number', v.replace(/\D/g, ''))}
                 placeholder="Account Number (9–18 digits)"
-                placeholderTextColor="#ccc"
+                placeholderTextColor="#9CA3AF"
                 keyboardType="numeric"
                 maxLength={18}
               />
@@ -991,7 +1003,7 @@ export default function WithdrawScreen({ navigation }) {
                 value={form.ifsc}
                 onChangeText={(v) => handleChange('ifsc', v.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
                 placeholder="IFSC Code — e.g. SBIN0001234"
-                placeholderTextColor="#ccc"
+                placeholderTextColor="#9CA3AF"
                 autoCapitalize="characters"
                 maxLength={11}
               />
@@ -1016,7 +1028,7 @@ export default function WithdrawScreen({ navigation }) {
                 value={form.upi_id}
                 onChangeText={(v) => handleChange('upi_id', v)}
                 placeholder="e.g. name@upi"
-                placeholderTextColor="#ccc"
+                placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
               />
               {errors.upi_id ? <Text style={FS.errorText}>{errors.upi_id}</Text> : null}
@@ -1043,7 +1055,8 @@ export default function WithdrawScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* ── Withdrawal Status DataTable ── */}
+        {/* ── Withdrawal Status — sirf tab dikhega jab kam se kam 1 request ho ── */}
+        {!loading && withdrawData.requests.length > 0 ? (
         <View style={WithdrawStyles.card}>
           <View style={WithdrawStyles.tableTopRow}>
             <Text style={WithdrawStyles.sectionTitle}>Withdrawal Status</Text>
@@ -1059,17 +1072,17 @@ export default function WithdrawScreen({ navigation }) {
           ) : (
             <>
               <View style={WithdrawStyles.searchWrap}>
-                <Feather name="search" size={15} color="#ccc" />
+                <Feather name="search" size={15} color="#9CA3AF" />
                 <TextInput
                   style={WithdrawStyles.searchInput}
                   value={searchQuery}
                   onChangeText={(v) => { setSearchQuery(v); setCurrentPage(1); }}
                   placeholder="Search by amount, bank, status…"
-                  placeholderTextColor="#ccc"
+                  placeholderTextColor="#9CA3AF"
                 />
                 {searchQuery.length > 0 && (
                   <TouchableOpacity onPress={() => { setSearchQuery(''); setCurrentPage(1); }}>
-                    <Feather name="x" size={15} color="#ccc" />
+                    <Feather name="x" size={15} color="#9CA3AF" />
                   </TouchableOpacity>
                 )}
               </View>
@@ -1083,7 +1096,7 @@ export default function WithdrawScreen({ navigation }) {
                       key={item.id ?? index}
                       style={[
                         WithdrawStyles.requestCard,
-                        index % 2 === 0 && WithdrawStyles.requestCardEven,
+                        { borderLeftColor: statusAccent(item.status) },
                         index === pagedRequests.length - 1 && WithdrawStyles.requestCardLast,
                       ]}
                     >
@@ -1097,7 +1110,7 @@ export default function WithdrawScreen({ navigation }) {
                       </View>
 
                       <View style={WithdrawStyles.requestMetaRow}>
-                        <Feather name="credit-card" size={12} color="#ccc" />
+                        <Feather name="credit-card" size={12} color="#9CA3AF" />
                         <Text style={WithdrawStyles.requestMeta}>
                           Mode:{' '}
                           <Text style={WithdrawStyles.requestMetaBold}>
@@ -1109,13 +1122,13 @@ export default function WithdrawScreen({ navigation }) {
                       {item.payment_mode === 'bank' ? (
                         <>
                           <View style={WithdrawStyles.requestMetaRow}>
-                            <Feather name="home" size={12} color="#ccc" />
+                            <Feather name="home" size={12} color="#9CA3AF" />
                             <Text style={WithdrawStyles.requestMeta}>
                               Bank: <Text style={WithdrawStyles.requestMetaBold}>{item.bank_name}</Text>
                             </Text>
                           </View>
                           <View style={WithdrawStyles.requestMetaRow}>
-                            <Feather name="hash" size={12} color="#ccc" />
+                            <Feather name="hash" size={12} color="#9CA3AF" />
                             <Text style={WithdrawStyles.requestMeta}>
                               Account:{' '}
                               <Text style={WithdrawStyles.requestMetaBold}>
@@ -1124,7 +1137,7 @@ export default function WithdrawScreen({ navigation }) {
                             </Text>
                           </View>
                           <View style={WithdrawStyles.requestMetaRow}>
-                            <Feather name="tag" size={12} color="#ccc" />
+                            <Feather name="tag" size={12} color="#9CA3AF" />
                             <Text style={WithdrawStyles.requestMeta}>
                               IFSC: <Text style={WithdrawStyles.requestMetaBold}>{item.ifsc_code || item.ifsc}</Text>
                             </Text>
@@ -1132,7 +1145,7 @@ export default function WithdrawScreen({ navigation }) {
                         </>
                       ) : (
                         <View style={WithdrawStyles.requestMetaRow}>
-                          <Feather name="smartphone" size={12} color="#ccc" />
+                          <Feather name="smartphone" size={12} color="#9CA3AF" />
                           <Text style={WithdrawStyles.requestMeta}>
                             UPI ID: <Text style={WithdrawStyles.requestMetaBold}>{item.upi_id}</Text>
                           </Text>
@@ -1220,6 +1233,7 @@ export default function WithdrawScreen({ navigation }) {
             </>
           )}
         </View>
+        ) : null}
       </ScrollView>
 
       <Sidebar

@@ -128,6 +128,8 @@ const MyNetworkStyles = StyleSheet.create({
     textTransform: 'uppercase', letterSpacing: 0.5,
     fontFamily: 'Roboto, sans-serif',
   },
+  // header text hamesha ek line me, Level/Commission ke upar centered (rows ke saath align)
+  headerCellCenter: { textAlign: 'center' },
   tableRow: {
     flexDirection: 'row',
     paddingVertical: 13, paddingHorizontal: 12,
@@ -141,10 +143,10 @@ const MyNetworkStyles = StyleSheet.create({
   },
 
   // ─── Column Widths ───────────────────────────────────────────────────────
-  colUser:       { flex: 1.4, paddingRight: 8 },
-  colReferred:   { flex: 1.2, paddingRight: 8 },
-  colLevel:      { width: 55,  alignItems: 'center' },
-  colCommission: { width: 75,  alignItems: 'center' },
+  colUser:       { flex: 1.3, paddingRight: 8, justifyContent: 'center' },
+  colReferred:   { flex: 1.1, paddingRight: 8, justifyContent: 'center' },
+  colLevel:      { width: 52,  alignItems: 'center', justifyContent: 'center' },
+  colCommission: { width: 76,  alignItems: 'center', justifyContent: 'center' },
   colAction:     { width: 40,  alignItems: 'center', justifyContent: 'center' },
 
   // ─── Cell Content ────────────────────────────────────────────────────────

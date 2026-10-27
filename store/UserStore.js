@@ -587,6 +587,29 @@ const getRoleFromPlanName = (planName = '') => {
 };
 
 
+// ✅ NEW: plan ka location level — 'state' | 'district' | 'taluka' | 'village' | '' (level nahi)
+const LOCATION_LEVELS = ['state', 'district', 'taluka', 'village'];
+const normalizeLocationLevel = (v = '') => {
+  const lvl = String(v || '').trim().toLowerCase();
+  return LOCATION_LEVELS.includes(lvl) ? lvl : '';
+};
+// Level ke hisaab se location trim karta hai (district level me taluka/village nahi jaayega)
+const trimLocationToLevel = (level = '', loc = {}) => {
+  const lvl = normalizeLocationLevel(level);
+  const out = { state: '', district: '', taluka: '', village: '' };
+  if (!lvl) return { state: loc.state || '', district: loc.district || '', taluka: loc.taluka || '', village: loc.village || '' };
+  const idx = LOCATION_LEVELS.indexOf(lvl);
+  LOCATION_LEVELS.forEach((k, i) => { if (i <= idx) out[k] = String(loc[k] || '').trim(); });
+  return out;
+};
+// Level ke liye kaun si location chahiye (jo missing ho uska naam)
+const getMissingLocationField = (level = '', loc = {}) => {
+  const lvl = normalizeLocationLevel(level);
+  if (!lvl) return '';
+  const idx = LOCATION_LEVELS.indexOf(lvl);
+  return LOCATION_LEVELS.slice(0, idx + 1).find((k) => !String(loc[k] || '').trim()) || '';
+};
+
 const normalizeBackendPlan = (raw = {}) => {
   const locationLabel = [raw.taluka, raw.district, raw.state].filter(Boolean).join(', ');
   const planName = raw.title || raw.plan_name || raw.name || locationLabel || `Plan #${raw.id}`;
@@ -608,6 +631,10 @@ const normalizeBackendPlan = (raw = {}) => {
     state:        raw.state || '',
     district:     raw.district || '',
    taluka:       raw.taluka || '', village:      raw.village || '',
+    // ✅ NEW: admin plan ek baar banata hai aur level set karta hai (state/district/taluka/village).
+    // Level plan me fixed location nahi hoti — user apni location chunta hai, Sold check
+    // usi (plan + level tak ki location) par hota hai.
+    location_level: normalizeLocationLevel(raw.location_level || raw.level || raw.seat_level || ''),
     description:  raw.description || '',
 role_id_raw:  raw.role_id || '',               // ✅ comma-separated multi-role id, ab handled
     validity_days: Number(raw.days || raw.validity_days || 30),
@@ -2694,6 +2721,9 @@ consumeQuizAttempt: async () => {
      hasBlueTick: (user) => hasBlueTick(user),
    hasBlueTickFeatures: (user) => hasBlueTickFeatures(user),
   isPremiumPlan: (plan) => isPremiumPlan(plan),
+  // ✅ NEW: level-based plan helpers (SubscriptionPlansScreen use karta hai)
+  trimLocationToLevel: (level, loc) => trimLocationToLevel(level, loc),
+  getMissingLocationField: (level, loc) => getMissingLocationField(level, loc),
   // true agar expiry (date ya datetime) nikal chuki ho
   isExpired: (value) => isExpiredValue(value),
   getRoleFromPlanId,
@@ -4001,13 +4031,18 @@ createPaymentOrder: async ({ plan_id, seat_state, seat_district = '', seat_taluk
     const planForOrder = passedPlan || cachedBackendPlans.find((p) => p.plan_id === plan_id);
     // ✅ Full location + designation bhejte hain taaki backend seat-uniqueness check kar sake.
     // ✅ Premium plan par seat lock nahi hota — sirf plan_id jaayega
+    // ✅ NEW: level plan par sirf level tak ki location bhejo (district plan = state+district),
+    // taaki backend ka Sold check exact usi level par ho.
+    const orderLoc = trimLocationToLevel(planForOrder?.location_level, {
+      state: seat_state, district: seat_district, taluka: seat_taluka, village: seat_village,
+    });
     const orderResult = await AuthAPI.purchaseRoleSubscription({
       planId: backendPlanId,
       isPremium: isPremiumPlan(planForOrder),
-      state: seat_state || '',
-      district: seat_district || '',
-      taluka: seat_taluka || '',
-      village: seat_village || '',
+      state: orderLoc.state,
+      district: orderLoc.district,
+      taluka: orderLoc.taluka,
+      village: orderLoc.village,
     });
     // ✅ 409 seat_unavailable yahin ruk jaata hai — Razorpay checkout khulega hi nahi
     if (!orderResult?.ok) {
@@ -4062,7 +4097,7 @@ markPaymentFailed: async (razorpay_order_id, error_code, error_description, modu
 },
 
 
-verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signature, plan_id, seat_state, seat_role_id, plan: passedPlan }) => {
+verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signature, plan_id, seat_state, seat_district = '', seat_taluka = '', seat_village = '', seat_role_id, plan: passedPlan }) => {
     try {
       const user = await UserStore.getCurrentUser();
       if (!user) return { ok: false, message: 'Please login again.' };
@@ -4111,8 +4146,19 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
         || verifiedSubscription.end_date
         || verifiedData.expires_at
         || null;
+      // ✅ NEW: level plan me location plan par fixed nahi hoti — jo location user ne
+      // kharidte waqt chuni (level tak trim karke), wahi active plan ki location banegi.
+      const boughtLoc = basePlan.location_level
+        ? trimLocationToLevel(basePlan.location_level, {
+            state: seat_state || verifiedSeat?.state,
+            district: seat_district || verifiedSeat?.district,
+            taluka: seat_taluka || verifiedSeat?.taluka,
+            village: seat_village || verifiedSeat?.village,
+          })
+        : null;
       const activePlan = {
         ...basePlan,
+        ...(boughtLoc || {}),
         purchased_at: String(verifiedPurchasedAt).slice(0, 10),
         expires_at: verifiedExpiresAt || basePlan.expires_at || addDaysToDateString(today, Number(basePlan.validity_days || 30)),
       };
@@ -4376,7 +4422,8 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
       const blockedPromise = skipBlockedUsers
         ? Promise.resolve({ ok: true, list: [] })
         : UserStore.getBlockedUsers().catch(() => ({ ok: true, list: [] }));
-      const currentUser = await UserStore.getCurrentUser();
+      // ✅ SPEED: current-user lookup ab news API ke saath parallel chalta hai (pehle news request isi ka wait karti thi)
+      const currentUserPromise = UserStore.getCurrentUser();
 
       // ── Real news ab yahan se aati hai (dummy defaultNewsFeed hata diya) ──
       let apiItems = [];
@@ -4419,6 +4466,8 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
         console.warn('[UserStore.getNewsFeedSummary] news request failed:', e);
       }
 
+
+      const currentUser = await currentUserPromise;
 
       // ✅ FIX: backend /news response mein author.has_blue_tick reliably nahi aata
       // (backend blue-tick track hi nahi karta), isliye premium user ka apna post

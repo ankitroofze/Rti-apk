@@ -1,6 +1,7 @@
 // components/ui/ToastProvider.js
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import SystemBars from '../SystemBars'; // ✅ Android navigation bar ko brand red karta hai (neeche ki safed patti hatane ke liye)
 
 const ToastContext = createContext({
   showToast: () => {}, showPopup: () => {}, hidePopup: () => {},
@@ -79,6 +80,7 @@ export function ToastProvider({ children }) {
 
   return (
     <ToastContext.Provider value={value}>
+      <SystemBars />
       {children}
       {popup ? (
         <Modal

@@ -13,7 +13,7 @@ import AutoIdCardPreview from '../components/IdCardPreview';
 import AutoIdCardBackPreview from '../components/IdCardBackPreview';
 import ScaledCard from '../components/ScaledCard';
 import AutoAppointmentLetterPreview from '../components/AppointmentLetterPreview';
-import { hasPublicDocumentSource, getProfileTier, generateMemberId, getSubscriptionName, resolveAreaText, cleanRoleNames } from '../utils/profileHelpers';
+import { hasPublicDocumentSource, getProfileTier, generateMemberId, getSubscriptionName, resolveAreaText, cleanRoleNames, pickPhoneNumber } from '../utils/profileHelpers';
 import { cardFromProfile } from '../utils/idCardService';
 import { useToast } from '../components/ui/ToastProvider';
 import VerifiedBadge from '../components/VerifiedBadge';
@@ -621,10 +621,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const memberIdText = String(idCardInfo?.id_number || display?.id_number || display?.member_id || display?.memberId || '').trim()
     || (display?.email || resolvedEmail ? generateMemberId(display?.email || resolvedEmail) : '');
   // Mobile: backend `phone` bhejta hai; baaki naam purane local records ke liye
-  const mobileText = String(
-    display?.phone || display?.mobile_number || display?.phone_number || display?.contact_number || display?.mobile ||
-    display?.author_mobile || display?.author_phone || ''
-  ).trim();
+  const mobileText = pickPhoneNumber(display);
   // Role + Area: seat ka naam (jaise "State Bureau Chief") aur uska area (state / district / taluka)
   const roleAreaRole = shownPillText || tierPillLabel || '';
   const seatArea = String(
@@ -896,7 +893,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       showToast("You can't follow yourself.", 'error');
       return;
     }
-    setFollowLoading(true);
+    // ✅ FAST: loading state nahi — button turant badalta hai
     selfFollowActionRef.current = true;
     const nextFollowing = !isFollowing;
     setIsFollowing(nextFollowing);
@@ -922,7 +919,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       } else {
         // NOTE: follow API ke response ka followers_count yahan use nahi karte — wo
         // stale/alag user ka aa sakta hai (isse count 1 se wapas 0 ho jata tha).
-        showToast(nextFollowing ? `Following ${name}` : `Unfollowed ${name}`, 'success');
+        // ✅ success toast hata diya — button/followers count turant badalte hain
         // Followers list me apna naam turant add/remove (pehle list purani rehti thi)
         try {
           const me = await UserStore.getCurrentUser();
@@ -1391,13 +1388,6 @@ export default function UserPublicProfileScreen({ route, navigation }) {
               >
                 <Text style={[styles.tabText, activeTab === 'posts' && styles.tabTextActive]}>Posts</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.tabBtn, activeTab === 'activity' && styles.tabBtnActive]}
-                onPress={() => setActiveTab('activity')}
-                activeOpacity={0.85}
-              >
-                <Text style={[styles.tabText, activeTab === 'activity' && styles.tabTextActive]}>Activity</Text>
-              </TouchableOpacity>
               {showDocuments ? (
                 <TouchableOpacity
                   style={[styles.tabBtn, activeTab === 'documents' && styles.tabBtnActive]}
@@ -1423,10 +1413,6 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           {/* ── Tab Content ── */}
           {effectiveTab === 'documents' ? (
             renderDocumentsTab(true)
-          ) : activeTab === 'activity' ? (
-            <View style={styles.activityCard}>
-              <Text style={styles.mutedText}>No activity yet.</Text>
-            </View>
           ) : sortedPosts.length ? (
             gridView ? (
               // 3-col grid — tiles sized from live windowWidth
@@ -1594,14 +1580,6 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                 <Feather name="grid" size={12} color={activeTab === 'posts' ? '#0f172a' : '#737373'} />
                 <Text style={[webSt.tabText, activeTab === 'posts' && webSt.tabTextActive]}>POSTS</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[webSt.tabBtn, activeTab === 'activity' && webSt.tabBtnActive]}
-                onPress={() => setActiveTab('activity')}
-                activeOpacity={0.85}
-              >
-                <Feather name="activity" size={12} color={activeTab === 'activity' ? '#0f172a' : '#737373'} />
-                <Text style={[webSt.tabText, activeTab === 'activity' && webSt.tabTextActive]}>ACTIVITY</Text>
-              </TouchableOpacity>
               {showDocuments ? (
                 <TouchableOpacity
                   style={[webSt.tabBtn, activeTab === 'documents' && webSt.tabBtnActive]}
@@ -1628,11 +1606,6 @@ export default function UserPublicProfileScreen({ route, navigation }) {
             {/* ── Posts Grid / List / Empty ── */}
             {effectiveTab === 'documents' ? (
               renderDocumentsTab(false)
-            ) : activeTab === 'activity' ? (
-              <View style={webSt.emptyCard}>
-                <Feather name="activity" size={36} color="#cbd5e1" style={{ marginBottom: 10 }} />
-                <Text style={webSt.emptyText}>No activity yet.</Text>
-              </View>
             ) : sortedPosts.length ? (
               gridView ? (
                 <View style={webSt.grid}>
@@ -1839,9 +1812,9 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
         {renderContactCard()}
 
-        {/* ── Tabs: Posts (left) | Activity (right) ── */}
+        {/* ── Tabs: Posts | ID & Letter ── */}
         <View style={{ flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#E5E7EB', marginTop: 12 }}>
-          {[{ key: 'posts', label: 'Posts' }, { key: 'activity', label: 'Activity' }, ...(showDocuments ? [{ key: 'documents', label: 'ID & Letter' }] : [])].map((t) => {
+          {[{ key: 'posts', label: 'Posts' }, ...(showDocuments ? [{ key: 'documents', label: 'ID & Letter' }] : [])].map((t) => {
             const active = activeTab === t.key;
             return (
               <TouchableOpacity
@@ -1870,10 +1843,6 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         {/* ── Tab Content ── */}
         {effectiveTab === 'documents' ? (
           renderDocumentsTab(true)
-        ) : activeTab === 'activity' ? (
-          <View style={styles.activityCard}>
-            <Text style={styles.mutedText}>No activity yet.</Text>
-          </View>
         ) : sortedPosts.length ? (
           gridView ? (
             <View style={styles.postGrid}>

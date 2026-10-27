@@ -1,5 +1,6 @@
 // ProfileScreen.js - Complete updated file with scroll fixes
 
+import { smartGoBack } from '../utils/smartBack';
 import NameWithTick from '../components/NameWithTick';
 import { Feather, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
@@ -402,13 +403,15 @@ function ProfileScreenInner({ navigation, route }) {
     // Android hardware back button
     const backHandlerSub = Platform.OS === 'android'
       ? BackHandler.addEventListener('hardwareBackPress', () => {
-          navigation.navigate('Home');
+          smartGoBack(navigation, 'Home');
           return true; // default back action ko rok diya
         })
       : null;
 
     // Browser back button (web) / iOS swipe-back gesture
     const unsubscribeBeforeRemove = navigation.addListener('beforeRemove', (e) => {
+      // pichli screen ho to normal back (breadcrumb); sirf history na ho tab Home
+      if (navigation.canGoBack()) return;
       e.preventDefault();
       navigation.navigate('Home');
     });
@@ -449,7 +452,9 @@ function ProfileScreenInner({ navigation, route }) {
   const [idCardSide, setIdCardSide] = useState('front');
   const [userPosts, setUserPosts] = useState([]);
   const [postsLoaded, setPostsLoaded] = useState(false); // posts aane se pehle "No posts yet" na dikhe
-   const [showSavedProfile, setShowSavedProfile] = useState(true);
+   // Mobile (Android/iOS): profile kholte hi "My Posts" highlighted rehta hai, isliye posts seedha dikhein (click ki zarurat nahi).
+   // Web par purana behaviour (Profile Details) hi default rehta hai.
+   const [showSavedProfile, setShowSavedProfile] = useState(Platform.OS === 'web');
   const [activeMenu, setActiveMenu] = useState('posts'); // profile menu: jis item pe click kiya wo Edit Profile button ke color me dikhega
   const [postViewMode, setPostViewMode] = useState('grid');
   const [approvalNoticeDismissed, setApprovalNoticeDismissed] = useState(false); // NEW: approved/rejected banner ka cross button
@@ -632,6 +637,7 @@ function ProfileScreenInner({ navigation, route }) {
     // masking the edit form on Android/iOS.
     setForm({ ...savedProfile });
     setShowSavedProfile(true);
+    setActiveMenu('profile'); // edit ke time My Posts highlight na rahe
     setIsEditing(true);
   };
   
@@ -694,7 +700,7 @@ function ProfileScreenInner({ navigation, route }) {
     if (isEditing) {
       closeEdit();
     } else {
-      navigation?.navigate?.('Home'); 
+      smartGoBack(navigation, 'Home');
     }
   }, [navigation, isEditing]);
   const handleOpenSettings = useCallback(() => { navigation?.navigate?.('Settings'); }, [navigation]);
@@ -2062,7 +2068,7 @@ style={[ProfileStyles.avatarCameraBadge, !canChangePhoto && { display: 'none' }]
               )}
 
                                          {isLoggedIn ? (
-  (canSeeReferral ? <ReferralRow referralCode={referralCode} onCopy={handleCopyReferralCode} /> : null)
+  (canSeeReferral ? <ReferralRow referralCode={referralCode} onCopy={handleCopyReferralCode} color={menuActiveColor} /> : null)
 ) : null}
 
               {isLoggedIn ? (
@@ -2082,7 +2088,7 @@ style={[ProfileStyles.avatarCameraBadge, !canChangePhoto && { display: 'none' }]
                     </>
                   ) : (
                     <View style={{ paddingHorizontal: 8 }}>
-                      <TouchableOpacity onPress={() => setShowSavedProfile(true)} style={{ marginBottom: 10 }}>
+                      <TouchableOpacity onPress={() => { setShowSavedProfile(true); setActiveMenu('profile'); }} style={{ marginBottom: 10 }}>
                         <Text style={{ color: ORANGE, fontWeight: '700' }}>← Back to Profile Details</Text>
                       </TouchableOpacity>
                       {renderUserPosts()}
