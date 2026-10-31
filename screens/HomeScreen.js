@@ -1033,9 +1033,13 @@ const allStories = useMemo(() => {
     }
     const q = String(searchQuery || '').trim().toLowerCase();
     if (q) {
-      scopedStories = scopedStories.filter((story) =>
-        [story.title, story.excerpt, story.description, story.category, story.state, story.district, story.author_name].join(' ').toLowerCase().includes(q)
-      );
+      // User search: jo naam typed letters se start hota hai wahi users (unki news) dikhe,
+      // aur result alphabetically (A → Z) sorted aaye.
+      scopedStories = scopedStories
+        .filter((story) => !story.isAd && !story.isEcome)
+        .filter((story) => String(story.author_name || '').trim().toLowerCase().startsWith(q))
+        .sort((a, b) => String(a.author_name || '').trim().toLowerCase()
+          .localeCompare(String(b.author_name || '').trim().toLowerCase()));
     }
      // Home shows only live API news; never pad the feed with dummy stories.
     // ✅ Web par center feed me sirf news cards — ecom/ads ko hata do (right panel me already dikh rahe hai)
@@ -1347,6 +1351,9 @@ const handleOpenLeadForm = useCallback((story) => {
                         onSelectMenu={handleMenuSelection}
                         commonCopy={commonCopy}
                       />
+                    ) : null}
+                    {String(searchQuery || '').trim() && visibleStories.length === 0 ? (
+                      <Text style={{ color: '#64748b', fontSize: 15, fontWeight: '600', paddingVertical: 32, textAlign: 'center' }}>User not found</Text>
                     ) : null}
                     <View style={[styles.storyCardsStack, isMobileLayout && styles.storyCardsStackMobile]}>
                       {visibleStories.map((story, index) => (

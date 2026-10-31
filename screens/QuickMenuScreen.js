@@ -31,7 +31,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../contexts/AuthContext';
 import { UserStore } from '../store/UserStore';
 import { getProfileTier } from '../utils/profileHelpers';
-import { PROFILE_TIERS } from '../constants/profileConstants';
+import { PROFILE_TIERS, PROFILE_BG_YELLOW } from '../constants/profileConstants';
 import ProfileScreen from '../pages/ProfileScreen';
 import AddNewsScreen from '../pages/Addnewsscreen';
 import NewsFeedScreen from '../pages/NewsFeedScreen';
@@ -181,6 +181,15 @@ const QM_CSS = `
   .qm-nav-item.danger:hover { background: rgba(225,29,72,0.25) !important; }
   .qm-nav-icon { width: 22px !important; height: 22px !important; background: transparent !important; }
   .qm-divider { display: block; height: 1px; background: rgba(255,255,255,0.25); margin: 6px 16px; }
+  /* Premium / Verified user ka Profile open ho (yellow sidebar) — text white ki jagah black */
+  .qm-sidebar.qm-sidebar-yellow .qm-brand { color: #111111; border-bottom-color: rgba(0,0,0,0.20); }
+  .qm-sidebar.qm-sidebar-yellow .qm-brand span { color: #7c2d12; }
+  .qm-sidebar.qm-sidebar-yellow .qm-sec-title { color: rgba(0,0,0,0.65); }
+  .qm-sidebar.qm-sidebar-yellow .qm-nav-item { color: #111111; }
+  .qm-sidebar.qm-sidebar-yellow .qm-nav-item:hover { color: #111111; background: rgba(0,0,0,0.08); }
+  .qm-sidebar.qm-sidebar-yellow .qm-nav-item.active { color: #c2410c !important; }
+  .qm-sidebar.qm-sidebar-yellow .qm-nav-item.danger { color: #b91c1c !important; }
+  .qm-sidebar.qm-sidebar-yellow .qm-divider { background: rgba(0,0,0,0.20); }
   .qm-main { position: relative; padding: 26px 28px 32px; overflow-y: auto; background: #fff; }
   .qm-main::after { display: none; }
   .qm-page-header { display: none; }
@@ -485,6 +494,8 @@ function QuickMenuWeb({ navigation, route }) {
   const [isMobileWeb, setIsMobileWeb] = React.useState(() => {
     return Platform.OS === 'web' && typeof window !== 'undefined' && window.innerWidth <= 760;
   });
+  // Profile open + user ki tier yellow artwork (Premium / Verified) => sidebar par black text
+  const isYellowSidebar = activeScreen === 'Profile' && profileTier?.bgImage === PROFILE_BG_YELLOW;
   const activeModule = WEB_MODULES.find((item) => item.screen === activeScreen) || WEB_MODULES[0];
   const ActiveComponent = activeModule.component || ProfileScreen;
 
@@ -583,7 +594,7 @@ function QuickMenuWeb({ navigation, route }) {
       </div>
 
       <div className="qm-shell">
-             <aside className="qm-sidebar">
+             <aside className={`qm-sidebar${isYellowSidebar ? ' qm-sidebar-yellow' : ''}`}>
                     <div className="qm-brand">RTI India <span>News</span></div>
           {[{ title: 'Navigation', items: WEB_MODULES }].map((section) => (
             <div key={section.title}>
@@ -601,7 +612,7 @@ function QuickMenuWeb({ navigation, route }) {
                                    <Ionicons
                       name={item.icon}
                       size={16}
-                                           color={item.isDestructive ? '#ffe4e6' : item.screen === activeScreen ? '#9d0410' : '#ffffff'}
+                                           color={item.isDestructive ? (isYellowSidebar ? '#b91c1c' : '#ffe4e6') : item.screen === activeScreen ? '#9d0410' : (isYellowSidebar ? '#111111' : '#ffffff')}
                     />
                   </div>
                   <span>{item.label}</span>

@@ -47,3 +47,20 @@ app-example
 
 .vercel
 .env*.local
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Expo debug and generated builds
+.expo-debug/
+dist/
+dist-check-*/
+web-build/
+
+# Local backups and temporary files
+android-backup/
+*.backup
+_tmp_*
+__test_write*

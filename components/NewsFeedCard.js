@@ -1699,15 +1699,25 @@ const handleLike = async () => {
   // News location and an author's purchased-role area are different things.
   // Show the member's own current area here, falling back to the news location
   // only for older posts that do not carry author profile fields.
-  const authorArea = String(
-    liveAuthorProfile?.area || liveAuthorProfile?.state_seat?.area || liveAuthorProfile?.state_seat?.area_name ||
-    story.author_area ||
+  // story.state / category kabhi-kabhi "Breaking News" jaisa category text hota hai —
+  // wo location nahi hai, isliye location icon ke saamne sirf asli jagah (state etc.) dikhao.
+  const _nonPlaceWords = new Set([
+    'general', 'breaking news', 'breaking', 'news', 'latest', 'politics', 'sports', 'elections', 'viral',
+    String(story.category || '').trim().toLowerCase(),
+    String(story.report_type || '').trim().toLowerCase(),
+  ].filter(Boolean));
+  const _place = (v) => {
+    const t = String(v || '').trim();
+    return t && !_nonPlaceWords.has(t.toLowerCase()) ? t : '';
+  };
+  const authorArea = (
+    _place(liveAuthorProfile?.area || liveAuthorProfile?.state_seat?.area || liveAuthorProfile?.state_seat?.area_name || story.author_area) ||
     [
-      liveAuthorProfile?.taluka || story.author_taluka,
-      liveAuthorProfile?.district || story.author_district,
-      liveAuthorProfile?.state || story.author_state,
+      _place(liveAuthorProfile?.taluka || story.author_taluka),
+      _place(liveAuthorProfile?.district || story.author_district),
+      _place(liveAuthorProfile?.state || story.author_state),
     ].filter(Boolean).join(', ') ||
-    [story.taluka, story.district, story.state].filter(Boolean).join(', ')
+    [_place(story.taluka), _place(story.district), _place(story.state)].filter(Boolean).join(', ')
   ).trim();
 
   if (isBlockedNow) return null;

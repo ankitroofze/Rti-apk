@@ -25,7 +25,7 @@ import RefreshButton from './RefreshButton';
 import { UserStore } from '../store/UserStore';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getProfileTier, AVATAR_IMAGE } from '../utils/profileHelpers';
-import { openWithSidebar } from '../utils/useQuickMenuRedirect ';
+import { openWithSidebar } from '../utils/useQuickMenuRedirect';
 import { isValidImageUrl } from '../utils/storyHelpers';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
 
@@ -390,7 +390,7 @@ function ProfileDropdown({ navigation, showNameLabel }) {
     <View style={styles.profileDropdownWrap}>
       <TouchableOpacity
         ref={triggerRef}
-        style={styles.profileIconButton}
+        style={[styles.profileIconButton, showNameLabel && styles.profileIconButtonWithName]}
         onPress={openDropdown}
         activeOpacity={0.85}
       >
@@ -725,29 +725,24 @@ export default function AppNavbar({ activeScreen, navigation, hideTopHeader = fa
               />
             );
           })}
+          {/* E-Paper ke just bagal me: Settings + Subscription */}
+          <DesktopNavItem
+            item={{ icon: 'settings-outline', screen: 'Settings' }}
+            isActive={activeScreen === 'Settings'}
+            onPress={() => navigation?.navigate?.('Settings')}
+            label="Settings"
+          />
+          <DesktopNavItem
+            item={{ icon: 'ribbon-outline', screen: 'Subscription Plans' }}
+            isActive={activeScreen === 'Subscription Plans'}
+            onPress={() => openWithSidebar(navigation, 'Subscription Plans')}
+            label="Subscription"
+          />
         </View>
 
         <View style={styles.desktopUtilityRow}>
           <NavbarLanguageSelector />
-        <RefreshButton />
 <NotificationBell navigation={navigation} style={{ marginRight: 6 }} />
-          {/* Baki pages ke header jaisa: Settings + Subscription upar hi */}
-          <TouchableOpacity
-            style={styles.notificationBellBtn}
-            onPress={() => navigation?.navigate?.('Settings')}
-            activeOpacity={0.85}
-            accessibilityLabel="Settings"
-          >
-            <Ionicons name="settings-outline" size={20} color="#0f172a" />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.notificationBellBtn, { marginRight: 16 }]}
-            onPress={() => openWithSidebar(navigation, 'Subscription Plans')}
-            activeOpacity={0.85}
-            accessibilityLabel="Subscription"
-          >
-            <Ionicons name="ribbon-outline" size={20} color="#0f172a" />
-          </TouchableOpacity>
         </View>
 
         <View style={styles.desktopActionsRow}>
@@ -829,7 +824,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     gap: 4,
     minWidth: 0,
   },
@@ -877,6 +872,7 @@ const styles = StyleSheet.create({
     gap: 8,
     flexShrink: 0,
     marginLeft: 12,
+    marginRight: 8,
   },
 
   // ─── Mobile Top Header ─────────────────────────────────────────────────
@@ -1078,6 +1074,7 @@ const styles = StyleSheet.create({
   profileDropdownWrap: {
     position: 'relative',
     zIndex: 5003,
+    flexShrink: 0,
   },
   profileIconButton: {
     width: 40,
@@ -1088,6 +1085,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  // Naam ke saath: button content ke hisaab se chaudha ho, taaki avatar/naam bell par overlap na kare
+  profileIconButtonWithName: {
+    width: 'auto',
+    height: 'auto',
+    minHeight: 40,
+    flexShrink: 0,
+    justifyContent: 'flex-start',
+    paddingLeft: 2,
+    paddingRight: 6,
+    borderRadius: 24,
   },
   profileIconFallbackRing: {
     width: 34,
@@ -1129,7 +1137,8 @@ const styles = StyleSheet.create({
   },
   profileNameLabelWrap: {
     marginLeft: 8,
-    maxWidth: 120,
+    maxWidth: 220,
+    flexShrink: 0,
   },
   profileNameLabel: {
     fontSize: 12.5,

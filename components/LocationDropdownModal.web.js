@@ -1,7 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, Modal, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Modal } from 'react-native';
 
+// ✅ Ab poora UI seedhe web (HTML) elements se bana hai — RN-web ScrollView/TextInput ki
+//    height / autofill problems ki wajah se list gayab ho jaati thi.
+//
 // Shared searchable dropdown for Select State / District / Taluka / Village (WEB only).
 //
 // Pehle ke bugs:
@@ -11,8 +13,6 @@ import { Ionicons } from '@expo/vector-icons';
 //  3. Search sirf simple includes() tha -> ab case / extra spaces / accents / symbols
 //     ignore hote hain, aur "starts with" results upar aate hain.
 
-const ROW_HEIGHT = 46;
-const MAX_LIST_HEIGHT = 320;
 const MAX_RENDER = 300; // bahut bade lists (villages) me web ko hang hone se bachata hai
 
 const norm = (v) =>
@@ -45,83 +45,103 @@ export function filterAndRank(items, query) {
 
 export default function LocationDropdownModal({ visible, title, items, selected, onSelect, onClose, placeholder, emptyText }) {
   const [search, setSearch] = useState('');
+  const [locked, setLocked] = useState(true); // readOnly-until-focus: Chrome autofill popup ko rokta hai
+  const [inputName] = useState(() => `rti_loc_${Math.random().toString(36).slice(2, 9)}`);
 
-  useEffect(() => { if (!visible) setSearch(''); }, [visible]);
+  useEffect(() => { if (!visible) { setSearch(''); setLocked(true); } }, [visible]);
 
   const filtered = useMemo(() => filterAndRank(items, search), [items, search]);
   const shown = filtered.length > MAX_RENDER ? filtered.slice(0, MAX_RENDER) : filtered;
-  const listHeight = Math.max(ROW_HEIGHT, Math.min(MAX_LIST_HEIGHT, shown.length * ROW_HEIGHT));
 
   const pick = (item) => { onSelect(item); onClose(); setSearch(''); };
 
+  const onKeyDown = (e) => {
+    if (e.key === 'Enter' && shown.length > 0) { e.preventDefault(); pick(shown[0]); }
+    else if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+  };
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <TouchableOpacity style={s.overlay} activeOpacity={1} onPress={onClose}>
-        <TouchableOpacity activeOpacity={1} style={{ width: '100%', alignItems: 'center' }} onPress={() => {}}>
-          <View style={s.sheet}>
-            <View style={s.handle} />
-            <Text style={s.title}>{title}</Text>
-            <View style={s.searchWrap}>
-              <Ionicons name="search-outline" size={16} color="#B91C1C" />
-              <TextInput
-                style={s.searchInput}
-                value={search}
-                onChangeText={setSearch}
-                placeholder={placeholder || 'Search...'}
-                placeholderTextColor="#9ca3af"
-                autoCorrect={false}
-                autoCapitalize="none"
-                spellCheck={false}
-                autoComplete="off"
-                // Chrome address-autofill band karne ke liye (React Native Web in attrs ko DOM tak pahunchata hai)
-                name="rti-location-search"
-                dataSet={{ lpignore: 'true', formtype: 'other' }}
-                autoFocus
-              />
-              {search ? (
-                <TouchableOpacity onPress={() => setSearch('')} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Ionicons name="close-circle" size={16} color="#9ca3af" />
-                </TouchableOpacity>
-              ) : null}
-            </View>
+      <div style={st.overlay} onClick={onClose}>
+        <div style={st.sheet} onClick={(e) => e.stopPropagation()}>
+          <div style={st.handle} />
+          <div style={st.title}>{title}</div>
 
-            {shown.length === 0 ? (
-              <Text style={s.empty}>{emptyText || 'No results found'}</Text>
-            ) : (
-              <ScrollView style={{ height: listHeight }} showsVerticalScrollIndicator keyboardShouldPersistTaps="handled">
-                {shown.map((item, index) => {
-                  const isSel = selected === item;
-                  return (
-                    <TouchableOpacity key={`${item}-${index}`} style={[s.item, isSel && s.itemSelected]} onPress={() => pick(item)}>
-                      <Text style={[s.itemText, isSel && s.itemTextSelected]} numberOfLines={1}>{String(item)}</Text>
-                      {isSel ? <Ionicons name="checkmark-circle" size={18} color="#B91C1C" /> : null}
-                    </TouchableOpacity>
-                  );
-                })}
-                {filtered.length > MAX_RENDER ? (
-                  <Text style={s.more}>Showing first {MAX_RENDER} of {filtered.length} — type more letters to narrow down</Text>
-                ) : null}
-              </ScrollView>
-            )}
-          </View>
-        </TouchableOpacity>
-      </TouchableOpacity>
+          <div style={st.searchWrap}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B91C1C" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              style={st.searchInput}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder={placeholder || 'Search...'}
+              autoFocus
+              readOnly={locked}
+              onFocus={() => setLocked(false)}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="none"
+              spellCheck={false}
+              name={inputName}
+              id={inputName}
+              aria-autocomplete="none"
+              data-lpignore="true"
+              data-form-type="other"
+              data-1p-ignore="true"
+            />
+            {search ? (
+              <button type="button" onClick={() => setSearch('')} style={st.clearBtn} aria-label="Clear search">✕</button>
+            ) : null}
+          </div>
+
+          {shown.length === 0 ? (
+            <div style={st.empty}>{emptyText || 'No results found'}</div>
+          ) : (
+            <div style={st.list}>
+              {shown.map((item, index) => {
+                const isSel = selected === item;
+                return (
+                  <div
+                    key={`${item}-${index}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => pick(item)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') pick(item); }}
+                    style={{ ...st.item, ...(isSel ? st.itemSelected : null) }}
+                  >
+                    <span style={{ ...st.itemText, ...(isSel ? st.itemTextSelected : null) }}>{String(item)}</span>
+                    {isSel ? <span style={{ color: '#B91C1C', fontSize: 16 }}>✓</span> : null}
+                  </div>
+                );
+              })}
+              {filtered.length > MAX_RENDER ? (
+                <div style={st.more}>Showing first {MAX_RENDER} of {filtered.length} — type more letters to narrow down</div>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </div>
     </Modal>
   );
 }
 
 const FONT = "'Roboto', sans-serif";
-const s = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', alignItems: 'center', justifyContent: 'center', padding: 20 },
-  sheet: { width: '100%', maxWidth: 420, maxHeight: '85%', borderRadius: 20, backgroundColor: '#ffffff', padding: 20, paddingBottom: 24 },
-  handle: { width: 40, height: 4, backgroundColor: '#EEEEEE', borderRadius: 99, alignSelf: 'center', marginBottom: 14 },
-  title: { fontSize: 16, fontWeight: '800', color: '#111111', marginBottom: 12, textAlign: 'center', fontFamily: FONT },
-  searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F8F8F8', borderWidth: 1.5, borderColor: '#EEEEEE', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 10 },
-  searchInput: { flex: 1, fontSize: 14, color: '#111111', paddingVertical: 0, outlineStyle: 'none', fontFamily: FONT },
-  item: { height: ROW_HEIGHT - 3, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 14, borderRadius: 12, marginBottom: 3 },
-  itemSelected: { backgroundColor: 'rgba(185,28,28,0.08)' },
-  itemText: { flex: 1, fontSize: 14, color: '#111111', fontWeight: '500', fontFamily: FONT },
-  itemTextSelected: { color: '#B91C1C', fontWeight: '700' },
-  empty: { textAlign: 'center', color: '#9ca3af', paddingVertical: 20, fontFamily: FONT },
-  more: { textAlign: 'center', color: '#9ca3af', fontSize: 12, paddingVertical: 10, fontFamily: FONT },
-});
+const st = {
+  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, boxSizing: 'border-box', zIndex: 99999 },
+  sheet: { width: '100%', maxWidth: 420, maxHeight: '85vh', display: 'flex', flexDirection: 'column', borderRadius: 20, background: '#ffffff', padding: '20px 20px 24px', boxSizing: 'border-box', fontFamily: FONT },
+  handle: { width: 40, height: 4, background: '#EEEEEE', borderRadius: 99, alignSelf: 'center', marginBottom: 14, flexShrink: 0 },
+  title: { fontSize: 16, fontWeight: 800, color: '#111111', marginBottom: 12, textAlign: 'center', fontFamily: FONT, flexShrink: 0 },
+  searchWrap: { display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, background: '#F8F8F8', border: '1.5px solid #EEEEEE', borderRadius: 12, padding: '9px 12px', marginBottom: 10, flexShrink: 0 },
+  searchInput: { flex: 1, minWidth: 0, fontSize: 14, color: '#111111', padding: 0, border: 'none', outline: 'none', background: 'transparent', fontFamily: FONT },
+  clearBtn: { border: 'none', background: 'transparent', color: '#9ca3af', fontSize: 14, cursor: 'pointer', padding: 0, lineHeight: 1 },
+  list: { overflowY: 'auto', maxHeight: 320, minHeight: 0, flex: '0 1 auto' },
+  item: { minHeight: 43, display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: '0 14px', borderRadius: 12, marginBottom: 3, cursor: 'pointer', boxSizing: 'border-box' },
+  itemSelected: { background: 'rgba(185,28,28,0.08)' },
+  itemText: { flex: 1, fontSize: 14, color: '#111111', fontWeight: 500, fontFamily: FONT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  itemTextSelected: { color: '#B91C1C', fontWeight: 700 },
+  empty: { textAlign: 'center', color: '#9ca3af', padding: '20px 0', fontFamily: FONT },
+  more: { textAlign: 'center', color: '#9ca3af', fontSize: 12, padding: '10px 0', fontFamily: FONT },
+};
