@@ -1717,6 +1717,19 @@ const hasActiveSubscription = (user = {}) => {
   })) return true;
   return false;
 };
+// ✅ NEW: Kya is user ka role/plan ABHI active hai? (news card pe plan/role pill dikhane ke liye)
+// Plan expire / cancel ho gaya ho to false -> koi bhi plan ka naam / tier UI me nahi dikhna chahiye.
+const hasActiveRolePlan = (user = {}) => {
+  if (!user || typeof user !== 'object') return false;
+  const plan = getRoleSubscriptionPlan(user);
+  if (plan) {
+    const planStatus = String(plan?.status || plan?.subscription_status || '').trim().toLowerCase();
+    if (['cancelled', 'canceled', 'expired', 'inactive', 'failed', 'refunded'].includes(planStatus)) return false;
+    return hasActiveSubscription(user);
+  }
+  // Plan object nahi mila: seat holder tabhi active jab server ne is_subscribed true bheja ho
+  return Boolean(user.state_seat?.seat_id) && (user.is_subscribed === true || user.is_subscribed === 1 || user.is_subscribed === '1');
+};
 // Quiz subscription ab sirf expiry-date se nahi, balki bache hue "quiz count" se bhi
 // gate hoti hai — jaise hi remaining count 0 ho jaata hai, expiry valid hone ke bawajood
 // user ko dobara subscription lena padta hai. `quiz_subscription_remaining_count` undefined
@@ -2732,6 +2745,8 @@ consumeQuizAttempt: async () => {
      hasBlueTick: (user) => hasBlueTick(user),
    hasBlueTickFeatures: (user) => hasBlueTickFeatures(user),
   isPremiumPlan: (plan) => isPremiumPlan(plan),
+  // ✅ NEW: plan abhi active hai ya expire? (false => plan/role pill mat dikhao)
+  hasActiveRolePlan: (user) => hasActiveRolePlan(user),
   // ✅ NEW: level-based plan helpers (SubscriptionPlansScreen use karta hai)
   trimLocationToLevel: (level, loc) => trimLocationToLevel(level, loc),
   getMissingLocationField: (level, loc) => getMissingLocationField(level, loc),

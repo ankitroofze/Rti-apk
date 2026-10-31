@@ -226,7 +226,7 @@ const FilterDropdown = ({ label, value, options, onSelect }) => {
       </TouchableOpacity>
       {open ? (
         <View style={styles.dropdownList}>
-          <ScrollView style={styles.dropdownScroll} showsVerticalScrollIndicator={false}>
+          <ScrollView style={styles.dropdownScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
             {options.map((opt) => (
               <TouchableOpacity
                 key={opt}
@@ -236,7 +236,7 @@ const FilterDropdown = ({ label, value, options, onSelect }) => {
                 <Text style={[styles.dropdownItemText, value === opt && styles.dropdownItemTextActive]}>
                   {opt}
                 </Text>
-                {value === opt ? <Feather name="check" size={12} color={C.textSub} /> : null}
+                {value === opt ? <Feather name="check" size={14} color={C.primary} /> : null}
               </TouchableOpacity>
             ))}
           </ScrollView>
@@ -538,6 +538,7 @@ export default function NewsFeedScreen({ navigation }) {
   const [expandedReplyThreads, setExpandedReplyThreads] = useState({});
   const [expandedItems, setExpandedItems] = useState({});
   const [filterPanelVisible, setFilterPanelVisible] = useState(false);
+  const [focusedField, setFocusedField] = useState('');
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [feedMediaWidth, setFeedMediaWidth] = useState(0);
   const [editingNewsItem, setEditingNewsItem] = useState(null);
@@ -915,6 +916,12 @@ const handleLike = async (item) => {
       has_blue_tick: Boolean(item.author_has_blue_tick || item.has_blue_tick),
       author_is_premium: Boolean(item.author_is_premium),
       author_is_subscriber: Boolean(item.author_is_subscriber),
+      // Premium / role plan ki detail bhi bhejo, taaki profile page par bhi
+      // wahi plan ka naam aur colour dikhe jo feed card par dikhta hai.
+      subscription_plan: item.author_subscription_plan || null,
+      subscription_type: item.author_subscription_type || '',
+      is_subscribed: Boolean(item.author_is_subscriber || item.author_is_premium),
+      author_seat_id: item.author_seat_id || '',
     };
     if (!authorEmail && !fallbackAuthor.name && !fallbackAuthor.author_profile_image) {
       showToast('Author profile not available.', 'error');
@@ -1332,10 +1339,12 @@ const handleLike = async (item) => {
         {/* Filter Card */}
         <View style={styles.filterCard}>
           <View style={styles.searchRow}>
-            <View style={styles.searchBox}>
-              <Feather name="search" size={15} color={C.neutral400} />
+            <View style={[styles.searchBox, focusedField === 'search' && styles.inputBoxFocused]}>
+              <Feather name="search" size={15} color={focusedField === 'search' ? C.primary : C.neutral400} />
               <TextInput
-                style={styles.searchInput}
+                style={[styles.searchInput, styles.noOutline]}
+                onFocus={() => setFocusedField('search')}
+                onBlur={() => setFocusedField('')}
                 placeholder="Search news, author..."
                 placeholderTextColor={C.neutral400}
                 value={searchText}
@@ -1405,27 +1414,55 @@ const handleLike = async (item) => {
           {filterPanelVisible ? (
             <View style={styles.filterPanel}>
               <View style={styles.filterGroup}>
-                <Text style={styles.filterLabel}>📍  State</Text>
+                <View style={styles.filterLabelRow}>
+                  <Feather name="map-pin" size={13} color={C.primary} />
+                  <Text style={styles.filterLabel}>State</Text>
+                </View>
                 <FilterDropdown label="Select State" value={filterState} options={stateOptions} onSelect={setFilterState} />
               </View>
               <View style={styles.filterGroup}>
-                <Text style={styles.filterLabel}>🏘  District / City</Text>
-                <View style={styles.textFilterBox}>
-                  <Feather name="search" size={13} color={C.neutral400} />
-                  <TextInput style={styles.textFilterInput} placeholder="Type district or city..." placeholderTextColor={C.neutral400} value={filterDistrict} onChangeText={setFilterDistrict} />
-                  {filterDistrict ? <TouchableOpacity onPress={() => setFilterDistrict('')}><Feather name="x" size={13} color={C.neutral400} /></TouchableOpacity> : null}
+                <View style={styles.filterLabelRow}>
+                  <Feather name="home" size={13} color={C.primary} />
+                  <Text style={styles.filterLabel}>District / City</Text>
+                </View>
+                <View style={[styles.textFilterBox, focusedField === 'district' && styles.inputBoxFocused]}>
+                  <Feather name="search" size={14} color={focusedField === 'district' ? C.primary : C.neutral400} />
+                  <TextInput
+                    style={[styles.textFilterInput, styles.noOutline]}
+                    placeholder="Type district or city..."
+                    placeholderTextColor={C.neutral400}
+                    value={filterDistrict}
+                    onChangeText={setFilterDistrict}
+                    onFocus={() => setFocusedField('district')}
+                    onBlur={() => setFocusedField('')}
+                  />
+                  {filterDistrict ? <TouchableOpacity onPress={() => setFilterDistrict('')}><Feather name="x" size={14} color={C.neutral400} /></TouchableOpacity> : null}
                 </View>
               </View>
               <View style={styles.filterGroup}>
-                <Text style={styles.filterLabel}>🗂  Taluka</Text>
-                <View style={styles.textFilterBox}>
-                  <Feather name="search" size={13} color={C.neutral400} />
-                  <TextInput style={styles.textFilterInput} placeholder="Type taluka..." placeholderTextColor={C.neutral400} value={filterTaluka} onChangeText={setFilterTaluka} />
-                  {filterTaluka ? <TouchableOpacity onPress={() => setFilterTaluka('')}><Feather name="x" size={13} color={C.neutral400} /></TouchableOpacity> : null}
+                <View style={styles.filterLabelRow}>
+                  <Feather name="map" size={13} color={C.primary} />
+                  <Text style={styles.filterLabel}>Taluka</Text>
+                </View>
+                <View style={[styles.textFilterBox, focusedField === 'taluka' && styles.inputBoxFocused]}>
+                  <Feather name="search" size={14} color={focusedField === 'taluka' ? C.primary : C.neutral400} />
+                  <TextInput
+                    style={[styles.textFilterInput, styles.noOutline]}
+                    placeholder="Type taluka..."
+                    placeholderTextColor={C.neutral400}
+                    value={filterTaluka}
+                    onChangeText={setFilterTaluka}
+                    onFocus={() => setFocusedField('taluka')}
+                    onBlur={() => setFocusedField('')}
+                  />
+                  {filterTaluka ? <TouchableOpacity onPress={() => setFilterTaluka('')}><Feather name="x" size={14} color={C.neutral400} /></TouchableOpacity> : null}
                 </View>
               </View>
               <View style={styles.filterGroup}>
-                <Text style={styles.filterLabel}>🏷  Report Type</Text>
+                <View style={styles.filterLabelRow}>
+                  <Feather name="tag" size={13} color={C.primary} />
+                  <Text style={styles.filterLabel}>Report Type</Text>
+                </View>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   <View style={styles.chipsRow}>
                     {REPORT_TYPES.map((rt) => <FilterChip key={rt} label={rt} active={filterReportType === rt} onPress={() => setFilterReportType(rt)} />)}
@@ -1433,7 +1470,10 @@ const handleLike = async (item) => {
                 </ScrollView>
               </View>
               <View style={styles.filterGroup}>
-                <Text style={styles.filterLabel}>👤  Author Role</Text>
+                <View style={styles.filterLabelRow}>
+                  <Feather name="user" size={13} color={C.primary} />
+                  <Text style={styles.filterLabel}>Author Role</Text>
+                </View>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   <View style={styles.chipsRow}>
                     {ROLE_TYPES.map((rt) => <FilterChip key={rt} label={rt} active={filterRoleType === rt} onPress={() => setFilterRoleType(rt)} />)}
@@ -1749,11 +1789,13 @@ metricBadge: { backgroundColor: 'rgba(255,255,255,0.18)', borderRadius: 20, padd
 metricBadgeText: { fontSize: 11, fontFamily: FONT.bold, color: C.white, textTransform: 'uppercase' },
 metricValue: { fontSize: 24, fontFamily: FONT.black, color: C.white, textAlign: 'center' },
 metricLabel: { fontSize: 12, fontFamily: FONT.medium, color: C.white, marginTop: 2, textAlign: 'center' },
-  filterCard: { marginHorizontal: 16, marginBottom: 12, backgroundColor: C.white, borderRadius: 14, padding: 12 },
+  filterCard: { marginHorizontal: 16, marginBottom: 12, backgroundColor: C.white, borderRadius: 16, padding: 14, borderWidth: 1, borderColor: C.border },
   searchRow: { flexDirection: 'row', gap: 8, alignItems: 'center' },
- searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: C.dashedBorder, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: C.white, outlineStyle: 'none' },
-  searchInput: { flex: 1, fontSize: 13, fontFamily: FONT.regular, color: C.textBody, padding: 0 },
-  filterToggleBtn: { width: 40, height: 40, borderRadius: 10, borderWidth: 1, borderColor: '#B91C1C', alignItems: 'center', justifyContent: 'center', position: 'relative', backgroundColor: C.white },
+  searchBox: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 12, backgroundColor: '#FAFAFA' },
+  inputBoxFocused: { borderColor: C.primary, backgroundColor: C.white },
+  noOutline: Platform.select({ web: { outlineStyle: 'none', outlineWidth: 0, outlineColor: 'transparent', boxShadow: 'none', borderWidth: 0, backgroundColor: 'transparent' }, default: {} }),
+  searchInput: { flex: 1, fontSize: 13, fontFamily: FONT.regular, color: C.textBody, padding: 0, margin: 0, height: '100%' },
+  filterToggleBtn: { width: 44, height: 44, borderRadius: 12, borderWidth: 1, borderColor: '#B91C1C', alignItems: 'center', justifyContent: 'center', position: 'relative', backgroundColor: C.uploadBg },
   filterToggleBtnActive: { backgroundColor: C.primary },
   filterBadge: { position: 'absolute', top: -5, right: -5, backgroundColor: C.danger, borderRadius: 9, minWidth: 18, height: 18, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
   filterBadgeText: { fontSize: 9, fontFamily: FONT.bold, color: C.white },
@@ -1765,31 +1807,32 @@ metricLabel: { fontSize: 12, fontFamily: FONT.medium, color: C.white, marginTop:
   clearAllChip: { justifyContent: 'center', paddingHorizontal: 10 },
   clearAllText: { fontSize: 11, fontFamily: FONT.bold, color: C.danger },
 
-  filterPanel: { marginTop: 12, gap: 14 },
-  filterGroup: { gap: 6 },
-  filterLabel: { fontSize: 12, fontFamily: FONT.bold, color: C.textBody },
-  textFilterBox: { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: C.dashedBorder, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 9, backgroundColor: C.white },
-  textFilterInput: { flex: 1, fontSize: 12, fontFamily: FONT.regular, color: C.textBody, padding: 0 },
-  chipsRow: { flexDirection: 'row', gap: 8 },
+  filterPanel: { marginTop: 14, paddingTop: 14, gap: 16, borderTopWidth: 1, borderTopColor: C.border },
+  filterGroup: { gap: 8 },
+  filterLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  filterLabel: { fontSize: 12, fontFamily: FONT.bold, color: C.textMain, letterSpacing: 0.3 },
+  textFilterBox: { flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 12, backgroundColor: '#FAFAFA' },
+  textFilterInput: { flex: 1, fontSize: 13, fontFamily: FONT.regular, color: C.textBody, padding: 0, margin: 0, height: '100%' },
+  chipsRow: { flexDirection: 'row', gap: 8, paddingRight: 4 },
   resetBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderWidth: 1, borderColor: C.danger, borderRadius: 100, paddingVertical: 10, marginTop: 4 },
   resetBtnText: { fontSize: 12, fontFamily: FONT.bold, color: C.danger },
 
-  filterChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, borderWidth: 1, borderColor: C.neutral400, backgroundColor: C.white, marginRight: 8 },
+  filterChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: C.border, backgroundColor: '#FAFAFA' },
   filterChipActive: { backgroundColor: C.primary, borderColor: C.primary },
-  filterChipText: { fontSize: 11, fontFamily: FONT.medium, color: C.textSub },
-  filterChipTextActive: { color: C.white, fontFamily: FONT.bold },
+  filterChipText: { fontSize: 12, fontFamily: FONT.medium, color: C.textSub },
+  filterChipTextActive: { fontSize: 12, color: C.white, fontFamily: FONT.bold },
 
   dropdownWrapper: { position: 'relative' },
-   dropdownBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: C.border, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: C.white },
+  dropdownBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', height: 44, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 12, backgroundColor: '#FAFAFA' },
   dropdownBtnActive: { backgroundColor: C.primary },
-  dropdownBtnText: { fontSize: 12, fontFamily: FONT.medium, color: C.textBody, flex: 1 },
+  dropdownBtnText: { fontSize: 13, fontFamily: FONT.medium, color: C.textBody, flex: 1 },
   dropdownBtnTextActive: { color: C.white, fontFamily: FONT.bold },
-  dropdownList: { position: 'absolute', top: '100%', left: 0, right: 0, backgroundColor: C.white, borderRadius: 10, borderWidth: 1, borderColor: C.border, marginTop: 4, maxHeight: 220, zIndex: 20, elevation: 6 },
+  dropdownList: { marginTop: 6, backgroundColor: C.white, borderRadius: 12, borderWidth: 1, borderColor: C.border, maxHeight: 220, overflow: 'hidden' },
   dropdownScroll: { maxHeight: 220 },
-  dropdownItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 10 },
+  dropdownItem: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 11, borderBottomWidth: 1, borderBottomColor: '#F3F3F3' },
   dropdownItemActive: { backgroundColor: C.uploadBg },
-  dropdownItemText: { fontSize: 12, fontFamily: FONT.medium, color: C.textBody },
-  dropdownItemTextActive: { color: C.textSub, fontFamily: FONT.bold },
+  dropdownItemText: { fontSize: 13, fontFamily: FONT.medium, color: C.textBody },
+  dropdownItemTextActive: { color: C.primary, fontFamily: FONT.bold },
 
   card: { marginHorizontal: 16, marginBottom: 20, backgroundColor: C.white, borderRadius: 14, borderWidth: 1, borderColor: C.border, padding: 14 },
 sectionTitle: { fontSize: 19, fontFamily: FONT.bold, color: C.textBody, marginBottom: 4 },

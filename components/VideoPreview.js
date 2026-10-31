@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Platform, View, Image, Text, StyleSheet } from 'react-native';
-import { useVideoPlayer, VideoView } from 'expo-video';
+import ControlledVideo from './ControlledVideo';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 
 function isLikelyPlayableVideoSource(uri) {
@@ -54,21 +54,13 @@ export default function VideoPreview({ uri, style, contentFit = 'contain' }) {
   }, [resolved, uri]);
 
   const playableUri = isLikelyPlayableVideoSource(finalUri) ? finalUri : null;
-  const player = useVideoPlayer(playableUri, (p) => {
-    p.loop = false;
-  });
-
-   if (!playableUri) return null;
+  if (!playableUri) return null;
 
   return (
     // ✅ kaala background + contain: video crop / zoom nahi hota, poora dikhta hai
     <View style={{ position: 'relative', backgroundColor: '#000', borderRadius: 8, overflow: 'hidden' }}>
-      <VideoView
-        player={player}
-        style={[{ backgroundColor: '#000' }, style]}
-        contentFit={contentFit}
-        fullscreenOptions={{ enabled: true }}
-      />
+      {/* News jaisa player: play/pause, progress line + timer; video poora dikhta hai */}
+      <ControlledVideo uri={playableUri} style={style} />
       <View pointerEvents="none" style={wm.bar}>
         <Image source={require('../assets/images/logo.jpg')} style={wm.logo} />
         <Text style={wm.text}>RTI NEWS</Text>

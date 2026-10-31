@@ -2133,71 +2133,117 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
   // ✅ WEB: Instagram jaisa snap scroll — ek scroll / swipe / arrow key = ek poora reel (agla reel poori screen par).
   // react-native-web `snapToOffsets` support nahi karta, isliye DOM level par wheel + keyboard + scroll-settle handle karte hain.
   useEffect(() => {
-    if (Platform.OS !== 'web' || typeof window === 'undefined') return undefined;
-    const node = feedListRef.current?.getScrollableNode?.();
-    if (!node || !(cardHeight > 0)) return undefined;
+    if (Platform.OS !== 'web' || typeof window === 'undefined' || !(cardHeight > 0)) return undefined;
 
-    const maxIdx = Math.max(posts.length - 1, 0);
-    const clampIdx = (i) => Math.max(0, Math.min(maxIdx, i));
-    const currentIdx = () => Math.round(node.scrollTop / cardHeight);
-    const goTo = (idx) => {
-      try { node.scrollTo({ top: clampIdx(idx) * cardHeight, behavior: 'smooth' }); }
-      catch (_) { node.scrollTop = clampIdx(idx) * cardHeight; }
-    };
+    let detach = null;
+    let pollTimer = null;
 
-    // Card ke andar koi apna scroll (caption etc.) ho to wheel usi ko do
-    const hasInnerScroll = (el) => {
-      let cur = el;
-      while (cur && cur !== node) {
-        if (cur.nodeType === 1 && cur.scrollHeight > cur.clientHeight + 2) {
-          const oy = window.getComputedStyle(cur).overflowY;
-          if (oy === 'auto' || oy === 'scroll') return true;
+    const attach = (node) => {
+      const maxIdx = Math.max(posts.length - 1, 0);
+      const clampIdx = (i) => Math.max(0, Math.min(maxIdx, i));
+      const currentIdx = () => Math.round(node.scrollTop / cardHeight);
+      // ✅ ROOT CAUSE FIX: react-native-web list ke DOM node par apna `scrollTo({x, y, animated})` laga deta hai
+      // (version ke hisaab se). Usme `top/behavior` samajh nahi aata, isliye `node.scrollTo({top})` kuch nahi
+      // karta (ya 0 par reset kar deta) aur feed kabhi scroll nahi hota tha. Isliye browser ka ASLI
+      // Element.scrollTo seedha call karte hain — har react-native-web version par same chalta hai.
+      const nativeScrollTo = (typeof Element !== 'undefined' && Element.prototype && Element.prototype.scrollTo) || null;
+      const goTo = (idx) => {
+        const top = clampIdx(idx) * cardHeight;
+        try {
+          if (nativeScrollTo) nativeScrollTo.call(node, { top, behavior: 'smooth' });
+          else node.scrollTop = top;
+        } catch (_) { node.scrollTop = top; }
+        // safety: smooth scroll na chale (kuch browsers / reduced-motion) to bhi reel badal jaye
+        setTimeout(() => { if (Math.abs(node.scrollTop - top) > 2 && Math.abs(node.scrollTop - top) > cardHeight * 0.9) node.scrollTop = top; }, 700);
+      };
+
+      // Card ke andar koi apna scroll (caption etc.) ho to wheel usi ko do
+      const hasInnerScroll = (el) => {
+        let cur = el;
+        while (cur && cur !== node) {
+          if (cur.nodeType === 1 && cur.scrollHeight > cur.clientHeight + 2) {
+            const oy = window.getComputedStyle(cur).overflowY;
+            if (oy === 'auto' || oy === 'scroll') return true;
+          }
+          cur = cur.parentNode;
         }
-        cur = cur.parentNode;
-      }
-      return false;
+        return false;
+      };
+
+      // ✅ FIX (laptop touchpad par scroll nahi hota tha): touchpad ek gesture me bahut saare chhote
+      // wheel events bhejta hai (deltaY 1, 2, 3 ...). Pehle har event ko alag dekha jaata tha — pehla event
+      // chhota hone par "ignore", aur baaki events "streaming" maan kar ignore => poora gesture bekaar.
+      // Ab ek gesture ke saare delta JOD (accumulate) kar lete hain; threshold paar hote hi ek reel aage/peeche.
+      // Mouse wheel (alag-alag notch) pehle jaisa hi chalta hai.
+      const GESTURE_GAP = 160;     // ms — isse zyada gap = naya gesture
+      const TRIGGER_DELTA = 30;    // itna total scroll hote hi agla reel
+      let acc = 0;
+      let fired = false;
+      let lockUntil = 0;
+      let lastWheelAt = 0;
+      const onWheel = (e) => {
+        if (e.ctrlKey || hasInnerScroll(e.target)) return;
+        e.preventDefault();
+        const now = Date.now();
+        if (now - lastWheelAt > GESTURE_GAP) { acc = 0; fired = false; }
+        lastWheelAt = now;
+        if (fired || now < lockUntil) return;
+        const dy = e.deltaMode === 1 ? e.deltaY * 16 : (e.deltaMode === 2 ? e.deltaY * cardHeight : e.deltaY);
+        acc += dy;
+        if (Math.abs(acc) < TRIGGER_DELTA) return;
+        fired = true;
+        lockUntil = now + 450;
+        goTo(currentIdx() + (acc > 0 ? 1 : -1));
+      };
+
+      const onKey = (e) => {
+        const t = e.target;
+        const tag = t && t.tagName ? String(t.tagName).toLowerCase() : '';
+        if (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable)) return;
+        if (e.key === 'ArrowDown' || e.key === 'PageDown') { e.preventDefault(); goTo(currentIdx() + 1); }
+        else if (e.key === 'ArrowUp' || e.key === 'PageUp') { e.preventDefault(); goTo(currentIdx() - 1); }
+      };
+
+      // Touch / scrollbar drag: scroll ruke to sabse paas ke reel par exact snap
+      let idleTimer = null;
+      const onScroll = () => {
+        if (idleTimer) clearTimeout(idleTimer);
+        idleTimer = setTimeout(() => {
+          const target = clampIdx(currentIdx()) * cardHeight;
+          if (Math.abs(node.scrollTop - target) > 2) goTo(currentIdx());
+        }, 140);
+      };
+
+      node.addEventListener('wheel', onWheel, { passive: false });
+      node.addEventListener('scroll', onScroll, { passive: true });
+      window.addEventListener('keydown', onKey);
+      return () => {
+        node.removeEventListener('wheel', onWheel);
+        node.removeEventListener('scroll', onScroll);
+        window.removeEventListener('keydown', onKey);
+        if (idleTimer) clearTimeout(idleTimer);
+      };
     };
 
-    let lockUntil = 0;
-    let lastWheelAt = 0;
-    const onWheel = (e) => {
-      if (e.ctrlKey || hasInnerScroll(e.target)) return;
-      e.preventDefault();
-      const now = Date.now();
-      const streaming = now - lastWheelAt < 120;   // trackpad inertia / lagataar wheel events
-      lastWheelAt = now;
-      if (now < lockUntil || streaming) return;
-      if (Math.abs(e.deltaY) < 4) return;
-      lockUntil = now + 450;
-      goTo(currentIdx() + (e.deltaY > 0 ? 1 : -1));
+    // ✅ FIX (race): web par WebLayout/WebReadyGate fonts load hone tak list mount hi nahi karta, isliye
+    // effect chalte waqt list ka DOM node null hota tha aur scroll handler kabhi lagta hi nahi tha.
+    // Ab node milne tak thodi-thodi der me dobara try karte hain.
+    const tryAttach = () => {
+      const node = feedListRef.current?.getScrollableNode?.();
+      if (!node) return false;
+      detach = attach(node);
+      return true;
     };
-
-    const onKey = (e) => {
-      const t = e.target;
-      const tag = t && t.tagName ? String(t.tagName).toLowerCase() : '';
-      if (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable)) return;
-      if (e.key === 'ArrowDown' || e.key === 'PageDown') { e.preventDefault(); goTo(currentIdx() + 1); }
-      else if (e.key === 'ArrowUp' || e.key === 'PageUp') { e.preventDefault(); goTo(currentIdx() - 1); }
-    };
-
-    // Touch / scrollbar drag: scroll ruke to sabse paas ke reel par exact snap
-    let idleTimer = null;
-    const onScroll = () => {
-      if (idleTimer) clearTimeout(idleTimer);
-      idleTimer = setTimeout(() => {
-        const target = clampIdx(currentIdx()) * cardHeight;
-        if (Math.abs(node.scrollTop - target) > 2) goTo(currentIdx());
-      }, 140);
-    };
-
-    node.addEventListener('wheel', onWheel, { passive: false });
-    node.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('keydown', onKey);
+    if (!tryAttach()) {
+      let tries = 0;
+      pollTimer = setInterval(() => {
+        tries += 1;
+        if (tryAttach() || tries > 50) { clearInterval(pollTimer); pollTimer = null; }
+      }, 200);
+    }
     return () => {
-      node.removeEventListener('wheel', onWheel);
-      node.removeEventListener('scroll', onScroll);
-      window.removeEventListener('keydown', onKey);
-      if (idleTimer) clearTimeout(idleTimer);
+      if (pollTimer) clearInterval(pollTimer);
+      if (detach) detach();
     };
   }, [cardHeight, posts.length]);
 

@@ -334,6 +334,41 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     return () => { alive = false; };
   }, []);
 
+  // ── Plan fallback from the news feed ────────────────────────────────────────
+  // ROOT CAUSE of "Common User": GET /profile/{id} (aur local cache) me kai baar subscription
+  // plan hota hi nahi, jabki feed card ko plan /news list ke `author` object se milta hai.
+  // Profile me plan na mile to usi feed data se is author ka plan utha lo.
+  const [feedAuthorInfo, setFeedAuthorInfo] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    const hasPlan = (o) => Boolean(o?.subscription_plan || o?.active_plan || o?.role_subscription_plan || o?.subscription);
+    const base = profile || author || {};
+    if (loading || hasPlan(base) || hasPlan(author)) { setFeedAuthorInfo(null); return undefined; }
+    (async () => {
+      try {
+        const summary = await UserStore.getNewsFeedSummary?.({ skipBlockedUsers: true });
+        const items = (Array.isArray(summary?.items) ? summary.items : []).filter((it) => it?.author_subscription_plan);
+        const idStr = String(userId ?? profile?.id ?? '').trim();
+        const mail = String(resolvedEmail || profile?.email || '').trim().toLowerCase();
+        const nm = String(base?.name || base?.author_name || '').trim().toLowerCase();
+        let hit = items.find((it) => (idStr && String(it.author_id ?? '') === idStr)
+          || (mail && String(it.createdBy || it.author_email || '').trim().toLowerCase() === mail));
+        if (!hit && !idStr && !mail && nm) hit = items.find((it) => String(it.author_name || '').trim().toLowerCase() === nm);
+        if (alive && hit) {
+          setFeedAuthorInfo({
+            plan: hit.author_subscription_plan,
+            type: hit.author_subscription_type || '',
+            isSub: Boolean(hit.author_is_subscriber || hit.author_is_premium),
+          });
+        }
+        if (typeof __DEV__ !== 'undefined' && __DEV__) {
+          console.log('[PublicProfile plan debug] profile keys:', Object.keys(profile || {}).join(','), '| feed plan found:', Boolean(hit));
+        }
+      } catch { /* ignore */ }
+    })();
+    return () => { alive = false; };
+  }, [loading, profile, author, userId, resolvedEmail]);
+
   // ── Load profile + posts ────────────────────────────────────────────────────
   useEffect(() => {
     let active = true;
@@ -484,7 +519,28 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   }, [resolvedEmail, userId]);
   // ── Derived profile values ──────────────────────────────────────────────────
 
-    const display = profile || author || {};
+  // Server profile (GET /profile/{id}) kai baar subscription_plan nahi bhejta, jabki feed
+  // card ke paas plan hota hai -> profile "Common User" dikhata tha. Isliye plan na milne par
+  // navigation `author` param aur is user ke posts (author_subscription_plan) se plan lo.
+  const baseDisplay = profile || author || {};
+  const _hasPlanInfo = (o) => Boolean(o?.subscription_plan || o?.active_plan || o?.role_subscription_plan || o?.subscription);
+  const display = (() => {
+    if (_hasPlanInfo(baseDisplay)) return baseDisplay;
+    const postsList = Array.isArray(posts) ? posts : [];
+    const postWithPlan = postsList.find((p) => p?.author_subscription_plan);
+    const fallbackPlan = author?.subscription_plan || author?.active_plan || postWithPlan?.author_subscription_plan || feedAuthorInfo?.plan || null;
+    if (!fallbackPlan) return baseDisplay;
+    const fallbackIsSub = Boolean(
+      author?.is_subscribed || author?.author_is_subscriber || author?.author_is_premium || feedAuthorInfo?.isSub ||
+      postsList.some((p) => p?.author_is_subscriber || p?.author_is_premium)
+    );
+    return {
+      ...baseDisplay,
+      subscription_plan: fallbackPlan,
+      subscription_type: baseDisplay?.subscription_type || author?.subscription_type || postWithPlan?.author_subscription_type || feedAuthorInfo?.type || '',
+      is_subscribed: Boolean(baseDisplay?.is_subscribed) || fallbackIsSub,
+    };
+  })();
   const name = String(display?.name || display?.author_name || 'User').trim() || 'User';
   const roleLabel = String(display?.role_label || display?.author_role_label || '').trim();
   const state = String(display?.state || display?.author_state || '').trim();
@@ -498,7 +554,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     role: display?.role || display?.author_role,
     subscription_plan: display?.subscription_plan,
   }).key);
-  const latestIsPremium = !_hasRoleTier && Boolean(UserStore.hasBlueTick(profile || display));
+  const latestIsPremium = !_hasRoleTier && Boolean(UserStore.hasBlueTick(display));
   const seatName = latestIsPremium ? '' : String(display?.state_seat?.seat_name || display?.author_seat_name || '').trim();
   const seatId = latestIsPremium ? '' : String(display?.state_seat?.seat_id || display?.author_seat_id || '').trim();
   const roleId = latestIsPremium ? 'premium' : String(display?.role || display?.author_role || '').trim().toLowerCase();
@@ -545,7 +601,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const safePhotoUri = isValidImageUrl(photoUri) ? photoUri : '';
   // Never trust stale post/legacy flags: entitlement belongs to this profile's
   // active Premium Plan and is identical on web and Android.
-  const isVerified = !_hasRoleTier && Boolean(UserStore.hasBlueTick(profile || display));
+  const isVerified = !_hasRoleTier && Boolean(UserStore.hasBlueTick(display));
   const isSubscribedProfile = Boolean(
     display?.is_subscribed || display?.author_is_subscribed || ['basic', 'pro', 'premium'].includes(roleId)
   );
@@ -566,14 +622,17 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const tierPillLabel = (['representative', 'executive', 'chief'].includes(profileTier.key) && seatName) ? seatName : profileTier.label;
   // Badge/pill me SUBSCRIPTION ka naam dikhao (role tiers ke liye) — seat_name (jagah ka naam) nahi.
   const isRoleTier = ['representative', 'executive', 'chief'].includes(profileTier.key);
+  // Premium / Verified tier me bhi "Common User" ya generic "Premium User" ki jagah
+  // user ke kharide hue plan ka naam (jaise "Premium Plan") dikhao.
+  const isPaidPlanTier = ['premium', 'verified'].includes(profileTier.key);
   const subscriptionPillLabel = isRoleTier
     ? (getSubscriptionName(display) || rolePillText || tierPillLabel)
-    : tierPillLabel;
+    : (isPaidPlanTier ? (getSubscriptionName(display) || tierPillLabel) : tierPillLabel);
   // Referral code tab dikhta hai jab profile owner ne koi role / subscription / premium liya ho
   // (yaani tier common se upar ho) — visitor chahe Common user ho ya kuch bhi.
   const hasPaidAccess = profileTier.key !== 'common' || isSubscribedProfile;
   // Web / mobile-web par pehle common user ka pill gayab rehta tha jabki Android/iOS par 'Common User' dikhta tha
-  const shownPillText = rolePillText || tierPillLabel;
+  const shownPillText = (isPaidPlanTier ? subscriptionPillLabel : rolePillText) || tierPillLabel;
   const referralCode = hasPaidAccess ? rawReferralCode : '';
   // ID Card + Appointment Letter: sirf jab owner ne ROLE subscription liya ho (Premium/Verified/Common nahi).
   // Visitor koi bhi ho (Common bhi) use ye dikhna chahiye.
@@ -815,6 +874,9 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         state: p?.state || state, district: p?.district || district, taluka: p?.taluka || taluka,
         author_seat_name: p?.author_seat_name || seatName,
         author_seat_id: p?.author_seat_id || seatId,
+        subscription_plan: p?.author_subscription_plan || undefined,
+        subscription_type: p?.author_subscription_type || undefined,
+        is_subscribed: Boolean(p?.author_is_subscriber || p?.author_is_premium) || undefined,
       },
     });
   };
@@ -1082,7 +1144,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           </TouchableOpacity>
           <View style={styles.feedHeaderMain}>
             <View style={styles.feedNameRow}>
-              {rolePillText ? <View style={styles.feedRoleMiniPill}><Text style={styles.feedRoleMiniText}>{rolePillText}</Text></View> : null}
+              {(isPaidPlanTier ? subscriptionPillLabel : rolePillText) ? <View style={styles.feedRoleMiniPill}><Text style={styles.feedRoleMiniText}>{isPaidPlanTier ? subscriptionPillLabel : rolePillText}</Text></View> : null}
               <TouchableOpacity onPress={() => openAuthorProfile(p)} activeOpacity={0.8}>
                 <Text style={styles.feedName} numberOfLines={1}>{postAuthorName}</Text>
               </TouchableOpacity>

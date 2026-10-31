@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet,
+  View, TouchableOpacity, StyleSheet,
   ScrollView, Share, Linking, Clipboard, Platform, ImageBackground,
 } from 'react-native';
+import Text from '../components/RobotoText'; // Roboto (web + android + ios) — login pages jaisa
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { UserStore } from '../store/UserStore';
@@ -23,10 +24,6 @@ const buildReferMessage = (code = '', link = '') => (
 const PLATFORMS = [
   { id: 'whatsapp', label: 'WhatsApp', icon: 'logo-whatsapp', color: '#25D366', bg: '#e9fbe9', getUrl: (msg) => `https://wa.me/?text=${encodeURIComponent(msg)}` },
   { id: 'whatsapp_status', label: 'WhatsApp Status', icon: 'logo-whatsapp', color: '#128C7E', bg: '#e0f4f2', getUrl: (msg) => `https://wa.me/?text=${encodeURIComponent(msg)}` },
-  { id: 'instagram', label: 'Instagram', icon: 'logo-instagram', color: '#E1306C', bg: '#fde8ef', getUrl: () => 'https://www.instagram.com/' },
-  { id: 'facebook', label: 'Facebook', icon: 'logo-facebook', color: '#1877F2', bg: '#e7f0fd', getUrl: (_msg, link) => `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(link)}` },
-  { id: 'twitter', label: 'Twitter / X', icon: 'logo-twitter', color: '#1DA1F2', bg: '#e7f5fd', getUrl: (msg) => `https://twitter.com/intent/tweet?text=${encodeURIComponent(msg)}` },
-  { id: 'telegram', label: 'Telegram', icon: 'paper-plane-outline', color: '#229ED9', bg: '#e4f4fb', getUrl: (msg, link) => `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(msg)}` },
   { id: 'gmail', label: 'Gmail', icon: 'mail-outline', color: '#EA4335', bg: '#fde9e7', getUrl: (msg) => `https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent(`${APP_NAME} Referral`)}&body=${encodeURIComponent(msg)}` },
   {
     id: 'sms',
@@ -166,11 +163,6 @@ useEffect(() => {
       } catch (_e) {}
       return;
     }
-    if (platform.id === 'instagram') {
-      handleCopy(personalLink);
-      Linking.openURL('instagram://').catch(() => Linking.openURL('https://www.instagram.com/'));
-      return;
-    }
     const url = platform.getUrl(referMessage, personalLink);
     Linking.openURL(url).catch(() => {
       Share.share({ message: referMessage });
@@ -284,22 +276,44 @@ useEffect(() => {
       </View>
 
       <Text style={styles.sectionTitle}>Share via</Text>
-        <View style={styles.grid}>
-          {PLATFORMS.map((p) => (
-            <TouchableOpacity
-              key={p.id}
-              style={styles.platformCard}
-              onPress={() => handleShare(p)}
-              activeOpacity={0.75}
-            >
-              <View style={[styles.iconCircle, { backgroundColor: p.bg }]}>
-                <Ionicons name={p.icon} size={28} color={p.color} />
+        {(() => {
+          const [primary, ...others] = PLATFORMS;
+          return (
+            <>
+              <TouchableOpacity
+                style={[styles.primaryShare, { backgroundColor: primary.color }]}
+                onPress={() => handleShare(primary)}
+                activeOpacity={0.85}
+                accessibilityRole="button"
+                accessibilityLabel={`Share via ${primary.label}`}
+              >
+                <View style={styles.primaryIconCircle}>
+                  <Ionicons name={primary.icon} size={26} color={primary.color} />
+                </View>
+                <Text style={styles.primaryShareText}>Share on {primary.label}</Text>
+                <Ionicons name="chevron-forward" size={20} color="#ffffff" />
+              </TouchableOpacity>
+
+              <View style={styles.grid}>
+                {others.map((p) => (
+                  <TouchableOpacity
+                    key={p.id}
+                    style={styles.platformCard}
+                    onPress={() => handleShare(p)}
+                    activeOpacity={0.75}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Share via ${p.label}`}
+                  >
+                    <View style={[styles.iconCircle, { backgroundColor: p.bg }]}>
+                      <Ionicons name={p.icon} size={24} color={p.color} />
+                    </View>
+                    <Text style={styles.platformLabel} numberOfLines={1}>{p.label}</Text>
+                  </TouchableOpacity>
+                ))}
               </View>
-              <Text style={styles.platformLabel}>{p.label}</Text>
-              {p.note && <Text style={styles.platformNote}>{p.note}</Text>}
-            </TouchableOpacity>
-          ))}
-        </View>
+            </>
+          );
+        })()}
       </ScrollView>
     </View>
     </SafeAreaView>
@@ -316,7 +330,7 @@ const styles = StyleSheet.create({
     width: 36, height: 36,
     alignItems: 'center', justifyContent: 'center',
   },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: '#ffffff' },
+  headerTitle: { fontSize: 19, fontWeight: '700', color: '#ffffff' },
   content: { padding: 16, paddingBottom: 40 },
 webContent: {
   maxWidth: 720,
@@ -336,9 +350,9 @@ twoCol: {
     backgroundColor: '#1d4ed8', borderRadius: 20, padding: 24,
     alignItems: 'center', marginBottom: 14,
   },
-  bannerEmoji: { fontSize: 20, fontWeight: '900', color: '#ffffff', marginBottom: 8, letterSpacing: 2 },
-  bannerTitle: { fontSize: 22, fontWeight: '800', color: '#ffffff', marginBottom: 6 },
-  bannerSub: { fontSize: 13, color: '#bfdbfe', textAlign: 'center', lineHeight: 20 },
+  bannerEmoji: { fontSize: 22, fontWeight: '700', color: '#ffffff', marginBottom: 8, letterSpacing: 2 },
+  bannerTitle: { fontSize: 24, fontWeight: '700', color: '#ffffff', marginBottom: 6 },
+  bannerSub: { fontSize: 14, color: '#bfdbfe', textAlign: 'center', lineHeight: 22 },
   statsCard: {
     flexDirection: 'row', backgroundColor: '#ffffff', borderRadius: 16,
     borderWidth: 1, borderColor: '#e2e8f0', paddingVertical: 16,
@@ -346,26 +360,26 @@ twoCol: {
   },
   statItem: { flex: 1, alignItems: 'center', paddingHorizontal: 6 },
   statDivider: { width: 1, backgroundColor: '#e2e8f0' },
-  statValue: { fontSize: 16, fontWeight: '900', color: '#0f172a', textAlign: 'center' },
-  statLabel: { fontSize: 11, color: '#64748b', fontWeight: '700', marginTop: 4, textAlign: 'center' },
+  statValue: { fontSize: 18, fontWeight: '700', color: '#0f172a', textAlign: 'center' },
+  statLabel: { fontSize: 12.5, color: '#64748b', fontWeight: '500', marginTop: 4, textAlign: 'center' },
   nextBox: {
     backgroundColor: '#ecfdf5', borderColor: '#bbf7d0', borderWidth: 1,
     borderRadius: 14, padding: 12, marginBottom: 14,
   },
-  nextText: { color: '#166534', fontSize: 13, fontWeight: '800' },
-  nextSub: { color: '#15803d', fontSize: 12, fontWeight: '700', marginTop: 3 },
+  nextText: { color: '#166534', fontSize: 14.5, fontWeight: '700' },
+  nextSub: { color: '#15803d', fontSize: 13.5, fontWeight: '500', marginTop: 3 },
   linkBox: {
     backgroundColor: '#ffffff', borderRadius: 16, padding: 16,
     borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 20,
   },
   linkLabel: {
-    fontSize: 11, color: '#64748b', fontWeight: '700',
+    fontSize: 12.5, color: '#64748b', fontWeight: '500',
     marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.6,
   },
   codeRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  codeText: { flex: 1, fontSize: 18, color: '#0f172a', fontWeight: '900', letterSpacing: 0.4 },
+  codeText: { flex: 1, fontSize: 20, color: '#0f172a', fontWeight: '700', letterSpacing: 0.4 },
   linkRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  linkText: { flex: 1, fontSize: 13, color: '#334155', fontWeight: '500' },
+  linkText: { flex: 1, fontSize: 14.5, color: '#334155', fontWeight: '400' },
   copyBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 5,
     backgroundColor: '#2563eb', paddingHorizontal: 14, paddingVertical: 9,
@@ -376,8 +390,8 @@ twoCol: {
     justifyContent: 'center', backgroundColor: '#eff6ff',
   },
   copyBtnDone: { backgroundColor: '#16a34a' },
-  copyBtnText: { fontSize: 13, color: '#fff', fontWeight: '700' },
-  sectionTitle: { fontSize: 15, fontWeight: '800', color: '#0f172a', marginBottom: 12 },
+  copyBtnText: { fontSize: 14.5, color: '#fff', fontWeight: '500' },
+  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#0f172a', marginBottom: 12 },
   tierBox: {
     backgroundColor: '#ffffff', borderRadius: 16, borderWidth: 1,
     borderColor: '#e2e8f0', marginBottom: 22, overflow: 'hidden',
@@ -386,21 +400,36 @@ twoCol: {
     flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14,
     paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9',
   },
-  tierRank: { flex: 1, fontSize: 13, fontWeight: '900', color: '#0f172a' },
-  tierMeta: { width: 96, fontSize: 12, fontWeight: '700', color: '#64748b', textAlign: 'right' },
-  tierBonus: { width: 78, fontSize: 12, fontWeight: '900', color: '#2563eb', textAlign: 'right' },
+  tierRank: { flex: 1, fontSize: 15, fontWeight: '700', color: '#0f172a' },
+  tierMeta: { width: 112, fontSize: 13.5, fontWeight: '500', color: '#64748b', textAlign: 'right' },
+  tierBonus: { width: 88, fontSize: 14, fontWeight: '700', color: '#2563eb', textAlign: 'right' },
+  primaryShare: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16, marginBottom: 12,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 6px 16px rgba(37,211,102,0.28)', cursor: 'pointer' }
+      : { elevation: 3, shadowColor: '#25D366', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } }),
+  },
+  primaryIconCircle: {
+    width: 44, height: 44, borderRadius: 22, backgroundColor: '#ffffff',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  primaryShareText: { flex: 1, fontSize: 17, color: '#ffffff', fontWeight: '700' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   platformCard: {
-    width: '29%', alignItems: 'center',
+    flexBasis: '47%', flexGrow: 1,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: '#ffffff', borderRadius: 16,
-    paddingVertical: 16, paddingHorizontal: 8,
+    paddingVertical: 12, paddingHorizontal: 12,
     borderWidth: 1, borderColor: '#e2e8f0',
-    elevation: 1,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 1px 3px rgba(15,23,42,0.06)', cursor: 'pointer' }
+      : { elevation: 1 }),
   },
   iconCircle: {
-    width: 56, height: 56, borderRadius: 16,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 8,
+    width: 46, height: 46, borderRadius: 14,
+    alignItems: 'center', justifyContent: 'center',
   },
-  platformLabel: { fontSize: 12, color: '#334155', fontWeight: '700', textAlign: 'center' },
+  platformLabel: { flex: 1, fontSize: 15, color: '#1e293b', fontWeight: '500' },
   platformNote: { fontSize: 10, color: '#94a3b8', textAlign: 'center', marginTop: 2 },
 });

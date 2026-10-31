@@ -716,7 +716,8 @@ export default function NewsDetailsScreen({ route, navigation }) {
   }, [resolvedVideoUri, videoUri]);
 
   const canPlayVideo = Boolean(effectiveVideoUri) && isPlayableVideoSource(effectiveVideoUri);
-  const player = useVideoPlayer(canPlayVideo ? { uri: effectiveVideoUri } : null, (p) => {
+  // Video ab MediaGallery ke apne player se chalta hai; yahan dusra player (double download) nahi banta.
+  const player = useVideoPlayer(null, (p) => {
     p.loop = false;
   });
 
@@ -1047,16 +1048,25 @@ export default function NewsDetailsScreen({ route, navigation }) {
                         <Text style={styles.storyAuthorName}>{article.author_name}</Text>
                         {authorVerified ? <VerifiedBadge size={20} /> : null}
                       </View>
-                      <Text style={styles.storyAuthorRoleText}>
-                        {(() => {
-                          const planForRole = article.author_subscription_plan || null;
-                          const planRoleLabel = (planForRole?.role_names?.length
-                            ? planForRole.role_names
-                            : String(UserStore.getSeatRoleNameForPlanRoleId(planForRole?.role_id_raw || planForRole?.role_id || '') || '').split(', ')
-                          ).filter(Boolean).join(', ');
-                          return planRoleLabel || article.author_role_label || 'Reporter';
-                        })()}
-                      </Text>
+                      {(() => {
+                        // Plan expire / inactive => koi plan ya role label nahi dikhana
+                        const planForRole = liveAuthor?.subscription_plan || article.author_subscription_plan || null;
+                        const planActive = liveAuthor
+                          ? UserStore.hasActiveRolePlan(liveAuthor)
+                          : UserStore.hasActiveRolePlan({
+                              subscription_plan: article.author_subscription_plan || null,
+                              is_subscribed: article.author_is_subscribed ?? article.author_is_premium,
+                            });
+                        if (!planActive) return null;
+                        const _rn = planForRole?.role_names;
+                        const _rnList = Array.isArray(_rn) ? _rn : (typeof _rn === 'string' && _rn.trim() ? _rn.split(',') : []);
+                        const planRoleLabel = (_rnList.length
+                          ? _rnList
+                          : String(UserStore.getSeatRoleNameForPlanRoleId(planForRole?.role_id_raw || planForRole?.role_id || '') || '').split(', ')
+                        ).map((n) => String(n || '').trim()).filter(Boolean).join(', ');
+                        const label = planRoleLabel || article.author_role_label || 'Reporter';
+                        return <Text style={styles.storyAuthorRoleText}>{label}</Text>;
+                      })()}
                     </View>
                   </View>
                  {false ? (
@@ -1117,34 +1127,15 @@ export default function NewsDetailsScreen({ route, navigation }) {
                   }}
                 >
                   {canPlayVideo ? (
-                    <TouchableOpacity style={styles.videoContainer} activeOpacity={1} onPress={handleVideoPress}>
-                      <VideoView
-                        player={player}
-                        style={styles.videoView}
-                        contentFit="contain"
-                        nativeControls={false}
-                        fullscreenOptions={{ enabled: true }}
-                        playsInline
-                        onFirstFrameRender={() => { if (!isVideoPlaying) setShowVideoPoster(false); }}
-                      />
-                      {showVideoPoster && !isVideoPlaying ? (
-                        <>
-                          {heroImageSource ? (
-                            <Image source={heroImageSource} style={styles.videoPoster} resizeMode="contain" />
-                          ) : null}
-                          <View style={styles.playButtonOverlay}>
-                            <Ionicons name="play-circle" size={68} color="#ffffff" />
-                            <Text style={styles.playButtonText}>Tap to Play</Text>
-                          </View>
-                        </>
-                      ) : null}
-                      {!isVideoPlaying && !showVideoPoster ? (
-                        <View style={styles.playButtonOverlay}>
-                          <Ionicons name="play-circle" size={68} color="#ffffff" />
-                          <Text style={styles.playButtonText}>Tap to Play</Text>
-                        </View>
-                      ) : null}
-                    </TouchableOpacity>
+                    // News card jaisa hi player: play/pause, -5/+15, progress line + timer, speed, fullscreen.
+                    // Video poora dikhta hai (crop/stretch nahi) — har laptop / phone par same.
+                    <MediaGallery
+                      key={effectiveVideoUri}
+                      images={[]}
+                      video={effectiveVideoUri}
+                      width={Math.max(1, heroWrapWidth || Math.min(responsiveWidth - (isCompactLayout ? 32 : 64), 668))}
+                      maxHeight={heroFrameHeight}
+                    />
                   ) : article.images.length > 1 ? (
                     <MediaGallery
                       images={resolvedGalleryImages}

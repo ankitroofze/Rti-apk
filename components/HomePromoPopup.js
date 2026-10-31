@@ -34,6 +34,66 @@ const AD_SECONDS = 5;          // har ad ka fixed time (image + video)
 const AD_FIT = 'contain';      // ad poora dikhta hai (crop nahi); khaali jagah BLUR background se bharti hai, black se nahi
 const IS_WEB = Platform.OS === 'web';
 
+// ── WEB video: asli <video> tag. Isse video ka asli size (videoWidth/Height) turant milta hai aur
+// popup card video ke aspect ratio ke hisaab se banta hai => poora video bina crop / bina chhote box ke dikhta hai.
+function PromoVideoWeb({ uri, onSize }) {
+  const [muted, , toggleMuted] = useGlobalMuted();
+  const elRef = useRef(null);
+
+  useEffect(() => {
+    const el = elRef.current;
+    if (el) el.muted = Boolean(muted);
+  }, [muted]);
+
+  useEffect(() => {
+    const el = elRef.current;
+    if (!el) return undefined;
+    el.muted = Boolean(getGlobalMuted());
+    const tryPlay = () => {
+      const pr = el.play?.();
+      if (pr && pr.catch) {
+        // Browser unmuted autoplay block kare to muted karke chalao
+        pr.catch(() => { try { el.muted = true; el.play?.().catch(() => {}); } catch (_) { /* ignore */ } });
+      }
+    };
+    tryPlay();
+    return () => { try { el.pause?.(); } catch (_) { /* ignore */ } };
+  }, [uri]);
+
+  const reportSize = (e) => {
+    const v = e?.target;
+    if (v?.videoWidth && v?.videoHeight && onSize) onSize({ w: v.videoWidth, h: v.videoHeight });
+  };
+
+  return (
+    <View style={StyleSheet.absoluteFill}>
+      {React.createElement('video', {
+        ref: elRef,
+        src: uri,
+        autoPlay: true,
+        loop: true,
+        playsInline: true,
+        controls: false,
+        preload: 'auto',
+        onLoadedMetadata: reportSize,
+        style: {
+          width: '100%', height: '100%', display: 'block',
+          objectFit: 'contain', backgroundColor: '#000', pointerEvents: 'none',
+        },
+      })}
+      <TouchableOpacity
+        style={styles.muteBtn}
+        onPress={toggleMuted}
+        activeOpacity={0.8}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        accessibilityLabel={muted ? 'Unmute' : 'Mute'}
+      >
+        <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={22} color="#fff" />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 // ── Video ad (muted autoplay, 5 sec ke baad parent agla ad / ruk jaata hai) ──
 function PromoVideo({ uri, poster, onSize }) {
   const [muted, , toggleMuted] = useGlobalMuted();
@@ -111,8 +171,8 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
   const insets = useSafeAreaInsets();
   const { width: winW, height: winH } = useWindowDimensions();
   // Web: chhota centered popup card. Mobile: poori screen.
-  const cardW = Math.min(440, winW * 0.92);
-  const cardH = Math.min(760, winH * 0.8);
+  let cardW = Math.min(440, winW * 0.92);
+  let cardH = Math.min(760, winH * 0.8);
   const topPad = IS_WEB ? 14 : (insets.top || StatusBar.currentHeight || 24) + 8;
   const bottomPad = IS_WEB ? 16 : Math.max(insets.bottom, 12) + 6;
 
@@ -234,6 +294,20 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
   const videoUri = String(current.video || '').trim();
   const imageUri = String(current.image || current.brandLogo || '').trim();
 
+  // ✅ WEB + VIDEO: popup card ko video ke asli aspect ratio par fit karo (crop nahi, chhota box nahi).
+  const webVideoFit = IS_WEB && Boolean(videoUri);
+  if (webVideoFit && mediaNatural?.w && mediaNatural?.h) {
+    const maxW = Math.min(winW * 0.94, 960);
+    const maxH = winH * 0.9;
+    const sc = Math.min(maxW / mediaNatural.w, maxH / mediaNatural.h);
+    cardW = Math.max(280, Math.round(mediaNatural.w * sc));
+    cardH = Math.max(200, Math.round(mediaNatural.h * sc));
+  } else if (webVideoFit) {
+    // metadata aane tak bada, neutral card
+    cardW = Math.min(640, winW * 0.94);
+    cardH = Math.min(winH * 0.7, cardW * 0.5625);
+  }
+
   // 'contain' ke hisaab se image/video jitni jagah me dikh rahi hai utna hi tappable area
   let hit = { width: '100%', height: '100%' };
   // Video: always use the full media area with 'contain' so the WHOLE video is visible (track metadata can be wrong/rotated).
@@ -253,7 +327,7 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
       {/* Ad media — top/bottom bar se bachke beech me. Container touch nahi leta (blur par tap = kuch nahi),
           sirf andar ka asli image/video wala box tappable hai. */}
       <View
-        style={[styles.mediaArea, styles.mediaAreaCenter, { top: topPad + 52, bottom: bottomPad }]}
+        style={[styles.mediaArea, styles.mediaAreaCenter, webVideoFit ? { top: 0, bottom: 0 } : { top: topPad + 52, bottom: bottomPad }]}
         pointerEvents="box-none"
         onLayout={(e) => {
           const { width, height } = e.nativeEvent.layout;
@@ -266,7 +340,9 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
           onPress={handlePress}
         >
           {videoUri ? (
-            <PromoVideo key={`v-${currentKey}`} uri={videoUri} poster={imageUri} onSize={setMediaNatural} />
+            IS_WEB
+              ? <PromoVideoWeb key={`v-${currentKey}`} uri={videoUri} onSize={setMediaNatural} />
+              : <PromoVideo key={`v-${currentKey}`} uri={videoUri} poster={imageUri} onSize={setMediaNatural} />
           ) : (
             <Image
               key={`i-${currentKey}`}
@@ -277,6 +353,8 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
           )}
         </TouchableOpacity>
       </View>
+
+      {webVideoFit ? <View style={styles.topScrim} pointerEvents="none" /> : null}
 
       {/* Top: progress bars + label + skip */}
       <View style={[styles.topBar, { paddingTop: topPad }]} pointerEvents="box-none">
@@ -358,6 +436,7 @@ const styles = StyleSheet.create({
   blurTint: { backgroundColor: 'rgba(15,23,42,0.45)' },
   noImageBg: { backgroundColor: '#1e293b' },
   mediaArea: { position: 'absolute', left: 0, right: 0 },
+  topScrim: { position: 'absolute', top: 0, left: 0, right: 0, height: 84, backgroundColor: 'rgba(0,0,0,0.28)' },
   mediaAreaCenter: { alignItems: 'center', justifyContent: 'center' },
   topBar: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 14 },
   progressRow: { flexDirection: 'row', gap: 4 },

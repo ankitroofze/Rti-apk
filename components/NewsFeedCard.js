@@ -27,6 +27,7 @@ import { getAdRedirectMeta, openAdRedirect } from '../utils/adRedirect';
 import styles from './NewsFeedCardStyles';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getProfileTier, resolveRoleTitle, cleanRoleNames } from '../utils/profileHelpers';
+import { PROFILE_TIERS } from '../constants/profileConstants';
 import MediaGallery from './MediaGallery';
 import { MediaLogo } from './MediaBrandOverlay';
 import NewsFrameOverlay, { getFrameBoxAspect, getFrameWindow, getLowerBannerHeight } from './NewsFrameOverlay';
@@ -453,7 +454,7 @@ function VideoPopupModal({ uri, title, onClose }) {
           </View>
           <VideoView
             player={player}
-            style={{ width: boxW, height: boxH, backgroundColor: '#000' }}
+            style={[{ width: boxW, height: boxH, backgroundColor: '#000' }, Platform.OS === 'web' ? { objectFit: 'contain' } : null]}
             contentFit="contain"
             nativeControls
             fullscreenOptions={{ enabled: true }}
@@ -1664,11 +1665,19 @@ const handleLike = async () => {
   ).trim();
   // Backend kabhi role ki numeric id ("6") bhejta hai -> usse role naam banao, number kabhi mat dikhao.
   const _mapRoleId = (id) => { try { return UserStore.getSeatRoleNameForPlanRoleId?.(id) || ''; } catch { return ''; } };
-  const seatLabel =
+  // ✅ Plan expire ho gaya (ya active nahi) => koi bhi plan / role / premium pill nahi dikhana.
+  const authorPlanActive = liveAuthorProfile
+    ? UserStore.hasActiveRolePlan(liveAuthorProfile)
+    : UserStore.hasActiveRolePlan({
+        subscription_plan: story.author_subscription_plan || null,
+        state_seat: story.author_state_seat || (story.author_seat_id ? { seat_id: story.author_seat_id } : null),
+        is_subscribed: (story.author_is_subscribed ?? story.author_is_subscriber ?? story.author_is_premium),
+      });
+  const seatLabel = !authorPlanActive ? '' :
     resolveRoleTitle({ state_seat: { seat_id: authorSeatId }, subscription_plan: authorPlanForRole }, planRoleNames.join(', '), _mapRoleId) ||
     cleanRoleNames(String(authorPlanForRole?.plan_name || authorPlanForRole?.name || '').trim(), _mapRoleId) ||
     cleanRoleNames(String(liveAuthorProfile?.role_label || story.author_role_label || '').trim(), _mapRoleId);
-  const authorTier = getProfileTier({
+  const authorTier = !authorPlanActive ? PROFILE_TIERS.common : getProfileTier({
     seat_id: liveAuthorProfile?.state_seat?.seat_id || story.author_seat_id || story.author_state_seat?.seat_id,
     role: liveAuthorProfile?.role || story.author_role,
     subscription_type: liveAuthorProfile?.subscription_type || story.author_subscription_type,
@@ -1830,7 +1839,7 @@ const handleLike = async () => {
           {canPlayVideo ? (
             <>
               {player ? (
-                <VideoView player={player} style={[StyleSheet.absoluteFill, { width: '100%', height: '100%' }]} contentFit="contain" nativeControls={false} fullscreenOptions={{ enabled: false }} playsInline onFirstFrameRender={() => { setShowVideoPoster(false); setVideoBuffering(false); }} />
+                <VideoView player={player} style={[StyleSheet.absoluteFill, { width: '100%', height: '100%', backgroundColor: '#000' }, Platform.OS === 'web' ? { objectFit: 'contain' } : null]} contentFit="contain" nativeControls={false} fullscreenOptions={{ enabled: false }} playsInline onFirstFrameRender={() => { setShowVideoPoster(false); setVideoBuffering(false); }} />
               ) : null}
               {videoBuffering && !videoPaused ? (
                 <View style={styles.videoLoadingOverlay} pointerEvents="none"><ActivityIndicator size="large" color="#ffffff" /></View>

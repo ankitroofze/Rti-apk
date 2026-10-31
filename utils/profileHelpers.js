@@ -34,10 +34,20 @@ export function getProfileTier(profileLike = {}) {
   // profile, author pill aur Follow button ek hi colour me refresh hon.
   const plan = profileLike?.subscription_plan || profileLike?.active_plan || null;
   const planStatus = String(plan?.status || plan?.subscription_status || '').toLowerCase();
-  const hasPlan = Boolean(plan && (plan?.plan_id || plan?.id || plan?.plan_name || plan?.name));
+  // Plan ki expiry nikal chuki ho to usko plan hi mat maano (premium tier / pill gayab)
+  const _planExpiry = plan?.expires_at || plan?.expiry || plan?.end_date;
+  const _planExpiryStr = _planExpiry ? String(_planExpiry).trim() : '';
+  const _planExpiryMs = _planExpiryStr
+    ? (/^\d{4}-\d{2}-\d{2}$/.test(_planExpiryStr)
+        ? new Date(`${_planExpiryStr}T23:59:59`).getTime()
+        : new Date(_planExpiryStr.includes(' ') && !_planExpiryStr.includes('T') ? _planExpiryStr.replace(' ', 'T') : _planExpiryStr).getTime())
+    : NaN;
+  const planExpired = Number.isFinite(_planExpiryMs) && Date.now() > _planExpiryMs;
+  const hasPlan = Boolean(!planExpired && plan && (plan?.plan_id || plan?.id || plan?.plan_name || plan?.name));
   const subscriptionRole = [profileLike?.subscription_type, profileLike?.role]
     .map((value) => String(value || '').trim().toLowerCase())
     .some((value) => ['basic', 'pro', 'premium'].includes(value));
+  if (planExpired) return PROFILE_TIERS.common;
   if (profileLike?.is_subscribed || subscriptionRole || (hasPlan && !['cancelled', 'canceled', 'expired', 'inactive'].includes(planStatus))) return PROFILE_TIERS.premium;
   return PROFILE_TIERS.common;
 }
