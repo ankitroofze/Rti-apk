@@ -328,6 +328,32 @@ const sb = StyleSheet.create({
   text: { fontSize: 12, fontFamily: FONT.medium, color: C.textBody },
 });
 
+// ✅ EDIT MODE helpers: server se aaye HTML/entities ko saaf text banao, aur existing media nikalo.
+const cleanExistingText = (value) => String(value || '')
+  .replace(/<br\s*\/?>/gi, '\n')
+  .replace(/<\/(div|p|li)>\s*<(div|p|li)[^>]*>/gi, '\n')
+  .replace(/<[^>]*>/g, '')
+  .replace(/&nbsp;/gi, ' ')
+  .replace(/&lt;/gi, '<')
+  .replace(/&gt;/gi, '>')
+  .replace(/&quot;/gi, '"')
+  .replace(/&#39;/gi, "'")
+  .replace(/&amp;/gi, '&')
+  .trim();
+const getExistingImages = (item) => (
+  Array.isArray(item?.images) ? item.images.filter(Boolean) : (item?.image ? [item.image] : [])
+);
+const getExistingVideo = (item) => (
+  item?.video ? (typeof item.video === 'string' ? item.video : (item.video.uri || null)) : null
+);
+const getExistingMediaType = (item) => {
+  if (!item) return 'None';
+  if (getExistingImages(item).length) return 'Image';
+  if (getExistingVideo(item)) return 'Video';
+  if (item.file) return 'File';
+  return Number(item.type) === 2 ? 'Video' : 'None';
+};
+
 const MAX_VIDEO_MB = 10;
 const MAX_VIDEO_BYTES = MAX_VIDEO_MB * 1024 * 1024;
 const VIDEO_TOO_LARGE_MSG = `Video size is too large. Please post a video of ${MAX_VIDEO_MB}MB or less.`;
@@ -393,23 +419,23 @@ export default function AddNewsScreen({ navigation, route }) {
   const [locationDistrict, setLocationDistrict] = useState('');
   const [locationTaluka, setLocationTaluka] = useState('');
 
-  const [title, setTitle] = useState('');
-  const [subtitle, setSubtitle] = useState('');
-  const [descriptionText, setDescriptionText] = useState('');
-  const [reportType, setReportType] = useState('');
-  const [roleType, setRoleType] = useState('');
+  const [title, setTitle] = useState(() => cleanExistingText(editItem?.title));
+  const [subtitle, setSubtitle] = useState(() => cleanExistingText(editItem?.subtitle || editItem?.sub_tittle));
+  const [descriptionText, setDescriptionText] = useState(() => cleanExistingText(editItem?.description || editItem?.full_description || editItem?.fullDescription));
+  const [reportType, setReportType] = useState(editItem?.report_type || editItem?.category || editItem?.reportType || '');
+  const [roleType, setRoleType] = useState(editItem?.role_type || editItem?.roleType || '');
   const [titleExpanded, setTitleExpanded] = useState(false);
   const [subtitleExpanded, setSubtitleExpanded] = useState(false);
   const [postType, setPostType] = useState(Number(editItem?.type) === 2 ? 2 : 1); // 1 = News, 2 = Feed (Reel)
-  const [mediaType, setMediaType] = useState(Number(editItem?.type) === 2 ? 'Video' : 'None');
-  const [images, setImages] = useState([]);
+  const [mediaType, setMediaType] = useState(() => getExistingMediaType(editItem));
+  const [images, setImages] = useState(() => getExistingImages(editItem));
   // Breaking-news template: '' = koi template nahi, warna template id (glossy2 / glossy1 / redbar / banner)
   const [frameTemplate, setFrameTemplate] = useState(editItem?.useFrame ? (editItem?.frameTemplate || DEFAULT_FRAME_ID) : '');
   const useFrame = Boolean(frameTemplate);
-  const [video, setVideo] = useState(null);
+  const [video, setVideo] = useState(() => getExistingVideo(editItem));
   const [videoThumb, setVideoThumb] = useState(null);
-  const [attachment, setAttachment] = useState(null);
-  const [selectedState, setSelectedState] = useState('');
+  const [attachment, setAttachment] = useState(() => (editItem?.file ? { uri: typeof editItem.file === 'string' ? editItem.file : (editItem.file.uri || ''), name: editItem.file_name || editItem.file?.name || 'attachment' } : null));
+  const [selectedState, setSelectedState] = useState(editItem?.state || '');
   const [statePickerVisible, setStatePickerVisible] = useState(false);
   const [reportPickerVisible, setReportPickerVisible] = useState(false);
   const [rolePickerVisible, setRolePickerVisible] = useState(false);
@@ -421,11 +447,11 @@ export default function AddNewsScreen({ navigation, route }) {
 
   const videoOriginalUriRef = useRef(null);
   const titleEditorRef = useRef(null);
-  const titleHtmlRef = useRef('');
+  const titleHtmlRef = useRef(isEditMode && title ? plainToHtml(title) : '');
   const subtitleEditorRef = useRef(null);
-  const subtitleHtmlRef = useRef('');
+  const subtitleHtmlRef = useRef(isEditMode && subtitle ? plainToHtml(subtitle) : '');
   const descriptionEditorRef = useRef(null);
-  const descriptionHtmlRef = useRef('');
+  const descriptionHtmlRef = useRef(isEditMode && descriptionText ? plainToHtml(descriptionText) : '');
   const [editorReady, setEditorReady] = useState(false);
 
   useEffect(() => {
@@ -459,7 +485,8 @@ const admin = user.role === 'admin';
         try { setSavedDraft(JSON.parse(rawDraft)); } catch { await AsyncStorage.removeItem(`${NEWS_DRAFT_PREFIX}${String(user.email || '').toLowerCase()}`); }
       }
 
-      if (hasSubscription && user.location_complete) {
+      // Edit mode me post ka apna state rehne do (user ka state upar se overwrite nahi karna)
+      if (!isEditMode && hasSubscription && user.location_complete) {
         setSelectedState(user.state || '');
       }
     };
@@ -490,9 +517,21 @@ const admin = user.role === 'admin';
   useEffect(() => {
     if (!isEditMode || !editorReady || !editItem) return;
 
-    const existingTitle = editItem.title || '';
-    const existingSubtitle = editItem.subtitle || editItem.sub_tittle || '';
-    const existingDescription = editItem.description || '';
+    // Server se HTML aaye to bhi form me saaf text dikhe (tags nahi) — user seedha edit kar sake
+    const cleanExisting = (value) => String(value || '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(div|p|li)>\s*<(div|p|li)[^>]*>/gi, '\n')
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/&amp;/gi, '&')
+      .trim();
+    const existingTitle = cleanExisting(editItem.title);
+    const existingSubtitle = cleanExisting(editItem.subtitle || editItem.sub_tittle);
+    const existingDescription = cleanExisting(editItem.description || editItem.full_description || editItem.fullDescription);
 
     setTitle(existingTitle);
     setSubtitle(existingSubtitle);
@@ -520,6 +559,63 @@ const admin = user.role === 'admin';
     descriptionEditorRef.current?.setContentHTML(descriptionHtmlRef.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isEditMode, editorReady, editItem]);
+
+  // ✅ EDIT MODE: list se aaya item adhura ho (ya params kho jayein) to server se taaza poori news laao
+  // aur jo fields abhi khaali hain unhe bhar do. User ne jo already type/badla hai use overwrite nahi karte.
+  const [fetchedEdit, setFetchedEdit] = useState(null);
+  useEffect(() => {
+    if (!isEditMode || !editItem?.id) return undefined;
+    let alive = true;
+    (async () => {
+      try {
+        const summary = await UserStore.getNewsFeedSummary({ focusItemId: String(editItem.id), feedType: 'all' });
+        const match = Array.isArray(summary?.items)
+          ? summary.items.find((it) => String(it.id) === String(editItem.id))
+          : null;
+        if (alive && match) setFetchedEdit(match);
+      } catch { /* list wala item hi kaafi hai */ }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEditMode, editItem?.id]);
+
+  useEffect(() => {
+    if (!isEditMode || !editorReady || !fetchedEdit) return;
+    const clean = (value) => String(value || '')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(div|p|li)>\s*<(div|p|li)[^>]*>/gi, '\n')
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&lt;/gi, '<')
+      .replace(/&gt;/gi, '>')
+      .replace(/&quot;/gi, '"')
+      .replace(/&#39;/gi, "'")
+      .replace(/&amp;/gi, '&')
+      .trim();
+    const fTitle = clean(fetchedEdit.title);
+    const fDesc = clean(fetchedEdit.description);
+    if (!title.trim() && fTitle) {
+      setTitle(fTitle);
+      titleHtmlRef.current = plainToHtml(fTitle);
+      titleEditorRef.current?.setContentHTML(titleHtmlRef.current);
+    }
+    if (!descriptionText.trim() && fDesc) {
+      setDescriptionText(fDesc);
+      descriptionHtmlRef.current = plainToHtml(fDesc);
+      descriptionEditorRef.current?.setContentHTML(descriptionHtmlRef.current);
+    }
+    if (!reportType) setReportType(fetchedEdit.report_type || fetchedEdit.category || '');
+    if (!selectedState && fetchedEdit.state) setSelectedState(fetchedEdit.state);
+    if (mediaType === 'None' || (mediaType === 'Image' && images.length === 0)) {
+      const fImages = Array.isArray(fetchedEdit.images) ? fetchedEdit.images.filter(Boolean) : [];
+      if (fImages.length) { setMediaType('Image'); setImages(fImages); }
+      else if (fetchedEdit.video && !video) {
+        setMediaType('Video');
+        setVideo(typeof fetchedEdit.video === 'string' ? fetchedEdit.video : (fetchedEdit.video.uri || null));
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchedEdit, editorReady]);
 
   // ============================================================
   // Everything above this line is a hook — safe to bail out now.
@@ -1346,6 +1442,7 @@ console.log("Platform:", Platform.OS);
                 {Platform.OS === 'web' ? (
                   <WebRichEditor
                     ref={titleEditorRef}
+                    initialHtml={isEditMode ? (editItem?.title || '') : ''}
                     style={[s.richEditor, titleExpanded && s.richEditorExpanded]}
                     placeholder="Enter news title..."
                     onChange={(html) => { titleHtmlRef.current = html; setTitle(htmlToPlain(html)); }}
@@ -1409,6 +1506,7 @@ console.log("Platform:", Platform.OS);
                 {Platform.OS === 'web' ? (
                   <WebRichEditor
                     ref={descriptionEditorRef}
+                    initialHtml={isEditMode ? (editItem?.description || editItem?.full_description || editItem?.fullDescription || '') : ''}
                     style={[s.richEditor, { minHeight: 140 }]}
                     placeholder="Enter description..."
                     onChange={(html) => {

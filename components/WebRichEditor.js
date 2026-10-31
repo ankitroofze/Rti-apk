@@ -7,15 +7,33 @@ import React, {
 } from 'react';
 import { StyleSheet, TextInput, View } from 'react-native';
 
+// Web par ye plain TextInput hai, isliye HTML (<div>..</div>, <br/>, &amp; ...) ko seedha plain text banakar dikhate hain.
+// Warna edit karte waqt field me tags dikhte the.
+const htmlToDisplayText = (html) => {
+  const str = String(html || '');
+  if (!/<[a-z!/][^>]*>|&(nbsp|amp|lt|gt|quot|#39);/i.test(str)) return str;
+  return str
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(div|p|li|h[1-6])>\s*<(div|p|li|h[1-6])[^>]*>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&amp;/gi, '&')
+    .trim();
+};
+
 const WebRichEditor = forwardRef(function WebRichEditor(
-  { value = '', onChange, placeholder = '', style },
+  { value = '', initialHtml = '', onChange, placeholder = '', style },
   ref
 ) {
   const inputRef = useRef(null);
-  const [text, setText] = useState(value || '');
+  const [text, setText] = useState(htmlToDisplayText(value || initialHtml || ''));
 
   useEffect(() => {
-    setText(value || '');
+    if (value) setText(htmlToDisplayText(value));
   }, [value]);
 
   const updateText = (nextValue) => {
@@ -25,7 +43,7 @@ const WebRichEditor = forwardRef(function WebRichEditor(
 
   useImperativeHandle(ref, () => ({
     setContentHTML: (nextValue = '') => {
-      const normalized = typeof nextValue === 'string' ? nextValue : '';
+      const normalized = typeof nextValue === 'string' ? htmlToDisplayText(nextValue) : '';
       updateText(normalized);
     },
     getContentHtml: () => text,

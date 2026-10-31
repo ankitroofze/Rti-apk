@@ -1109,6 +1109,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
                     (!canPlayVideo && article.images.length > 1)
                       ? { height: heroFrameHeight + 26, backgroundColor: 'transparent' }
                       : { height: heroFrameHeight },
+                    canPlayVideo && { backgroundColor: '#000000' },
                   ]}
                   onLayout={(e) => {
                     const w = Math.round(e.nativeEvent.layout.width);
@@ -1120,7 +1121,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
                       <VideoView
                         player={player}
                         style={styles.videoView}
-                        contentFit="cover"
+                        contentFit="contain"
                         nativeControls={false}
                         fullscreenOptions={{ enabled: true }}
                         playsInline
@@ -1129,7 +1130,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
                       {showVideoPoster && !isVideoPlaying ? (
                         <>
                           {heroImageSource ? (
-                            <Image source={heroImageSource} style={styles.videoPoster} resizeMode="cover" />
+                            <Image source={heroImageSource} style={styles.videoPoster} resizeMode="contain" />
                           ) : null}
                           <View style={styles.playButtonOverlay}>
                             <Ionicons name="play-circle" size={68} color="#ffffff" />
@@ -1521,9 +1522,9 @@ const styles = StyleSheet.create({
   storyHeroImage: { width: '100%', height: '100%' },
   imagePlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f1f5f9' },
   imagePlaceholderText: { color: '#94a3b8', fontSize: 13, marginTop: 8, fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
-  videoContainer: { width: '100%', height: '100%', position: 'relative' },
-  videoView: { width: '100%', height: '100%' },
-  videoPoster: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%' },
+  videoContainer: { width: '100%', height: '100%', position: 'relative', backgroundColor: '#000000' },
+  videoView: { width: '100%', height: '100%', backgroundColor: '#000000' },
+  videoPoster: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%', backgroundColor: '#000000' },
   playButtonOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(15, 23, 42, 0.3)' },
   playButtonText: { color: '#ffffff', fontSize: 14, fontWeight: '600', marginTop: 8, backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   storyStatsRow: {

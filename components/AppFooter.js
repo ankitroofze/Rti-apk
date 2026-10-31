@@ -49,10 +49,13 @@ const STATE_LINK_ITEMS = [
   'Himachal Pradesh',
 ];
 
+import { SOCIAL_LINKS } from '../constants/socialLinks';
+
 const SOCIAL_LINK_ITEMS = [
-  { label: 'Facebook', icon: 'logo-facebook', url: 'https://www.facebook.com/' },
-  { label: 'X', icon: 'logo-twitter', url: 'https://www.twitter.com/' },
-  { label: 'YouTube', icon: 'logo-youtube', url: 'https://www.youtube.com/' },
+  { label: 'Facebook', icon: 'logo-facebook', url: SOCIAL_LINKS.facebook },
+  { label: 'X', icon: 'logo-twitter', url: SOCIAL_LINKS.twitter },
+  { label: 'YouTube', icon: 'logo-youtube', url: SOCIAL_LINKS.youtube },
+  { label: 'Instagram', icon: 'logo-instagram', url: SOCIAL_LINKS.instagram },
   { label: 'Telegram', icon: 'paper-plane-outline', url: 'https://telegram.org/' },
 ];
 

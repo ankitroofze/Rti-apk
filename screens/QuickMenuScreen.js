@@ -421,6 +421,12 @@ const WEB_MODULES = [
 function QuickMenuWeb({ navigation }) {
   const { logout } = useAuth();
   const [activeScreen, setActiveScreen] = React.useState('Profile');
+  // ✅ FIX (web): embedded screens ko navigate() ke params (jaise editItem) aur `route` pehle milte hi nahi the,
+  // isliye News Feed se Edit dabane par Add News hamesha khaali form kholta tha.
+  const [screenParams, setScreenParams] = React.useState({});
+  const activeScreenRef = React.useRef('Profile');
+  activeScreenRef.current = activeScreen;
+  const historyRef = React.useRef([]);
   const [profileTier, setProfileTier] = React.useState(PROFILE_TIERS.common);
 
   React.useEffect(() => {
@@ -473,10 +479,16 @@ function QuickMenuWeb({ navigation }) {
   const ActiveComponent = activeModule.component || ProfileScreen;
 
   const embeddedNavigation = React.useMemo(() => {
+    const goToEmbedded = (screenName, params) => {
+      const cur = activeScreenRef.current;
+      if (screenName !== cur) historyRef.current.push(cur);   // goBack() isi par wapas jayega
+      setScreenParams((prev) => ({ ...prev, [screenName]: params }));
+      setActiveScreen(screenName);
+    };
     const openScreen = (screenName, ...args) => {
       const module = WEB_MODULES.find((item) => item.screen === screenName && item.component);
       if (module) {
-        setActiveScreen(screenName);
+        goToEmbedded(screenName, args[0]);
         return;
       }
       navigation.navigate(screenName, ...args);
@@ -486,12 +498,16 @@ function QuickMenuWeb({ navigation }) {
       ...navigation,
       navigate: openScreen,
       replace: openScreen,
-      goBack: () => setActiveScreen('Profile'),
+      goBack: () => {
+        const prev = historyRef.current.pop();
+        setActiveScreen(prev || 'Profile');
+      },
       dispatch: (action) => {
-        const nextRoute = action?.payload?.routes?.[action.payload.routes.length - 1]?.name;
+        const lastRoute = action?.payload?.routes?.[action.payload.routes.length - 1];
+        const nextRoute = lastRoute?.name;
         const module = WEB_MODULES.find((item) => item.screen === nextRoute && item.component);
         if (module) {
-          setActiveScreen(nextRoute);
+          goToEmbedded(nextRoute, lastRoute?.params);
           return;
         }
         navigation.dispatch(action);
@@ -509,6 +525,9 @@ function QuickMenuWeb({ navigation }) {
       navigation.navigate(item.screen);
       return;
     }
+    // Sidebar se khulne par hamesha fresh screen (purane edit params / history nahi)
+    historyRef.current = [];
+    setScreenParams((prev) => ({ ...prev, [item.screen]: undefined }));
     setActiveScreen(item.screen);
   };
 
@@ -578,7 +597,11 @@ function QuickMenuWeb({ navigation }) {
         <main className="qm-main">
           <div className="qm-content-panel">
             <div className="qm-embedded-page">
-              <ActiveComponent navigation={embeddedNavigation} />
+              <ActiveComponent
+                key={`${activeScreen}:${screenParams[activeScreen]?.editItem?.id ?? ''}`}
+                navigation={embeddedNavigation}
+                route={{ key: activeScreen, name: activeScreen, params: screenParams[activeScreen] }}
+              />
             </div>
           </div>
           <div className="qm-page-header">

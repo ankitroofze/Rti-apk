@@ -315,9 +315,24 @@ export default function WithdrawScreen({ navigation }) {
   };
 
   const handleSubmit = async () => {
+    // Blocked states: tell the user WHY instead of a dead button
+    if (withdrawData.wallet?.is_frozen) {
+      showToast(withdrawData.wallet.freeze_reason || 'Your wallet is frozen. Withdrawals are disabled.', 'error');
+      return;
+    }
+    if (withdrawData.wallet?.can_withdraw === false) {
+      showToast(withdrawData.wallet?.withdraw_block_reason || 'Withdrawals are not available for your wallet right now.', 'error');
+      return;
+    }
     const validationErrors = validateForm(form);
+    const balance = Number(withdrawData.available_balance);
+    if (!validationErrors.amount && Number.isFinite(balance) && Number(form.amount) > balance) {
+      validationErrors.amount = 'Amount cannot be more than your available balance.';
+    }
     if (Object.keys(validationErrors).length > 0) {
       setErrors(validationErrors);
+      // The error may be on a field above the visible area — always show a toast too
+      showToast(Object.values(validationErrors)[0], 'error');
       return;
     }
     setSubmitting(true);
@@ -610,7 +625,7 @@ export default function WithdrawScreen({ navigation }) {
 
                        <TouchableOpacity
               onPress={handleSubmit}
-              disabled={submitting || withdrawData.wallet?.is_frozen || withdrawData.wallet?.can_withdraw === false}
+              disabled={submitting}
               activeOpacity={0.85}
               style={(submitting || withdrawData.wallet?.is_frozen) ? { opacity: 0.6 } : undefined}
             >
@@ -1037,7 +1052,7 @@ export default function WithdrawScreen({ navigation }) {
 
             <TouchableOpacity
             onPress={handleSubmit}
-            disabled={submitting || withdrawData.wallet?.is_frozen || withdrawData.wallet?.can_withdraw === false}
+            disabled={submitting}
             activeOpacity={0.85}
             style={(submitting || withdrawData.wallet?.is_frozen) ? FS.submitBtnDisabled : undefined}
           >

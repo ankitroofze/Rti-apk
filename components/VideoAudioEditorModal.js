@@ -7,15 +7,15 @@
 //  - Output      : onDone({ musicId, musicUrl, musicTitle, music, musicVolume, voiceUri, voiceMime, muteOriginal })
 //
 // Layout:
-//  - Web (wide screen) : video preview card on the left (9:16), controls card on the right.
-//  - Mobile / narrow   : full-screen video with a bottom sheet.
+//  - Web    : video centered in a phone-width column, full height top to bottom.
+//  - Mobile : full-screen video. Controls are a bottom sheet touching the bottom edge.
 //
 // Web audio uses plain HTMLAudioElement (music + voice) and MediaRecorder (recording),
 // native uses expo-audio.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Modal, View, Text, TouchableOpacity, FlatList, StyleSheet, StatusBar, Alert, Platform,
-  useWindowDimensions,
+  useWindowDimensions, Animated,
 } from 'react-native';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import {
@@ -34,7 +34,8 @@ const clamp01 = (n) => Math.max(0, Math.min(1, Number(n) || 0));
 export default function VideoAudioEditorModal({ visible, videoUri, initial, onClose, onDone }) {
   const insets = useSafeAreaInsets();
   const { width: winW, height: winH } = useWindowDimensions();
-  const isWide = IS_WEB && winW >= 900;
+  // Web: centered phone-width column, full height (top to bottom). Mobile: full screen.
+  const colW = IS_WEB ? Math.min(winW, 480) : winW;
 
   const [tab, setTab] = useState('music');                    // 'music' | 'voice'
   const [music, setMusic] = useState(initial?.music || null); // library item
@@ -43,7 +44,10 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
   const [voiceMime, setVoiceMime] = useState(initial?.voiceMime || null);
   const [recording, setRecording] = useState(false);
   const [previewing, setPreviewing] = useState(false);
-  const [progress, setProgress] = useState(0);                // 0..1
+  const progressAnim = useRef(new Animated.Value(0)).current;   // 0..1 (no re-render while playing)
+  const previewingRef = useRef(false);
+  const selectedRef = useRef(initial?.music?.id || null);
+  const resolvedCache = useRef({});                                // songId -> Promise<resolved song>
 
   // Web: video is stored in IndexedDB ("idb-media:") — the player needs a playable blob URL
   const [resolvedWebUri, setResolvedWebUri] = useState(null);
@@ -135,21 +139,51 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
     setMusicVolume(initial?.musicVolume ?? 0.6);
     setVoiceUri(initial?.voiceUri || null);
     setVoiceMime(initial?.voiceMime || null);
-    setProgress(0);
+    progressAnim.setValue(0);
     try { videoPlayer.muted = true; videoPlayer.currentTime = 0; } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  // Video finished -> stop everything. Also drives the progress bar.
+  useEffect(() => { previewingRef.current = previewing; }, [previewing]);
+  useEffect(() => { selectedRef.current = music?.id || null; }, [music]);
+
+  // Resolve all songs once in the background so taps respond instantly
+  const getResolved = useCallback((song) => {
+    if (!resolvedCache.current[song.id]) {
+      resolvedCache.current[song.id] = resolveSong(song).catch((e) => { delete resolvedCache.current[song.id]; throw e; });
+    }
+    return resolvedCache.current[song.id];
+  }, []);
   useEffect(() => {
-    const subEnd = videoPlayer.addListener?.('playToEnd', () => { stopAll(); setProgress(0); });
+    if (!visible) return;
+    MUSIC_LIBRARY.forEach((sg) => { getResolved(sg).catch(() => {}); });
+  }, [visible, getResolved]);
+
+  const resumeAudio = useCallback(() => {
+    if (IS_WEB) { ['music', 'voice'].forEach((k) => { try { webAudio.current[k]?.play?.()?.catch?.(() => {}); } catch {} }); return; }
+    try { musicPlayer.play(); } catch {}
+    try { voicePlayer.play(); } catch {}
+  }, [musicPlayer, voicePlayer]);
+
+  // Video finished -> stop everything. Progress bar updates WITHOUT re-rendering the screen.
+  // Video buffering -> pause audio, then resume + re-sync, so video and sound never drift apart.
+  useEffect(() => {
+    const subEnd = videoPlayer.addListener?.('playToEnd', () => { stopAll(); progressAnim.setValue(0); });
     const subTime = videoPlayer.addListener?.('timeUpdate', (e) => {
-      const cur = Number(e?.currentTime ?? videoPlayer.currentTime ?? 0);
+      const cur = Number(e?.currentTime ?? 0);
       const dur = Number(videoPlayer.duration || 0);
-      if (dur > 0) setProgress(Math.max(0, Math.min(1, cur / dur)));
+      if (dur > 0) progressAnim.setValue(Math.max(0, Math.min(1, cur / dur)));
     });
-    return () => { subEnd?.remove?.(); subTime?.remove?.(); };
-  }, [videoPlayer, stopAll]);
+    const subRate = videoPlayer.addListener?.('playbackRateChange', () => {
+      try { if (videoPlayer.playbackRate !== 1) videoPlayer.playbackRate = 1; } catch {}
+    });
+    const subStatus = videoPlayer.addListener?.('statusChange', (e) => {
+      if (!previewingRef.current) return;
+      if (e?.status === 'loading') pauseAudio();
+      else if (e?.status === 'readyToPlay') resumeAudio();
+    });
+    return () => { subEnd?.remove?.(); subTime?.remove?.(); subRate?.remove?.(); subStatus?.remove?.(); };
+  }, [videoPlayer, stopAll, pauseAudio, resumeAudio, progressAnim]);
 
   // Cleanup on unmount
   useEffect(() => () => {
@@ -171,14 +205,18 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
 
   const selectSong = async (song) => {
     if (recording) return;
-    const same = music?.id === song.id;
+    const same = selectedRef.current === song.id;
     stopAll();
-    if (same) { setMusic(null); return; }
-    const resolved = await resolveSong(song);   // bundled mp3 -> playable uri
+    if (same) { selectedRef.current = null; setMusic(null); return; }
+    selectedRef.current = song.id;
+    setMusic(song);                                  // instant highlight (no waiting)
+    let resolved;
+    try { resolved = await getResolved(song); } catch (e) { console.warn('song resolve failed', e); return; }
+    if (selectedRef.current !== song.id) return;     // user picked another song meanwhile
     setMusic(resolved);
     if (!IS_WEB) { try { await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }); } catch {} }
-    playAudio('music', resolved.url, musicVolume, true);
     playVideoFromStart();
+    playAudio('music', resolved.url, musicVolume, true);
     setPreviewing(true);
   };
 
@@ -274,13 +312,15 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
 
   const removeVoice = () => { stopAll(); setVoiceUri(null); setVoiceMime(null); };
 
-  const finish = () => {
+  const finish = async () => {
     stopAll();
+    let m = music;
+    if (m && !m.url) { try { m = await getResolved(m); } catch { m = null; } }
     onDone?.({
-      musicId: music?.id || null,
-      musicUrl: music?.url || null,
-      musicTitle: music?.title || null,
-      music,
+      musicId: m?.id || null,
+      musicUrl: m?.url || null,
+      musicTitle: m?.title || null,
+      music: m,
       musicVolume,
       voiceUri: voiceUri || null,
       voiceMime: voiceUri ? (voiceMime || null) : null,
@@ -307,7 +347,7 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
         </View>
         <View style={s.songInfo}>
           <Text style={s.songTitle} numberOfLines={1}>{item.title}</Text>
-          <Text style={s.songArtist} numberOfLines={1}>{item.artist}</Text>
+          <Text style={s.songArtist} numberOfLines={1}>{item.artist}{item.code ? `  •  #${item.code}` : ''}</Text>
         </View>
         <Ionicons
           name={on ? 'checkmark-circle' : 'play-circle-outline'}
@@ -318,31 +358,20 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
     );
   };
 
-  // Sizes
-  const stageH = isWide ? Math.max(360, Math.min(winH - 110, 720)) : 0;
-  const stageW = isWide ? Math.round(stageH * 9 / 16) : 0;
-  const listMaxH = isWide ? Math.max(180, stageH - 170) : 250;
-
-  const stageStyle = isWide
-    ? [s.stage, { width: stageW, height: stageH }]
-    : [StyleSheet.absoluteFill];
-
-  const panelStyle = isWide
-    ? [s.panel, s.panelWide, { maxHeight: stageH }]
-    : [s.panel, s.panelSheet, { paddingBottom: insets.bottom + 10 }];
+  const listMaxH = Math.max(170, Math.min(250, Math.round(winH * 0.3)));
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={close} statusBarTranslucent>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
       <View style={s.root}>
-        <View style={[s.body, isWide && s.bodyWide, isWide && { paddingTop: 64 }]}>
-          {/* VIDEO STAGE */}
-          <View style={stageStyle}>
+        <View style={[s.column, { width: colW }]}>
+          {/* VIDEO: fills the whole column, top to bottom */}
+          <View style={StyleSheet.absoluteFill}>
             {playUri ? (
               <VideoView
                 player={videoPlayer}
-                style={StyleSheet.absoluteFill}
-                contentFit={isWide ? 'contain' : (IS_WEB ? 'contain' : 'cover')}
+                style={[StyleSheet.absoluteFill, IS_WEB ? { objectFit: 'contain' } : null]}
+                contentFit={IS_WEB ? 'contain' : 'cover'}
                 nativeControls={false}
               />
             ) : null}
@@ -350,27 +379,39 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
 
             {!recording ? (
               <TouchableOpacity
-                style={[s.centerPlay, !isWide && s.centerPlayFull]}
+                style={s.centerPlay}
                 onPress={() => (previewing ? stopAll() : startPreview())}
                 activeOpacity={0.8}
               >
                 <Ionicons name={previewing ? 'pause' : 'play'} size={32} color="#fff" style={!previewing && { marginLeft: 3 }} />
               </TouchableOpacity>
             ) : (
-              <View style={s.recPill} pointerEvents="none">
+              <View style={[s.recPill, { top: insets.top + 60 }]} pointerEvents="none">
                 <View style={s.recDot} />
                 <Text style={s.recPillText}>Recording</Text>
               </View>
             )}
-
-            {/* progress bar */}
-            <View style={[s.progressTrack, !isWide && { bottom: undefined, top: insets.top + 54 }]} pointerEvents="none">
-              <View style={[s.progressFill, { width: `${Math.round(progress * 100)}%` }]} />
-            </View>
           </View>
 
-          {/* CONTROLS PANEL */}
-          <View style={panelStyle}>
+          {/* TOP BAR */}
+          <View style={[s.top, { paddingTop: insets.top + 8 }]}>
+            <TouchableOpacity onPress={close} style={s.topBtn}>
+              <Ionicons name="close" size={26} color="#fff" />
+            </TouchableOpacity>
+            <View style={s.badge}>
+              <Feather name="volume-x" size={13} color="#fff" />
+              <Text style={s.badgeText}>Original sound muted</Text>
+            </View>
+            <TouchableOpacity onPress={finish} style={[s.doneBtn, recording && { opacity: 0.4 }]} disabled={recording}>
+              <Text style={s.doneText}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={[s.progressTrack, { top: insets.top + 52 }]} pointerEvents="none">
+            <Animated.View style={[s.progressFill, { width: progressAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]} />
+          </View>
+
+          {/* BOTTOM SHEET: touches the bottom edge */}
+          <View style={[s.panel, { paddingBottom: Math.max(insets.bottom, 12) + 4 }]}>
             <View style={s.tabs}>
               <TouchableOpacity onPress={() => setTab('music')} style={[s.tab, tab === 'music' && s.tabOn]}>
                 <Ionicons name="musical-notes" size={15} color={tab === 'music' ? '#fff' : '#e5e7eb'} />
@@ -423,46 +464,29 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
             )}
           </View>
         </View>
-
-        {/* TOP BAR */}
-        <View style={[s.top, { paddingTop: (isWide ? 14 : insets.top + 6) }]}>
-          <TouchableOpacity onPress={close} style={s.topBtn}>
-            <Ionicons name="close" size={26} color="#fff" />
-          </TouchableOpacity>
-          <View style={s.badge}>
-            <Feather name="volume-x" size={13} color="#fff" />
-            <Text style={s.badgeText}>Original sound muted</Text>
-          </View>
-          <TouchableOpacity onPress={finish} style={[s.doneBtn, recording && { opacity: 0.4 }]} disabled={recording}>
-            <Text style={s.doneText}>Done</Text>
-          </TouchableOpacity>
-        </View>
       </View>
     </Modal>
   );
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#000' },
-  body: { flex: 1 },
-  bodyWide: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 28, paddingBottom: 20, paddingHorizontal: 20 },
+  root: { flex: 1, backgroundColor: '#000', alignItems: 'center' },
+  column: { flex: 1, backgroundColor: '#000', overflow: 'hidden' },
 
   // video stage
-  stage: { backgroundColor: '#000', overflow: 'hidden', borderRadius: 16, borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' },
   dim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.12)' },
   centerPlay: {
     position: 'absolute', alignSelf: 'center', top: '50%', marginTop: -32, width: 64, height: 64, borderRadius: 32,
     backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center',
     borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)',
   },
-  centerPlayFull: { top: '38%', marginTop: 0 },
   recPill: {
-    position: 'absolute', alignSelf: 'center', top: 14, flexDirection: 'row', alignItems: 'center', gap: 6,
+    position: 'absolute', alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: 6,
     backgroundColor: 'rgba(127,29,29,0.9)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14,
   },
   recDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#ef4444' },
   recPillText: { color: '#fff', fontSize: 12, fontWeight: '800' },
-  progressTrack: { position: 'absolute', left: 0, right: 0, bottom: 0, height: 3, backgroundColor: 'rgba(255,255,255,0.2)' },
+  progressTrack: { position: 'absolute', left: 0, right: 0, height: 3, backgroundColor: 'rgba(255,255,255,0.2)' },
   progressFill: { height: 3, backgroundColor: '#ea580c' },
 
   // top bar
@@ -474,9 +498,7 @@ const s = StyleSheet.create({
   doneText: { color: '#fff', fontWeight: '800', fontSize: 14 },
 
   // panel
-  panel: { backgroundColor: 'rgba(17,24,39,0.96)', paddingTop: 12, paddingHorizontal: 12 },
-  panelSheet: { position: 'absolute', left: 0, right: 0, bottom: 0, borderTopLeftRadius: 18, borderTopRightRadius: 18 },
-  panelWide: { width: 440, borderRadius: 16, paddingBottom: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  panel: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(17,24,39,0.96)', paddingTop: 12, paddingHorizontal: 12, borderTopLeftRadius: 18, borderTopRightRadius: 18 },
   tabs: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.1)' },
   tabOn: { backgroundColor: '#ea580c' },

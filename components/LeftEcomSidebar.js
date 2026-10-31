@@ -2,12 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, ImageBackground, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { UserStore } from '../store/UserStore';
+import { SOCIAL_LINKS } from '../constants/socialLinks';
 
 const SOCIAL_ITEMS = [
-  { icon: 'logo-facebook', color: '#1877F2', url: 'https://www.facebook.com/' },
-  { icon: 'logo-twitter', color: '#1DA1F2', url: 'https://twitter.com/' },
-  { icon: 'logo-youtube', color: '#FF0000', url: 'https://www.youtube.com/' },
-  { icon: 'logo-instagram', color: '#E1306C', url: 'https://www.instagram.com/' },
+  { icon: 'logo-facebook', color: '#1877F2', url: SOCIAL_LINKS.facebook },
+  { icon: 'logo-twitter', color: '#1DA1F2', url: SOCIAL_LINKS.twitter },
+  { icon: 'logo-youtube', color: '#FF0000', url: SOCIAL_LINKS.youtube },
+  { icon: 'logo-instagram', color: '#E1306C', url: SOCIAL_LINKS.instagram },
   { icon: 'paper-plane', color: '#229ED9', url: 'https://t.me/' },
 ];
 

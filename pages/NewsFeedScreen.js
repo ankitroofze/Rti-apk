@@ -281,7 +281,12 @@ function FeedCommentItem({
   return (
     <View style={[styles.commentItem, isReply && styles.commentReplyItem]}>
       <View style={styles.commentTopRow}>
-        <NameWithTick name={comment.author || 'User'} show={Boolean(comment.author_has_blue_tick)} style={styles.commentAuthor} badgeSize={12} />
+        <View style={styles.commentAuthorWrap}>
+          <View style={[styles.commentAvatar, isReply && styles.commentAvatarSmall]}>
+            <Text style={styles.commentAvatarText}>{String(comment.author || 'U').trim().charAt(0).toUpperCase() || 'U'}</Text>
+          </View>
+          <NameWithTick name={comment.author || 'User'} show={Boolean(comment.author_has_blue_tick)} style={styles.commentAuthor} badgeSize={12} />
+        </View>
         <Text style={styles.commentDate}>{comment.date || ''}{comment.edited_at ? ' • Edited' : ''}</Text>
       </View>
 
@@ -858,9 +863,34 @@ const handleLike = async (item) => {
     );
   };
 
+  const closeComments = () => {
+    setCommentModalVisible(false);
+    setLocalComments([]);
+    setCommentText('');
+    setEditingCommentId(null);
+    setEditingCommentText('');
+    setReplyingToCommentId(null);
+    setReplyText('');
+    setExpandedReplyThreads({});
+  };
+
+  // ✅ FIX: pehle yahan syncFeed(focusItemId) poori news list ko replace kar deta tha (list gayab + activeCommentItem null
+  // => comment post hi nahi hota tha). Ab sirf is ek news ke comments laate hain, list ko haath nahi lagate.
+  const loadCommentsFor = async (itemId) => {
+    if (!itemId) return;
+    try {
+      const data = await UserStore.getNewsFeedSummary({ focusItemId: itemId });
+      const match = Array.isArray(data?.items) ? data.items.find((it) => String(it.id) === String(itemId)) : null;
+      if (!match) return;
+      const raw = Array.isArray(match.comments_list) ? match.comments_list : (Array.isArray(match.comments) ? match.comments : []);
+      setLocalComments(formatCommentsForView(raw));
+    } catch { /* list wale comments hi dikhte rahenge */ }
+  };
+
   const openComments = async (item) => {
+    if (commentModalVisible && activeCommentItem?.id === item?.id) { closeComments(); return; }   // dubara dabane par band
     setActiveCommentItem(item);
-    setLocalComments(formatCommentsForView(item?.comments_list || []));
+    setLocalComments(formatCommentsForView(Array.isArray(item?.comments_list) ? item.comments_list : []));
     setCommentText('');
     setEditingCommentId(null);
     setEditingCommentText('');
@@ -868,7 +898,7 @@ const handleLike = async (item) => {
     setReplyText('');
     setExpandedReplyThreads({});
     setCommentModalVisible(true);
-    await syncFeed(item?.id || null);
+    await loadCommentsFor(item?.id);
   };
 
   const toggleExpanded = (itemId) => setExpandedItems((prev) => ({ ...prev, [itemId]: !prev[itemId] }));
@@ -935,8 +965,10 @@ const handleLike = async (item) => {
       replies: [],
     };
     setLocalComments((prev) => [newComment, ...prev]);
-    setActiveCommentItem((prev) => prev ? { ...prev, comments: Number(prev.comments || 0) + 1 } : prev);
-    updateFeedCommentCount(activeCommentItem.id, 1);
+    const nextCount = Number.isFinite(result.commentsCount) ? result.commentsCount : Number(activeCommentItem.comments || 0) + 1;
+    setActiveCommentItem((prev) => prev ? { ...prev, comments: nextCount } : prev);
+    updateFeedCommentCount(activeCommentItem.id, nextCount - Number(activeCommentItem.comments || 0));
+    publishEngagement(activeCommentItem.id, { comments: nextCount }, 'newsfeed-list');   // details page / home cards par bhi
     setCommentText('');
   };
 
@@ -1033,8 +1065,10 @@ const handleLike = async (item) => {
         .filter(Boolean)
     );
     if (removedCount > 0) {
-      setActiveCommentItem((prev) => prev ? { ...prev, comments: Math.max(0, Number(prev.comments || 0) - removedCount) } : prev);
+      const nextCount = Math.max(0, Number(activeCommentItem.comments || 0) - removedCount);
+      setActiveCommentItem((prev) => prev ? { ...prev, comments: nextCount } : prev);
       updateFeedCommentCount(activeCommentItem.id, -removedCount);
+      publishEngagement(activeCommentItem.id, { comments: nextCount }, 'newsfeed-list');
     }
     if (editingCommentId === commentId) handleCancelEdit();
     if (replyingToCommentId === commentId) {
@@ -1099,10 +1133,90 @@ const handleLike = async (item) => {
       })
     );
     setExpandedReplyThreads((prev) => ({ ...prev, [parentCommentId]: true }));
-    setActiveCommentItem((prev) => prev ? { ...prev, comments: Number(prev.comments || 0) + 1 } : prev);
+    const nextCount = Number(activeCommentItem.comments || 0) + 1;
+    setActiveCommentItem((prev) => prev ? { ...prev, comments: nextCount } : prev);
     updateFeedCommentCount(activeCommentItem.id, 1);
+    publishEngagement(activeCommentItem.id, { comments: nextCount }, 'newsfeed-list');
     setReplyingToCommentId(null);
     setReplyText('');
+  };
+
+  // Card ke theek neeche khulne wala comment box (home page ke news cards jaisa)
+  const renderCommentsPanel = (item) => {
+    if (!commentModalVisible || !activeCommentItem || String(activeCommentItem.id) !== String(item.id)) return null;
+    const me = newsData.currentUser;
+    const initial = String(me?.name || 'U').trim().charAt(0).toUpperCase() || 'U';
+    const total = Number(activeCommentItem.comments || item.comments || 0);
+    const canSend = commentText.trim().length > 0;
+    return (
+      <View style={styles.inlineCommentPanel}>
+        <View style={styles.inlineCommentHeader}>
+          <Text style={styles.inlineCommentTitle}>Comments{total > 0 ? ` (${total})` : ''}</Text>
+          <TouchableOpacity onPress={closeComments} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Feather name="x" size={18} color={C.neutral400} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.inlineCommentInputRow}>
+          <View style={styles.commentAvatar}><Text style={styles.commentAvatarText}>{initial}</Text></View>
+          <TextInput
+            style={styles.inlineCommentInput}
+            placeholder="Write a comment..."
+            placeholderTextColor={C.neutral400}
+            value={commentText}
+            onChangeText={setCommentText}
+            multiline
+            maxLength={300}
+          />
+          <TouchableOpacity
+            style={[styles.commentSendBtn, !canSend && { opacity: 0.45 }]}
+            onPress={handleAddComment}
+            disabled={!canSend}
+            activeOpacity={0.8}
+          >
+            <Feather name="send" size={16} color={C.white} />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          style={styles.inlineCommentList}
+          nestedScrollEnabled
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          {localComments.length ? (
+            localComments.map((c) => (
+              <FeedCommentItem
+                key={c.id}
+                comment={c}
+                currentUser={newsData.currentUser}
+                editingCommentId={editingCommentId}
+                editingCommentText={editingCommentText}
+                onEditingCommentTextChange={setEditingCommentText}
+                onStartEdit={handleStartEdit}
+                onCancelEdit={handleCancelEdit}
+                onSaveEdit={handleSaveEdit}
+                onDeleteComment={handleDeleteComment}
+                onLikeComment={handleLikeComment}
+                replyingToCommentId={replyingToCommentId}
+                replyText={replyText}
+                onReplyTextChange={setReplyText}
+                onStartReply={handleStartReply}
+                onCancelReply={handleCancelReply}
+                onSubmitReply={handleSubmitReply}
+                expandedReplyThreads={expandedReplyThreads}
+                onToggleReplies={handleToggleReplies}
+              />
+            ))
+          ) : (
+            <View style={styles.commentEmptyWrap}>
+              <Feather name="message-circle" size={22} color={C.neutral400} />
+              <Text style={styles.commentEmptyText}>No comments yet. Be the first to comment.</Text>
+            </View>
+          )}
+        </ScrollView>
+      </View>
+    );
   };
 
   const handleAddNews = async () => {
@@ -1115,7 +1229,7 @@ const handleLike = async (item) => {
       showToast('Select your location to activate premium services.', 'error');
       navigation.navigate('StateSelect', { fromPremium: true }); return;
     }
-    navigation.navigate('Add News');
+    navigation.navigate('Add News', { editItem: undefined });
   };
 
   const displayedItems = applyUIFilters(newsData.items.filter((item) => itemMatchesLanguage(item, language)));
@@ -1552,6 +1666,7 @@ const handleLike = async (item) => {
                     <Text style={styles.actionIconText}>{item.shares}</Text>
                   </TouchableOpacity>
                          </View>
+                {renderCommentsPanel(item)}
               </View>
               )
             ))
@@ -1584,89 +1699,7 @@ const handleLike = async (item) => {
         showToast={showToast}
       />
 
-      {/* Comments Modal */}
-      <Modal
-        visible={commentModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => {
-          setCommentModalVisible(false);
-          setLocalComments([]);
-          setReplyingToCommentId(null);
-          setReplyText('');
-          setExpandedReplyThreads({});
-        }}
-      >
-        <KeyboardAvoidingView
-          style={styles.commentKeyboardAvoider}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0}
-        >
-        <View style={styles.commentOverlay}>
-          <View style={styles.commentSheet}>
-            <View style={styles.commentHeader}>
-              <Text style={styles.commentTitle}>Comments</Text>
-              <TouchableOpacity onPress={() => {
-                setCommentModalVisible(false);
-                setLocalComments([]);
-                setReplyingToCommentId(null);
-                setReplyText('');
-                setExpandedReplyThreads({});
-              }}>
-                <Feather name="x" size={20} color={C.neutral400} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView
-              style={styles.commentList}
-              contentContainerStyle={styles.commentListContent}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            >
-              {localComments.length ? (
-                localComments.map((c) => (
-                  <FeedCommentItem
-                    key={c.id}
-                    comment={c}
-                    currentUser={newsData.currentUser}
-                    editingCommentId={editingCommentId}
-                    editingCommentText={editingCommentText}
-                    onEditingCommentTextChange={setEditingCommentText}
-                    onStartEdit={handleStartEdit}
-                    onCancelEdit={handleCancelEdit}
-                    onSaveEdit={handleSaveEdit}
-                    onDeleteComment={handleDeleteComment}
-                    onLikeComment={handleLikeComment}
-                    replyingToCommentId={replyingToCommentId}
-                    replyText={replyText}
-                    onReplyTextChange={setReplyText}
-                    onStartReply={handleStartReply}
-                    onCancelReply={handleCancelReply}
-                    onSubmitReply={handleSubmitReply}
-                    expandedReplyThreads={expandedReplyThreads}
-                    onToggleReplies={handleToggleReplies}
-                  />
-                ))
-              ) : (
-                <Text style={styles.commentEmptyText}>No comments yet.</Text>
-              )}
-            </ScrollView>
-            <View style={styles.commentInputRow}>
-              <TextInput
-                style={styles.commentInput}
-                placeholder="Write a comment..."
-                placeholderTextColor={C.neutral400}
-                value={commentText}
-                onChangeText={setCommentText}
-                multiline
-              />
-              <TouchableOpacity style={styles.commentSendBtn} onPress={handleAddComment}>
-                <Feather name="send" size={16} color={C.white} />
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-        </KeyboardAvoidingView>
-      </Modal>
+
         </View>
     </View>
   );
@@ -1829,9 +1862,20 @@ actionIconButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justify
 
   imagePlaceholder: { backgroundColor: C.uploadBg },
 
-  commentItem: { borderBottomWidth: 1, borderBottomColor: C.headerBorder, paddingVertical: 10 },
-  commentReplyItem: { marginLeft: 20, borderBottomWidth: 0, borderLeftWidth: 2, borderLeftColor: C.uploadBg, paddingLeft: 10 },
-  commentTopRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  commentItem: { backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#eef2f7', borderRadius: 12, padding: 10, marginBottom: 8 },
+  commentReplyItem: { marginLeft: 16, marginTop: 6, marginBottom: 0, backgroundColor: '#ffffff' },
+  commentTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  commentAuthorWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 },
+  commentAvatar: { width: 30, height: 30, borderRadius: 15, backgroundColor: C.primary, alignItems: 'center', justifyContent: 'center' },
+  commentAvatarSmall: { width: 24, height: 24, borderRadius: 12 },
+  commentAvatarText: { color: '#fff', fontSize: 12, fontFamily: FONT.bold },
+  commentEmptyWrap: { alignItems: 'center', gap: 6, paddingVertical: 22 },
+  inlineCommentPanel: { marginTop: 12, borderTopWidth: 1, borderTopColor: C.headerBorder, paddingTop: 12 },
+  inlineCommentHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  inlineCommentTitle: { fontSize: 13, fontFamily: FONT.bold, color: C.textMain },
+  inlineCommentInputRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
+  inlineCommentInput: { flex: 1, borderWidth: 1, borderColor: C.dashedBorder, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 9, fontSize: 12, fontFamily: FONT.regular, color: C.textBody, maxHeight: 90, backgroundColor: '#fff' },
+  inlineCommentList: { maxHeight: 380 },
   commentAuthor: { fontSize: 12, fontFamily: FONT.bold, color: C.textBody },
   commentDate: { fontSize: 10, fontFamily: FONT.regular, color: C.textMuted },
   commentEditInput: { borderWidth: 1, borderColor: C.primary, borderRadius: 8, padding: 8, fontSize: 12, fontFamily: FONT.regular, color: C.textBody, marginBottom: 6 },

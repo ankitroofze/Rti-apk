@@ -2102,14 +2102,6 @@ const handleLike = async () => {
               <TouchableWithoutFeedback>
                 <View style={menuAnchor ? [styles.storyMoreMenu, { position: 'absolute', top: menuAnchor.top, left: menuAnchor.left }] : styles.storyMoreMenuSheet}>
                   {!menuAnchor ? <View style={styles.storyMoreMenuHandle} /> : null}
-                  <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleReport} activeOpacity={0.82}>
-                    <Ionicons name="flag-outline" size={18} color="#ef4444" />
-                    <Text style={styles.storyMoreMenuText}>Report</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleCopyLink} activeOpacity={0.82}>
-                    <Ionicons name="link-outline" size={18} color="#0f172a" />
-                    <Text style={styles.storyMoreMenuText}>Copy link</Text>
-                  </TouchableOpacity>
                   <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleMenuShare} activeOpacity={0.82}>
                     <Ionicons name="share-social-outline" size={18} color="#0ea5e9" />
                     <Text style={styles.storyMoreMenuText}>Share link</Text>
