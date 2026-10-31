@@ -48,6 +48,7 @@ const RegisterWebStyles = StyleSheet.create({
   darkSwitchText: { color: '#555555' },
   darkSwitchLink: { color: '#B91C1C', fontWeight: '700' },
 
+  brandLogo: { width: 132, height: 132, borderRadius: 66, marginBottom: 18, alignSelf: 'center' },
   compactBrandRow: {
     flexDirection: 'row',
     alignItems: 'center',

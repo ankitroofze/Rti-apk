@@ -220,8 +220,10 @@ export default function SettingsScreen({ navigation }) {
   };
 
   const handleLogout = async () => {
-      await UserStore.clearCurrentUser?.();
-    navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+    await UserStore.clearCurrentUser?.();
+    try { await logout(); } catch {}   // auth state bhi clear (warna app logged-in dikhata rahega)
+    // Logout ke baad Login nahi, Home par hi raho
+    navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
   };
 
   // ── Delete Account (server API) ───────────────────────────────────────────

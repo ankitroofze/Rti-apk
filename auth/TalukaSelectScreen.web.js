@@ -10,6 +10,7 @@ import { useToast } from '../components/ui/ToastProvider';
 import { getTalukas } from '../pages/locationData';
 import styles from '../styles/RegisterStyles';
 import webStyles from '../styles/LocationWebStyles';
+import BackTitleRow from '../components/BackTitleRow';
 
 function DropdownModal({ visible, title, items, selected, onSelect, onClose }) {
   const [search, setSearch] = useState('');
@@ -214,20 +215,17 @@ export default function TalukaSelectScreen({ navigation, route }) {
       <View style={webStyles.formPanel}>
         <ScrollView contentContainerStyle={webStyles.formPanelScroll} showsVerticalScrollIndicator={false}>
           <View style={webStyles.formInner}>
-            {!showImagePanel && (
-              <View style={webStyles.compactBrandRow}>
-                <Ionicons name="location" size={20} color="#B91C1C" />
-                <Text style={webStyles.compactBrandText}>RTI News</Text>
-              </View>
-            )}
+            <Image
+              source={require('../assets/images/certificate_logo.jpg')}
+              resizeMode="contain"
+              style={webStyles.brandLogo}
+              accessibilityLabel="RTI News logo"
+            />
 
-            <TouchableOpacity style={webStyles.backRow} onPress={handleClose} activeOpacity={0.7}>
-              <Ionicons name="arrow-back" size={18} color="#111111" />
-              <Text style={webStyles.backText}>Back</Text>
-            </TouchableOpacity>
-
-            <Text style={[styles.welcomeBack, webStyles.welcomeBack]}>Setup Location</Text>
-            <Text style={[styles.formTitle, webStyles.formTitle]}>Select Your Taluka</Text>
+            <BackTitleRow onBack={handleClose} titleHeight={32}>
+              <Text style={[styles.welcomeBack, webStyles.welcomeBack]}>Setup Location</Text>
+              <Text style={[styles.formTitle, webStyles.formTitle]}>Select Your Taluka</Text>
+            </BackTitleRow>
             {(selectedState || selectedDistrict) && (
               <Text style={webStyles.locationInfo}>{[selectedState, selectedDistrict].filter(Boolean).join(' › ')}</Text>
             )}

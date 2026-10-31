@@ -341,7 +341,8 @@ function ProfileDropdown({ navigation, showNameLabel }) {
     setIsOpen(false);
     setAvatarError(false);
     setAvatarUri('');
-      navigation?.reset?.({ index: 0, routes: [{ name: 'Login' }] });
+      // Logout ke baad Login nahi, Home par hi raho (Sign In button se login page khulega)
+      navigation?.reset?.({ index: 0, routes: [{ name: 'Home' }] });
   };
 
   if (!isReady) return null;

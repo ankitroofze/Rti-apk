@@ -21,6 +21,7 @@ import { compressImageToBase64 } from '../utils/imageHandling';
 import { MAX_IMAGE_SIZE } from '../constants/profileConstants';
 import styles, { toastStyles, localStyles } from '../styles/RegisterStyles';
 import webStyles from '../styles/RegisterWebStyles';
+import BackTitleRow from '../components/BackTitleRow';
 
 // Web-only rendition of the Register screen: illustration on the left,
 // white form panel on the right — matching the reference design.
@@ -336,21 +337,19 @@ export default function RegisterScreen({ navigation }) {
       <View style={webStyles.formPanel}>
         <ScrollView contentContainerStyle={webStyles.formPanelScroll} showsVerticalScrollIndicator={false}>
           <View style={webStyles.formInner}>
-            {!showImagePanel && (
-              <View style={webStyles.compactBrandRow}>
-                <Ionicons name="location" size={20} color="#B91C1C" />
-                <Text style={webStyles.compactBrandText}>RTI News</Text>
-              </View>
-            )}
+            <Image
+              source={require('../assets/images/certificate_logo.jpg')}
+              resizeMode="contain"
+              style={webStyles.brandLogo}
+              accessibilityLabel="RTI News logo"
+            />
 
-            <TouchableOpacity style={styles.closeButton} onPress={handleClose} activeOpacity={0.7}>
-              <Ionicons name="arrow-back" size={22} color="#111111" />
-            </TouchableOpacity>
-
-            <View style={styles.headerBlock}>
+            <BackTitleRow onBack={handleClose} style={{ marginTop: 8, marginBottom: 20 }} titleHeight={32}>
+              <View style={{ alignItems: 'center' }}>
               <Text style={[styles.welcomeBack, webStyles.welcomeBack]}>Create your account</Text>
               <Text style={[styles.formTitle, webStyles.formTitle]}>Register</Text>
             </View>
+            </BackTitleRow>
 
             <StepIndicator currentStep={formStep - 1} totalSteps={2} />
 

@@ -19,8 +19,9 @@ const LocationWebStyles = StyleSheet.create({
   welcomeBack: { color: '#999999' },
   formTitle: { color: '#111111' },
   darkLabel: { color: '#111111' },
-  locationInfo: { color: '#6b7280' },
+  locationInfo: { color: '#6b7280', textAlign: 'center', marginTop: 6 },
 
+  brandLogo: { width: 132, height: 132, borderRadius: 66, marginBottom: 18, alignSelf: 'center' },
   compactBrandRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 20 },
   compactBrandText: { fontSize: 16, fontWeight: '800', color: '#B91C1C', fontFamily: "'Roboto', sans-serif" },
 

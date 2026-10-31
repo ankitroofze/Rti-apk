@@ -49,12 +49,15 @@ const LoginWebStyles = StyleSheet.create({
     fontSize: 30,
     fontWeight: '800',
     color: '#111111',
-    marginBottom: 8,
+    textAlign: 'center',
+    marginBottom: 0,
     fontFamily: "'Roboto', sans-serif",
   },
   subtitle: {
     fontSize: 14,
     color: '#6b7280',
+    textAlign: 'center',
+    marginTop: 8,
     marginBottom: 28,
     fontFamily: "'Roboto', sans-serif",
   },
@@ -62,6 +65,13 @@ const LoginWebStyles = StyleSheet.create({
   darkLink: { color: '#B91C1C' },
   darkSwitchText: { color: '#555555' },
   darkSwitchLink: { color: '#B91C1C', fontWeight: '700' },
+
+  // Back button (Home par wapas)
+  backRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 16, alignSelf: 'flex-start' },
+  backText: { color: '#111111', fontWeight: '700', fontSize: 14, marginLeft: 6, fontFamily: "'Roboto', sans-serif" },
+
+  // Header wala logo — Sign In title ke upar
+  brandLogo: { width: 132, height: 132, borderRadius: 66, marginBottom: 18, alignSelf: 'center' },
 
   // Small brand mark shown above the form on narrow web widths (when the
   // image panel is hidden), so the page never feels like a blank white screen.

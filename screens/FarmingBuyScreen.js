@@ -27,6 +27,7 @@ import { useToast } from '../components/ui/ToastProvider';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 import ModuleWebHeader from '../components/Modulewebheader';
 import Sidebar from '../components/Sidebar';
+import PriceRangeSlider from '../components/PriceRangeSlider';
 
 // Hero / banner — full banner image, drop your file at assets/images/ecom-buy-h.jpeg
 const ECOM_HERO_IMAGE = require('../assets/images/ecom-buy-h.jpeg');
@@ -74,6 +75,20 @@ const SORT_OPTIONS = [
 const priceValue = (v) => {
   const n = parseFloat(String(v || '').replace(/[^0-9.]/g, ''));
   return Number.isFinite(n) ? n : 0;
+};
+
+// Slider ka max: listings ka sabse mehenga price upar round kiya hua (kam se kam 10,000)
+const niceCeil = (n) => {
+  if (!Number.isFinite(n) || n <= 10000) return 10000;
+  const pow = Math.pow(10, Math.floor(Math.log10(n)));
+  return Math.ceil(n / pow) * pow;
+};
+// Slider ka step: max ka ~1/100, 1 / 2 / 5 x 10^k me round
+const niceStep = (max) => {
+  const raw = Math.max(1, max / 100);
+  const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+  const m = raw / pow;
+  return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * pow;
 };
 
 const notify = (title, message) => {
@@ -457,6 +472,20 @@ export default function FarmingBuyScreen({ navigation, route }) {
     loadListings();
   }, [loadListings, listings.length]));
 
+  // ── Price range slider (line type) ──
+  const sliderMax = useMemo(
+    () => niceCeil(listings.reduce((m, l) => Math.max(m, priceValue(l.price)), 0)),
+    [listings]
+  );
+  const sliderStep = useMemo(() => niceStep(sliderMax), [sliderMax]);
+  const sliderLow = minPrice ? Math.min(priceValue(minPrice), sliderMax) : 0;
+  const sliderHigh = maxPrice ? Math.min(priceValue(maxPrice), sliderMax) : sliderMax;
+  const handlePriceChange = (lo, hi) => {
+    // Extreme par ho to filter "off" (empty) rakho -> sab products dikhte hain
+    setMinPrice(lo <= 0 ? '' : String(lo));
+    setMaxPrice(hi >= sliderMax ? '' : String(hi));
+  };
+
   const categories = useMemo(() => {
     const fromData = Array.from(
       new Set(listings.map((l) => (l.sector || '').trim()).filter(Boolean))
@@ -627,30 +656,16 @@ export default function FarmingBuyScreen({ navigation, route }) {
               })}
 
               <Text style={[styles.sidebarLabel, { marginTop: 22 }]}>Price Range</Text>
-              <View style={styles.priceRow}>
-                <View style={styles.priceInputWrap}>
-                  <Text style={styles.priceRs}>₹</Text>
-                  <TextInput
-                    value={minPrice}
-                    onChangeText={setMinPrice}
-                    placeholder="0"
-                    placeholderTextColor="#94a3b8"
-                    keyboardType="numeric"
-                    style={styles.priceInput}
-                  />
-                </View>
-                <Text style={{ color: BRAND.faint }}>–</Text>
-                <View style={styles.priceInputWrap}>
-                  <Text style={styles.priceRs}>₹</Text>
-                  <TextInput
-                    value={maxPrice}
-                    onChangeText={setMaxPrice}
-                    placeholder="10,00,000"
-                    placeholderTextColor="#94a3b8"
-                    keyboardType="numeric"
-                    style={styles.priceInput}
-                  />
-                </View>
+              <View style={{ marginTop: 4 }}>
+                <PriceRangeSlider
+                  min={0}
+                  max={sliderMax}
+                  step={sliderStep}
+                  low={sliderLow}
+                  high={sliderHigh}
+                  onChange={handlePriceChange}
+                  activeColor={BRAND.primary}
+                />
               </View>
 
               <Text style={[styles.sidebarLabel, { marginTop: 22 }]}>Sort By</Text>

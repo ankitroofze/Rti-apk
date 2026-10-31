@@ -18,6 +18,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { AuthAPI } from './ClientAPI/AuthApi';
 import { UserStore } from '../store/UserStore';
 import styles from '../styles/LoginStyles';
+import BackTitleRow from '../components/BackTitleRow';
 import webStyles from '../styles/LoginWebStyles';
 
 // Web-only rendition of the Sign In screen: illustration on the left,
@@ -137,14 +138,18 @@ export default function LoginScreen({ navigation, route }) {
       <View style={webStyles.formPanel}>
         <ScrollView contentContainerStyle={webStyles.formPanelScroll} showsVerticalScrollIndicator={false}>
           <View style={webStyles.formInner}>
-            {!showImagePanel && (
-              <View style={webStyles.compactBrandRow}>
-                <Ionicons name="location" size={20} color="#B91C1C" />
-                <Text style={webStyles.compactBrandText}>RTI News</Text>
-              </View>
-            )}
+            {/* Header wala same logo — center me, bada */}
+            <Image
+              source={require('../assets/images/certificate_logo.jpg')}
+              resizeMode="contain"
+              style={webStyles.brandLogo}
+              accessibilityLabel="RTI News logo"
+            />
 
-            <Text style={webStyles.title}>Sign In</Text>
+            {/* Back (left) + Sign In (center) ek hi line par */}
+            <BackTitleRow onBack={() => navigation.navigate('Home')} titleHeight={36}>
+              <Text style={webStyles.title}>Sign In</Text>
+            </BackTitleRow>
             <Text style={webStyles.subtitle}>Please enter your credentials to continue</Text>
 
             {errors.general ? (
