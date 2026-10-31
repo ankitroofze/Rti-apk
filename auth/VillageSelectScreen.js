@@ -233,13 +233,13 @@ export default function VillageSelectScreen({ navigation, route }) {
     const villageValue = village.trim();
 
     if (needsCreateUser) {
-      const pending = await UserStore.getPendingRegistration();
-      if (!pending?.email) {
-        showPopup('Registration data not found. Please register again.', 'error');
-        allowLeaveRef.current = true;
-        navigation.replace('Register');
+      const commit = await UserStore.commitPendingRegistration();
+      if (!commit.ok) {
+        showPopup(commit.message || 'Registration failed. Please try again.', 'error');
+        if (!commit.isNetwork) { try { navigation.navigate('Register', commit.otpError ? { otpExpired: true } : undefined); } catch (_) { /* ignore */ } }
         return;
       }
+      const pending = commit.pending;
 
       const created = await UserStore.saveUser({
         name: pending.name, mobile: pending.mobile, email: pending.email,
@@ -290,13 +290,13 @@ export default function VillageSelectScreen({ navigation, route }) {
 
   const handleSkip = async () => {
     if (needsCreateUser) {
-      const pending = await UserStore.getPendingRegistration();
-      if (!pending?.email) {
-        showPopup('Registration data not found. Please register again.', 'error');
-        allowLeaveRef.current = true;
-        navigation.replace('Register');
+      const commit = await UserStore.commitPendingRegistration();
+      if (!commit.ok) {
+        showPopup(commit.message || 'Registration failed. Please try again.', 'error');
+        if (!commit.isNetwork) { try { navigation.navigate('Register', commit.otpError ? { otpExpired: true } : undefined); } catch (_) { /* ignore */ } }
         return;
       }
+      const pending = commit.pending;
 
       const created = await UserStore.saveUser({
         name: pending.name, mobile: pending.mobile, email: pending.email,

@@ -248,43 +248,12 @@ export default function TalukaSelectScreen({ navigation, route }) {
     const talukaValue = taluka.trim();
 
     if (needsCreateUser) {
-      const pending = await UserStore.getPendingRegistration();
-      if (!pending?.email) {
-        showPopup('Registration data not found. Please register again.', 'error');
-        allowLeaveRef.current = true;
-        navigation.replace('Register');
-        return;
-      }
-
-           const created = await UserStore.saveUser({
-        name: pending.name, mobile: pending.mobile, email: pending.email,
-        referral_code_used: pending.referral_code_used || null,
-        password: pending.password, state: selectedState,
-        district: selectedDistrict, taluka: talukaValue,
-        profile_image: pending.profile_image || '',
-        bio: pending.bio || '',
-      });
-
-      if (created && !created.ok) {
-        // Account server par ban chuka hai (Register screen par) — sirf local copy save nahi hui.
-        // Login karte hi profile server se sync ho jaati hai.
-        await UserStore.clearPendingRegistration();
-        allowLeaveRef.current = true;
-        showPopup('Your account has been created. Please sign in to continue.', 'success');
-        navigation.replace('Login');
-        return;
-      }
-
-      await UserStore.setCurrentUser(pending.email);
-      // ✅ login() yahan nahi — Village screen ke end me hoga, warna VillageSelect navigation fail hota hai
-          await UserStore.completeLocationSetup(pending.email, selectedState, selectedDistrict, talukaValue);
-      await UserStore.clearPendingRegistration();
-
-      syncRegistrationLocation(talukaValue);
-
-      goToVillageSelect(talukaValue);
+      // ✅ Account abhi save NAHI hoga — Village step poora hone par hi (Complete / Skip) hoga.
+      allowLeaveRef.current = true;
+      navigation.replace('VillageSelect', { selectedState, selectedDistrict, selectedTaluka: talukaValue, fromPremium, needsCreateUser: true, needsLogin: true });
       return;
     }
+
     const user = await UserStore.getCurrentUser();
     if (!user) { allowLeaveRef.current = true; navigation.replace('Login'); return; }
 
@@ -302,13 +271,13 @@ export default function TalukaSelectScreen({ navigation, route }) {
 
   const handleSkip = async () => {
     if (needsCreateUser) {
-      const pending = await UserStore.getPendingRegistration();
-      if (!pending?.email) {
-        showPopup('Registration data not found. Please register again.', 'error');
-        allowLeaveRef.current = true;
-        navigation.replace('Register');
+      const commit = await UserStore.commitPendingRegistration();
+      if (!commit.ok) {
+        showPopup(commit.message || 'Registration failed. Please try again.', 'error');
+        if (!commit.isNetwork) { try { navigation.navigate('Register', commit.otpError ? { otpExpired: true } : undefined); } catch (_) { /* ignore */ } }
         return;
       }
+      const pending = commit.pending;
 
               const created = await UserStore.saveUser({
         name: pending.name, mobile: pending.mobile, email: pending.email,

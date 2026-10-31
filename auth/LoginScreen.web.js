@@ -195,9 +195,9 @@ export default function LoginScreen({ navigation, route }) {
               {errors.password ? <Text style={styles.inlineErrorText}>{errors.password}</Text> : null}
             </View>
 
-            <TouchableOpacity style={styles.forgotBtn} onPress={() => navigation.navigate('ForgotPassword')}>
-              <Text style={[styles.forgotText, webStyles.darkLink]}>Forgot password?</Text>
-            </TouchableOpacity>
+            <View style={styles.forgotBtn}>
+<Text style={[styles.forgotText, webStyles.darkLink]} onPress={() => navigation.navigate('ForgotPassword')} accessibilityRole="link">Forgot password?</Text>
+</View>
 
             <TouchableOpacity style={[styles.submitBtnWrap, submitting && styles.btnDisabled]} disabled={submitting} onPress={handleLogin}>
               <LinearGradient colors={['#B91C1C', '#DC2626']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.submitBtn}>
@@ -210,12 +210,11 @@ export default function LoginScreen({ navigation, route }) {
               </LinearGradient>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.switchBtn} onPress={() => navigation.navigate('Register')}>
-              <Text style={webStyles.darkSwitchText}>
+            <View style={styles.switchBtn}>
+<Text style={webStyles.darkSwitchText}>
                 {"Don't have an account? "}
-                <Text style={webStyles.darkSwitchLink}>Sign Up</Text>
-              </Text>
-            </TouchableOpacity>
+                <Text style={webStyles.darkSwitchLink} onPress={() => navigation.navigate('Register')} accessibilityRole="link">Sign Up</Text></Text>
+</View>
           </View>
         </ScrollView>
       </View>

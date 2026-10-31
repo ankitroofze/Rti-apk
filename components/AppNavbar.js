@@ -25,6 +25,7 @@ import RefreshButton from './RefreshButton';
 import { UserStore } from '../store/UserStore';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getProfileTier, AVATAR_IMAGE } from '../utils/profileHelpers';
+import { openWithSidebar } from '../utils/useQuickMenuRedirect ';
 import { isValidImageUrl } from '../utils/storyHelpers';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
 
@@ -35,7 +36,6 @@ const DESKTOP_NAV_ITEMS = [
   { labelKey: 'News Feed', screen: 'Feed', icon: 'newspaper-outline' },
   { labelKey: 'Publish', screen: 'QuickMenu', icon: 'grid-outline', isCreateBtn: true },
   { labelKey: 'Promote', screen: 'Advertise', icon: 'megaphone-outline', isAdvertiseBtn: true },
-  { labelKey: 'My Profile', screen: 'Profile', icon: 'person-outline' },
   { labelKey: 'E-Paper', screen: 'NewspaperList', icon: 'newspaper-outline' },
 
 ];
@@ -264,7 +264,7 @@ function NotificationBell({ navigation, style }) {
   return (
     <TouchableOpacity
       style={[styles.notificationBellBtn, style]}
-      onPress={() => navigation?.navigate?.('Notifications')}
+      onPress={() => openWithSidebar(navigation, 'Notifications')}
       activeOpacity={0.85}
     >
       <Ionicons name="notifications-outline" size={20} color="#0f172a" />
@@ -366,7 +366,7 @@ function ProfileDropdown({ navigation, showNameLabel }) {
     <>
       <TouchableOpacity
         style={styles.profileDropdownItem}
-        onPress={() => { setIsOpen(false); navigation?.navigate?.('Profile'); }}
+        onPress={() => { setIsOpen(false); openWithSidebar(navigation, 'Profile'); }}
         activeOpacity={0.7}
       >
         <Ionicons name="person-outline" size={18} color="#ef4444" />
@@ -552,7 +552,7 @@ function MobileTopHeader({ navigation, handleNavigate, handleHomeShortcut }) {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={[styles.mobileTopHeaderShell, { paddingTop: insets.top + 8 }]}>
+    <View style={[styles.mobileTopHeaderShell, { paddingTop: IS_WEB ? 4 : insets.top + 8 }]}>
       <View style={styles.mobileTopHeader}>
         <View style={styles.mobileTopHeaderLeft}>
           <NavbarBrand onPressHome={() => handleNavigate('Home')} compact />
@@ -580,7 +580,7 @@ function MobileBottomBar({ activeScreen, handleNavigate }) {
   const insets = useSafeAreaInsets();
   const { language } = useLanguage();
   const copy = useMemo(() => getSiteCopy(language), [language]);
-  const bottomPad = Math.max(insets.bottom, 10);
+  const bottomPad = IS_WEB ? Math.max(insets.bottom, 4) : Math.max(insets.bottom, 10);
   const [currentProfileTier, setCurrentProfileTier] = useState(null);
 
   useEffect(() => {
@@ -612,7 +612,7 @@ function MobileBottomBar({ activeScreen, handleNavigate }) {
                 end={{ x: 1, y: 1 }}
                 style={styles.mobileTabFabWrap}
               >
-                <Ionicons name="add" size={34} color="#000000" />
+                <Ionicons name="add" size={IS_WEB ? 28 : 34} color="#000000" />
               </LinearGradient>
 
               <Text style={styles.mobileTabLabel} numberOfLines={1}>
@@ -730,7 +730,24 @@ export default function AppNavbar({ activeScreen, navigation, hideTopHeader = fa
         <View style={styles.desktopUtilityRow}>
           <NavbarLanguageSelector />
         <RefreshButton />
-<NotificationBell navigation={navigation} style={{ marginRight: 22 }} />
+<NotificationBell navigation={navigation} style={{ marginRight: 6 }} />
+          {/* Baki pages ke header jaisa: Settings + Subscription upar hi */}
+          <TouchableOpacity
+            style={styles.notificationBellBtn}
+            onPress={() => navigation?.navigate?.('Settings')}
+            activeOpacity={0.85}
+            accessibilityLabel="Settings"
+          >
+            <Ionicons name="settings-outline" size={20} color="#0f172a" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.notificationBellBtn, { marginRight: 16 }]}
+            onPress={() => openWithSidebar(navigation, 'Subscription Plans')}
+            activeOpacity={0.85}
+            accessibilityLabel="Subscription"
+          >
+            <Ionicons name="ribbon-outline" size={20} color="#0f172a" />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.desktopActionsRow}>
@@ -802,9 +819,9 @@ const styles = StyleSheet.create({
   },
   // Mobile header logo — made noticeably bigger, no border around it
   brandLogoCompact: {
-    width: 46,
-    height: 46,
-    borderRadius: 23,
+    width: IS_WEB ? 36 : 46,
+    height: IS_WEB ? 36 : 46,
+    borderRadius: IS_WEB ? 18 : 23,
     transform: [{ scale: 1 }],
   },
   desktopNavLinksRow: {
@@ -894,7 +911,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 14,
-    paddingBottom: 8,
+    paddingBottom: IS_WEB ? 2 : 8,
+    // Profile dropdown niche wale icon row (Post/Live/e-paper/Ecom) ke peeche na chhupe
+    ...(IS_WEB ? { position: 'relative', zIndex: 20 } : null),
   },
    mobileTopHeaderLeft: {
     flexDirection: 'row',
@@ -907,22 +926,23 @@ const styles = StyleSheet.create({
   // Gallery / stories style slider row
    gallerySliderWrap: {
     borderTopWidth: 0,
+    ...(IS_WEB ? { position: 'relative', zIndex: 1 } : null),
   },
   gallerySliderContent: {
     flexDirection: 'row',
-    gap: 18,
+    gap: IS_WEB ? 14 : 18,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: IS_WEB ? 4 : 10,
   },
     galleryItem: {
     alignItems: 'center',
-    gap: 2,
-    width: 68,
+    gap: IS_WEB ? 1 : 2,
+    width: IS_WEB ? 60 : 68,
   },
    galleryIconRing: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
+    width: IS_WEB ? 48 : 70,
+    height: IS_WEB ? 48 : 70,
+    borderRadius: IS_WEB ? 24 : 35,
     borderWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
@@ -932,9 +952,9 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   galleryIconFill: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: IS_WEB ? 44 : 64,
+    height: IS_WEB ? 44 : 64,
+    borderRadius: IS_WEB ? 22 : 32,
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
@@ -945,7 +965,7 @@ const styles = StyleSheet.create({
    galleryIconImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 32,
+    borderRadius: IS_WEB ? 22 : 32,
   },
   galleryLiveDot: {
     position: 'absolute',
@@ -953,7 +973,7 @@ const styles = StyleSheet.create({
     right: -1,
   },
        galleryItemLabel: {
-    fontSize: 12.5,
+    fontSize: IS_WEB ? 11.5 : 12.5,
     fontWeight: '600',
     color: '#334155',
     textAlign: 'center',
@@ -1199,7 +1219,7 @@ const styles = StyleSheet.create({
     }),
   },
      mobileBrandTitle: {
-  fontSize: 20,
+  fontSize: IS_WEB ? 17 : 20,
   fontWeight: '600',
   color: '#c40b0b',
   letterSpacing: 0.2,
@@ -1209,8 +1229,8 @@ const styles = StyleSheet.create({
 },
 
 mobileBrandSubtitle: {
-  fontSize: 9.5,
-  lineHeight: 12,
+  fontSize: IS_WEB ? 8.5 : 9.5,
+  lineHeight: IS_WEB ? 10 : 12,
   fontWeight: '500',
   color: '#374151',
   letterSpacing: 0.2,
@@ -1288,7 +1308,7 @@ mobileBrandSubtitle: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: 8,
-    paddingTop: 10,
+    paddingTop: IS_WEB ? 6 : 10,
     borderTopWidth: 0,
     ...Platform.select({
       web: {
@@ -1314,14 +1334,14 @@ mobileBrandSubtitle: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
+    gap: IS_WEB ? 1 : 4,
     paddingHorizontal: 2,
   },
 
   // Regular tab icon container — small rounded square, no border
   mobileTabIconWrap: {
     width: 44,
-    height: 36,
+    height: IS_WEB ? 26 : 36,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1347,14 +1367,14 @@ mobileBrandSubtitle: {
 
   // FAB-style button for the center tab (matching image's blue circle)
   mobileTabFabWrap: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
+    width: IS_WEB ? 46 : 58,
+    height: IS_WEB ? 46 : 58,
+    borderRadius: IS_WEB ? 23 : 29,
     
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#686262',
-    marginTop: -24,
+    marginTop: IS_WEB ? -20 : -24,
     ...Platform.select({
       default: {
         elevation: 2,

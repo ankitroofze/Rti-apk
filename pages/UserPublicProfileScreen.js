@@ -369,6 +369,32 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     return () => { alive = false; };
   }, [loading, profile, author, userId, resolvedEmail]);
 
+  // ── Mobile fallback ─────────────────────────────────────────────────────────
+  // GET /profile/{id} kai baar phone nahi bhejta (ya web par alag shape me aata hai) — tab ID card
+  // me "Mo:-" gayab ho jata tha. Pehle route `author`, phir news feed ke `author_mobile` se number lo.
+  const [fallbackMobile, setFallbackMobile] = useState('');
+  useEffect(() => {
+    let alive = true;
+    const direct = pickPhoneNumber(profile || {}) || pickPhoneNumber(author || {});
+    if (direct) { setFallbackMobile(direct); return undefined; }
+    if (loading) return undefined;
+    (async () => {
+      try {
+        const summary = await UserStore.getNewsFeedSummary?.({ skipBlockedUsers: true });
+        const items = Array.isArray(summary?.items) ? summary.items : [];
+        const idStr = String(userId ?? profile?.id ?? '').trim();
+        const mail = String(resolvedEmail || profile?.email || '').trim().toLowerCase();
+        const hit = items.find((it) => {
+          if (!pickPhoneNumber({ phone: it?.author_mobile })) return false;
+          return (idStr && String(it.author_id ?? '') === idStr)
+            || (mail && String(it.createdBy || it.author_email || '').trim().toLowerCase() === mail);
+        });
+        if (alive && hit) setFallbackMobile(pickPhoneNumber({ phone: hit.author_mobile }));
+      } catch { /* ignore */ }
+    })();
+    return () => { alive = false; };
+  }, [loading, profile, author, userId, resolvedEmail]);
+
   // ── Load profile + posts ────────────────────────────────────────────────────
   useEffect(() => {
     let active = true;
@@ -652,7 +678,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       <View style={[docCardStyle, { alignItems: 'center' }]}>
         <View style={{ width: '100%', alignSelf: 'center', alignItems: 'center', paddingVertical: 8, flexDirection: stacked ? 'column' : 'row', ...(stacked ? {} : { flexWrap: 'wrap' }), justifyContent: 'center', gap: stacked ? 12 : 10 }}>
           <ScaledCard width={220} naturalWidth={360} style={{ alignSelf: 'center' }}>
-            <AutoIdCardPreview profile={display} viewOnly />
+            <AutoIdCardPreview profile={display} viewOnly fallbackMobile={fallbackMobile} />
           </ScaledCard>
           <ScaledCard width={220} naturalWidth={360} style={{ alignSelf: 'center' }}>
             <AutoIdCardBackPreview />
@@ -681,7 +707,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const memberIdText = String(idCardInfo?.id_number || display?.id_number || display?.member_id || display?.memberId || '').trim()
     || (display?.email || resolvedEmail ? generateMemberId(display?.email || resolvedEmail) : '');
   // Mobile: backend `phone` bhejta hai; baaki naam purane local records ke liye
-  const mobileText = pickPhoneNumber(display);
+  const mobileText = pickPhoneNumber(display) || fallbackMobile;
   // Role + Area: seat ka naam (jaise "State Bureau Chief") aur uska area (state / district / taluka)
   const roleAreaRole = shownPillText || tierPillLabel || '';
   const seatArea = String(

@@ -861,11 +861,12 @@ const editAd = route?.params?.editAd || null;
           ))}
         </View>
       ) : null}
-      <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' }}>
+      {/* Upload box ke neeche gap + button center me (pehle dono chipke hue the) */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', marginTop: 16, marginBottom: 6 }}>
         <TouchableOpacity
           onPress={handlePickVideo}
           activeOpacity={0.85}
-          style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: ADV_RED, marginRight: 10 }}
+          style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: ADV_RED, marginHorizontal: 5 }}
         >
           <Ionicons name="videocam" size={16} color={ADV_RED} />
           <Text style={{ color: ADV_RED, fontWeight: '700', marginLeft: 6 }}>{adVideo ? 'Change Video' : 'Add Video (mp4/mov/webm, max 10 MB)'}</Text>

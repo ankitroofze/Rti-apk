@@ -201,7 +201,14 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
       seenRef.current = parsed && typeof parsed === 'object' ? parsed : {};
     } catch { seenRef.current = {}; }
   }, []);
-  useEffect(() => { setList(orderBySeen(rawList, seenRef.current)); }, [rawList]);
+  // ✅ FIX (timer 2 baar): popup khula ho tab list ka order KABHI mat badlo.
+  // Pehle parent re-render par `rawList` badalta tha, tab tak current ad "seen" mark ho chuka hota tha,
+  // to wo last me chala jata tha -> current ad badal jata -> countdown 5 se dobara shuru ho jata tha.
+  const visibleRef = useRef(false);
+  useEffect(() => {
+    if (visibleRef.current) return; // popup chal raha hai — list freeze
+    setList(orderBySeen(rawList, seenRef.current));
+  }, [rawList]);
 
   // ✅ SPEED: popup khulte hi ad turant dikhe isliye saari ad images pehle se download (cache) kar lo
   useEffect(() => {
@@ -218,6 +225,9 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
       // pehle "dekhe hue ads" load karo, phir order lagake popup kholo (dekhe hue ads last me)
       loadSeen().then(() => {
         if (!alive) return;
+        // Popup pehle se khula hai (focus event dobara aaya) to countdown / list reset mat karo
+        if (visibleRef.current) return;
+        visibleRef.current = true;
         setList(orderBySeen(rawListRef.current, seenRef.current));
         setVisible(true);
         setIndex(0);
@@ -252,7 +262,7 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
     setUnlocked(false);
     const timer = setInterval(() => setRemaining((r) => (r > 0 ? r - 1 : 0)), 1000);
     return () => clearInterval(timer);
-  }, [visible, currentKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [visible, index, Boolean(current)]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 5 sec poore: Skip unlock + (aakhri ad na ho to) agla ad
   useEffect(() => {
@@ -279,12 +289,16 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
     return () => { alive = false; };
   }, [currentKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const close = () => setVisible(false);
+  const close = () => { visibleRef.current = false; setVisible(false); };
   const handleSkip = () => { if (canSkip) close(); };
 
   if (!visible || !current) return null;
 
   const handlePress = () => {
+    // ✅ FIX: 5 sec ka timer poora hone se pehle redirect (profile / website / whatsapp ...) KABHI nahi khulega.
+    // Pehle ad par tap karte hi popup band ho jaata tha aur 5 sec ki timeline bypass ho jaati thi.
+    // Ab redirect tabhi chalta hai jab Skip bhi available ho (canSkip).
+    if (!canSkip) return;
     // Sirf asli image/video par tap -> ad ka redirect. (Blur par tap kuch nahi karta.)
     if (onPress) onPress(current);
     else if (current.ctaUrl) openExternalUrl(current.ctaUrl);
@@ -336,7 +350,7 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
       >
         <TouchableOpacity
           style={{ width: hit.width, height: hit.height, maxWidth: '100%', maxHeight: '100%' }}
-          activeOpacity={0.95}
+          activeOpacity={canSkip ? 0.95 : 1}
           onPress={handlePress}
         >
           {videoUri ? (

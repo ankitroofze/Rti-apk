@@ -133,13 +133,17 @@ export default function LoginScreen({ navigation, route }) {
             {errors.general ? <View style={styles.generalErrorBox}><Ionicons name="alert-circle-outline" size={16} color="#e8732a" /><Text style={styles.generalErrorText}>{errors.general}</Text></View> : null}
             <View style={styles.inputGroup}><Text style={styles.inputLabel}>Email / Mobile</Text><View style={[styles.inputWrap, errors.email && styles.inputWrapError]}><Ionicons name="mail-outline" size={18} color="#888" /><TextInput style={styles.input} value={identifier} onFocus={revealActiveField} onChangeText={(value) => { setIdentifier(value); setErrors((prev) => ({ ...prev, email: '', general: '' })); }} placeholder="you@example.com or 10-digit mobile" placeholderTextColor="#9ca3af" autoCapitalize="none" autoCorrect={false} /></View>{errors.email ? <Text style={styles.inlineErrorText}>{errors.email}</Text> : null}</View>
             <View style={styles.inputGroup}><Text style={styles.inputLabel}>Password</Text><View style={[styles.inputWrap, errors.password && styles.inputWrapError]}><Ionicons name="lock-closed-outline" size={18} color="#888" /><TextInput style={styles.input} value={password} onFocus={revealActiveField} onChangeText={(value) => { setPassword(value); setErrors((prev) => ({ ...prev, password: '', general: '' })); }} placeholder="Enter your password" placeholderTextColor="#9ca3af" secureTextEntry={!showPassword} /><TouchableOpacity onPress={() => setShowPassword((value) => !value)}><Ionicons name={showPassword ? 'eye-outline' : 'eye-off-outline'} size={20} color="#888" /></TouchableOpacity></View>{errors.password ? <Text style={styles.inlineErrorText}>{errors.password}</Text> : null}</View>
-            <TouchableOpacity style={styles.forgotBtn} onPress={() => navigation.navigate('ForgotPassword')}><Text style={styles.forgotText}>Forgot password?</Text></TouchableOpacity>
+            <View style={styles.forgotBtn}>
+<Text style={styles.forgotText} onPress={() => navigation.navigate('ForgotPassword')} accessibilityRole="link">Forgot password?</Text>
+</View>
          <TouchableOpacity style={[styles.submitBtnWrap, submitting && styles.btnDisabled]} disabled={submitting} onPress={handleLogin}>
   <LinearGradient colors={['#ffffff', '#f8fafc', '#f1f5f9']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.submitBtn}>
     {submitting ? <ActivityIndicator color="#B91C1C" /> : <><Text style={styles.submitBtnText}>Sign In</Text><Ionicons name="arrow-forward" size={18} color="#B91C1C" /></>}
   </LinearGradient>
 </TouchableOpacity>
-            <TouchableOpacity style={styles.switchBtn} onPress={() => navigation.navigate('Register')}><Text style={styles.switchText}>{"Don't have an account? "}<Text style={styles.switchLink}>Sign Up</Text></Text></TouchableOpacity>
+            <View style={styles.switchBtn}>
+<Text style={styles.switchText}>{"Don't have an account? "}<Text style={styles.switchLink} onPress={() => navigation.navigate('Register')} accessibilityRole="link">Sign Up</Text></Text>
+</View>
           </View>
         </KeyboardAwareScroll>
       </ImageBackground>

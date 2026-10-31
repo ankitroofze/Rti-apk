@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { readReferralCodeFromUrl } from '../utils/Referralservice';
 import * as ImagePicker from 'expo-image-picker';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   Animated,
   Image,
@@ -104,7 +105,7 @@ function StepIndicator({ currentStep, totalSteps }) {
 // ─────────────────────────────────────────────────────────────
 // Main Register Screen (web)
 // ─────────────────────────────────────────────────────────────
-export default function RegisterScreen({ navigation }) {
+export default function RegisterScreen({ navigation, route }) {
   useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold });
   const { width } = useWindowDimensions();
   const showImagePanel = width >= 900;
@@ -130,6 +131,18 @@ export default function RegisterScreen({ navigation }) {
   const [emailVerified, setEmailVerified] = useState(false);
   const [verifiedEmail, setVerifiedEmail] = useState('');
   const [verifiedOtp, setVerifiedOtp] = useState('');
+
+  // ✅ Location steps se back karke is screen par aane par pending (unsaved) registration hata do —
+  // jab tak taluka/village poora na ho, kuch bhi save nahi rehna chahiye. Form ke fields screen par bane rehte hain.
+  useFocusEffect(
+    useCallback(() => {
+      UserStore.clearPendingRegistration();
+      if (route?.params?.otpExpired) {
+        setEmailVerified(false); setVerifiedEmail(''); setVerifiedOtp('');
+        try { navigation.setParams({ otpExpired: undefined }); } catch (_) { /* ignore */ }
+      }
+    }, [route?.params?.otpExpired]) // eslint-disable-line react-hooks/exhaustive-deps
+  );
   const [otpSending, setOtpSending] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -271,29 +284,6 @@ export default function RegisterScreen({ navigation }) {
 
     setSubmitting(true);
     try {
-      // Server par registration abhi hoti hai (verified OTP ke saath) — OTP sirf 5 minute valid rehta hai,
-      // isliye location screens ke baad nahi, yahin.
-      const result = await AuthAPI.register({
-        firstName: firstName.trim(),
-        middleName: middleName.trim(),
-        lastName: lastName.trim(),
-        mobile: mobile.trim(),
-        email: normalizedEmail,
-        password,
-        referralCode: referralCode.trim(),
-        profileImage: profileImage || '',
-        otp: verifiedOtp,
-      });
-
-      if (!result.ok) {
-        if (result.otpError) {
-          setEmailVerified(false); setVerifiedEmail(''); setVerifiedOtp('');
-          showToast('OTP expired or invalid. Please verify your email again.', 'error');
-        } else {
-          showToast(result.message || 'Registration failed. Please try again.', 'error');
-        }
-        return;
-      }
 
       const ok = await UserStore.setPendingRegistration({
         name: fullName,
@@ -302,15 +292,17 @@ export default function RegisterScreen({ navigation }) {
         referral_code_used: referralCode.trim() || null,
         password,
         profile_image: profileImage || '',
+        first_name: firstName.trim(),
+        middle_name: middleName.trim(),
+        last_name: lastName.trim(),
+        referral_code: referralCode.trim(),
+        otp: verifiedOtp,
       });
 
       if (!ok) {
-        showToast('Account created. Please sign in to continue.', 'info');
-        navigation.navigate('Login');
+        showToast('Unable to continue registration. Please try again.', 'error');
         return;
       }
-      // Account ban gaya + token save: session turant save (app band karke kholne par bhi isi ID se login)
-      try { await UserStore.setCurrentUser(normalizedEmail); } catch (_) {}
       navigation.navigate('StateSelect', { fromPremium: false, needsCreateUser: true });
     } catch {
       showToast('Registration failed. Please try again.', 'error');
@@ -575,11 +567,10 @@ export default function RegisterScreen({ navigation }) {
                 {emailOk && !emailVerified &&
                   <Text style={localStyles.verifyHintBottom}>{'⚠️ Email verification is required to create account'}</Text>}
 
-                <TouchableOpacity style={styles.switchBtn} onPress={() => navigation.navigate('Login')}>
-                  <Text style={webStyles.darkSwitchText}>
-                    Already have an account? <Text style={webStyles.darkSwitchLink}>Sign In</Text>
-                  </Text>
-                </TouchableOpacity>
+                <View style={styles.switchBtn}>
+<Text style={webStyles.darkSwitchText}>
+                    Already have an account? <Text style={webStyles.darkSwitchLink} onPress={() => navigation.navigate('Login')} accessibilityRole="link">Sign In</Text></Text>
+</View>
               </>
             )}
           </View>

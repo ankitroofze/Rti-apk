@@ -7,53 +7,11 @@ import { getDistricts } from '../pages/locationData';
 import styles from '../styles/RegisterStyles';
 import webStyles from '../styles/LocationWebStyles';
 import BackTitleRow from '../components/BackTitleRow';
+import LocationDropdownModal from '../components/LocationDropdownModal';
 
-function DropdownModal({ visible, title, items, selected, onSelect, onClose }) {
-  const [search, setSearch] = useState('');
-  const filtered = (items || []).filter((i) => i.toLowerCase().includes(search.toLowerCase()));
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <TouchableOpacity style={dropStyles.overlay} activeOpacity={1} onPress={onClose}>
-        <TouchableOpacity activeOpacity={1} style={{ width: '100%', alignItems: 'center' }} onPress={() => {}}>
-          <View style={dropStyles.sheet}>
-            <View style={dropStyles.handle} />
-            <Text style={dropStyles.title}>{title}</Text>
-            <View style={dropStyles.searchWrap}>
-              <Ionicons name="search-outline" size={16} color="#B91C1C" />
-              <TextInput style={dropStyles.searchInput} value={search} onChangeText={setSearch} placeholder="Search district..." placeholderTextColor="#9ca3af" autoCorrect={false} autoCapitalize="none" />
-            </View>
-            <FlatList
-              data={filtered}
-              keyExtractor={(item) => item}
-              showsVerticalScrollIndicator={false}
-              style={{ maxHeight: 320 }}
-              renderItem={({ item }) => (
-                <TouchableOpacity style={[dropStyles.item, selected === item && dropStyles.itemSelected]} onPress={() => { onSelect(item); onClose(); setSearch(''); }}>
-                  <Text style={[dropStyles.itemText, selected === item && dropStyles.itemTextSelected]}>{item}</Text>
-                  {selected === item && <Ionicons name="checkmark-circle" size={18} color="#B91C1C" />}
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </Modal>
-  );
+function DropdownModal(props) {
+  return <LocationDropdownModal placeholder="Search district..." emptyText="No district found" {...props} />;
 }
-
-const dropStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', alignItems: 'center', justifyContent: 'center', padding: 20 },
-  sheet: { width: '100%', maxWidth: 420, maxHeight: '80%', borderRadius: 20, backgroundColor: '#ffffff', padding: 20, paddingBottom: 24 },
-  handle: { width: 40, height: 4, backgroundColor: '#EEEEEE', borderRadius: 99, alignSelf: 'center', marginBottom: 14 },
-  title: { fontSize: 16, fontWeight: '800', color: '#111111', marginBottom: 12, textAlign: 'center', fontFamily: "'Roboto', sans-serif" },
-  searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F8F8F8', borderWidth: 1.5, borderColor: '#EEEEEE', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 10 },
-  searchInput: { flex: 1, fontSize: 14, color: '#111111', paddingVertical: 0, outlineStyle: 'none', fontFamily: "'Roboto', sans-serif" },
-  item: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 11, paddingHorizontal: 14, borderRadius: 12, marginBottom: 3 },
-  itemSelected: { backgroundColor: 'rgba(185,28,28,0.08)' },
-  itemText: { fontSize: 14, color: '#111111', fontWeight: '500', fontFamily: "'Roboto', sans-serif" },
-  itemTextSelected: { color: '#B91C1C', fontWeight: '700' },
-});
 
 export default function DistrictSelectScreen({ navigation, route }) {
   useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold });

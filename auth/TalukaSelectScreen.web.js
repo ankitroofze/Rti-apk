@@ -11,53 +11,11 @@ import { getTalukas } from '../pages/locationData';
 import styles from '../styles/RegisterStyles';
 import webStyles from '../styles/LocationWebStyles';
 import BackTitleRow from '../components/BackTitleRow';
+import LocationDropdownModal from '../components/LocationDropdownModal';
 
-function DropdownModal({ visible, title, items, selected, onSelect, onClose }) {
-  const [search, setSearch] = useState('');
-  const filtered = items.filter((i) => i.toLowerCase().includes(search.toLowerCase()));
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <TouchableOpacity style={dropStyles.overlay} activeOpacity={1} onPress={onClose}>
-        <TouchableOpacity activeOpacity={1} style={{ width: '100%', alignItems: 'center' }} onPress={() => {}}>
-          <View style={dropStyles.sheet}>
-            <View style={dropStyles.handle} />
-            <Text style={dropStyles.title}>{title}</Text>
-            <View style={dropStyles.searchWrap}>
-              <Ionicons name="search-outline" size={16} color="#B91C1C" />
-              <TextInput style={dropStyles.searchInput} value={search} onChangeText={setSearch} placeholder="Search taluka..." placeholderTextColor="#9ca3af" autoCorrect={false} autoCapitalize="none" />
-            </View>
-            <FlatList
-              data={filtered}
-              keyExtractor={(item) => item}
-              showsVerticalScrollIndicator={false}
-              style={{ maxHeight: 320 }}
-              renderItem={({ item }) => (
-                <TouchableOpacity style={[dropStyles.item, selected === item && dropStyles.itemSelected]} onPress={() => { onSelect(item); onClose(); setSearch(''); }}>
-                  <Text style={[dropStyles.itemText, selected === item && dropStyles.itemTextSelected]}>{item}</Text>
-                  {selected === item && <Ionicons name="checkmark-circle" size={18} color="#B91C1C" />}
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </TouchableOpacity>
-      </TouchableOpacity>
-    </Modal>
-  );
+function DropdownModal(props) {
+  return <LocationDropdownModal placeholder="Search taluka..." emptyText="No taluka found" {...props} />;
 }
-
-const dropStyles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.35)', alignItems: 'center', justifyContent: 'center', padding: 20 },
-  sheet: { width: '100%', maxWidth: 420, maxHeight: '80%', borderRadius: 20, backgroundColor: '#ffffff', padding: 20, paddingBottom: 24 },
-  handle: { width: 40, height: 4, backgroundColor: '#EEEEEE', borderRadius: 99, alignSelf: 'center', marginBottom: 14 },
-  title: { fontSize: 16, fontWeight: '800', color: '#111111', marginBottom: 12, textAlign: 'center', fontFamily: "'Roboto', sans-serif" },
-  searchWrap: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F8F8F8', borderWidth: 1.5, borderColor: '#EEEEEE', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, marginBottom: 10 },
-  searchInput: { flex: 1, fontSize: 14, color: '#111111', paddingVertical: 0, outlineStyle: 'none', fontFamily: "'Roboto', sans-serif" },
-  item: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 11, paddingHorizontal: 14, borderRadius: 12, marginBottom: 3 },
-  itemSelected: { backgroundColor: 'rgba(185,28,28,0.08)' },
-  itemText: { fontSize: 14, color: '#111111', fontWeight: '500', fontFamily: "'Roboto', sans-serif" },
-  itemTextSelected: { color: '#B91C1C', fontWeight: '700' },
-});
 
 export default function TalukaSelectScreen({ navigation, route }) {
   useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold });
@@ -128,34 +86,12 @@ export default function TalukaSelectScreen({ navigation, route }) {
     const talukaValue = taluka.trim();
 
     if (needsCreateUser) {
-      const pending = await UserStore.getPendingRegistration();
-      if (!pending?.email) { showPopup('Registration data not found. Please register again.', 'error'); navigation.replace('Register'); return; }
-
-      const created = await UserStore.saveUser({
-        name: pending.name, mobile: pending.mobile, email: pending.email,
-        referral_code_used: pending.referral_code_used || null,
-        password: pending.password, state: selectedState,
-        district: selectedDistrict, taluka: talukaValue,
-        profile_image: pending.profile_image || '', bio: pending.bio || '',
-      });
-      if (created && !created.ok) {
-        // Account server par ban chuka hai (Register screen par) — sirf local copy save nahi hui.
-        // Login karte hi profile server se sync ho jaati hai.
-        await UserStore.clearPendingRegistration();
-        allowLeaveRef.current = true;
-        showPopup('Your account has been created. Please sign in to continue.', 'success');
-        navigation.replace('Login');
-        return;
-      }
-
-      await UserStore.setCurrentUser(pending.email);
-      // ✅ login() yahan nahi — Village screen ke end me hoga, warna VillageSelect navigation fail hota hai
-      await UserStore.completeLocationSetup(pending.email, selectedState, selectedDistrict, talukaValue);
-      await UserStore.clearPendingRegistration();
-        syncRegistrationLocation(talukaValue);
-      goToVillageSelect(talukaValue);
+      // ✅ Account abhi save NAHI hoga — Village step poora hone par hi (Complete / Skip) hoga.
+      allowLeaveRef.current = true;
+      navigation.replace('VillageSelect', { selectedState, selectedDistrict, selectedTaluka: talukaValue, fromPremium, needsCreateUser: true, needsLogin: true });
       return;
     }
+
 
     const user = await UserStore.getCurrentUser();
     if (!user) { navigation.replace('Login'); return; }
@@ -168,8 +104,13 @@ export default function TalukaSelectScreen({ navigation, route }) {
 
   const handleSkip = async () => {
     if (needsCreateUser) {
-      const pending = await UserStore.getPendingRegistration();
-      if (!pending?.email) { showPopup('Registration data not found. Please register again.', 'error'); navigation.replace('Register'); return; }
+      const commit = await UserStore.commitPendingRegistration();
+      if (!commit.ok) {
+        showPopup(commit.message || 'Registration failed. Please try again.', 'error');
+        if (!commit.isNetwork) { try { navigation.navigate('Register', commit.otpError ? { otpExpired: true } : undefined); } catch (_) { /* ignore */ } }
+        return;
+      }
+      const pending = commit.pending;
 
       const created = await UserStore.saveUser({
         name: pending.name, mobile: pending.mobile, email: pending.email,

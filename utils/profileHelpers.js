@@ -249,11 +249,11 @@ export function resolveAreaText(profile = {}) {
 // (pehle sirf kuch fixed keys padhi jaati thi, isliye public profile ke ID card me number gayab rehta tha.)
 export function pickPhoneNumber(profile = {}) {
   const p = profile || {};
-  const nestedSources = [p, p.user, p.data, p.profile, p.details, p.contact_info, p.contact, p.author, p.owner, p.state_seat, p.seat];
+  const nestedSources = [p, p.user, p.data, p.profile, p.details, p.contact_info, p.contact, p.author, p.owner, p.state_seat, p.seat, p.user_data, p.author_info, p.public_profile];
   const KEYS = [
     'phone', 'mobile', 'mobile_number', 'mobileNumber', 'phone_number', 'phoneNumber',
     'contact_number', 'contactNumber', 'contact_no', 'mobile_no', 'phone_no', 'whatsapp', 'whatsapp_number',
-    'author_mobile', 'author_phone',
+    'author_mobile', 'author_phone', 'authorMobile', 'authorPhone', 'owner_mobile', 'user_mobile', 'mobile_phone', 'tel', 'telephone',
   ];
   const clean = (v) => {
     if (v == null || typeof v === 'object') return '';

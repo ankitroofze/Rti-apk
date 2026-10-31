@@ -710,6 +710,20 @@ const admin = user.role === 'admin';
     });
   };
 
+  // ── Image type check (backend sirf jpg / jpeg / png leta hai) ──────────────
+  const IMG_TYPE_TITLE = 'Wrong image format';
+  const IMG_TYPE_MSG = 'Please select a JPG, JPEG or PNG image. WEBP, HEIC, GIF and other formats are not supported.';
+  const isAllowedImageAsset = (asset) => {
+    const mime = String(asset?.mimeType || asset?.type || '').toLowerCase();
+    if (mime.startsWith('image/')) return /^image\/(jpe?g|png)$/.test(mime);
+    const name = String(asset?.fileName || asset?.name || asset?.uri || '').split('?')[0].toLowerCase();
+    const dataMime = /^data:(image\/[a-z0-9.+-]+)/.exec(String(asset?.uri || '').toLowerCase());
+    if (dataMime) return /^image\/(jpe?g|png)$/.test(dataMime[1]);
+    const ext = /\.([a-z0-9]+)$/.exec(name);
+    if (ext) return ['jpg', 'jpeg', 'png'].includes(ext[1]);
+    return true; // type pata nahi (blob: uri) — backend check karega
+  };
+
   const pickImages = async () => {
     try {
       const ok = await ensureLibraryPermission();
@@ -738,6 +752,10 @@ const admin = user.role === 'admin';
 
         for (let i = 0; i < Math.min(imgPickResult.assets.length, remainingSlots); i++) {
           const asset = imgPickResult.assets[i];
+          if (!isAllowedImageAsset(asset)) {
+            showToast(IMG_TYPE_MSG, 'error', { title: IMG_TYPE_TITLE });
+            continue;
+          }
           if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) {
             showToast(`Image ${i + 1} is too large (max 10MB). Skipping.`, 'warning');
             continue;
@@ -849,6 +867,10 @@ const admin = user.role === 'admin';
         });
         if (!res.canceled && res.assets?.[0]) {
           const a = res.assets[0];
+          if (a.type !== 'video' && !isAllowedImageAsset(a)) {
+            showToast(IMG_TYPE_MSG, 'error', { title: IMG_TYPE_TITLE });
+            return;
+          }
           handleCaptured({ type: a.type === 'video' ? 'video' : 'photo', uri: a.uri, durationMs: a.duration });
         }
       } catch {
@@ -1017,7 +1039,16 @@ console.log("Platform:", Platform.OS);
         setLimitModal({ visible: true, message: apiResult.message });
         return;
       }
-      showToast(apiResult.message || `Failed to ${isEditMode ? 'update' : 'submit'} news to server.`, 'error');
+      // Backend ka raw message ("The images.0 field must be a file of type: jpg, jpeg, png.")
+      // client ko samajh nahi aata — isliye saaf heading + simple line dikhao.
+      const rawMsg = String(apiResult.message || '');
+      const typeErr = /images?\.(\d+)\s+field must be a file of type/i.exec(rawMsg);
+      if (typeErr) {
+        const n = Number(typeErr[1]) + 1;
+        showToast(`Image ${n} is not supported. Please use a JPG, JPEG or PNG image and try again.`, 'error', { title: IMG_TYPE_TITLE });
+        return;
+      }
+      showToast(rawMsg || `Failed to ${isEditMode ? 'update' : 'submit'} news to server.`, 'error', { title: `Could not ${isEditMode ? 'update' : 'post'} news` });
       return;
     }
 
@@ -1164,6 +1195,7 @@ console.log("Platform:", Platform.OS);
   const imageUploadBlock = mediaType === 'Image' ? (
     <View style={T.mediaBlock}>
       <Text style={T.subLabel}>Upload one or more images (max 5, 10MB each).</Text>
+      <Text style={T.subLabel}>Allowed image types: JPG, JPEG, PNG only.</Text>
       {images.length > 0 ? (
         <>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>

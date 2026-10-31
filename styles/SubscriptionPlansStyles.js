@@ -118,7 +118,6 @@ const SubscriptionPlansStyles = StyleSheet.create({
   heroPlain: {
     marginTop: 14,
     marginBottom: 18,
-    ...(Platform.OS === 'web' ? { paddingLeft: 290 } : null),
   },
   heroTitlePlain: {
     fontSize: 24,

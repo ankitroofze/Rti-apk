@@ -17,7 +17,7 @@
 
 import { smartGoBack } from '../utils/smartBack';
 import React, { useEffect, useState } from 'react';
-import { Platform, View, Text, TouchableOpacity, ImageBackground, Image } from 'react-native';
+import { Platform, View, Text, TouchableOpacity, ImageBackground, Image, useWindowDimensions } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { UserStore } from '../store/UserStore';
 import { getProfileTier, AVATAR_IMAGE } from '../utils/profileHelpers';
@@ -58,6 +58,15 @@ const S = {
 
   title: { fontSize: 15, fontWeight: '600', color: '#ffffff', fontFamily: "'Roboto', sans-serif" },
 
+  // Subscription button (pill) — desktop par label ke saath, chhoti screen par sirf icon
+  subBtn: {
+    height: 34, borderRadius: 17, paddingHorizontal: 12,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderWidth: 1,
+  },
+  subBtnIconOnly: { width: 34, paddingHorizontal: 0 },
+  subTxt: { fontSize: 12, fontWeight: '700', fontFamily: "'Roboto', sans-serif" },
+
   bellBtn: {
     width: 34, height: 34, borderRadius: 17,
     marginHorizontal: 4, // bell thoda andar
@@ -88,7 +97,11 @@ export default function ModuleWebHeader({
   avatarBgColor = null,  // optional — sirf Profile screen bhejti hai
   rightExtra = null,
   highContrast = false,
+  showSettings = true,       // ✅ sab module headers me Settings icon (Profile jaisa)
+  showSubscription = true,   // ✅ sab module headers me Subscription button
 }) {
+  const { width: headerWinW } = useWindowDimensions();
+  const compactHeader = headerWinW <= 640; // phone / mobile-web: sirf icon, label nahi
   // ── Mobile par kuch render nahi — Android/iOS bilkul pehle jaisa ──
    // Profile circle: user ki apni photo (sirf Role/Premium/Verified ke liye) warna default avatar.png
   const [selfAvatar, setSelfAvatar] = useState(null);
@@ -117,9 +130,9 @@ export default function ModuleWebHeader({
     if (onBack) return onBack();
     smartGoBack(navigation, 'QuickMenu');
   };
-  const readableColor = highContrast ? '#14532D' : '#FFFFFF';
+  const readableColor = highContrast ? '#111111' : '#FFFFFF';   // yellow header par black
   const controlSurface = highContrast ? 'rgba(255,255,255,0.62)' : 'rgba(255,255,255,0.16)';
-  const controlBorder = highContrast ? 'rgba(20,83,45,0.35)' : 'rgba(255,255,255,0.35)';
+  const controlBorder = highContrast ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.35)';
 
   return (
     <ImageBackground
@@ -140,6 +153,26 @@ export default function ModuleWebHeader({
 
       <View style={S.right}>
         {rightExtra}
+
+        {/* Subscription */}
+        {showSubscription ? (
+          <TouchableOpacity
+            style={[S.subBtn, compactHeader && S.subBtnIconOnly, { backgroundColor: controlSurface, borderColor: controlBorder }]}
+            onPress={() => go('Subscription Plans')}
+            activeOpacity={0.8}
+            accessibilityLabel="Subscription"
+          >
+            <Feather name="award" size={16} color={readableColor} />
+            {!compactHeader ? <Text style={[S.subTxt, { color: readableColor }]}>Subscription</Text> : null}
+          </TouchableOpacity>
+        ) : null}
+
+        {/* Settings */}
+        {showSettings ? (
+          <TouchableOpacity style={[S.bellBtn, { backgroundColor: controlSurface, borderColor: controlBorder }]} onPress={() => go('Settings')} activeOpacity={0.8} accessibilityLabel="Settings">
+            <Feather name="settings" size={16} color={readableColor} />
+          </TouchableOpacity>
+        ) : null}
 
         {/* Bell */}
         <TouchableOpacity style={[S.bellBtn, { backgroundColor: controlSurface, borderColor: controlBorder }]} onPress={() => go('Notifications')} activeOpacity={0.8}>

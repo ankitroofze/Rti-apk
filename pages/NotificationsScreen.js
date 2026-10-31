@@ -1,4 +1,5 @@
 import { smartGoBack } from '../utils/smartBack';
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
@@ -80,6 +81,7 @@ const WebContentWrapper = ({ children, isMobile }) => {
 };
 
 export default function NotificationsScreen({ navigation }) {
+  const redirectingToSidebar = useQuickMenuRedirect(navigation, 'Notifications');
   const { width: windowWidth } = useWindowDimensions();
   const isMobileWeb = Platform.OS === 'web' && windowWidth <= 760;
   const insets = useSafeAreaInsets();
@@ -185,6 +187,8 @@ export default function NotificationsScreen({ navigation }) {
   );
   const currentUser = notificationData.currentUser;
 
+  if (redirectingToSidebar) return null; // standalone (bina sidebar) khula to QuickMenu me redirect ho raha hai
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.root}>
@@ -205,7 +209,7 @@ export default function NotificationsScreen({ navigation }) {
           >
             <TouchableOpacity
               style={styles.backButton}
-              onPress={() => navigation.navigate('QuickMenu')}
+              onPress={() => smartGoBack(navigation, 'Home')}
               activeOpacity={0.75}
             >
               <Feather name="arrow-left" size={20} color={C.accent} />

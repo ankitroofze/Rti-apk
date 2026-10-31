@@ -40,7 +40,8 @@ const ID_CARD_FONT = Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_40
 const ID_CARD_FONT_BLACK = Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_900Black';
 
 // viewOnly=true -> public profile (kisi aur ka card): data profile owner ka hi dikhega, viewer ka nahi.
-export default function AutoIdCardPreview({ profile, viewOnly = false }) {
+// fallbackMobile: public profile API number na de to feed/author object se mila number yahan aata hai.
+export default function AutoIdCardPreview({ profile, viewOnly = false, fallbackMobile = '' }) {
   useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const safeProfile = profile || {};
   const seat = safeProfile?.state_seat || safeProfile?.seat || {};
@@ -57,7 +58,7 @@ export default function AutoIdCardPreview({ profile, viewOnly = false }) {
   const designation = resolveRoleTitle(safeProfile, planRoleNames, (id) => { try { return UserStore.getSeatRoleNameForPlanRoleId?.(id) || ''; } catch { return ''; } }) || `${rank.label} - RTI News Member`;
   const area = resolveAreaText(safeProfile);
   // ✅ FIX: mobile number ab har naam / nested object se uthaya jaata hai (public profile me bhi dikhega)
-  const mobile = pickPhoneNumber(safeProfile);
+  const mobile = pickPhoneNumber(safeProfile) || pickPhoneNumber({ phone: fallbackMobile }) || '';
   const issueDate = getIssueDate(profile);
   const own = useIdCardVerification({ enabled: !viewOnly }); // sirf apne profile par backend /id-cards
   const idCard = viewOnly ? cardFromProfile(safeProfile) : own.idCard;
@@ -129,12 +130,11 @@ export default function AutoIdCardPreview({ profile, viewOnly = false }) {
         </View>
         ) : null}
 
-        {(!viewOnly || mobile) ? (
+        {/* Mo: row ab web / mobile-web / Android sab par hamesha dikhta hai (public profile me bhi) */}
         <View style={IdCardStyles.idCardRow}>
           <Text style={IdCardStyles.idCardKeyLight}>Mo:-</Text>
-          <Text style={IdCardStyles.idCardValLight}>{mobile}</Text>
+          <Text style={IdCardStyles.idCardValLight}>{mobile || '-'}</Text>
         </View>
-        ) : null}
 
         {/* ID No + Valid Upto — ek hi row me */}
      <View style={[IdCardStyles.idCardRow, { marginBottom: 6, flexWrap: 'wrap' }]}>

@@ -39,12 +39,14 @@ export function ToastProvider({ children }) {
     }
   }, []);
 
-  const showToast = useCallback((message, type = 'info') => {
+  // 3rd arg optional: { title } -> toast par generic "Error" ki jagah samajhne layak heading
+  // (jaise "Wrong image format"). Title na do to purana behaviour (Success / Error / Notice).
+  const showToast = useCallback((message, type = 'info', options = {}) => {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
 
-    setToast({ message, type });
+    setToast({ message, type, title: options?.title || '' });
     timeoutRef.current = setTimeout(() => {
       setToast(null);
       timeoutRef.current = null;
@@ -133,7 +135,7 @@ export function ToastProvider({ children }) {
           <View style={[styles.overlay, toast.type === 'success' ? styles.overlayBottom : styles.overlayTop]} pointerEvents="none">
             <View style={[styles.toast, styles[toast.type] || styles.info]}>
               <Text style={styles.title}>
-                {toast.type === 'success' ? 'Success' : toast.type === 'error' ? 'Error' : 'Notice'}
+                {toast.title || (toast.type === 'success' ? 'Success' : toast.type === 'error' ? 'Error' : 'Notice')}
               </Text>
               <Text style={styles.message}>{toast.message}</Text>
             </View>

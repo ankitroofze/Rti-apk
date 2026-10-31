@@ -26,6 +26,7 @@ import {
   StatusBar,
   Modal,
   Platform,
+  useWindowDimensions,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -67,6 +68,12 @@ export default function SubscriptionPlanPurchase({
   emptyText = 'No plans are available right now.',
 }) {
     const insets = useSafeAreaInsets();
+  // Mobile web (phone browser) ko bilkul Android app jaisa dikhana hai:
+  // Android header + full-width hero + full-width button. Desktop web par purana layout.
+  const { width: windowWidth } = useWindowDimensions();
+  const isWeb = Platform.OS === 'web';
+  const isMobileWeb = isWeb && windowWidth <= 760;
+  const isDesktopWeb = isWeb && !isMobileWeb;
   const [detailsModal, setDetailsModal] = React.useState(null); // Read More click hote hi { plan, theme } set hoga
 
   const selectedIndex = plans.findIndex((p) => p.id === selectedPlanId);
@@ -84,7 +91,7 @@ export default function SubscriptionPlanPurchase({
            <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
       {/* Header — same image background used on every subscription screen */}
-      {Platform.OS !== 'web' ? (
+      {!isDesktopWeb ? (
 <ModuleAndroidHeader title={headerTitle} onBack={() => navigation.goBack()} />
 ) : (
 <>
@@ -104,7 +111,7 @@ export default function SubscriptionPlanPurchase({
         showsVerticalScrollIndicator={false}
       >
         {/* Hero */}
-        <View style={S.heroPlain}>
+        <View style={[S.heroPlain, isDesktopWeb ? { paddingLeft: 290 } : null]}>
           <Text style={S.heroTitlePlain}>{heroTitle}</Text>
           <Text style={S.heroSubtitlePlain}>{heroSubtitle}</Text>
         </View>
@@ -193,7 +200,7 @@ export default function SubscriptionPlanPurchase({
                       activeOpacity={0.85}
 disabled={isActive || Boolean(processingPlanId)}
 onPress={() => { if (typeof onPay === 'function') onPay(plan); }}
-style={[S.selectPlanBtn, isSelected && S.selectPlanBtnActive, processingPlanId && processingPlanId !== plan.id && { opacity: 0.5 }]}
+style={[S.selectPlanBtn, isMobileWeb && { alignSelf: 'stretch', width: 'auto', maxWidth: 'none' }, isSelected && S.selectPlanBtnActive, processingPlanId && processingPlanId !== plan.id && { opacity: 0.5 }]}
                     >
                     <Text style={S.selectPlanBtnText} numberOfLines={1}>
 {isActive ? 'Currently active' : (processingPlanId === plan.id ? 'Processing…' : payLabel)}

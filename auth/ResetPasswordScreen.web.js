@@ -172,18 +172,16 @@ export default function ResetPasswordScreen({ navigation, route }) {
             </TouchableOpacity>
 
             {sessionMissing || errors.general ? (
-              <TouchableOpacity style={styles.switchBtn} onPress={() => navigation.navigate('ForgotPassword')}>
-                <Text style={webStyles.darkSwitchText}>
-                  Need a new OTP? <Text style={webStyles.darkSwitchLink}>Start again</Text>
-                </Text>
-              </TouchableOpacity>
+              <View style={styles.switchBtn}>
+<Text style={webStyles.darkSwitchText}>
+                  Need a new OTP? <Text style={webStyles.darkSwitchLink} onPress={() => navigation.navigate('ForgotPassword')} accessibilityRole="link">Start again</Text></Text>
+</View>
             ) : null}
 
-            <TouchableOpacity style={styles.switchBtn} onPress={() => navigation.navigate('Login')}>
-              <Text style={webStyles.darkSwitchText}>
-                Back to <Text style={webStyles.darkSwitchLink}>Sign In</Text>
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.switchBtn}>
+<Text style={webStyles.darkSwitchText}>
+                Back to <Text style={webStyles.darkSwitchLink} onPress={() => navigation.navigate('Login')} accessibilityRole="link">Sign In</Text></Text>
+</View>
           </View>
         </ScrollView>
       </View>

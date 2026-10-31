@@ -418,14 +418,24 @@ const WEB_MODULES = [
 // ─────────────────────────────────────────────
 //  WEB LAYOUT
 // ─────────────────────────────────────────────
-function QuickMenuWeb({ navigation }) {
+function QuickMenuWeb({ navigation, route }) {
   const { logout } = useAuth();
-  const [activeScreen, setActiveScreen] = React.useState('Profile');
+  // Header / navbar se aaya ho to wahi screen (Profile / Notifications / ...) sidebar ke saath khulegi
+  const initialScreen = (WEB_MODULES.find((m) => m.screen === route?.params?.initialScreen && m.component) || {}).screen || 'Profile';
+  const [activeScreen, setActiveScreen] = React.useState(initialScreen);
   // ✅ FIX (web): embedded screens ko navigate() ke params (jaise editItem) aur `route` pehle milte hi nahi the,
   // isliye News Feed se Edit dabane par Add News hamesha khaali form kholta tha.
   const [screenParams, setScreenParams] = React.useState({});
-  const activeScreenRef = React.useRef('Profile');
+  const activeScreenRef = React.useRef(initialScreen);
   activeScreenRef.current = activeScreen;
+  // QuickMenu pehle se khula ho aur navbar se dobara navigate ho (naya initialScreen) to switch karo
+  React.useEffect(() => {
+    const target = route?.params?.initialScreen;
+    if (target && WEB_MODULES.find((m) => m.screen === target && m.component)) {
+      historyRef.current = [];
+      setActiveScreen(target);
+    }
+  }, [route?.params?.initialScreen, route?.params?.ts]);
   const historyRef = React.useRef([]);
   const [profileTier, setProfileTier] = React.useState(PROFILE_TIERS.common);
 
@@ -496,11 +506,19 @@ function QuickMenuWeb({ navigation }) {
 
     return {
       ...navigation,
+      isQuickMenuEmbedded: true,   // standalone-redirect guard isse pehchanta hai
       navigate: openScreen,
       replace: openScreen,
+      canGoBack: () => true,
+      // ✅ FIX: back pehle hamesha 'Profile' set karta tha, to Profile / Notifications par back kuch karta hi nahi tha.
+      // Ab: pehle embedded history, phir real stack, phir Home.
       goBack: () => {
         const prev = historyRef.current.pop();
-        setActiveScreen(prev || 'Profile');
+        if (prev) { setActiveScreen(prev); return; }
+        try {
+          if (navigation?.canGoBack?.()) { navigation.goBack(); return; }
+        } catch (_) { /* neeche Home */ }
+        navigation.navigate('Home');
       },
       dispatch: (action) => {
         const lastRoute = action?.payload?.routes?.[action.payload.routes.length - 1];
@@ -706,7 +724,8 @@ function QuickMenuMobile({ navigation }) {
       <ImageBackground
         source={require('../assets/images/profile-red.png')}
         resizeMode="cover"
-        style={[styles.header, { paddingTop: insets.top + 8 }]}
+        imageStyle={styles.headerImg}
+        style={[styles.header, Platform.OS === 'web' ? styles.headerWeb : { paddingTop: insets.top + 8 }]}
       >
         <TouchableOpacity onPress={() => navigation.navigate('Home')} style={styles.backBtn} activeOpacity={0.7}>
           <Ionicons name="chevron-back" size={24} color="#ffffff" />
@@ -778,8 +797,8 @@ function QuickMenuMobile({ navigation }) {
 // ─────────────────────────────────────────────
 //  EXPORT
 // ─────────────────────────────────────────────
-export default function QuickMenuScreen({ navigation }) {
-  if (Platform.OS === 'web') return <QuickMenuWeb navigation={navigation} />;
+export default function QuickMenuScreen({ navigation, route }) {
+  if (Platform.OS === 'web') return <QuickMenuWeb navigation={navigation} route={route} />;
   return <QuickMenuMobile navigation={navigation} />;
 }
 
@@ -791,6 +810,20 @@ const styles = StyleSheet.create({
     gap: 12, 
     paddingHorizontal: 16, 
     paddingBottom: 5, 
+  },
+  // Web (mobile view): fixed height red bar — image header ke bahar phail kar list ke upar na aaye
+  headerWeb: {
+    height: 64,
+    flexShrink: 0,
+    flexGrow: 0,
+    alignSelf: 'stretch',
+    overflow: 'hidden',
+    backgroundColor: '#b91c1c',
+    paddingTop: 0,
+  },
+  headerImg: {
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+    width: '100%', height: '100%', resizeMode: 'cover',
   },
   backBtn: { 
     width: 36, 

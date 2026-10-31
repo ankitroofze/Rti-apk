@@ -121,11 +121,10 @@ export default function ForgotPasswordScreen({ navigation }) {
                 </LinearGradient>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.switchBtn} onPress={() => navigation.navigate('Login')}>
-                <Text style={styles.switchText}>
-                  Back to <Text style={styles.switchLink}>Sign In</Text>
-                </Text>
-              </TouchableOpacity>
+              <View style={styles.switchBtn}>
+<Text style={styles.switchText}>
+                  Back to <Text style={styles.switchLink} onPress={() => navigation.navigate('Login')} accessibilityRole="link">Sign In</Text></Text>
+</View>
             </View>
           </KeyboardAwareScroll>
 

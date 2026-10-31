@@ -161,7 +161,6 @@ export default function SettingsScreen({ navigation }) {
   const [form, setForm]                   = useState({ language: 'English', password: '' });
 
   const [dataSaver, setDataSaver]       = useState(false);
-  const [disableMedia, setDisableMedia] = useState(false);
 
   const [locState, setLocState]           = useState('');
   const [locDistrict, setLocDistrict]     = useState('');
@@ -454,7 +453,6 @@ export default function SettingsScreen({ navigation }) {
         <SectionHeader title="Account Actions" />
         <View style={s.card}>
                  <SettingsItem icon="trash-outline" label="Delete Account"         onPress={handleDeleteAccount} isDestructive />
-          <SettingsItem icon="flash-off-outline" label="Disable Media Encoding"  isToggle toggleValue={disableMedia} onToggleChange={setDisableMedia} />
           <SettingsItem icon="log-out-outline" label="Logout Account"          onPress={handleLogout} isDestructive />
         </View>
 

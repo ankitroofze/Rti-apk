@@ -3115,6 +3115,13 @@ consumeQuizAttempt: async () => {
         referral_code_used: data.referral_code_used ? String(data.referral_code_used).trim() : '',
         profile_image: String(data.profile_image || ''),
         bio: String(data.bio || '').trim(),
+        // ✅ Server registration location poori hone ke baad hogi — isliye form ka poora data (OTP ke saath) yahin rakhte hain
+        first_name: String(data.first_name || '').trim(),
+        middle_name: String(data.middle_name || '').trim(),
+        last_name: String(data.last_name || '').trim(),
+        referral_code: String(data.referral_code || '').trim(),
+        otp: String(data.otp || '').trim(),
+        server_registered: Boolean(data.server_registered),
         created_at: new Date().toISOString(),
       };
       if (!payload.email) return false;
@@ -3145,6 +3152,41 @@ consumeQuizAttempt: async () => {
     } catch {
       return null;
     }
+  },
+
+  // ✅ Account server par TABHI banta hai jab user location (state/district/taluka/village) poori kar leta hai.
+  // Pehle Register screen par hi ban jaata tha, isliye beech me back karne par bhi data save ho jaata tha.
+  commitPendingRegistration: async () => {
+    const pending = await UserStore.getPendingRegistration();
+    if (!pending?.email) {
+      return { ok: false, missing: true, message: 'Registration data not found. Please register again.' };
+    }
+    if (pending.server_registered) return { ok: true, pending };
+    const result = await AuthAPI.register({
+      firstName: pending.first_name || String(pending.name || '').split(' ')[0] || '',
+      middleName: pending.middle_name || '',
+      lastName: pending.last_name || '',
+      mobile: pending.mobile,
+      email: pending.email,
+      password: pending.password,
+      referralCode: pending.referral_code || pending.referral_code_used || '',
+      profileImage: pending.profile_image || '',
+      otp: pending.otp || '',
+    });
+    if (!result.ok) {
+      return {
+        ok: false,
+        otpError: Boolean(result.otpError),
+        isNetwork: Boolean(result.isNetwork),
+        message: result.otpError
+          ? 'OTP expired or invalid. Please verify your email again.'
+          : (result.message || 'Registration failed. Please try again.'),
+      };
+    }
+    const done = { ...pending, server_registered: true, otp: '' };
+    _pendingRegistrationMemory = done;
+    try { await AsyncStorage.setItem(PENDING_REG_KEY, JSON.stringify(done)); } catch (_) { /* ignore */ }
+    return { ok: true, pending: done };
   },
 
   clearPendingRegistration: async () => {

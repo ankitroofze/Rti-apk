@@ -31,6 +31,7 @@ import StateDirectorySection from '../components/StateDirectorySection';
 import RightUtilityPanel from '../components/RightUtilityPanel';
 import MarqueeMenuBar from '../components/MarqueeMenuBar';
 import AutoFitAdImage from '../components/AutoFitAdImage';
+import AdCtaButtons from '../components/AdCtaButtons';
 import MediaGallery from '../components/MediaGallery';
 import { groupAdStories } from '../utils/adGrouping';
 const PINK = '#FF2D78';
@@ -360,7 +361,7 @@ function TopRotatingAdSlot({ ads = [], onPress }) {
   );
 }
 
-function InFeedAdSlot({ ad, onPress }) {
+function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
   const { width: winW } = useWindowDimensions();
   const [page, setPage] = useState(0);
   const [slideHeights, setSlideHeights] = useState({});
@@ -425,6 +426,7 @@ function InFeedAdSlot({ ad, onPress }) {
               ) : null}
             </>
           ) : null}
+          <AdCtaButtons ad={group[Math.min(page, group.length - 1)]} onOpenLeadForm={onOpenLeadForm} />
           <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 8 }}>
             {group.map((a, i) => (
               <View key={String(a.id)} style={{ width: i === page ? 16 : 6, height: 6, borderRadius: 3, backgroundColor: i === page ? '#f97316' : '#cbd5e1' }} />
@@ -451,15 +453,23 @@ function InFeedAdSlot({ ad, onPress }) {
           maxHeight={420}
           onPressImage={() => onPress?.(ad)}
         />
+        <View style={{ width: Math.min(winW - 24, 520) }}>
+          <AdCtaButtons ad={ad} onOpenLeadForm={onOpenLeadForm} />
+        </View>
       </View>
     );
   }
 
   return (
-    <TouchableOpacity style={styles.inFeedAdSlot} activeOpacity={0.92} onPress={() => onPress?.(ad)}>
-      <Text style={styles.adCaption}>ADVERTISEMENT</Text>
-      <AutoFitAdImage uri={image} maxWidth={Math.min(winW - 24, 520)} maxHeight={420} />
-    </TouchableOpacity>
+    <View style={styles.inFeedAdSlot}>
+      <TouchableOpacity style={{ width: '100%', alignItems: 'center' }} activeOpacity={0.92} onPress={() => onPress?.(ad)}>
+        <Text style={styles.adCaption}>ADVERTISEMENT</Text>
+        <AutoFitAdImage uri={image} maxWidth={Math.min(winW - 24, 520)} maxHeight={420} />
+      </TouchableOpacity>
+      <View style={{ width: Math.min(winW - 24, 520) }}>
+        <AdCtaButtons ad={ad} onOpenLeadForm={onOpenLeadForm} />
+      </View>
+    </View>
   );
 }
 
@@ -768,6 +778,7 @@ export default function HomeScreen({ navigation, route }) {
  const [pendingPlan, setPendingPlan] = useState(null);
   const [leadFormAd, setLeadFormAd] = useState(null);
   const [showAllAds, setShowAllAds] = useState(false);
+  const [showAllTrending, setShowAllTrending] = useState(false); // ✅ Trending "See All" -> saari news ka page
   const initialHomeState = buildHomeStateFromParams(route?.params);
   const [viewMode, setViewMode] = useState(initialHomeState.nextViewMode);
   const [selectedMenuKey, setSelectedMenuKey] = useState(initialHomeState.nextMenuKey);
@@ -1115,7 +1126,17 @@ const handleOpenLeadForm = useCallback((story) => {
       openExternalUrl(ad.redirect === 'shop' ? ad.extraValues?.shop_url : ad.extraValues?.website_url);
       return;
     }
-    if (ad.redirect === 'profile') { handleOpenAuthorProfile(ad); return; }
+    if (ad.redirect === 'profile') {
+      handleOpenAuthorProfile({
+        ...ad,
+        createdBy: ad.createdBy || ad.owner_email || ad.created_by || '',
+        author_name: ad.author_name || ad.owner_name || '',
+        author_profile_image: ad.author_profile_image || ad.owner_profile_image || '',
+        author_role_label: ad.author_role_label || ad.owner_role_label || 'Sponsored',
+        author_has_blue_tick: Boolean(ad.author_has_blue_tick || ad.owner_has_blue_tick),
+      });
+      return;
+    }
     handleOpenDetails(ad);
   }, [handleOpenAuthorProfile, handleOpenDetails, handleOpenLeadForm]);
 
@@ -1144,6 +1165,19 @@ const handleOpenLeadForm = useCallback((story) => {
   }).filter(Boolean), [allAdsList]);
 
   const handleViewMoreAds = useCallback(() => setShowAllAds(true), []);
+  // ✅ Trending News ke "See All" par: saari news ek page (center column) me, latest pehle
+  const handleViewAllTrending = useCallback(() => {
+    setShowAllAds(false);
+    setShowAllTrending(true);
+    try { if (IS_WEB && typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (_) { /* ignore */ }
+  }, []);
+  const handleBackFromTrending = useCallback(() => setShowAllTrending(false), []);
+  const allNewsList = useMemo(
+    () => allStories
+      .filter((s) => !s.isAd && !s.isEcome)
+      .sort((a, b) => new Date(b?.date || b?.createdAt || 0) - new Date(a?.date || a?.createdAt || 0)),
+    [allStories]
+  );
   const handleBackFromAds = useCallback(() => setShowAllAds(false), []);
   // ── Search bar — ab feed column ke sabse upar, koi duplicate "post" bar
   // uske niche nahi hai (wo fake input hata diya gaya hai). Android par
@@ -1157,7 +1191,6 @@ const handleOpenLeadForm = useCallback((story) => {
           placeholder={homeCopy.searchFeedPlaceholder} placeholderTextColor="#94a3b8"
           style={styles.sectionSearchInput}
         />
-        <Ionicons name="options-outline" size={18} color="#94a3b8" />
       </View>
       {(selectedStateName || selectedMenuKey !== 'all') ? (
         <TouchableOpacity
@@ -1182,6 +1215,7 @@ const handleOpenLeadForm = useCallback((story) => {
    trendingStories={allStories.filter((s) => !s.isAd)} onOpenDetails={handleOpenDetails}
       ads={allAdsList} onOpenLeadForm={handleOpenLeadForm}
       onViewMoreAds={handleViewMoreAds} onBackFromAds={handleBackFromAds}
+      onViewAllTrending={handleViewAllTrending}
       showingAllAds={showAllAds} firstNewsStory={firstNewsStory}
     />
   );
@@ -1241,7 +1275,43 @@ const handleOpenLeadForm = useCallback((story) => {
                     stateSearchQuery={searchQuery} onSearchChange={setSearchQuery}
                     onSelectState={handleStateSelection} isCompactLayout={isCompactLayout} homeCopy={homeCopy}
                   />
-         ) : showAllAds ? (
+         ) : showAllTrending ? (
+                  <>
+                    <TouchableOpacity onPress={handleBackFromTrending} activeOpacity={0.8} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                      <Ionicons name="arrow-back" size={16} color="#f97316" />
+                      <Text style={{ color: '#f97316', fontWeight: '800', fontSize: 13 }}>Back to News Feed</Text>
+                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                      <Ionicons name="trending-up" size={20} color="#dc2626" />
+                      <Text style={{ fontSize: 18, fontWeight: '800', color: '#0f172a' }}>All News</Text>
+                      <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748b' }}>({allNewsList.length})</Text>
+                    </View>
+                    <View style={[styles.storyCardsStack, isMobileLayout && styles.storyCardsStackMobile]}>
+                      {allNewsList.length === 0 ? (
+                        <Text style={{ color: '#64748b', fontSize: 14, paddingVertical: 24, textAlign: 'center' }}>No news available right now.</Text>
+                      ) : null}
+                      {allNewsList.map((story, index) => (
+                        <NewsFeedCard
+                          key={story.id} story={story} isCompactLayout={isMobileLayout}
+                          altShade={isMobileLayout && index % 2 === 1}
+                          navigation={navigation}
+                          onOpenDetails={handleOpenDetails} onOpenLocation={handleOpenLocation}
+                          onOpenCategory={handleOpenCategory} onOpenAuthorProfile={handleOpenAuthorProfile}
+                          onOpenLeadForm={handleOpenLeadForm}
+                          commonCopy={commonCopy}
+                          currentUser={currentUser ? {
+                            name: currentUser.name,
+                            avatar: currentUser.profile_image,
+                            email: currentUser.email,
+                            has_blue_tick: UserStore.hasBlueTick(currentUser),
+                            state_seat: currentUser.state_seat,
+                            is_subscribed: currentUser.is_subscribed,
+                          } : null}
+                        />
+                      ))}
+                    </View>
+                  </>
+                ) : showAllAds ? (
                   <>
                     <TouchableOpacity onPress={handleBackFromAds} activeOpacity={0.8} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 }}>
                       <Ionicons name="arrow-back" size={16} color="#f97316" />
@@ -1282,7 +1352,7 @@ const handleOpenLeadForm = useCallback((story) => {
                       {visibleStories.map((story, index) => (
                         <React.Fragment key={story.id}>
                         {story.isAd ? (
-                          <InFeedAdSlot ad={story} onPress={handleSponsoredAdPress} />
+                          <InFeedAdSlot ad={story} onPress={handleSponsoredAdPress} onOpenLeadForm={handleOpenLeadForm} />
                         ) : story.isEcome ? (
                       (visibleStories.findIndex((x) => x.isEcome) === index
                         ? <EcomeTopSection items={visibleStories.filter((x) => x.isEcome)} navigation={navigation} compact={isMobileLayout} />

@@ -143,6 +143,7 @@ function SponsoredHeader({ ad, navigation }) {
 export default function RightUtilityPanel({
   navigation, trendingStories = [], onOpenDetails, ads = [], onOpenLeadForm,
   onViewMoreAds, onBackFromAds, showingAllAds = false, firstNewsStory = null,
+  onViewAllTrending,
 }) {
   const [desk, setDesk] = useState(null);
   useEffect(() => {
@@ -312,7 +313,7 @@ export default function RightUtilityPanel({
           <Ionicons name="trending-up" size={18} color="#dc2626" />
           <Text style={styles.cardTitle}>Trending News</Text>
           </View>
-          <TouchableOpacity onPress={() => navigation?.navigate?.('News Feed')}><Text style={styles.viewMoreText}>See All <Ionicons name="arrow-forward" size={12} /></Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => (onViewAllTrending ? onViewAllTrending() : navigation?.navigate?.('Home'))}><Text style={styles.viewMoreText}>See All <Ionicons name="arrow-forward" size={12} /></Text></TouchableOpacity>
         </View>
         {(latestUpdates.length ? latestUpdates : []).map((story, i) => (
           <TouchableOpacity key={story.id || i} style={styles.updateRow} activeOpacity={0.8} onPress={() => onOpenDetails?.(story)}>

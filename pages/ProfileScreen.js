@@ -1,6 +1,7 @@
 // ProfileScreen.js - Complete updated file with scroll fixes
 
 import { smartGoBack } from '../utils/smartBack';
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import NameWithTick from '../components/NameWithTick';
 import { Feather, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
@@ -398,7 +399,8 @@ export default function ProfileScreen(props) {
 }
 
 function ProfileScreenInner({ navigation, route }) {
-  
+  // Desktop web par Profile hamesha sidebar wale QuickMenu ke andar (alag bina-sidebar page nahi)
+  const redirectingToSidebar = useQuickMenuRedirect(navigation, 'Profile');
   useEffect(() => {
     // Android hardware back button
     const backHandlerSub = Platform.OS === 'android'
@@ -630,7 +632,7 @@ function ProfileScreenInner({ navigation, route }) {
     // sabhi Edit entry points (Edit Profile button, camera badge, saved-profile card)
     // isi function se guzarte hain, isliye gate yahin lagaya hai.
     if (profileTier.key === 'common') {
-      showToast('Profile editing is available only after purchasing a subscription.', 'error');
+      showToast('Profile editing is available only after purchasing a subscription.', 'error', { title: 'Subscription required' });
       return;
     }
     // One state transition is shared by the web and native render branches.
@@ -1042,6 +1044,8 @@ const handlePickImage = async () => {
   // TEMP DEBUG: tick kyu nahi aa raha — confirm hone ke baad ye line hata dena
   console.log('[TICK-DEBUG]', JSON.stringify({ plan: displayProfile?.subscription_plan, is_subscribed: displayProfile?.is_subscribed, subscription_type: displayProfile?.subscription_type, role: displayProfile?.role, tick: displayHasBlueTick, referral: displayProfile?.referral_code }));
   const hasPremiumSubscription = Boolean(isLoggedIn && UserStore.hasPremiumAccess(displayProfile));
+  // Premium + Verified tier ka header yellow hai -> white text dikhta nahi, isliye wahan black text/icons
+  const isYellowTier = Boolean(isLoggedIn && ['premium', 'verified'].includes(getProfileTier({ ...displayProfile, has_blue_tick: UserStore.hasBlueTick(displayProfile) }).key));
   // Role Based Profile Look — 6-tier color theme (Common/Premium/Verified/
   // Representative/Executive/Chief). Subscription ya seat change hote he
   // pillTheme aur profileTier dono automatically naye role ke color me update
@@ -1799,7 +1803,7 @@ const handlePickImage = async () => {
                       end={{ x: 1, y: 1 }}
                       style={w.editProfileBtn}
                     >
-                      <Text style={w.editProfileBtnText}>Edit Profile</Text>
+                      <Text style={[w.editProfileBtnText, isYellowTier && { color: '#111111', fontWeight: '600' }]}>Edit Profile</Text>
                     </LinearGradient>
                   </TouchableOpacity>
                 </View>
@@ -1866,23 +1870,11 @@ const handlePickImage = async () => {
      avatarUri={displayProfile.profile_image || null}
       avatarBgImage={profileTier.bgImage}
       avatarBgColor={profileTier.accent}
-      highContrast={hasPremiumSubscription}
-      rightExtra={
-        <TouchableOpacity
-          onPress={handleOpenSettings}
-          activeOpacity={0.8}
-          style={{
-            width: 34, height: 34, borderRadius: 17,
-            alignItems: 'center', justifyContent: 'center',
-            backgroundColor: hasPremiumSubscription ? 'rgba(255,255,255,0.62)' : 'rgba(255,255,255,0.16)',
-            borderWidth: 1, borderColor: hasPremiumSubscription ? 'rgba(20,83,45,0.35)' : 'rgba(255,255,255,0.35)',
-          }}
-        >
-          <Feather name="settings" size={16} color={hasPremiumSubscription ? '#14532D' : '#FFFFFF'} />
-        </TouchableOpacity>
-      }
+      highContrast={hasPremiumSubscription || isYellowTier}
     />
   );
+
+  if (redirectingToSidebar) return null;
 
   if (Platform.OS === 'web') {
     return renderRtiNewsWebProfile();
@@ -1905,12 +1897,22 @@ const handlePickImage = async () => {
 
                  <View style={[ProfileStyles.greenHeaderTop, { paddingTop: insets.top + 8 }]}>
             <TouchableOpacity style={ProfileStyles.greenHeaderIcon} onPress={handleGoHome}>
-              <Feather name="arrow-left" size={20} color="#FFFFFF" />
+              <Feather name="arrow-left" size={20} color={isYellowTier ? '#111111' : '#FFFFFF'} />
             </TouchableOpacity>
 
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              {/* Web header jaisa: Subscription + Settings + Notifications */}
+              <TouchableOpacity style={ProfileStyles.greenHeaderIcon} onPress={() => navigation?.navigate?.('Subscription Plans')} accessibilityLabel="Subscription">
+                <Feather name="award" size={20} color={isYellowTier ? '#111111' : '#FFFFFF'} />
+              </TouchableOpacity>
+              <TouchableOpacity style={ProfileStyles.greenHeaderIcon} onPress={handleOpenSettings} accessibilityLabel="Settings">
+                <Feather name="settings" size={20} color={isYellowTier ? '#111111' : '#FFFFFF'} />
+              </TouchableOpacity>
+              <TouchableOpacity style={ProfileStyles.greenHeaderIcon} onPress={handleOpenNotifications} accessibilityLabel="Notifications">
+                <Feather name="bell" size={20} color={isYellowTier ? '#111111' : '#FFFFFF'} />
+              </TouchableOpacity>
               <TouchableOpacity style={ProfileStyles.greenHeaderIcon} onPress={handleShareProfile}>
-                <Feather name="more-vertical" size={20} color="#FFFFFF" />
+                <Feather name="more-vertical" size={20} color={isYellowTier ? '#111111' : '#FFFFFF'} />
               </TouchableOpacity>
             </View>
           </View>
