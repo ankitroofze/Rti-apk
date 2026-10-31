@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { View, ScrollView, TouchableOpacity, Text, Platform } from 'react-native';
+import { View, ScrollView, TouchableOpacity, Text, Platform, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import AutoFitAdImage from './AutoFitAdImage';
 import MediaControlBar, { isAudioUrl } from './MediaControlBar';
+import NewsVideoControls from './NewsVideoControls';
+import { subscribeUserScroll } from '../utils/feedScrollBus';
 
 // Video ka asli width/height ratio nikalta hai (native + web) taaki video bina zoom/crop/stretch ke
 // bilkul waisa dikhe jaisa upload kiya gaya tha.
@@ -55,17 +57,105 @@ function getVideoBox(width, ratio, maxHeight) {
 // to video kabhi stretch/zoom nahi hota aur frame ki height asli ratio se hi banti hai.
 // Audio-only file (videoWidth === 0) par browser ka alag "pill" player aata hai — usse hata kar
 // hum apna video-jaisa control bar dikhate hain (MediaControlBar).
+// Video chal raha ho aur user scroll karke use screen se bahar kar de to video khud pause ho jaye.
+// Video chal raha ho aur user SCROLL kare => pause. Bina scroll kiye kabhi pause nahi.
+// (auto-slide / sidebar / marquee ke scroll se nahi — sirf asli user scroll se: utils/feedScrollBus.js)
+function useWebAutoPause(vref) {
+  useEffect(() => {
+    if (Platform.OS !== 'web') return undefined;
+    const el = vref.current;
+    if (!el) return undefined;
+    let unsub = null;
+    const stop = () => { if (unsub) { unsub(); unsub = null; } };
+    const start = () => {
+      stop();
+      unsub = subscribeUserScroll(() => el, () => { try { el.pause(); } catch (e) { /* ignore */ } });
+    };
+    el.addEventListener('play', start);
+    el.addEventListener('pause', stop);
+    el.addEventListener('ended', stop);
+    if (!el.paused) start();
+    return () => {
+      stop();
+      el.removeEventListener('play', start);
+      el.removeEventListener('pause', stop);
+      el.removeEventListener('ended', stop);
+    };
+  }, [vref]);
+}
+
+function useNativeAutoPause(viewRef, player) {
+  useEffect(() => {
+    if (Platform.OS === 'web' || !player) return undefined;
+    let unsub = null;
+    const stop = () => { if (unsub) { unsub(); unsub = null; } };
+    const start = () => {
+      stop();
+      unsub = subscribeUserScroll(() => viewRef.current, () => { try { player.pause(); } catch (e) { /* ignore */ } });
+    };
+    let sub;
+    try {
+      sub = player.addListener('playingChange', (e) => {
+        const now = typeof e === 'object' ? e?.isPlaying : e;
+        if (now) start(); else stop();
+      });
+    } catch (e) { /* purana expo-video */ }
+    try { if (player.playing) start(); } catch (e) { /* ignore */ }
+    return () => { stop(); try { sub?.remove?.(); } catch (e) { /* ignore */ } };
+  }, [viewRef, player]);
+}
+
+// Ad video par news card jaise controls: prev | -5 | play/pause | +15 | next, progress bar, time, speed, fullscreen.
+// Chalte time kuch second baad chhup jaate hain, video par tap karne se wapas aate hain.
+function AdVideoControls({ player, playing, ended, buffering, onToggle, onFullscreen }) {
+  const [visible, setVisible] = useState(true);
+  const timerRef = useRef(null);
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
+  const poke = useCallback(() => {
+    setVisible(true);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (playingRef.current) timerRef.current = setTimeout(() => setVisible(false), 3500);
+  }, []);
+  useEffect(() => {
+    if (!playing) { if (timerRef.current) clearTimeout(timerRef.current); setVisible(true); } else { poke(); }
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [playing, poke]);
+  return (
+    <>
+      <TouchableOpacity activeOpacity={1} onPress={poke} style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 3 }} />
+      <NewsVideoControls
+        player={player}
+        visible={visible}
+        paused={!playing}
+        ended={ended}
+        buffering={buffering}
+        onTogglePlay={onToggle}
+        onFullscreen={onFullscreen}
+        onInteract={poke}
+        compact
+      />
+    </>
+  );
+}
+
 function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio }) {
   const [ratio, setRatio] = useState(null);
   const [audioOnly, setAudioOnly] = useState(() => isAudioUrl(uri));
-  const [st, setSt] = useState({ playing: false, cur: 0, dur: 0, muted: false });
+  const [st, setSt] = useState({ playing: false, ended: false, cur: 0, dur: 0, muted: false });
+  const [waiting, setWaiting] = useState(false);
+  const [vel, setVel] = useState(null);
   const vref = useRef(null);
+  // stable callback ref (naya function har render par banta to ref baar-baar reset hota)
+  const setVideoNode = useCallback((n) => { vref.current = n; setVel(n); }, []);
+  useWebAutoPause(vref);
 
   const sync = (e) => {
     const v = e?.currentTarget || e?.target || vref.current;
     if (!v) return;
     setSt({
       playing: !v.paused && !v.ended,
+      ended: !!v.ended,
       cur: v.currentTime || 0,
       dur: Number.isFinite(v.duration) ? v.duration : 0,
       muted: !!v.muted,
@@ -91,17 +181,26 @@ function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio }) {
     if (v.paused || v.ended) { if (v.ended) v.currentTime = 0; v.play?.(); } else v.pause();
   };
 
-  const { w, h } = coverMode
-    ? { w: width, h: Math.round(width * 9 / 16) }
-    : getVideoBox(width, ratio, maxHeight);
+  const goFullscreen = () => {
+    const v = vref.current;
+    if (!v) return;
+    try {
+      if (v.requestFullscreen) v.requestFullscreen();
+      else if (v.webkitEnterFullscreen) v.webkitEnterFullscreen();
+      else if (v.webkitRequestFullscreen) v.webkitRequestFullscreen();
+    } catch (err) { /* ignore */ }
+  };
+
+  // ✅ Frame hamesha poori width (kaala background) — video apne asli ratio me beech me, crop / stretch nahi.
+  const frameH = coverMode ? Math.round(width * 9 / 16) : getVideoBox(width, ratio, maxHeight).h;
 
   return (
-    <View style={{ width: w, height: h, backgroundColor: '#000', overflow: 'hidden' }}>
+    <View style={{ width, height: frameH, backgroundColor: '#000', overflow: 'hidden' }}>
       {React.createElement('video', {
         key: uri,
-        ref: vref,
+        ref: setVideoNode,
         src: uri,
-        controls: !audioOnly,
+        controls: false,
         playsInline: true,
         preload: 'metadata',
         onLoadedMetadata: handleMeta,
@@ -111,6 +210,9 @@ function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio }) {
         onTimeUpdate: sync,
         onDurationChange: sync,
         onVolumeChange: sync,
+        onWaiting: () => setWaiting(true),
+        onPlaying: () => setWaiting(false),
+        onCanPlay: () => setWaiting(false),
         style: { width: '100%', height: '100%', objectFit: 'contain', display: 'block', backgroundColor: '#000' },
       })}
       {audioOnly ? (
@@ -126,7 +228,16 @@ function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio }) {
             onMute={() => { if (vref.current) vref.current.muted = !vref.current.muted; }}
           />
         </>
-      ) : null}
+      ) : (
+        <AdVideoControls
+          player={vel}
+          playing={st.playing}
+          ended={st.ended}
+          buffering={waiting}
+          onToggle={toggle}
+          onFullscreen={goFullscreen}
+        />
+      )}
     </View>
   );
 }
@@ -136,6 +247,10 @@ function NativeVideoSlide({ uri, width, maxHeight, coverMode, onRatio }) {
   const ratio = useVideoRatio(uri, player);
   const [audioOnly, setAudioOnly] = useState(() => isAudioUrl(uri));
   const [st, setSt] = useState({ playing: false, cur: 0, dur: 0, muted: false });
+  const [np, setNp] = useState({ playing: false, ended: false, loading: false });
+  const boxRef = useRef(null);
+  const videoViewRef = useRef(null);
+  useNativeAutoPause(boxRef, player);
 
   useEffect(() => { if (ratio) onRatio?.(uri, ratio); }, [ratio, uri, onRatio]);
   useEffect(() => { if (ratio) setAudioOnly(false); }, [ratio]);
@@ -150,6 +265,27 @@ function NativeVideoSlide({ uri, width, maxHeight, coverMode, onRatio }) {
       });
     } catch (e) { /* purana expo-video */ }
     return () => { try { sub?.remove?.(); } catch (e) { /* ignore */ } };
+  }, [player]);
+
+  // Play / end / loading state (ad controls ke liye)
+  useEffect(() => {
+    const subs = [];
+    try {
+      subs.push(player.addListener('playingChange', (e) => {
+        const now = typeof e === 'object' ? Boolean(e?.isPlaying) : Boolean(e);
+        setNp((prev) => ({ ...prev, playing: now, ended: now ? false : prev.ended, loading: now ? false : prev.loading }));
+      }));
+    } catch (e) { /* ignore */ }
+    try {
+      subs.push(player.addListener('playToEnd', () => setNp((prev) => ({ ...prev, playing: false, ended: true }))));
+    } catch (e) { /* ignore */ }
+    try {
+      subs.push(player.addListener('statusChange', (e) => {
+        const status = typeof e === 'object' ? e?.status : e;
+        setNp((prev) => ({ ...prev, loading: status === 'loading' }));
+      }));
+    } catch (e) { /* ignore */ }
+    return () => { subs.forEach((x) => { try { x?.remove?.(); } catch (e) { /* ignore */ } }); };
   }, [player]);
 
   // Audio bar ke liye time/play state (chhota polling — saare expo-video versions par chalta hai)
@@ -177,9 +313,14 @@ function NativeVideoSlide({ uri, width, maxHeight, coverMode, onRatio }) {
   const toggle = () => {
     try {
       if (player.playing) { player.pause(); return; }
-      if (st.dur > 0 && st.cur >= st.dur - 0.3) player.currentTime = 0;
+      const dur = Number(player.duration) || 0;
+      if (np.ended || (dur > 0 && Number(player.currentTime) >= dur - 0.3)) player.currentTime = 0;
       player.play();
     } catch (e) { /* ignore */ }
+  };
+
+  const goFullscreen = () => {
+    try { videoViewRef.current?.enterFullscreen?.(); } catch (e) { /* ignore */ }
   };
 
   const bar = audioOnly ? (
@@ -195,24 +336,32 @@ function NativeVideoSlide({ uri, width, maxHeight, coverMode, onRatio }) {
         onMute={() => { try { player.muted = !player.muted; } catch (e) { /* ignore */ } }}
       />
     </>
-  ) : null;
+  ) : (
+    <AdVideoControls
+      player={player}
+      playing={np.playing}
+      ended={np.ended}
+      buffering={np.loading}
+      onToggle={toggle}
+      onFullscreen={goFullscreen}
+    />
+  );
 
   const surface = Platform.OS === 'android' ? 'textureView' : undefined;
 
-  // cover mode (purana behaviour): fixed 16:9 frame
-  if (coverMode) {
-    return (
-      <View style={{ width, height: Math.round(width * 9 / 16), backgroundColor: '#000' }}>
-        <VideoView player={player} style={{ width: '100%', height: '100%' }} contentFit="contain" nativeControls={!audioOnly} surfaceType={surface} />
-        {bar}
-      </View>
-    );
-  }
-
-  const { w, h } = getVideoBox(width, ratio, maxHeight);
+  // ✅ Frame hamesha poori width (kaala background); video asli ratio me beech me (crop / stretch nahi)
+  const frameH = coverMode ? Math.round(width * 9 / 16) : getVideoBox(width, ratio, maxHeight).h;
   return (
-    <View style={{ width: w, height: h, backgroundColor: '#000', overflow: 'hidden' }}>
-      <VideoView player={player} style={{ width: '100%', height: '100%' }} contentFit="contain" nativeControls={!audioOnly} surfaceType={surface} />
+    <View ref={boxRef} collapsable={false} style={{ width, height: frameH, backgroundColor: '#000', overflow: 'hidden' }}>
+      <VideoView
+        ref={videoViewRef}
+        player={player}
+        style={{ width: '100%', height: '100%' }}
+        contentFit="contain"
+        nativeControls={false}
+        fullscreenOptions={{ enable: true }}
+        surfaceType={surface}
+      />
       {bar}
     </View>
   );

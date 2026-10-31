@@ -5,6 +5,7 @@ const LoginStyles = StyleSheet.create({
 
   root: {
     flex: 1,
+    backgroundColor: '#B91C1C', // keyboard band hone par white nahi, red dikhe
     ...(Platform.OS === 'web' && { minHeight: '100vh', width: '100%' }),
   },
 

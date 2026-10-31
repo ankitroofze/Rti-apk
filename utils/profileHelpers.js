@@ -261,7 +261,7 @@ export function pickPhoneNumber(profile = {}) {
   for (const src of nestedSources) {
     if (!src || typeof src !== 'object') continue;
     for (const k of Object.keys(src)) {
-      if (/(phone|mobile|whatsapp)/i.test(k) && !/(email|verified|country|code|otp)/i.test(k)) {
+      if (/(phone|mobile|whatsapp)/i.test(k) && !/(email|verified|country|code|otp|pending)/i.test(k)) {
         const v = clean(src[k]);
         if (v) return v;
       }

@@ -22,6 +22,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { getAdRedirectMeta, openAdRedirect } from '../utils/adRedirect';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
 import { getProfileTier } from '../utils/profileHelpers';
+import { getEngagement, publishEngagement, subscribeEngagement, persistLikedLocal } from '../utils/newsEngagementStore';
 import { MODULE_HEADER_HEIGHT_WEB } from '../constants/subscriptionThemes';
 import ModuleWebHeader from '../components/Modulewebheader';
 import MediaGallery from '../components/MediaGallery';
@@ -79,6 +80,8 @@ function formatNewsDate(dateValue) {
   if (isNaN(d.getTime())) return String(dateValue);
   return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
+const likeInFlight = new Set();   // ids whose like request is pending (prevents double taps)
+
 function interleaveSponsoredCards(items = [], ads = []) {
   const sponsoredAds = Array.isArray(ads) ? ads : [];
   if (!sponsoredAds.length) return items.map((item) => ({ ...item, __type: 'news' }));
@@ -640,7 +643,17 @@ const syncFeed = useCallback(async (focusItemId = null) => {
     setLoading(false);
     if (!data) { navigation.replace('Login'); return null; }
     const newsOnlyItems = (Array.isArray(data.items) ? data.items : []).filter((item) => Number(item?.type) !== 2);
-    const filteredItems = applyLocationFilter(newsOnlyItems, data.currentUser);
+    const withEngagement = newsOnlyItems.map((it) => {
+      const eng = getEngagement(it.id);   // fresh like/comment/share from details page or cards
+      if (!eng) return it;
+      const next = { ...it };
+      if (eng.likes !== undefined) next.likes = eng.likes;
+      if (eng.liked !== undefined) next.liked_by_me = eng.liked;
+      if (eng.comments !== undefined) next.comments = eng.comments;
+      if (eng.shares !== undefined) next.shares = eng.shares;
+      return next;
+    });
+    const filteredItems = applyLocationFilter(withEngagement, data.currentUser);
     const totalViews = filteredItems.reduce((sum, item) => sum + (Number(item.views) || 0), 0);
     const totalShares = filteredItems.reduce((sum, item) => sum + (Number(item.shares) || 0), 0);
     const payload = { ...data, items: filteredItems, totalViews, totalShares };
@@ -738,25 +751,64 @@ const syncFeed = useCallback(async (focusItemId = null) => {
     catch { showToast('Unable to open file.', 'error'); }
   };
 const handleLike = async (item) => {
+  const key = String(item.id);
+  if (likeInFlight.has(key)) return;
+  likeInFlight.add(key);
   const currentEmail = String(newsData.currentUser?.email || '').trim().toLowerCase();
   const wasLiked = Boolean(item.liked_by_me || (currentEmail && Array.isArray(item.liked_by) && item.liked_by.includes(currentEmail)));
-  if (wasLiked) return;   // ✅ ek baar like ho gaya to dobara request/unlike nahi
-  // Render immediately on Android and web; the server response then confirms it.
-  setNewsData((prev) => ({
+  const prevLikes = Number(item.likes || 0);
+  const applyLike = (liked, likes) => setNewsData((prev) => ({
     ...prev,
-    items: (prev.items || []).map((entry) => entry.id === item.id ? {
+    items: (prev.items || []).map((entry) => String(entry.id) === key ? {
       ...entry,
-      liked_by_me: !wasLiked,
-      likes: Math.max(0, Number(entry.likes || 0) + (wasLiked ? -1 : 1)),
+      liked_by_me: liked,
+      likes,
       liked_by: currentEmail
-        ? (wasLiked ? (entry.liked_by || []).filter((email) => email !== currentEmail) : [...new Set([...(entry.liked_by || []), currentEmail])])
+        ? (liked ? [...new Set([...(entry.liked_by || []), currentEmail])] : (entry.liked_by || []).filter((email) => email !== currentEmail))
         : entry.liked_by,
     } : entry),
   }));
-  const result = await UserStore.updateNewsFeedItem(item.id, 'like', { liked: wasLiked });
-  if (!result.ok) { loadNewsFeed(); showToast(result.message, 'error'); return; }
-  loadNewsFeed();
+  applyLike(!wasLiked, Math.max(0, prevLikes + (wasLiked ? -1 : 1)));   // instant UI (web + Android + iOS)
+  try {
+    const result = await UserStore.updateNewsFeedItem(item.id, 'like', { liked: wasLiked });
+    if (!result?.ok) { applyLike(wasLiked, prevLikes); showToast(result?.message || 'Could not update like.', 'error'); return; }
+    const finalLiked = result.liked !== undefined ? Boolean(result.liked) : !wasLiked;
+    const finalCount = Number.isFinite(result.likesCount)
+      ? result.likesCount
+      : Math.max(0, prevLikes + (finalLiked ? 1 : 0) - (wasLiked ? 1 : 0));
+    applyLike(finalLiked, finalCount);
+    // Share with News Details / feed cards and save for this account
+    publishEngagement(item.id, { liked: finalLiked, likes: finalCount }, 'newsfeed-list');
+    if (currentEmail) persistLikedLocal(currentEmail, item.id, finalLiked);
+  } finally {
+    likeInFlight.delete(key);
+  }
 };
+
+  // Like / comment / share changed on News Details (or any card) -> update this list instantly
+  useEffect(() => subscribeEngagement((id, entry, src) => {
+    if (src === 'newsfeed-list') return;
+    setNewsData((prev) => ({
+      ...prev,
+      items: (prev.items || []).map((it) => {
+        if (String(it.id) !== String(id)) return it;
+        const email = String(prev.currentUser?.email || '').trim().toLowerCase();
+        const next = { ...it };
+        if (entry.likes !== undefined) next.likes = entry.likes;
+        if (entry.comments !== undefined) next.comments = entry.comments;
+        if (entry.shares !== undefined) next.shares = entry.shares;
+        if (entry.liked !== undefined) {
+          next.liked_by_me = entry.liked;
+          if (email) {
+            next.liked_by = entry.liked
+              ? [...new Set([...(it.liked_by || []), email])]
+              : (it.liked_by || []).filter((e) => e !== email);
+          }
+        }
+        return next;
+      }),
+    }));
+  }), []);
 
   const handleBookmark = async (item) => {
     const result = await UserStore.updateNewsFeedItem(item.id, 'bookmark');
@@ -1369,7 +1421,7 @@ const handleLike = async (item) => {
                       : String(UserStore.getSeatRoleNameForPlanRoleId(planForRole?.role_id_raw || planForRole?.role_id || '') || '').split(', ')
                     ).filter(Boolean).join(', ');
                     // Seat name (Car Nicobar) hata diya. Plan ka role name dikhega.
-                    const label = planRoleLabel || (itemTier.key !== 'common' ? itemTier.label : '');
+                    const label = planRoleLabel || (itemTier.key !== 'common' && itemTier.key !== 'premium' ? itemTier.label : '');
                     if (!label) return null;
                     return (
                       <>

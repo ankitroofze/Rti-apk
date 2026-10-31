@@ -538,6 +538,7 @@ function ProfileScreenInner({ navigation, route }) {
         profile_image: apiUser.profile_image_url || apiUser.profile_image || user.profile_image,
         pending_profile_image: apiUser.pending_profile_image ?? null,
         pending_profile_image_url: apiUser.pending_profile_image_url ?? null,
+        profile_image_change_count: Number(apiUser.profile_image_change_count ?? apiUser.profile?.profile_image_change_count ?? user.profile_image_change_count ?? 0) || 0,
         state: apiUser.state || user.state,
         district: apiUser.district || user.district,
        taluka: apiUser.taluka || user.taluka, village: apiUser.village || user.village || '',
@@ -760,8 +761,23 @@ function ProfileScreenInner({ navigation, route }) {
     showToast('Referral code copied!', 'success');
   };
 
+// Free photo change use ho chuka: proper message + "Purchase Subscription" button
+  const PHOTO_LIMIT_MESSAGE = 'Free photo change already used. Take a Role or Premium subscription to change your profile photo again.';
+  const promptPhotoLimit = (message) => {
+    const text = message || PHOTO_LIMIT_MESSAGE;
+    const goToPlans = () => navigation.navigate('Subscription Plans', { returnTo: 'Profile' });
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(`${text}\n\nOpen subscription plans?`)) goToPlans();
+      return;
+    }
+    Alert.alert('Purchase Subscription', text, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Purchase Role Subscription', onPress: goToPlans },
+    ]);
+  };
+
 const handlePickImage = async () => {
-    if (!canChangePhoto) { showToast('Take a Role or Premium subscription to change your profile photo.', 'info'); return; }
+    if (!canPickPhoto) { promptPhotoLimit(); return; }
     try {
       setUploading(true);
       if (ImagePicker.requestMediaLibraryPermissionsAsync) {
@@ -880,6 +896,13 @@ const handlePickImage = async () => {
       if (!imgResult.ok) {
         setSaving(false);
         if (imgResult.isAuth) { showToast('Session expired. Please login again.', 'error'); return; }
+        if (imgResult.needsSubscription) {
+          // Free change pehle hi use ho chuka — pending image hatao, purani photo wapas dikhao, subscription prompt do
+          pendingImageUriRef.current = null;
+          handleChange('profile_image', savedProfile.profile_image || '');
+          promptPhotoLimit(imgResult.message);
+          return;
+        }
         showToast(imgResult.message || 'Unable to upload image.', 'error');
         return;
       }
@@ -893,6 +916,11 @@ const handlePickImage = async () => {
         } else if (!hasExistingImage && imgResult.imageUrl) {
         imageUpdatePayload = { profile_image: imgResult.imageUrl };
       }
+      // Har successful upload par count +1 (backend value mile to wahi, warna local +1)
+      imageUpdatePayload = {
+        ...imageUpdatePayload,
+        profile_image_change_count: Number(imgResult.imageChangeCount ?? (Number(savedProfile.profile_image_change_count || 0) + 1)) || 1,
+      };
     }
 
     // FIX: ab asli backend endpoint POST /profile hit hota hai— phone/bio ka
@@ -1033,7 +1061,15 @@ const handlePickImage = async () => {
    const pillTheme = { bg: `${profileTier.accent}1F`, border: profileTier.accent, text: profileTier.accent };
   // ✅ FIX: purchased seat ka asli naam (Pratinidhi, PRO, etc.) generic tier
   // label ("Authorised Representative") se hamesha priority lega.
-   const canChangePhoto = profileTier.key !== 'common';   // sirf Role / Premium / Verified wale photo badal sakte hain
+   const canChangePhoto = profileTier.key !== 'common';   // Role / Premium / Verified wale hamesha photo badal sakte hain
+  // ✅ Naya (common) user: 1 baar photo FREE badal sakta hai. Uske baad Role/Premium subscription chahiye.
+  // Backend `profile_image_change_count` bheje to wahi use hota hai; na bheje to
+  // "image pehle se hai / pending hai" ko "free change use ho chuka" maana jaata hai.
+  const photoChangeCount = Number(
+    displayProfile?.profile_image_change_count
+    ?? (displayProfile?.pending_profile_image_url ? 1 : 0)
+  ) || 0;
+  const canPickPhoto = canChangePhoto || photoChangeCount < 1;
     const profileSeatKeyLC = String(displayProfile?.state_seat?.seat_id || '').trim().toLowerCase();
   const purchasedRoleLabel = Array.isArray(displayProfile?.subscription_plan?.role_names)
     ? displayProfile.subscription_plan.role_names.filter(Boolean).join(', ')
@@ -1068,7 +1104,7 @@ const handlePickImage = async () => {
           <View style={{ position: 'relative' }}>
             <View style={w.avatarWrap}>
               <Image
-               source={canChangePhoto && form.profile_image ? { uri: form.profile_image } : AVATAR_IMAGE}
+               source={form.profile_image ? { uri: form.profile_image } : AVATAR_IMAGE}
                 style={w.avatar}
                 resizeMode="cover"
               />
@@ -1078,7 +1114,7 @@ const handlePickImage = async () => {
                 position: 'absolute',
                 bottom: 4,
                 right: 4,
-                width: 36, display: canChangePhoto ? 'flex' : 'none',
+                width: 36,
                 height: 36,
                 borderRadius: 18,
                 backgroundColor: ORANGE,
@@ -1095,7 +1131,7 @@ const handlePickImage = async () => {
             </TouchableOpacity>
           </View>
           <Text style={{ fontSize: 12, color: '#64748b', marginTop: 8 }}>
-            {uploading ? 'Opening...' : 'Tap to change photo'}
+            {uploading ? 'Opening...' : (canPickPhoto ? 'Tap to change photo' : 'Free photo change used')}
           </Text>
         </View>
 
@@ -1472,7 +1508,7 @@ const handlePickImage = async () => {
             <TouchableOpacity key={post.id || index} style={w.postCard} onPress={() => openUserPost(post)} activeOpacity={0.85}>
               <View style={w.postHeader}>
                 <Image
-               source={canChangePhoto && savedProfile.profile_image ? { uri: savedProfile.profile_image } : AVATAR_IMAGE}
+               source={savedProfile.profile_image ? { uri: savedProfile.profile_image } : AVATAR_IMAGE}
                   style={w.postAvatar}
                 />
                 <View>
@@ -1693,10 +1729,10 @@ const handlePickImage = async () => {
                 <View style={[w.profileHeadRow, isWebNarrow && w.profileHeadRowNarrow]}>
                  <View style={w.avatarBox}>
                     <Image
-                     source={canChangePhoto && displayProfile.profile_image ? { uri: displayProfile.profile_image } : AVATAR_IMAGE}
+                     source={displayProfile.profile_image ? { uri: displayProfile.profile_image } : AVATAR_IMAGE}
                       style={w.avatarImg}
                     />
-                <TouchableOpacity onPress={openEdit} activeOpacity={0.8} style={!canChangePhoto ? { display: 'none' } : null}>
+                <TouchableOpacity onPress={openEdit} activeOpacity={0.8} style={!canPickPhoto ? { display: 'none' } : null}>
                       <LinearGradient
                         colors={gradient}
                         start={{ x: 0, y: 0 }}
@@ -1827,7 +1863,7 @@ const handlePickImage = async () => {
       navigation={navigation}
       onBack={handleGoHome}
       bgImage={profileTier.bgImage}
-     avatarUri={canChangePhoto ? (displayProfile.profile_image || null) : null}
+     avatarUri={displayProfile.profile_image || null}
       avatarBgImage={profileTier.bgImage}
       avatarBgColor={profileTier.accent}
       highContrast={hasPremiumSubscription}
@@ -1896,14 +1932,14 @@ const handlePickImage = async () => {
                   <View style={ProfileStyles.profileCardAvatarWrap}>
                     <View style={ProfileStyles.profileCardAvatarRing}>
                       <Image
-                        source={canChangePhoto && displayProfile.profile_image ? { uri: displayProfile.profile_image } : AVATAR_IMAGE}
+                        source={displayProfile.profile_image ? { uri: displayProfile.profile_image } : AVATAR_IMAGE}
                         style={ProfileStyles.profileCardAvatar}
                       />
                      <LinearGradient
   colors={profileTier.gradient}
   start={{ x: 0, y: 0 }}
   end={{ x: 1, y: 1 }}
-style={[ProfileStyles.avatarCameraBadge, !canChangePhoto && { display: 'none' }]}
+style={[ProfileStyles.avatarCameraBadge, !canPickPhoto && { display: 'none' }]}
 >
   <TouchableOpacity
     style={ProfileStyles.avatarCameraBadgeInner}

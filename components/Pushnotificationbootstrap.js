@@ -57,9 +57,11 @@ export default function PushNotificationBootstrap() {
   // Web par ye silent hai: permission pehle se granted ho tabhi register; warna WebPushPrompt button se maangta hai.
   useEffect(() => {
     if (!isLoggedIn) return undefined;
-    registerDeviceToken();
+    // ✅ Register/login ke turant baad permission dialog + token call Home transition ke beech aa jaata tha —
+    // isliye thodi der baad (Home screen settle hone par) register karte hain.
+    const t = setTimeout(() => { registerDeviceToken(); }, 3000);
     const unsubRefresh = listenTokenRefresh();
-    return () => unsubRefresh?.();
+    return () => { clearTimeout(t); unsubRefresh?.(); };
   }, [isLoggedIn]);
 
   return <WebPushPrompt />;

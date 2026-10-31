@@ -23,6 +23,7 @@ import {
 } from '../utils/storyHelpers';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
 import { openExternalUrl } from '../utils/adRedirect';
+import { emitFeedScroll } from '../utils/feedScrollBus';
 import NewsFeedCard from '../components/NewsFeedCard';
 import NewsMenuSidebar from '../components/NewsMenuSidebar';
 import LeftEcomSidebar from '../components/LeftEcomSidebar';
@@ -934,9 +935,9 @@ export default function HomeScreen({ navigation, route }) {
         handledRegistrationToastRef.current = true;
         showToast('Registration successful! Welcome 🎉', 'success');
       }
+      // ✅ Register ke baad user seedha Home par rehta hai — Subscription Plans par auto-redirect hata diya.
       if (fromRegistration && !handledSubscriptionModalRef.current) {
         handledSubscriptionModalRef.current = true;
-        setTimeout(() => navigation.navigate('Subscription Plans'), 1000);
       }
     })();
     return () => { mounted = false; };
@@ -1336,6 +1337,7 @@ const handleOpenLeadForm = useCallback((story) => {
       onScroll={(e) => {
           const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
           scrollYRef.current = contentOffset.y;
+          emitFeedScroll(contentOffset.y); // playing video card ko batao: user ne scroll kiya => pause
           if (viewMode !== 'states' && contentOffset.y + layoutMeasurement.height >= contentSize.height - 800) {
             handleLoadMoreNews();
           }

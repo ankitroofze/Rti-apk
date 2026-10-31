@@ -533,8 +533,11 @@ storyFollowBtnWrap: {
     backgroundColor: 'transparent',
   },
   singleActionItemViews: {
-    flex: 0,
+    // ✅ web: `flex: 0` ka flexBasis 0 hota hai => count ka text collapse ho jata tha (sirf eye icon dikhta tha)
+    flexGrow: 0,
     flexShrink: 0,
+    flexBasis: 'auto',
+    minWidth: 52,
     paddingHorizontal: 8,
   },
   singleActionItemActive: {

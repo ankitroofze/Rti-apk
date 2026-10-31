@@ -7,6 +7,7 @@ import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_9
 import { useAuth } from '../contexts/AuthContext';
 import { AuthAPI } from './ClientAPI/AuthApi';
 import { UserStore } from '../store/UserStore';
+import KeyboardAwareScroll from '../components/KeyboardAwareScroll';
 import styles from '../styles/LoginStyles';
 
 export default function LoginScreen({ navigation, route }) {
@@ -120,11 +121,11 @@ export default function LoginScreen({ navigation, route }) {
   };
 
   return (
-    <SafeAreaView style={styles.flex} edges={[]}>
+    <SafeAreaView style={[styles.flex, { backgroundColor: '#B91C1C' }]} edges={[]}>
     <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined} enabled={Platform.OS === 'ios'}>
       <ImageBackground source={require('../assets/images/profile-red.png')} resizeMode="cover" style={styles.root}>
-        <ScrollView ref={scrollRef} style={styles.scrollView} contentContainerStyle={[styles.formScroll, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 40 }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="none" showsVerticalScrollIndicator={false}>
+        <KeyboardAwareScroll ref={scrollRef} style={styles.scrollView} contentContainerStyle={[styles.formScroll, { paddingTop: insets.top + 24, paddingBottom: insets.bottom + 40 }]} keyboardShouldPersistTaps="handled" keyboardDismissMode="none" showsVerticalScrollIndicator={false}>
           <View style={styles.formContainer}>
             <TouchableOpacity style={styles.closeButton} onPress={() => navigation.navigate('Home')}><Ionicons name="arrow-back" size={22} color="#fff" /></TouchableOpacity>
             <Text style={styles.pageTitle}>Sign In</Text>
@@ -140,7 +141,7 @@ export default function LoginScreen({ navigation, route }) {
 </TouchableOpacity>
             <TouchableOpacity style={styles.switchBtn} onPress={() => navigation.navigate('Register')}><Text style={styles.switchText}>{"Don't have an account? "}<Text style={styles.switchLink}>Sign Up</Text></Text></TouchableOpacity>
           </View>
-        </ScrollView>
+        </KeyboardAwareScroll>
       </ImageBackground>
     </KeyboardAvoidingView>
     </SafeAreaView>

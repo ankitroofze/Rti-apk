@@ -33,12 +33,12 @@ const styles = StyleSheet.create(withRobotoFont({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 320,
+    height: 260,
     pointerEvents: 'none',
     ...Platform.select({
       web: {
         backgroundImage:
-          'linear-gradient(to top, rgba(0,0,0,0.90) 0%, rgba(0,0,0,0.5) 50%, transparent 100%)',
+          'linear-gradient(to top, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.25) 50%, transparent 100%)',
         pointerEvents: 'none',
       },
       default: {},

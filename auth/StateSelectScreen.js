@@ -299,10 +299,10 @@ export default function StateSelectScreen({ navigation, route }) {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={[]}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#B91C1C' }} edges={[]}>
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined} enabled={Platform.OS === 'ios'}
     >
       <ImageBackground source={require('../assets/images/profile-red.png')} resizeMode="cover" style={styles.root}>
         <View style={[styles.glow, styles.glowTop]} pointerEvents="none" />

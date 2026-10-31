@@ -323,8 +323,12 @@ const newsUploadErrorResult = (err, mediaType) => {
 // Video ke saath music / voice-over ke fields (backend ffmpeg se merge karta hai).
 const appendAudioMix = async (formData, audioMix) => {
   if (!audioMix) return;
-  if (audioMix.musicId) formData.append('music_id', String(audioMix.musicId));
-  if (audioMix.musicUrl) formData.append('music_url', String(audioMix.musicUrl));
+  // Bundled (local) songs ka id server ko nahi pata — unke liye sirf https music_url bhejte hain.
+  const isLocalSong = String(audioMix.musicId || '').startsWith('local-');
+  if (audioMix.musicId && !isLocalSong) formData.append('music_id', String(audioMix.musicId));
+  const remoteMusicUrl = audioMix.music?.remoteUrl
+    || (/^https?:/i.test(String(audioMix.musicUrl || '')) ? audioMix.musicUrl : null);
+  if (remoteMusicUrl) formData.append('music_url', String(remoteMusicUrl));
   if (audioMix.musicId || audioMix.musicUrl) {
     formData.append('music_volume', String(audioMix.musicVolume ?? 0.6));
   }
@@ -332,7 +336,10 @@ const appendAudioMix = async (formData, audioMix) => {
   if (audioMix.voiceUri) {
     if (Platform.OS === 'web') {
       const blob = await fetch(audioMix.voiceUri).then((r) => r.blob());
-      formData.append('voice', blob, 'voice.m4a');
+      // Browser recordings are usually audio/webm (Chrome/Firefox) or audio/mp4 (Safari) — use the right extension
+      const vType = String(blob.type || audioMix.voiceMime || '').toLowerCase();
+      const vExt = vType.includes('webm') ? 'webm' : vType.includes('ogg') ? 'ogg' : vType.includes('wav') ? 'wav' : 'm4a';
+      formData.append('voice', blob, `voice.${vExt}`);
     } else {
       formData.append('voice', { uri: audioMix.voiceUri, type: 'audio/mp4', name: 'voice.m4a' });
     }
@@ -891,9 +898,20 @@ export const AuthAPI = {
           pendingImageUrl: profile?.pending_profile_image_url || '',
           imageUrl: profile?.profile_image_url || profile?.profile_image || '',
           profileUpdateStatus: profile?.profile_update_status ?? null,
+          // Har successful upload par backend profile_image_change_count badhata hai
+          imageChangeCount: (profile?.profile_image_change_count ?? json?.profile_image_change_count ?? null),
         };
       }
       if (res.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+      // ✅ Free photo change use ho chuka ho to backend 403 + code 'photo_change_limit' bhejta hai
+      if (res.status === 402 || res.status === 403 || json?.code === 'photo_change_limit') {
+        return {
+          ok: false,
+          needsSubscription: true,
+          code: json?.code || 'photo_change_limit',
+          message: json?.message || 'Free photo change already used. Take a Role or Premium subscription.',
+        };
+      }
       return { ok: false, message: json?.message || 'Update failed.' };
     } catch (_err) {
       return { ok: false, isNetwork: true, message: 'Network error.' };
@@ -1703,6 +1721,8 @@ if (status === 200 || status === 201) {
     mediaMime = '',
     extraImages = [],
     audioMix = null,
+    useFrame = false,
+    frameTemplate = '',
   }) => {
     try {
       console.log("Received mediaUri:", mediaUri);
@@ -1716,6 +1736,8 @@ if (status === 200 || status === 201) {
       formData.append('description', description || '');
       formData.append('report_type', reportType || '');
       formData.append('media_type', String(mediaType));
+      formData.append('use_frame', useFrame ? '1' : '0');
+      formData.append('frame_template', useFrame ? String(frameTemplate || 'glossy2') : '');
 
       if (mediaUri) {
         if (Platform.OS === 'web') {
@@ -2327,6 +2349,8 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
     mediaMime = '',
     extraImages = [],
     audioMix = null,
+    useFrame = false,
+    frameTemplate = '',
   }) => {
     try {
       const token = await getAuthToken();
@@ -2340,6 +2364,8 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
       formData.append('description', description || '');
       formData.append('report_type', reportType || '');
       formData.append('media_type', String(mediaType));
+      formData.append('use_frame', useFrame ? '1' : '0');
+      formData.append('frame_template', useFrame ? String(frameTemplate || 'glossy2') : '');
 
       if (mediaUri) {
         if (Platform.OS === 'web') {

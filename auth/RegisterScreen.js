@@ -384,11 +384,11 @@ export default function RegisterScreen({ navigation }) {
   const mobileShowError = mobileTouched && mobile.length > 0 && !mobileOk;
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={[]}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#B91C1C' }} edges={[]}>
       <ImageBackground source={require('../assets/images/profile-red.png')} resizeMode="cover" style={styles.root}>
         <KeyboardAvoidingView
           style={styles.root}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined} enabled={Platform.OS === 'ios'}
         >
           <KeyboardAwareScroll
             style={styles.scrollView}

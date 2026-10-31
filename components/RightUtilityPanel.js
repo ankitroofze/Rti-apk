@@ -39,12 +39,19 @@ const formatCount = (n) => {
 
 function SponsoredImage({ ad }) {
   const [failedToLoad, setFailedToLoad] = useState(false);
+  const [ratio, setRatio] = useState(null);
   const imageUri = ad.image || ad.photo || ad.image_url || ad.images?.[0] || ad.photos?.[0] || '';
   const videoUri = ad.video || ad.video_url || '';
+  useEffect(() => {
+    if (!imageUri) return undefined;
+    let alive = true;
+    Image.getSize(imageUri, (w, h) => { if (alive && w && h) setRatio(w / h); }, () => {});
+    return () => { alive = false; };
+  }, [imageUri]);
 
   // ✅ video ad (media_type 2): image nahi hoti — video player dikhao (muted autoplay + controls)
   if ((!imageUri || failedToLoad) && videoUri) {
-    return <AdVideoPlayer key={videoUri} uri={videoUri} autoPlay style={styles.sponsoredImage} />;
+    return <AdVideoPlayer key={videoUri} uri={videoUri} autoPlay style={[styles.sponsoredImage, { height: undefined, aspectRatio: 16 / 9 }]} />;
   }
 
   if (!imageUri || failedToLoad) {
@@ -56,7 +63,19 @@ function SponsoredImage({ ad }) {
     );
   }
 
-  return <Image source={{ uri: imageUri }} style={styles.sponsoredImage} resizeMode="cover" onError={() => setFailedToLoad(true)} />;
+  // Poori image dikhe (crop nahi): asli ratio ke hisaab se height, contain
+  return (
+    <Image
+      source={{ uri: imageUri }}
+      style={[styles.sponsoredImage, { height: undefined, aspectRatio: ratio || 1.5, maxHeight: 420 }]}
+      resizeMode="contain"
+      onLoad={(e) => {
+        const { width: w, height: h } = e?.nativeEvent?.source || {};
+        if (w && h) setRatio(w / h);
+      }}
+      onError={() => setFailedToLoad(true)}
+    />
+  );
 }
 
 // Ek hi user ke 2+ ads: ek card ke andar prev/next se dekho (title, buttons sab ad ke saath badalte hain)

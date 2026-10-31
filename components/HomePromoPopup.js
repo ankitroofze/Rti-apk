@@ -4,9 +4,10 @@
 //  - Har ad (image ho ya video) sirf AD_SECONDS = 5 second chalta hai, phir apne aap agla ad.
 //  - Skip button pehle 5 second tak "Skip in 5s" countdown dikhata hai, uske baad chalu hota hai.
 //  - Skip dabane par POORA popup ek baar me band ho jaata hai (agla ad nahi).
-//  - Backdrop tap / Android back se countdown ke dauran popup band nahi hota.
+//  - Backdrop / blur area par tap karne se popup KABHI band nahi hota (na 5 sec se pehle, na baad me).
+//    Popup sirf Skip button se band hota hai (5 sec poore hone ke baad).
 //  - Aakhri ad par ruk jaata hai (loop nahi) — user Skip dabake band kare.
-//  - Ad par tap karne par ad ka redirect khulta hai (onPress).
+//  - Sirf ASLI image / video par tap karne se ad ka redirect khulta hai (onPress).
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -34,7 +35,7 @@ const AD_FIT = 'contain';      // ad poora dikhta hai (crop nahi); khaali jagah 
 const IS_WEB = Platform.OS === 'web';
 
 // ── Video ad (muted autoplay, 5 sec ke baad parent agla ad / ruk jaata hai) ──
-function PromoVideo({ uri, poster }) {
+function PromoVideo({ uri, poster, onSize }) {
   const [muted, , toggleMuted] = useGlobalMuted();
   const player = useVideoPlayer(uri ? { uri } : null, (p) => {
     try {
@@ -46,6 +47,19 @@ function PromoVideo({ uri, poster }) {
   });
 
   useEffect(() => { safeSetMuted(player, muted); }, [player, muted]);
+
+  // Video ka asli size batao taaki sirf video ke upar tap redirect ho (blur par nahi)
+  useEffect(() => {
+    if (!player || !onSize) return undefined;
+    const report = (track) => {
+      const sz = track?.size;
+      if (sz?.width && sz?.height) onSize({ w: sz.width, h: sz.height });
+    };
+    try { report(player.videoTrack); } catch (_) { /* ignore */ }
+    let sub;
+    try { sub = player.addListener?.('videoTrackChange', (e) => report(e?.videoTrack ?? e)); } catch (_) { /* ignore */ }
+    return () => { try { sub?.remove?.(); } catch (_) { /* ignore */ } };
+  }, [player, onSize]);
   useEffect(() => {
     safePlay(player);
     return () => { safePause(player); };
@@ -56,7 +70,7 @@ function PromoVideo({ uri, poster }) {
       {poster ? <Image source={{ uri: poster }} style={StyleSheet.absoluteFill} resizeMode={AD_FIT} /> : null}
       <VideoView
         player={player}
-        style={StyleSheet.absoluteFill}
+        style={[StyleSheet.absoluteFill, IS_WEB ? { objectFit: AD_FIT, backgroundColor: 'transparent' } : null]}
         contentFit={AD_FIT}
         nativeControls={false}
         fullscreenOptions={{ enabled: false }}
@@ -106,6 +120,8 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
   const [index, setIndex] = useState(0);
   const [remaining, setRemaining] = useState(AD_SECONDS);
   const [unlocked, setUnlocked] = useState(false);
+  const [areaSize, setAreaSize] = useState({ w: 0, h: 0 });   // media area ka size
+  const [mediaNatural, setMediaNatural] = useState(null);       // image/video ka asli size {w,h}
 
   // `ads` (array) ho to wahi, warna purana single `ad`. Image YA video wale ads.
   const rawList = useMemo(() => {
@@ -173,6 +189,7 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
   useEffect(() => {
     if (!visible || !current) return undefined;
     setRemaining(AD_SECONDS);
+    setUnlocked(false);
     const timer = setInterval(() => setRemaining((r) => (r > 0 ? r - 1 : 0)), 1000);
     return () => clearInterval(timer);
   }, [visible, currentKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -186,7 +203,21 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
     return () => clearTimeout(t);
   }, [visible, current, remaining, isLast]);
 
-  const canSkip = unlocked || remaining <= 0;
+  // ✅ Skip ka 5 sec countdown SIRF pehle ad par. Pehla ad khatam hone ke baad (index > 0) baaki ads par
+  // Skip seedha available rehta hai — "Skip in 5s" har ad par dobara nahi aata.
+  const canSkip = index > 0 || remaining <= 0;
+
+  // Current ad ka asli size nikaalo (image ke liye Image.getSize; video ke liye PromoVideo se aata hai)
+  useEffect(() => {
+    setMediaNatural(null);
+    if (!current) return;
+    if (String(current.video || '').trim()) return;
+    const uri = String(current.image || current.brandLogo || '').trim();
+    if (!uri) return;
+    let alive = true;
+    Image.getSize(uri, (w, h) => { if (alive && w && h) setMediaNatural({ w, h }); }, () => {});
+    return () => { alive = false; };
+  }, [currentKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const close = () => setVisible(false);
   const handleSkip = () => { if (canSkip) close(); };
@@ -194,6 +225,7 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
   if (!visible || !current) return null;
 
   const handlePress = () => {
+    // Sirf asli image/video par tap -> ad ka redirect. (Blur par tap kuch nahi karta.)
     if (onPress) onPress(current);
     else if (current.ctaUrl) openExternalUrl(current.ctaUrl);
     close();
@@ -201,6 +233,14 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
 
   const videoUri = String(current.video || '').trim();
   const imageUri = String(current.image || current.brandLogo || '').trim();
+
+  // 'contain' ke hisaab se image/video jitni jagah me dikh rahi hai utna hi tappable area
+  let hit = { width: '100%', height: '100%' };
+  // Video: always use the full media area with 'contain' so the WHOLE video is visible (track metadata can be wrong/rotated).
+  if (!videoUri && areaSize.w && areaSize.h && mediaNatural?.w && mediaNatural?.h) {
+    const scale = Math.min(areaSize.w / mediaNatural.w, areaSize.h / mediaNatural.h);
+    hit = { width: Math.round(mediaNatural.w * scale), height: Math.round(mediaNatural.h * scale) };
+  }
 
   const stage = (
     <View style={IS_WEB ? [styles.webCard, { width: cardW, height: cardH }] : styles.screen}>
@@ -210,23 +250,33 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
       ) : null}
       <View style={[StyleSheet.absoluteFill, imageUri ? styles.blurTint : styles.noImageBg]} pointerEvents="none" />
 
-      {/* Ad media — top/bottom bar se bachke beech me */}
-      <TouchableOpacity
-        style={[styles.mediaArea, { top: topPad + 52, bottom: bottomPad }]}
-        activeOpacity={1}
-        onPress={handlePress}
+      {/* Ad media — top/bottom bar se bachke beech me. Container touch nahi leta (blur par tap = kuch nahi),
+          sirf andar ka asli image/video wala box tappable hai. */}
+      <View
+        style={[styles.mediaArea, styles.mediaAreaCenter, { top: topPad + 52, bottom: bottomPad }]}
+        pointerEvents="box-none"
+        onLayout={(e) => {
+          const { width, height } = e.nativeEvent.layout;
+          setAreaSize((p) => (p.w === width && p.h === height ? p : { w: width, h: height }));
+        }}
       >
-        {videoUri ? (
-          <PromoVideo key={`v-${currentKey}`} uri={videoUri} poster={imageUri} />
-        ) : (
-          <Image
-            key={`i-${currentKey}`}
-            source={{ uri: imageUri }}
-            style={StyleSheet.absoluteFill}
-            resizeMode={AD_FIT}
-          />
-        )}
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={{ width: hit.width, height: hit.height, maxWidth: '100%', maxHeight: '100%' }}
+          activeOpacity={0.95}
+          onPress={handlePress}
+        >
+          {videoUri ? (
+            <PromoVideo key={`v-${currentKey}`} uri={videoUri} poster={imageUri} onSize={setMediaNatural} />
+          ) : (
+            <Image
+              key={`i-${currentKey}`}
+              source={{ uri: imageUri }}
+              style={StyleSheet.absoluteFill}
+              resizeMode={AD_FIT}
+            />
+          )}
+        </TouchableOpacity>
+      </View>
 
       {/* Top: progress bars + label + skip */}
       <View style={[styles.topBar, { paddingTop: topPad }]} pointerEvents="box-none">
@@ -284,11 +334,8 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
       {IS_WEB ? (
         // Web: poora page cover nahi — blurred (black nahi) backdrop + center popup
         <View style={styles.webBackdrop}>
-          <TouchableOpacity
-            style={StyleSheet.absoluteFill}
-            activeOpacity={1}
-            onPress={() => { if (canSkip) close(); }}
-          />
+          {/* backdrop tap se popup band nahi hota — sirf Skip button se */}
+          <View style={StyleSheet.absoluteFill} pointerEvents="auto" />
           {stage}
         </View>
       ) : stage}
@@ -311,6 +358,7 @@ const styles = StyleSheet.create({
   blurTint: { backgroundColor: 'rgba(15,23,42,0.45)' },
   noImageBg: { backgroundColor: '#1e293b' },
   mediaArea: { position: 'absolute', left: 0, right: 0 },
+  mediaAreaCenter: { alignItems: 'center', justifyContent: 'center' },
   topBar: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 14 },
   progressRow: { flexDirection: 'row', gap: 4 },
   progressTrack: { flex: 1, height: 3, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.35)', overflow: 'hidden' },

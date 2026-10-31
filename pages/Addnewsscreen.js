@@ -23,6 +23,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { MODULE_HEADER_HEIGHT_WEB } from '../constants/subscriptionThemes';
 import ModuleWebHeader from '../components/Modulewebheader';
+import FrameTemplatePicker from '../components/FrameTemplatePicker';
+import { DEFAULT_FRAME_ID } from '../constants/frameTemplates';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
@@ -42,6 +44,7 @@ if (Platform.OS !== 'web') {
 import VideoPreview from '../components/VideoPreview';
 import NewsCameraModal from '../components/NewsCameraModal';
 import VideoAudioEditorModal from '../components/VideoAudioEditorModal';
+import { mergeAudioOnDevice, getLastMergeError } from '../utils/mergeAudioOnDevice';
 import NewsLimitModal from '../components/NewsLimitModal';
 import WebRichEditor from '../components/WebRichEditor';
 import { useToast, useBusy } from '../components/ui/ToastProvider';
@@ -400,6 +403,9 @@ export default function AddNewsScreen({ navigation, route }) {
   const [postType, setPostType] = useState(Number(editItem?.type) === 2 ? 2 : 1); // 1 = News, 2 = Feed (Reel)
   const [mediaType, setMediaType] = useState(Number(editItem?.type) === 2 ? 'Video' : 'None');
   const [images, setImages] = useState([]);
+  // Breaking-news template: '' = koi template nahi, warna template id (glossy2 / glossy1 / redbar / banner)
+  const [frameTemplate, setFrameTemplate] = useState(editItem?.useFrame ? (editItem?.frameTemplate || DEFAULT_FRAME_ID) : '');
+  const useFrame = Boolean(frameTemplate);
   const [video, setVideo] = useState(null);
   const [videoThumb, setVideoThumb] = useState(null);
   const [attachment, setAttachment] = useState(null);
@@ -495,6 +501,7 @@ const admin = user.role === 'admin';
     setRoleType(editItem.role_type || editItem.roleType || '');
     setSelectedState(editItem.state || '');
     setPostType(Number(editItem.type) === 2 ? 2 : 1);
+    setFrameTemplate(editItem.useFrame ? (editItem.frameTemplate || DEFAULT_FRAME_ID) : '');
 
     const existingImages = Array.isArray(editItem.images)
       ? editItem.images.filter(Boolean)
@@ -686,6 +693,8 @@ const admin = user.role === 'admin';
         videoOriginalUriRef.current = asset.uri;
         const persisted = await storeWebUriToIdbMedia(asset.uri, { prefix: 'video', mimeType: asset.mimeType || '' });
         setVideo(persisted);
+        setAudioMix(null);
+        setTimeout(() => setAudioEditorVisible(true), 350); // ✅ web par bhi music/voice editor
 
         const thumb = await generateVideoThumbnail(persisted);
         if (thumb) setVideoThumb(thumb);
@@ -765,7 +774,7 @@ const admin = user.role === 'admin';
       setMediaType('Video');
       setVideo(uri);
       setAudioMix(null);
-      if (Platform.OS !== 'web') setTimeout(() => setAudioEditorVisible(true), 350);
+      setTimeout(() => setAudioEditorVisible(true), 350); // ✅ web par bhi music/voice editor
     } else {
       setVideo(null);
       setAttachment(null);
@@ -856,6 +865,28 @@ const admin = user.role === 'admin';
       mediaMimeToSend = attachment.mimeType || '';
     }
 
+    // ── Voice / music ko video me phone par hi merge karo (original awaaz hat jaati hai) ──
+    // Merge ho gaya => merged video upload hoti hai aur server ko audioMix nahi bhejte (double-merge nahi).
+    let audioMixToSend = (mediaType === 'Video' && audioMix && !/^https?:/i.test(String(video || '')) && (audioMix.musicId || audioMix.voiceUri))
+      ? audioMix
+      : null;
+    if (audioMixToSend && Platform.OS !== 'web') {
+      const merged = await mergeAudioOnDevice({
+        videoUri: mediaUriToSend,
+        voiceUri: audioMixToSend.voiceUri,
+        musicUrl: audioMixToSend.musicUrl,
+        musicVolume: audioMixToSend.musicVolume,
+      });
+      if (merged) {
+        mediaUriToSend = merged;
+        audioMixToSend = null;
+      } else {
+        // Silent fail nahi: reason log me aayega (Metro / adb logcat me "[mergeAudioOnDevice]" dhundo)
+        console.warn('[AddNews] on-device merge fail — server merge par depend:', getLastMergeError());
+        showToast('Could not merge audio on your phone — the server will merge it instead.', 'warning');
+      }
+    }
+
     console.log("video:", video);
 console.log("videoOriginalUriRef:", videoOriginalUriRef.current);
 console.log("mediaUriToSend:", mediaUriToSend);
@@ -873,9 +904,10 @@ console.log("Platform:", Platform.OS);
       mediaMime: mediaMimeToSend,
       extraImages: mediaType === 'Image' ? images.slice(1) : [],
       // Music / voice-over — sirf nayi (local) video ke liye; backend ffmpeg se merge karta hai
-      audioMix: (mediaType === 'Video' && audioMix && !/^https?:/i.test(String(video || '')) && (audioMix.musicId || audioMix.voiceUri))
-        ? audioMix
-        : null,
+      audioMix: audioMixToSend,
+      // frame sirf image / video wali news par lagta hai
+      useFrame: useFrame && (mediaType === 'Image' || mediaType === 'Video'),
+      frameTemplate: useFrame && (mediaType === 'Image' || mediaType === 'Video') ? frameTemplate : '',
     };
 
     const apiResult = isEditMode
@@ -1070,17 +1102,23 @@ console.log("Platform:", Platform.OS);
       <Text style={T.subLabel}>Upload one video (15s to 1 minute, max 10MB).</Text>
       {video ? (
         <View style={T.videoPreviewWrap}>
-          <VideoPreview uri={video} style={T.videoPreview} contentFit="cover" />
-          <TouchableOpacity style={T.changeOverlay} onPress={pickVideo}>
-            <Feather name="repeat" size={12} color="#fff" />
-            <Text style={T.changeOverlayText}>Change Video</Text>
-          </TouchableOpacity>
+          <VideoPreview uri={video} style={T.videoPreview} contentFit="contain" />
           <TouchableOpacity style={T.videoRemoveBtn} onPress={() => { setVideo(null); setAudioMix(null); }}>
             <Feather name="x" size={12} color="#fff" />
           </TouchableOpacity>
         </View>
       ) : null}
-      {video && Platform.OS !== 'web' ? (
+      {video ? (
+        <TouchableOpacity
+          onPress={pickVideo}
+          activeOpacity={0.85}
+          style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: '#111827' }}
+        >
+          <Feather name="repeat" size={12} color="#fff" />
+          <Text style={T.changeOverlayText}>Change Video</Text>
+        </TouchableOpacity>
+      ) : null}
+      {video ? (
         <TouchableOpacity style={T.audioEditBtn} onPress={() => setAudioEditorVisible(true)} activeOpacity={0.85}>
           <Text style={T.audioEditText}>
             {audioMix?.musicId || audioMix?.voiceUri
@@ -1198,6 +1236,15 @@ console.log("Platform:", Platform.OS);
               {imageUploadBlock}
               {videoUploadBlock}
               {fileUploadBlock}
+              {(mediaType === 'Image' || mediaType === 'Video') ? (
+                <FrameTemplatePicker
+                  value={frameTemplate}
+                  onChange={setFrameTemplate}
+                  previewUri={mediaType === 'Image' ? (typeof images[0] === 'string' ? images[0] : images[0]?.uri) : (typeof videoThumb === 'string' ? videoThumb : videoThumb?.uri)}
+                  previewTitle={title}
+                  previewDescription={descriptionText}
+                />
+              ) : null}
             </View>
 
             {freePostsHint ? <Text style={s.freeHint}>{freePostsHint}</Text> : null}
@@ -1227,6 +1274,17 @@ console.log("Platform:", Platform.OS);
           selected={reportType}
           onSelect={setReportType}
           onClose={() => setReportPickerVisible(false)}
+        />
+        {/* ✅ Web par bhi Music / Voice editor (pehle sirf mobile layout me tha, isliye web par khulta nahi tha) */}
+        <VideoAudioEditorModal
+          visible={audioEditorVisible}
+          videoUri={video}
+          initial={audioMix}
+          onClose={() => setAudioEditorVisible(false)}
+          onDone={(mix) => {
+            setAudioMix(mix.musicId || mix.voiceUri ? mix : null);
+            setAudioEditorVisible(false);
+          }}
         />
         <NewsLimitModal
           visible={limitModal.visible}
@@ -1395,6 +1453,15 @@ console.log("Platform:", Platform.OS);
             {imageUploadBlock}
             {videoUploadBlock}
             {fileUploadBlock}
+            {(mediaType === 'Image' || mediaType === 'Video') ? (
+              <FrameTemplatePicker
+                value={frameTemplate}
+                onChange={setFrameTemplate}
+                previewUri={mediaType === 'Image' ? (typeof images[0] === 'string' ? images[0] : images[0]?.uri) : (typeof videoThumb === 'string' ? videoThumb : videoThumb?.uri)}
+                previewTitle={title}
+                previewDescription={descriptionText}
+              />
+            ) : null}
           </View>
 
           {freePostsHint ? <Text style={s.freeHint}>{freePostsHint}</Text> : null}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View } from 'react-native';
+import { View, Platform } from 'react-native';
 import { useVideoPlayer, VideoView } from 'expo-video';
 
 /**
@@ -18,7 +18,12 @@ export default function AdVideoPlayer({ uri, style, autoPlay = false, contentFit
   if (!uri) return null;
   return (
     <View style={[{ backgroundColor: '#000', overflow: 'hidden' }, style]}>
-      <VideoView player={player} style={{ width: '100%', height: '100%' }} contentFit={contentFit} nativeControls />
+      <VideoView
+        player={player}
+        style={[{ width: '100%', height: '100%' }, Platform.OS === 'web' ? { objectFit: contentFit } : null]}
+        contentFit={contentFit}
+        nativeControls
+      />
     </View>
   );
 }

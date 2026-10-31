@@ -383,7 +383,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
             const full = await UserStore.getPublicProfileById(summary.resolvedId);
             if (full && active) {
               // Purane cached blue tick / plan flags hata do, phir fresh server data lagao
-              const { has_blue_tick: _a, is_blue_tick: _b, blue_tick: _c, subscription_plan: _d, active_plan: _e, role_subscription_plan: _f, subscription: _g, subscription_type: _h, role: _i, state_seat: _j, ...cleanOld } = (user || {});
+              const { has_blue_tick: _a, is_blue_tick: _b, blue_tick: _c, subscription_plan: _d, active_plan: _e, role_subscription_plan: _f, subscription: _g, subscription_type: _h, role: _i, state_seat: _j,
+                phone: _p1, mobile: _p2, mobile_number: _p3, phone_number: _p4, contact_number: _p5, contactNumber: _p6, ...cleanOld } = (user || {});
               user = { ...cleanOld, ...full };
               setProfile(user);
             }

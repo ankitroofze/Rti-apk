@@ -12,7 +12,10 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
+import { useAudioPlayer } from 'expo-audio';
 import AppNavbar from '../components/AppNavbar';
+import NewsCameraModal from '../components/NewsCameraModal';
+import VideoAudioEditorModal from '../components/VideoAudioEditorModal';
 import NewsLimitModal from '../components/NewsLimitModal';
 import ProfileAvatar from '../components/ProfileAvatar';
 import VerifiedBadge from '../components/VerifiedBadge';
@@ -21,7 +24,8 @@ import { UserStore } from '../store/UserStore';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl, storeWebUriToIdbMedia } from '../utils/webMediaStore';
 import { safePause, safePlay, safeSetMuted } from '../utils/videoPlayerSafe';
-import { useGlobalMuted, getGlobalMuted } from '../utils/Globalmutestore';
+import { mergeAudioOnDevice, getLastMergeError } from '../utils/mergeAudioOnDevice';
+import { useGlobalMuted, getGlobalMuted, setGlobalMuted } from '../utils/Globalmutestore';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
 import { getAdRedirectMeta, openAdRedirect } from '../utils/adRedirect';
 
@@ -174,6 +178,19 @@ function ShareIcon({ size = 24 }) {
     );
   }
   return <Ionicons name="paper-plane-outline" size={size - 2} color="#fff" />;
+}
+
+function MoreDotsIcon({ size = 24 }) {
+  if (Platform.OS === 'web') {
+    return (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="#fff" stroke="none">
+        <circle cx="12" cy="5" r="2" />
+        <circle cx="12" cy="12" r="2" />
+        <circle cx="12" cy="19" r="2" />
+      </svg>
+    );
+  }
+  return <Ionicons name="ellipsis-vertical" size={size - 2} color="#fff" />;
 }
 
 function BookmarkIcon({ filled, size = 24 }) {
@@ -671,7 +688,54 @@ function UploadModal({ visible, onClose, onPost }) {
   const [mediaUri, setMediaUri] = useState('');
   const [mediaType, setMediaType] = useState('Video');
   const [picking, setPicking] = useState(false);
+  // Camera + Music/Voice editor (Add News jaisa)
+  const [cameraVisible, setCameraVisible] = useState(false);
+  const [cameraMode, setCameraMode] = useState('video');
+  const [audioEditorVisible, setAudioEditorVisible] = useState(false);
+  const [audioMix, setAudioMix] = useState(null); // { music, musicId, musicUrl, musicVolume, voiceUri, muteOriginal }
   const tagOptions = ['Success Story', 'Application Filed', 'Victory', 'Question', 'Official Update', 'Corruption Exposed'];
+
+  // Native par video aate hi Music / Voice editor khol do (original awaaz mute)
+  const openEditorForVideo = () => {
+    if (Platform.OS === 'web') return;
+    setTimeout(() => setAudioEditorVisible(true), 350);
+  };
+
+  const openCamera = async (mode = 'video') => {
+    if (Platform.OS === 'web') {
+      try {
+        const res = await ImagePicker.launchCameraAsync({
+          mediaTypes: mode === 'video' ? ['videos'] : ['images'],
+          quality: 0.7,
+          videoMaxDuration: 60,
+        });
+        if (!res.canceled && res.assets?.[0]) {
+          const a = res.assets[0];
+          handleCaptured({ type: a.type === 'video' ? 'video' : 'photo', uri: a.uri });
+        }
+      } catch {
+        Alert.alert('Camera', 'Unable to open camera.');
+      }
+      return;
+    }
+    setCameraMode(mode);
+    setCameraVisible(true);
+  };
+
+  const handleCaptured = ({ type, uri }) => {
+    if (!uri) return false;
+    setAudioMix(null);
+    if (type === 'video') {
+      setMediaType('Video');
+      setMediaUri(uri);
+      openEditorForVideo();
+    } else {
+      setMediaType('Image');
+      setMediaUri(uri);
+    }
+    setCameraVisible(false);
+    return true;
+  };
 
   const pickMedia = async () => {
     if (picking) return;
@@ -693,6 +757,7 @@ function UploadModal({ visible, onClose, onPost }) {
         });
         setMediaType(isVideo ? 'Video' : 'Image');
         setMediaUri(persisted);
+        setAudioMix(null);
         return;
       }
 
@@ -712,6 +777,8 @@ function UploadModal({ visible, onClose, onPost }) {
       const isVideo = asset.type === 'video' || String(asset.mimeType || '').startsWith('video/');
       setMediaType(isVideo ? 'Video' : 'Image');
       setMediaUri(asset.uri);
+      setAudioMix(null);
+      if (isVideo) openEditorForVideo();
     } catch {
       Alert.alert('Upload failed', 'Unable to select this media.');
     } finally {
@@ -722,17 +789,35 @@ function UploadModal({ visible, onClose, onPost }) {
   const handlePost = () => {
     if (!caption.trim()) { Alert.alert('Caption required', 'Please write something.'); return; }
     if (!mediaUri) { Alert.alert('Media required', 'Please choose a video or photo.'); return; }
-    onPost({ caption, headline, tag, mediaUri, mediaType });
+    const mix = (mediaType === 'Video' && audioMix && (audioMix.musicId || audioMix.voiceUri)) ? audioMix : null;
+    onPost({ caption, headline, tag, mediaUri, mediaType, audioMix: mix });
     setCaption('');
     setHeadline('');
     setMediaUri('');
     setMediaType('Video');
+    setAudioMix(null);
     onClose();
   };
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.modalOverlay}>
+        <VideoAudioEditorModal
+          visible={audioEditorVisible}
+          videoUri={mediaType === 'Video' ? mediaUri : null}
+          initial={audioMix}
+          onClose={() => setAudioEditorVisible(false)}
+          onDone={(mix) => {
+            setAudioMix(mix.musicId || mix.voiceUri ? mix : null);
+            setAudioEditorVisible(false);
+          }}
+        />
+        <NewsCameraModal
+          visible={cameraVisible}
+          initialMode={cameraMode}
+          onClose={() => setCameraVisible(false)}
+          onCapture={handleCaptured}
+        />
         <View style={styles.uploadSheet}>
           <View style={styles.sheetHandle} />
           <Text style={styles.sheetTitle}>📰 New Post</Text>
@@ -741,6 +826,29 @@ function UploadModal({ visible, onClose, onPost }) {
             <Text style={styles.mediaBoxText}>{mediaUri ? `${mediaType} selected` : (picking ? 'Opening...' : 'Add Video / Photo')}</Text>
             <Text style={styles.mediaBoxSub}>{mediaUri ? 'Tap to change media' : '(choose from gallery)'}</Text>
           </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+            <TouchableOpacity
+              onPress={() => openCamera('video')}
+              activeOpacity={0.85}
+              style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 11, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.08)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)' }}
+            >
+              <Ionicons name="camera-outline" size={18} color="#f1f5f9" />
+              <Text style={{ color: '#f1f5f9', fontSize: 13, fontWeight: '700' }}>Camera</Text>
+            </TouchableOpacity>
+            {mediaUri && mediaType === 'Video' && Platform.OS !== 'web' ? (
+              <TouchableOpacity
+                onPress={() => setAudioEditorVisible(true)}
+                activeOpacity={0.85}
+                style={{ flex: 2, alignItems: 'center', justifyContent: 'center', paddingVertical: 11, paddingHorizontal: 8, borderRadius: 12, backgroundColor: '#ea580c' }}
+              >
+                <Text style={{ color: '#fff', fontSize: 12, fontWeight: '800' }} numberOfLines={1}>
+                  {audioMix?.musicId || audioMix?.voiceUri
+                    ? `${audioMix.music?.title ? '🎵 ' + audioMix.music.title : ''}${audioMix.voiceUri ? '  🎙️ My Voice' : ''} (Edit)`
+                    : '🎵 Add Music  /  🎙️ Record Voice'}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
           <TextInput style={[styles.captionInput, { minHeight: 44, marginBottom: 10 }]} placeholder="Headline..." placeholderTextColor="#475569" value={headline} onChangeText={setHeadline} maxLength={100} />
           <TextInput style={styles.captionInput} placeholder="Write your RTI story..." placeholderTextColor="#475569" multiline value={caption} onChangeText={setCaption} maxLength={300} />
           <Text style={styles.charCount}>{caption.length}/300</Text>
@@ -1136,7 +1244,9 @@ function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditC
 }
 
 // Action Column
-function ActionColumn({ post, onLike, onComment, onShare, onBookmark, onDescription, scaleAnim, isMobileLayout, bottomInset = 0 }) {
+// Look: Instagram Reels jaisa — sirf icon + count, peeche koi black circle/shadow nahi.
+// Neeche 3 dots (⋮) button: usme Views count + Upload date/time dikhta hai.
+function ActionColumn({ post, onLike, onComment, onShare, onBookmark, onDescription, onMore, scaleAnim, isMobileLayout, bottomInset = 0 }) {
   const formatCount = (n) =>
     n >= 1_000_000 ? (n / 1_000_000).toFixed(1) + 'M' :
     n >= 1_000 ? (n / 1_000).toFixed(1) + 'K' : String(n);
@@ -1146,32 +1256,27 @@ function ActionColumn({ post, onLike, onComment, onShare, onBookmark, onDescript
   const likeCount    = formatCount(Number(post.likes));
   const shareCount   = formatCount(Number(post.shares));
   const commentCount = post.commentsCount ?? (Array.isArray(post.comments) ? post.comments.length : 0);
-  const viewCount    = formatCount(Number(post.views || 0));
 
-  const sz = isMobileLayout ? 44 : 52;
-  const iconSz = isMobileLayout ? 22 : 26;
+  const iconSz = isMobileLayout ? 30 : 32;
 
-  const circle = (bg) => ({
-    width: sz, height: sz, borderRadius: sz / 2,
-    backgroundColor: bg, alignItems: 'center', justifyContent: 'center', marginBottom: 3,
-  });
-
-  const textShadow = Platform.OS !== 'web'
-    ? { textShadowColor: 'rgba(0,0,0,0.9)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 }
-    : {};
+  // Bina background ke icon button (koi circle / black shadow nahi)
+  const iconWrap = {
+    width: iconSz + 10, height: iconSz + 10,
+    alignItems: 'center', justifyContent: 'center',
+  };
 
   const containerStyle = isMobileLayout
-  ? { position: 'absolute', right: 6, bottom: bottomInset > 0 ? bottomInset + 20 : 100, alignItems: 'center', gap: 14, zIndex: 20 }
+    ? { position: 'absolute', right: 8, top: '50%', marginTop: -70, alignItems: 'center', gap: 16, zIndex: 20 }
     : { width: 90, paddingLeft: 16, alignItems: 'center', justifyContent: 'center', alignSelf: 'center', height: '100%', gap: 22, flexShrink: 0 };
 
   const btn          = { alignItems: 'center', gap: 2 };
-  const countStyle   = { color: '#fff', fontSize: 12, fontWeight: '700', ...textShadow };
-  const labelStyle   = { color: 'rgba(255,255,255,0.9)', fontSize: 11, fontWeight: '600', ...textShadow };
+  const countStyle   = { color: '#fff', fontSize: 13, fontWeight: '600' };
+  const labelStyle   = { color: 'rgba(255,255,255,0.9)', fontSize: 11, fontWeight: '600' };
 
   return (
     <View style={containerStyle}>
       <TouchableOpacity style={btn} onPress={() => onLike(post.id)} activeOpacity={0.75}>
-        <Animated.View style={[circle(post.liked ? 'rgba(255,59,92,0.28)' : 'rgba(0,0,0,0.5)'), { transform: [{ scale: scaleAnim }] }]}>
+        <Animated.View style={[iconWrap, { transform: [{ scale: scaleAnim }] }]}>
           <HeartIcon filled={post.liked} size={iconSz} />
         </Animated.View>
         <Text style={[countStyle, { color: post.liked ? '#ff3b5c' : '#fff' }]}>{likeCount}</Text>
@@ -1179,23 +1284,22 @@ function ActionColumn({ post, onLike, onComment, onShare, onBookmark, onDescript
       </TouchableOpacity>
 
       <TouchableOpacity style={btn} onPress={() => onComment(post.id)} activeOpacity={0.75}>
-        <View style={circle('rgba(0,0,0,0.5)')}><CommentIcon size={iconSz} /></View>
+        <View style={iconWrap}><CommentIcon size={iconSz} /></View>
         <Text style={countStyle}>{commentCount}</Text>
         {!isMobileLayout ? <Text style={labelStyle}>Comment</Text> : null}
       </TouchableOpacity>
 
       <TouchableOpacity style={btn} onPress={() => onShare(post.id)} activeOpacity={0.75}>
-        <View style={circle('rgba(0,0,0,0.5)')}><ShareIcon size={iconSz} /></View>
+        <View style={iconWrap}><ShareIcon size={iconSz} /></View>
         <Text style={countStyle}>{shareCount}</Text>
         {!isMobileLayout ? <Text style={labelStyle}>Share</Text> : null}
       </TouchableOpacity>
 
+      {/* 3 dots — Views count + Upload date/time yahan se dikhte hain */}
       {!post.isAd ? (
-        <View style={btn}>
-          <View style={circle('rgba(0,0,0,0.5)')}><Ionicons name="eye-outline" size={iconSz} color="#fff" /></View>
-          <Text style={countStyle}>{viewCount}</Text>
-          {!isMobileLayout ? <Text style={labelStyle}>Views</Text> : null}
-        </View>
+        <TouchableOpacity style={btn} onPress={() => onMore?.(post)} activeOpacity={0.75} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+          <View style={iconWrap}><MoreDotsIcon size={iconSz} /></View>
+        </TouchableOpacity>
       ) : null}
 
       {/* Save (bookmark) button abhi ke liye hata diya gaya hai */}
@@ -1203,8 +1307,158 @@ function ActionColumn({ post, onLike, onComment, onShare, onBookmark, onDescript
   );
 }
 
+// Reel ki details: Views + Upload date/time (3 dots dabane par)
+function formatUploadDateTime(value) {
+  if (!value) return '';
+  const raw = String(value).trim();
+  if (!raw) return '';
+  let d = null;
+  if (typeof value === 'number') d = new Date(value);
+  else {
+    // "2026-10-28 12:45:10" (space wala) ko bhi ISO bana kar parse karo
+    d = new Date(/^\d{4}-\d{2}-\d{2} \d/.test(raw) ? raw.replace(' ', 'T') : raw);
+  }
+  if (!d || Number.isNaN(d.getTime())) return raw; // "2h ago" jaisa text ho to jaisa hai waisa dikhao
+  try {
+    const date = d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    const time = d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+    return `${date}, ${time}`;
+  } catch (_) {
+    return d.toString();
+  }
+}
+
+function ReelInfoModal({ visible, onClose, views = 0, uploadedAt = '' }) {
+  const viewsText = (() => {
+    try { return Number(views || 0).toLocaleString('en-IN'); } catch (_) { return String(views || 0); }
+  })();
+  const when = formatUploadDateTime(uploadedAt);
+  const rowStyle = { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, gap: 14 };
+  const labelStyle = { color: '#6b7280', fontSize: 12, fontWeight: '600' };
+  const valueStyle = { color: '#111827', fontSize: 16, fontWeight: '700', marginTop: 2 };
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose} statusBarTranslucent>
+      <TouchableOpacity style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }} activeOpacity={1} onPress={onClose}>
+        <TouchableOpacity activeOpacity={1} style={{ backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, paddingTop: 10, paddingBottom: Platform.OS === 'ios' ? 34 : 22, width: '100%', maxWidth: 560, alignSelf: 'center' }}>
+          <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: '#d1d5db', marginBottom: 10 }} />
+          <Text style={{ fontSize: 17, fontWeight: '800', color: '#111827', marginBottom: 4 }}>Reel details</Text>
+
+          <View style={rowStyle}>
+            <Ionicons name="eye-outline" size={24} color="#374151" />
+            <View>
+              <Text style={labelStyle}>Views</Text>
+              <Text style={valueStyle}>{viewsText}</Text>
+            </View>
+          </View>
+
+          <View style={{ height: 1, backgroundColor: '#f3f4f6' }} />
+
+          <View style={rowStyle}>
+            <Ionicons name="time-outline" size={24} color="#374151" />
+            <View style={{ flex: 1 }}>
+              <Text style={labelStyle}>Uploaded on</Text>
+              <Text style={valueStyle}>{when || 'Not available'}</Text>
+            </View>
+          </View>
+
+          <TouchableOpacity onPress={onClose} activeOpacity={0.85} style={{ marginTop: 8, alignSelf: 'stretch', backgroundColor: '#f3f4f6', borderRadius: 12, paddingVertical: 12, alignItems: 'center' }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: '#111827' }}>Close</Text>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+// ── Media ko stretch/zoom hone se bachane ke liye ─────────────────────────────
+// Media ka asli width/height ratio pata karke decide karte hain:
+//  • ratio card ke lagbhag barabar (jaise 9:16 reel)  → 'cover'  (full screen, bahut halka crop)
+//  • ratio card se alag (landscape / square / logo)   → 'contain' (poori image/video asli size me, kaali patti ke saath)
+function pickContentFit(ratio, cardW, cardH) {
+  if (!ratio || !cardW || !cardH) return 'contain';
+  const cardRatio = cardW / cardH;
+  // Portrait media (9:16, 10:16, 2:3 ...) = reel — poori screen bharo (upar/neeche kaali patti nahi)
+  if (ratio <= 0.7) return 'cover';
+  return Math.abs(ratio / cardRatio - 1) <= 0.2 ? 'cover' : 'contain';
+}
+
+// Image ka ratio (Image.getSize se)
+function useImageRatio(uri) {
+  const [ratio, setRatio] = useState(null);
+  useEffect(() => {
+    setRatio(null);
+    if (!uri || typeof uri !== 'string') return undefined;
+    let alive = true;
+    try {
+      Image.getSize(uri, (w, h) => { if (alive && w > 0 && h > 0) setRatio(w / h); }, () => {});
+    } catch (_) { /* ignore */ }
+    return () => { alive = false; };
+  }, [uri]);
+  return ratio;
+}
+
+// Video ka ratio (expo-video player se; na mile to None)
+function useVideoTrackRatio(player, enabled) {
+  const [ratio, setRatio] = useState(null);
+  useEffect(() => {
+    setRatio(null);
+    if (!enabled || !player) return undefined;
+    let alive = true;
+    const subs = [];
+    const apply = (size) => {
+      if (alive && size && size.width > 0 && size.height > 0) setRatio(size.width / size.height);
+    };
+    const read = () => { try { apply(player.videoTrack?.size); } catch (_) { /* released player */ } };
+    try {
+      read();
+      subs.push(player.addListener('videoTrackChange', (e) => apply(e?.videoTrack?.size)));
+      subs.push(player.addListener('sourceLoad', (e) => { apply(e?.availableVideoTracks?.[0]?.size); read(); }));
+      subs.push(player.addListener('statusChange', () => read()));
+    } catch (_) { /* purana expo-video */ }
+    let tries = 0;
+    const timer = setInterval(() => { tries += 1; read(); if (tries >= 15) clearInterval(timer); }, 300);
+    subs.push({ remove: () => clearInterval(timer) });
+    return () => { alive = false; subs.forEach((x) => { try { x?.remove?.(); } catch (_) {} }); };
+  }, [player, enabled]);
+  return ratio;
+}
+
+// Gallery ki har image apne ratio ke hisaab se fit hoti hai
+function GalleryImage({ uri, width, height }) {
+  const ratio = useImageRatio(uri);
+  return (
+    <View style={{ width, height, backgroundColor: '#000' }}>
+      <Image
+        source={{ uri }}
+        style={{ width: '100%', height: '100%' }}
+        resizeMode={pickContentFit(ratio, width, height)}
+      />
+    </View>
+  );
+}
+
 // Is session me jin reels ka view record ho chuka hai
 const feedViewedIds = new Set();
+
+// Abhi-abhi upload hui reel (jab tak server wala merged video na aaye): original awaaz band,
+// sirf user ki voice (aur chuna hua music) chalegi.
+function LocalVoiceOver({ voiceUri, musicUrl, musicVolume = 0.6, playing }) {
+  const voicePlayer = useAudioPlayer(null);
+  const musicPlayer = useAudioPlayer(null);
+  useEffect(() => {
+    try {
+      if (playing) {
+        if (voiceUri) { voicePlayer.replace({ uri: voiceUri }); voicePlayer.loop = true; voicePlayer.volume = 1; voicePlayer.seekTo(0); voicePlayer.play(); }
+        if (musicUrl) { musicPlayer.replace({ uri: musicUrl }); musicPlayer.loop = true; musicPlayer.volume = voiceUri ? Math.min(musicVolume, 0.35) : musicVolume; musicPlayer.seekTo(0); musicPlayer.play(); }
+      } else {
+        voicePlayer.pause(); musicPlayer.pause();
+      }
+    } catch (_) { /* player release ho chuka ho */ }
+    return () => { try { voicePlayer.pause(); } catch (_) {} try { musicPlayer.pause(); } catch (_) {} };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, voiceUri, musicUrl, musicVolume]);
+  return null;
+}
 
 // Reel Card
 function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription, onProfilePress, onAdPress, onFollow, isActive, isNear = true, bottomInset = 0, cardWidth, cardHeight, isMobileLayout }) {
@@ -1223,13 +1477,20 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription,
   const [followLoading, setFollowLoading] = useState(false);
   const [currentUserEmail, setCurrentUserEmail] = useState(null);
   const [currentUserHasBlueTick, setCurrentUserHasBlueTick] = useState(false);
+  const [infoVisible, setInfoVisible] = useState(false); // 3 dots → Views + Upload date/time
 
   const comments    = Array.isArray(safePost.comments) ? safePost.comments : [];
   const caption     = String(safePost.caption || '');
-  const userName    = String(safePost.user || 'User');
+  const userName    = String(safePost.user || safePost.author_name || safePost.createdByName || 'User');
   const avatarUri   = String(safePost.avatar || safePost.author_profile_image || '');
   const location    = String(safePost.location || safePost.author_seat_name || '');
-  const headline    = String(safePost.headline || '');
+  const stripTags   = (v) => String(v || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/[ \t]+/g, ' ').trim();
+  // ✅ FIX: feed API ke item me `title` / `description` aate hain (headline/caption nahi) — isliye pehle kuch dikhta nahi tha
+  const headline    = stripTags(safePost.headline || safePost.title || '');
+  // Description: pehle poora description, na ho to caption/subtitle. Title jaisa ho to dobara na dikhao.
+  const reelBodyRaw = stripTags(safePost.fullDescription || safePost.description || safePost.caption || safePost.subtitle || '');
+  const reelBody    = reelBodyRaw && reelBodyRaw !== headline.trim() ? reelBodyRaw : '';
+  const reelNeedsMore = headline.length > 60 || reelBody.length > 90 || reelBody.includes('\n');
   const role        = String(safePost.role || safePost.author_role || '');
   const time        = String(safePost.time || '');
     const postId      = String(safePost.id || '');
@@ -1409,7 +1670,7 @@ return t || '';
   const player = useVideoPlayer(activeSource, (p) => {
     try {
       p.loop = true;
-      p.muted = getGlobalMuted();   // global mute state se start
+      p.muted = getGlobalMuted() || Boolean(safePost.localMuteOriginal);   // global mute state se start (voice-over reel => original hamesha mute)
       p.volume = 1;
       p.autoplay = false;
       p.addListener('statusChange', ({ status }) => {
@@ -1420,6 +1681,20 @@ return t || '';
       });
     } catch (_) { /* player release ho chuka ho to ignore */ }
   });
+
+  // ✅ FIX (stretch/zoom): media ka asli ratio nikaal kar contentFit decide karo
+  const videoRatio = useVideoTrackRatio(player, canPlayVideo && Boolean(activeSource));
+  const thumbRatio = useImageRatio(safeThumbnailUrl || '');
+  const mediaRatio = canPlayVideo ? (videoRatio || thumbRatio) : thumbRatio;
+  const mediaFit   = pickContentFit(mediaRatio, cardWidth, cardHeight);
+  // Video ka box: ratio pata ho aur 'contain' ho to card ke andar usi ratio ka box (letterbox khud banate hain)
+  const videoBox = (() => {
+    if (mediaFit !== 'contain' || !mediaRatio) return { w: cardWidth, h: cardHeight, boxed: false };
+    let w = cardWidth;
+    let h = Math.round(w / mediaRatio);
+    if (h > cardHeight) { h = cardHeight; w = Math.round(h * mediaRatio); }
+    return { w, h, boxed: true };
+  })();
 
   // Reset poster/ready when video source changes
   useEffect(() => {
@@ -1432,8 +1707,36 @@ return t || '';
   // Apply muted state to player
   useEffect(() => {
     if (!canPlayVideo || !player || !activeSource) return;
-    safeSetMuted(player, muted);
-  }, [canPlayVideo, activeSource, muted, player]);
+    safeSetMuted(player, muted || Boolean(safePost.localMuteOriginal));
+  }, [canPlayVideo, activeSource, muted, player, safePost.localMuteOriginal]);
+
+  // ✅ FIX (beech me ruk jaana): video chalte chalte ruk jaaye (buffering / audio focus) to khud dobara chalao.
+  // User ne pause kiya ho (paused=true) to kuch nahi karta.
+  const pausedRef = useRef(false);
+  useEffect(() => { pausedRef.current = paused; }, [paused]);
+  useEffect(() => {
+    if (!isActive || !canPlayVideo || !player || !activeSource || !playerReady) return undefined;
+    let lastT = -1;
+    let stuck = 0;
+    const id = setInterval(() => {
+      if (pausedRef.current || !mountedRef.current) return;
+      try {
+        const t = Number(player.currentTime) || 0;
+        if (!player.playing) { safePlay(player); stuck = 0; }
+        else if (t === lastT) { stuck += 1; if (stuck >= 3) { safePlay(player); stuck = 0; } }
+        else stuck = 0;
+        lastT = t;
+      } catch (_) { /* released player */ }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [isActive, canPlayVideo, player, activeSource, playerReady]);
+
+  // ✅ FIX (auto-play): 'readyToPlay' event kabhi miss ho jaaye to bhi 1.2s baad play try karo
+  useEffect(() => {
+    if (!isActive || !canPlayVideo || !activeSource || playerReady) return undefined;
+    const t = setTimeout(() => { if (mountedRef.current) setPlayerReady(true); }, 1200);
+    return () => clearTimeout(t);
+  }, [isActive, canPlayVideo, activeSource, playerReady]);
 
   // Handle play/pause based on active state + player readiness
   useEffect(() => {
@@ -1442,10 +1745,20 @@ return t || '';
     const playVideo = async () => {
       if (isActive && !paused) {
         try {
-          await safePlay(player);
+          const r = player.play();
+          if (r && typeof r.then === 'function') await r;
         } catch (error) {
-          console.log('Auto-play failed:', error);
-          setPaused(true);
+          // Browser kabhi awaaz ke saath autoplay rok deta hai — tab muted karke chala do
+          // (user speaker button se unmute kar sakta hai), warna video ruka rahega.
+          console.log('Auto-play with sound blocked:', error);
+          if (Platform.OS === 'web' && !getGlobalMuted()) {
+            setGlobalMuted(true);
+            safeSetMuted(player, true);
+            safePlay(player);
+          } else {
+            // pause mat dikhao (user ko tap na karna pade) — thodi der baad dobara try
+            setTimeout(() => { if (mountedRef.current) safePlay(player); }, 600);
+          }
         }
       } else {
         safePause(player);
@@ -1508,7 +1821,7 @@ return t || '';
 const safeBot = Platform.OS === 'ios' ? 34 : 0;
   // Navbar ab video ke UPAR overlay hai (video uske peeche tak jaata hai), isliye offset navbar ki real height se.
   const bottomBottom = isMobileLayout
-    ? (Platform.OS === 'web' ? 80 : (bottomInset > 0 ? bottomInset + 12 : navbarH + safeBot + 12))
+    ? (Platform.OS === 'web' ? 96 : (bottomInset > 0 ? bottomInset + 28 : navbarH + safeBot + 28))
     : 28;
   // const bottomRight = isMobileLayout ? 60 : 14;
   const bottomRight = 80; // icons ab video ke upar right me hain — caption unse na takraye
@@ -1554,24 +1867,37 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
               </TouchableOpacity>
             </View>
           ) : canPlayVideo ? (
-            <>
-              <VideoView
-                player={player}
-                style={[StyleSheet.absoluteFill, { width: '100%', height: '100%', backgroundColor: '#000' }]}
-                contentFit="cover"
-                nativeControls={false}
-                fullscreenOptions={{ enabled: false }}
-                playsInline
-              />
-              {showPoster && safeThumbnailUrl ? (
-                <Image
-                  source={{ uri: safeThumbnailUrl }}
-                  style={StyleSheet.absoluteFill}
-                  resizeMode="cover"
-                  onError={() => setThumbnailError(true)}
+            <View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' }]}>
+              {/* ✅ FIX (stretch): video ko uske ASLI ratio wale box me rakha hai (MediaGallery jaisa),
+                  Android par textureView — taaki surface kabhi width/height kheench na sake. */}
+              <View style={{ width: videoBox.w, height: videoBox.h, overflow: 'hidden', backgroundColor: '#000' }}>
+                {(safePost.localVoiceUri || safePost.localMusicUrl) ? (
+                  <LocalVoiceOver
+                    voiceUri={safePost.localVoiceUri}
+                    musicUrl={safePost.localMusicUrl}
+                    musicVolume={safePost.localMusicVolume}
+                    playing={Boolean(isActive && !paused && !muted)}
+                  />
+                ) : null}
+                <VideoView
+                  player={player}
+                  style={{ width: '100%', height: '100%', backgroundColor: '#000' }}
+                  contentFit={videoBox.boxed ? 'contain' : 'cover'}
+                  nativeControls={false}
+                  fullscreenOptions={{ enabled: false }}
+                  playsInline
+                  surfaceType={Platform.OS === 'android' ? 'textureView' : undefined}
                 />
-              ) : null}
-            </>
+                {showPoster && safeThumbnailUrl ? (
+                  <Image
+                    source={{ uri: safeThumbnailUrl }}
+                    style={StyleSheet.absoluteFill}
+                    resizeMode={videoBox.boxed ? 'contain' : 'cover'}
+                    onError={() => setThumbnailError(true)}
+                  />
+                ) : null}
+              </View>
+            </View>
           ) : galleryImages.length > 1 ? (
             <View style={StyleSheet.absoluteFill} onLayout={(e) => setGalleryW(e.nativeEvent.layout.width)}>
               {galleryW > 0 ? (
@@ -1582,7 +1908,7 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
                   onMomentumScrollEnd={(e) => setGalleryIdx(Math.round(e.nativeEvent.contentOffset.x / galleryW))}
                 >
                   {galleryImages.map((u, i) => (
-                    <Image key={`${u}-${i}`} source={{ uri: u }} style={{ width: galleryW, height: cardHeight }} resizeMode="cover" />
+                    <GalleryImage key={`${u}-${i}`} uri={u} width={galleryW} height={cardHeight} />
                   ))}
                 </ScrollView>
               ) : null}
@@ -1594,7 +1920,7 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
             <Image
               source={{ uri: safeThumbnailUrl }}
               style={StyleSheet.absoluteFill}
-              resizeMode="cover"
+              resizeMode={mediaFit}
               onError={() => setThumbnailError(true)}
             />
           ) : null}
@@ -1618,7 +1944,7 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
           </Animated.View>
         ) : null}
 
-        {canPlayVideo && (muted || paused) ? (
+        {canPlayVideo && paused ? (
           <View pointerEvents="box-none" style={styles.reelMuteCenter}>
             <TouchableOpacity
               style={styles.muteBtn}
@@ -1635,7 +1961,15 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
           post={{ ...safePost, likes: Number(safePost.likes || 0), shares, comments, commentsCount: safePost.commentsCount ?? comments.length, views: Number(safePost.views || 0) + viewBump }}
           onLike={handleLikePress} onComment={onComment} onShare={onShare}
           onBookmark={onBookmark} onDescription={onDescription}
+          onMore={() => setInfoVisible(true)}
           scaleAnim={scaleAnim} isMobileLayout={true} bottomInset={bottomInset}
+        />
+
+        <ReelInfoModal
+          visible={infoVisible}
+          onClose={() => setInfoVisible(false)}
+          views={Number(safePost.views || 0) + viewBump}
+          uploadedAt={safePost.createdAt || safePost.time || ''}
         />
 
         <View style={[styles.reelBottom, { bottom: bottomBottom, right: bottomRight }]}>
@@ -1679,14 +2013,30 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
             </View>
           ) : null}
 
-          {headline ? <Text style={styles.reelHeadline} numberOfLines={2}>{headline}</Text> : null}
-
-          <TouchableOpacity activeOpacity={0.85} onPress={() => onDescription(postId)}>
-            <Text style={styles.reelCaption} numberOfLines={captionExpanded ? undefined : 2}>{caption}</Text>
-            {caption.length > 80 && (
-              <Text style={styles.reelCaptionMore}>more</Text>
-            )}
-          </TouchableOpacity>
+          {/* Title + Description (neeche). Lamba ho to 2 line ke baad "See more" — tap par poora text,
+              zyada lamba ho to andar scroll hota hai. */}
+          {(headline || reelBody) ? (
+            <View style={captionExpanded ? { backgroundColor: 'rgba(0,0,0,0.55)', borderRadius: 12, padding: 10, marginTop: 4 } : null}>
+              <ScrollView
+                scrollEnabled={captionExpanded}
+                nestedScrollEnabled
+                showsVerticalScrollIndicator={false}
+                style={captionExpanded ? { maxHeight: Math.round((cardHeight || 600) * 0.4) } : null}
+              >
+                {headline ? (
+                  <Text style={styles.reelHeadline} numberOfLines={captionExpanded ? undefined : 2}>{headline}</Text>
+                ) : null}
+                {reelBody ? (
+                  <Text style={styles.reelCaption} numberOfLines={captionExpanded ? undefined : 2}>{reelBody}</Text>
+                ) : null}
+              </ScrollView>
+              {reelNeedsMore ? (
+                <TouchableOpacity activeOpacity={0.8} onPress={() => setCaptionExpanded((v) => !v)} hitSlop={{ top: 6, bottom: 6, left: 6, right: 10 }}>
+                  <Text style={styles.reelCaptionMore}>{captionExpanded ? 'See less' : 'See more'}</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
 
           {isAd && adRedirectMeta ? (
             <TouchableOpacity
@@ -1738,6 +2088,14 @@ export default function FeedScreen({ navigation }) {
   const [feedViewportHeight, setFeedViewportHeight] = useState(0);
   const [navBarH, setNavBarH] = useState(0); // neeche wale curved navbar ki real height
   const isScreenFocused = useIsFocused();
+
+  // ✅ Feed kholte hi video UNMUTED (awaaz ke saath) shuru hoga.
+  // User chahe to top-right speaker button se mute kar sakta hai (mute sab reels par lagega).
+  useFocusEffect(
+    useCallback(() => {
+      setGlobalMuted(false);
+    }, [])
+  );
   const feedCursorRef = useRef(null);
   const feedHasMoreRef = useRef(false);
   const feedLoadingRef = useRef(false);
@@ -2042,12 +2400,32 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     } catch {}
   }, [commentPost, currentUserEmail]);
 
-  const handleNewPost = useCallback(async ({ caption, headline, tag, mediaUri, mediaType }) => {
+  const handleNewPost = useCallback(async ({ caption, headline, tag, mediaUri, mediaType, audioMix = null }) => {
   const isVideoPost = mediaType === 'Video';
   const currentEmail = String(currentUser.email || currentUserEmail || '').trim().toLowerCase();
   const mediaTypeMap = { None: 0, Image: 1, Video: 2, File: 3 };
 
   // ✅ Free limit ab sirf backend enforce karta hai (403 NEWS_LIMIT_REACHED) — local pre-check hata diya.
+
+  // ── Voice / music ko video me phone par hi merge karo (original awaaz hat jaati hai) ──
+  // Merge ho gaya => merged video upload hoti hai aur server ko audioMix nahi bhejte (double-merge nahi).
+  // Merge nahi hua => purane tareeke se server ko audioMix bhejte hain (server ffmpeg merge kare).
+  let sendMediaUri = mediaUri;
+  let audioMixForServer = isVideoPost && audioMix ? audioMix : null;
+  if (audioMixForServer && Platform.OS !== 'web') {
+    const merged = await mergeAudioOnDevice({
+      videoUri: mediaUri,
+      voiceUri: audioMixForServer.voiceUri,
+      musicUrl: audioMixForServer.musicUrl,
+      musicVolume: audioMixForServer.musicVolume,
+    });
+    if (merged) {
+      sendMediaUri = merged;
+      audioMixForServer = null;
+    } else {
+      console.warn('[Feed] on-device merge fail — server merge par depend:', getLastMergeError());
+    }
+  }
 
   // ✅ FIX: pehle backend pe asli news banao, tabhi like/comment/view kaam karenge
   const apiResult = await AuthAPI.createNews({
@@ -2057,9 +2435,11 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     description: caption,
     reportType: tag,
     mediaType: mediaTypeMap[mediaType] ?? 0,
-    mediaUri,
+    mediaUri: sendMediaUri,
     mediaName: isVideoPost ? 'video.mp4' : 'image.jpg',
     mediaMime: isVideoPost ? 'video/mp4' : 'image/jpeg',
+    // Music / voice-over — sirf tab bhejo jab phone par merge nahi ho paaya (backend ffmpeg se merge karega)
+    audioMix: audioMixForServer,
   });
 
   if (!apiResult.ok) {
@@ -2089,24 +2469,36 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     verified: Boolean(currentUser.has_blue_tick), role: 'Citizen', location: 'India', time: 'Just now',
     author_has_blue_tick: Boolean(currentUser.has_blue_tick),
     type: isVideoPost ? 'video' : 'image',
-    media: mediaUri,
-    video: isVideoPost ? mediaUri : null,
-    thumbnail: isVideoPost ? '' : mediaUri,
-    image: isVideoPost ? '' : mediaUri,
+    media: sendMediaUri,
+    video: isVideoPost ? sendMediaUri : null,
+    thumbnail: isVideoPost ? '' : sendMediaUri,
+    image: isVideoPost ? '' : sendMediaUri,
     headline: headline || 'My RTI Story',
     caption, fullDescription: caption,
     likes: 0, shares: 0, comments: [],
     liked: false, bookmarked: false, tag, tagColor: '#16a34a',
     createdAt: new Date().toISOString(),
     createdBy: currentEmail,
+    // Voice-over wali reel: refresh se pehle bhi original awaaz nahi, sirf user ki voice sunayi de
+    // (Agar phone par merge ho gaya to awaaz video me hi baked hai — overlay ki zaroorat nahi)
+    ...(isVideoPost && audioMix && audioMixForServer ? {
+      localMuteOriginal: true,
+      localVoiceUri: audioMix.voiceUri || null,
+      localMusicUrl: audioMix.musicUrl || null,
+      localMusicVolume: audioMix.musicVolume ?? 0.6,
+    } : {}),
   };
   setPosts(prev => [nextPost, ...prev]);
 
   // ✅ Local `user.news` me copy save nahi hoti — data sirf server se aata hai.
 }, [currentUser, currentUserEmail]);
 
+const lastViewableIndexRef = useRef(0);
 const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
-    if (viewableItems.length > 0) setActiveIndex(viewableItems[0].index ?? 0);
+    if (viewableItems.length > 0) {
+      lastViewableIndexRef.current = viewableItems[0].index ?? 0;
+      setActiveIndex(lastViewableIndexRef.current);
+    }
   });
 
   const viewabilityConfigCallbackPairs = useRef([
@@ -2123,6 +2515,10 @@ const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
   useEffect(() => {
     if (!isScreenFocused) {
       setActiveIndex(-1);
+    } else {
+      // ✅ FIX (auto-play): Feed par wapas aane par activeIndex -1 hi reh jaata tha (list ka viewable item
+      // badla nahi to callback dobara chalta nahi) — isliye video khud play nahi hota tha, tap karna padta tha.
+      setActiveIndex((cur) => (cur < 0 ? (lastViewableIndexRef.current || 0) : cur));
     }
   }, [isScreenFocused]);
 

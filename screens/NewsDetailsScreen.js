@@ -29,6 +29,7 @@ import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaS
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
 import { safePause, safePlay } from '../utils/videoPlayerSafe';
 import MediaGallery from '../components/MediaGallery';
+import { getEngagement, publishEngagement, subscribeEngagement, getLikedLocal, persistLikedLocal } from '../utils/newsEngagementStore';
 
 const IS_WEB = Platform.OS === 'web';
 
@@ -479,6 +480,16 @@ export default function NewsDetailsScreen({ route, navigation }) {
   const [commentCount, setCommentCount] = useState(initialArticle.comments);
   const [shareCount, setShareCount] = useState(initialArticle.shares);
   const [viewCount, setViewCount] = useState(initialArticle.views);
+  const engId = useRef(`details-${Math.random().toString(36).slice(2)}`).current;
+  // ✅ Card / dusri jagah se aaya taza like-comment-share-view (shared store) yahan lagao
+  const applyEngagement = useCallback((entry) => {
+    if (!entry) return;
+    if (entry.liked !== undefined) setIsLiked(entry.liked);
+    if (entry.likes !== undefined) setLikeCount(entry.likes);
+    if (entry.comments !== undefined) setCommentCount(entry.comments);
+    if (entry.shares !== undefined) setShareCount(entry.shares);
+    if (entry.views !== undefined) setViewCount((prev) => Math.max(prev, entry.views));
+  }, []);
   const [comments, setComments] = useState([]);
   const [expandedReplyThreads, setExpandedReplyThreads] = useState({});
   const [showCommentsModal, setShowCommentsModal] = useState(false);
@@ -567,6 +578,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
     setCommentCount(fallbackArticle.comments);
     setShareCount(fallbackArticle.shares);
     setViewCount(fallbackArticle.views);
+    applyEngagement(getEngagement(fallbackArticle.id));
 
     try {
       const [user, summary] = await Promise.all([
@@ -586,7 +598,9 @@ export default function NewsDetailsScreen({ route, navigation }) {
             && Array.isArray(route?.params?.article?.liked_by)
             && route.params.article.liked_by.includes(String(user.email).trim().toLowerCase())
         );
-        setIsLiked(likedFallback);
+        const localSaved = user?.email ? await getLikedLocal(user.email) : {};
+        setIsLiked(likedFallback || Boolean(localSaved[articleId]));
+        applyEngagement(getEngagement(articleId));
         setComments([]);
         return;
       }
@@ -628,6 +642,11 @@ export default function NewsDetailsScreen({ route, navigation }) {
         matchedItem.comments_count ??
         countNestedComments(normalizedComments)
       ));
+      // card par like karne se server summary me liked na aaye to phone me saved like bhi maano
+      const localSavedLikes = user?.email ? await getLikedLocal(user.email) : {};
+      if (!likedByCurrentUser && localSavedLikes[articleId]) setIsLiked(true);
+      // taza shared count (card / yahin ka abhi ka action) stale server count se upar
+      applyEngagement(getEngagement(articleId));
     } catch {
       setCurrentUser(null);
       setComments([]);
@@ -642,7 +661,16 @@ export default function NewsDetailsScreen({ route, navigation }) {
     setCommentCount(initialArticle.comments);
     setShareCount(initialArticle.shares);
     setViewCount(initialArticle.views);
-  }, [initialArticle]);
+    applyEngagement(getEngagement(initialArticle.id));
+  }, [initialArticle, applyEngagement]);
+
+  // ✅ Card par like / comment / share / view badla to yahan turant
+  useEffect(() => {
+    if (!articleId) return undefined;
+    return subscribeEngagement((id, entry, src) => {
+      if (id === articleId && src !== engId) applyEngagement(entry);
+    });
+  }, [articleId, engId, applyEngagement]);
 
   useEffect(() => {
     loadArticleDetails();
@@ -765,12 +793,20 @@ export default function NewsDetailsScreen({ route, navigation }) {
 
   const handleLike = useCallback(async () => {
     const wasLiked = isLiked;
+    const prevCount = Number(likeCount || 0);
     setIsLiked(!wasLiked);
-    setLikeCount((count) => Math.max(0, Number(count || 0) + (wasLiked ? -1 : 1)));
-    const result = await UserStore.updateNewsFeedItem(article.id, 'like', { liked: isLiked });
-    if (!result?.ok) { setIsLiked(wasLiked); setLikeCount((count) => Math.max(0, Number(count || 0) + (wasLiked ? 1 : -1))); Alert.alert('Error', result?.message || 'Could not update like'); return; }
-    await loadArticleDetails();
-  }, [article.id, isLiked, loadArticleDetails]);
+    setLikeCount(Math.max(0, prevCount + (wasLiked ? -1 : 1)));
+    const result = await UserStore.updateNewsFeedItem(article.id, 'like', { liked: wasLiked });
+    if (!result?.ok) { setIsLiked(wasLiked); setLikeCount(prevCount); Alert.alert('Error', result?.message || 'Could not update like'); return; }
+    const finalLiked = result.liked !== undefined ? Boolean(result.liked) : !wasLiked;
+    const finalCount = Number.isFinite(result.likesCount)
+      ? result.likesCount
+      : Math.max(0, prevCount + (finalLiked ? 1 : 0) - (wasLiked ? 1 : 0));
+    setIsLiked(finalLiked);
+    setLikeCount(finalCount);
+    publishEngagement(article.id, { liked: finalLiked, likes: finalCount }, engId);   // ✅ card par bhi dikhe
+    if (currentUserEmail) persistLikedLocal(currentUserEmail, article.id, finalLiked);
+  }, [article.id, isLiked, likeCount, currentUserEmail, engId]);
 
   const handleShare = useCallback(async () => {
     try {
@@ -784,10 +820,15 @@ export default function NewsDetailsScreen({ route, navigation }) {
       const wasShared = Platform.OS === 'web' || result.action === Share.sharedAction;
       if (wasShared) {
         const shareResult = await UserStore.updateNewsFeedItem(article.id, 'share');
-        if (shareResult?.ok) await loadArticleDetails();
+        if (shareResult?.ok) {
+          const nextShares = Number(shareCount || 0) + 1;
+          setShareCount(nextShares);
+          publishEngagement(article.id, { shares: nextShares }, engId);
+          await loadArticleDetails();
+        }
       }
     } catch { Alert.alert('Error', 'Could not share this article'); }
-  }, [article, loadArticleDetails]);
+  }, [article, loadArticleDetails, shareCount, engId]);
 
   const handleAddComment = useCallback(async () => {
     const trimmed = commentText.trim();
@@ -800,10 +841,12 @@ export default function NewsDetailsScreen({ route, navigation }) {
       author_email: currentUserEmail || '',
     });
     setComments((prev) => [addedComment, ...prev]);
-    setCommentCount((count) => count + 1);
+    const nextComments = Number.isFinite(result.commentsCount) ? result.commentsCount : Number(commentCount || 0) + 1;
+    setCommentCount(nextComments);
+    publishEngagement(article.id, { comments: nextComments }, engId);   // ✅ card par bhi
     setCommentText('');
     await loadArticleDetails();
-  }, [article.id, commentText, currentUserEmail, currentUserName, loadArticleDetails]);
+  }, [article.id, commentText, commentCount, currentUserEmail, currentUserName, loadArticleDetails, engId]);
 
   const handleStartEditComment = useCallback((commentId, currentText) => {
     setEditingCommentId(commentId);
@@ -862,11 +905,13 @@ export default function NewsDetailsScreen({ route, navigation }) {
       )
     );
     setExpandedReplyThreads((prev) => ({ ...prev, [replyingToCommentId]: true }));
-    setCommentCount((count) => count + 1);
+    const nextComments = Number(commentCount || 0) + 1;
+    setCommentCount(nextComments);
+    publishEngagement(article.id, { comments: nextComments }, engId);
     setReplyingToCommentId(null);
     setReplyText('');
     await loadArticleDetails();
-  }, [article.id, currentUserEmail, currentUserName, loadArticleDetails, replyingToCommentId, replyText]);
+  }, [article.id, commentCount, currentUserEmail, currentUserName, engId, loadArticleDetails, replyingToCommentId, replyText]);
 
   const handleLikeComment = useCallback(async (commentId) => {
     const result = await UserStore.likeNewsComment(article.id, commentId);
@@ -892,8 +937,11 @@ export default function NewsDetailsScreen({ route, navigation }) {
     if (!result?.ok) { Alert.alert('Error', result?.message || 'Could not delete comment'); return; }
     if (editingCommentId === commentId) { setEditingCommentId(null); setEditingCommentText(''); }
     if (replyingToCommentId === commentId) { setReplyingToCommentId(null); setReplyText(''); }
+    const nextComments = Math.max(0, Number(commentCount || 0) - 1);
+    setCommentCount(nextComments);
+    publishEngagement(article.id, { comments: nextComments }, engId);
     await loadArticleDetails();
-  }, [article.id, editingCommentId, loadArticleDetails, replyingToCommentId]);
+  }, [article.id, commentCount, editingCommentId, engId, loadArticleDetails, replyingToCommentId]);
 
   const handleOpenAttachment = useCallback(async () => {
     const fileUri = article?.file?.uri;

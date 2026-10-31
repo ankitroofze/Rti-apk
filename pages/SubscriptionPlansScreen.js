@@ -172,9 +172,15 @@ export default function SubscriptionPlansScreen({ navigation, route }) {
   })();
   const LEVEL_LABEL = { state: 'State', district: 'District', taluka: 'Taluka', village: 'Village' };
   const filteredPlans = subscriptionData.plans.filter((plan) => {
-    // ✅ NEW: level plan (admin ne ek baar banaya) sabhi locations ke liye hamesha dikhta hai —
-    // location user Pay Now se pehle khud chunta hai, Sold check usi location par hota hai.
-    if (plan.location_level) return true;
+    // ✅ Level plan (admin ne sirf level ke saath banaya, location nahi) tabhi dikhega jab user ne
+    // us level tak ki location chun li ho: Village plan => State + District + Taluka + Village sab chune hon,
+    // Taluka plan => State + District + Taluka, District plan => State + District, State plan => State.
+    // Jab tak location poori nahi chuni, plan hidden rehta hai.
+    if (plan.location_level) {
+      return !UserStore.getMissingLocationField(plan.location_level, {
+        state: filterState, district: filterDistrict, taluka: filterTaluka, village: filterVillage,
+      });
+    }
     const matchState    = !plan.state    || (filterState    && String(plan.state).trim().toLowerCase()    === filterState.toLowerCase());
     const matchDistrict = !plan.district || (filterDistrict && String(plan.district).trim().toLowerCase() === filterDistrict.toLowerCase());
     const matchTaluka   = !plan.taluka   || (filterTaluka   && String(plan.taluka).trim().toLowerCase()   === filterTaluka.toLowerCase());
@@ -361,8 +367,17 @@ const runSubscriptionPayment = async (plan, seatRoleId) => {
   // ✅ 409 seat_unavailable / koi bhi error: message dikhao, Razorpay mat kholo,
   // user dusri location chun sakta hai
   if (!orderResult || orderResult.error) {
-    if (orderResult?.seatUnavailable) markPlanSold(plan);
-    showPopup(orderResult?.message || 'Unable to create order.', 'error');
+    if (orderResult?.seatUnavailable) {
+      markPlanSold(plan);
+      // ✅ latest plans reload — backend ka is_sold SOLD state dikhaye
+      lastSyncAt.current = 0;
+      try { await loadPlans(); } catch (e) { /* ignore */ }
+    }
+    showPopup(
+      orderResult?.seatUnavailable ? 'Sorry, this plan is already sold. Please choose another location.' : (orderResult?.message || 'Unable to create order.'),
+      'error',
+      orderResult?.seatUnavailable ? { title: 'Sorry, Sold' } : undefined
+    );
     return;
   }
 
@@ -404,7 +419,7 @@ const runSubscriptionPayment = async (plan, seatRoleId) => {
         // final answer (409) — dobara verify karne ka fayda nahi
         await UserStore.clearPendingRolePayment();
         markPlanSold(plan);
-        showPopup(verifyResult?.message || 'This seat is no longer available.', 'error');
+        showPopup('Sorry, this plan was just sold to someone else. Please choose another location.', 'error', { title: 'Sorry, Sold' });
         return;
       }
       const retryable = Boolean(verifyResult?.isNetwork) || Number(verifyResult?.status) >= 500;
@@ -446,7 +461,7 @@ const handleBuyPlan = (plan) => {
   if (payingRef.current) return; // checkout pehle se chal raha hai
   // ✅ Sold plan ko koi doosra user buy nahi kar sakta
   if (isPlanSold(plan)) {
-    showPopup('This seat is already taken. Please choose another location.', 'error');
+    showPopup('Sorry, this plan is already sold. Please choose another location.', 'error', { title: 'Sorry, Sold' });
     return;
   }
   // ✅ NEW: level plan — pehle uski location (state/district/taluka/village) chuno
@@ -644,7 +659,7 @@ const handleBuyPlan = (plan) => {
 
             {!loading && subscriptionData.plans.length > filteredPlans.length ? (
           <Text style={[S.loadingText, { marginBottom: 10, paddingVertical: 0, fontSize: 11.5, lineHeight: 16 }]}>
-            {subscriptionData.plans.length - filteredPlans.length} more plan(s) are available for specific locations. Select State / District / Taluka above to see them.
+            {subscriptionData.plans.length - filteredPlans.length} more plan(s) are available for specific locations. Select State / District / Taluka / Village above to see them.
           </Text>
         ) : null}
 
@@ -712,7 +727,7 @@ const handleBuyPlan = (plan) => {
 
                     <TouchableOpacity
                       activeOpacity={0.85}
-                      disabled={isActive || isSold || paying}
+                      disabled={isActive || paying}
                       onPress={() => handleBuyPlan(plan)}
                       style={[S.selectPlanBtn, isSelected && S.selectPlanBtnActive, isSold && { opacity: 0.6, backgroundColor: '#e5e7eb' }, paying && !isActive && !isSold && { opacity: 0.6 }]}
                     >

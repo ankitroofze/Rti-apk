@@ -16,7 +16,8 @@ import { CATEGORY_COLOR_MAP } from '../constants/homeData';
 import { isValidImageUrl, buildPlaceholderImage, getLocalizedCategoryLabel, getLocalizedSeatLabel } from '../utils/storyHelpers';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 import { safePause, safePlay, safeSetMuted } from '../utils/videoPlayerSafe';
-import { subscribeFeedScroll } from '../utils/feedScrollBus';
+import { subscribeUserScroll } from '../utils/feedScrollBus';
+import { getEngagement, publishEngagement, subscribeEngagement } from '../utils/newsEngagementStore';
 import { useGlobalMuted, getGlobalMuted, setGlobalMuted } from '../utils/Globalmutestore';
 import PostGridThumb from './PostGridThumb';
 import { UserStore } from '../store/UserStore';
@@ -27,7 +28,10 @@ import styles from './NewsFeedCardStyles';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getProfileTier, resolveRoleTitle, cleanRoleNames } from '../utils/profileHelpers';
 import MediaGallery from './MediaGallery';
-import { MediaLogo, MediaTicker } from './MediaBrandOverlay';
+import { MediaLogo } from './MediaBrandOverlay';
+import NewsFrameOverlay, { getFrameBoxAspect, getFrameWindow, getLowerBannerHeight } from './NewsFrameOverlay';
+import NewsVideoControls from './NewsVideoControls';
+import { getFrameTemplate } from '../constants/frameTemplates';
 import { captureRef } from 'react-native-view-shot';
 import ShareBrandFrame from './ShareBrandFrame';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -319,29 +323,15 @@ function useVideoThumbnail(videoUri) {
   return { thumbnail, capturing };
 }
 
-// Native (Android/iOS): card screen se bahar scroll ho jaye to false. Sirf tab measure karta hai jab `active`
-// (yani video play ho raha ho), isliye baaki cards par koi extra kharch nahi.
-function useNativeInView(ref, active, threshold = 0.3) {
-  const [inView, setInView] = useState(true);
-  const { height: winH } = useWindowDimensions();
+// Video chal raha ho aur user scroll kare => pause. SIRF asli scroll par (position sach me badli ho);
+// bina scroll kiye video kabhi pause nahi hota.
+function usePauseOnScroll(cardRef, active, onScroll) {
+  const cbRef = useRef(onScroll);
+  cbRef.current = onScroll;
   useEffect(() => {
-    if (Platform.OS === 'web') return undefined;
-    if (!active) { setInView(true); return undefined; }
-    let alive = true;
-    const check = () => {
-      const node = ref?.current;
-      if (!node || typeof node.measureInWindow !== 'function') return;
-      node.measureInWindow((x, y, w, h) => {
-        if (!alive || !h) return;
-        const visiblePx = Math.min(y + h, winH) - Math.max(y, 0);
-        setInView(visiblePx / h >= threshold);
-      });
-    };
-    const unsub = subscribeFeedScroll(check);
-    check();
-    return () => { alive = false; unsub(); };
-  }, [ref, active, winH, threshold]);
-  return inView;
+    if (!active) return undefined;
+    return subscribeUserScroll(() => cardRef?.current, () => cbRef.current?.());
+  }, [cardRef, active]);
 }
 
 function useCardVisibility(ref, threshold = 0.3) {
@@ -619,14 +609,21 @@ export default function NewsFeedCard({
   const likeInFlightRef = useRef(false);
   const lastOwnLikeActionAtRef = useRef(0); // ✅ user ke apne like/unlike ka timestamp — stale poll se overwrite rokne ke liye
   const isCardVisible = useCardVisibility(cardRef, 0.3);
+  // Video wale hisse (hero) ka ref — scroll out check poore card par nahi, sirf video par hota hai
+  const heroMeasureRef = useRef(null);
+  const restartOnPlayRef = useRef(false); // scroll out se pause hua => agli baar shuru se play
 
  const [currentEmail, setCurrentEmail] = useState('');
   const [currentUserId, setCurrentUserId] = useState(null);
- const [isLiked, setIsLiked] = useState(Boolean(story.liked_by_me));
-  const [likesCount, setLikesCount] = useState(Number(story.likes || 0));
-  const [commentsCount, setCommentsCount] = useState(Number(story.comments || 0));
-  const [sharesCount, setSharesCount] = useState(Number(story.shares || 0));
-  const [viewsCount, setViewsCount] = useState(Number(story.views || 0));
+  // ✅ Details page / dusre card se aaya taza like-comment-share-view (shared store) pehle liya jaata hai
+  const engInit = getEngagement(story.id);
+  const engId = useRef(`card-${Math.random().toString(36).slice(2)}`).current;
+  const [isLiked, setIsLiked] = useState(engInit?.liked ?? Boolean(story.liked_by_me));
+  const [likesCount, setLikesCount] = useState(engInit?.likes ?? Number(story.likes || 0));
+  const [commentsCount, setCommentsCount] = useState(engInit?.comments ?? Number(story.comments || 0));
+  const [sharesCount, setSharesCount] = useState(engInit?.shares ?? Number(story.shares || 0));
+  const [viewsCount, setViewsCount] = useState(engInit?.views ?? Number(story.views || 0));
+  const viewsStoryIdRef = useRef(story.id);
   const [showComments, setShowComments] = useState(false);
   const [mediaWidth, setMediaWidth] = useState(0);
   const [commentText, setCommentText] = useState('');
@@ -669,10 +666,18 @@ export default function NewsFeedCard({
   );
 
   useEffect(() => {
-    setLikesCount(Number(story.likes || 0));
-    setCommentsCount(Number(story.comments || 0));
-    setSharesCount(Number(story.shares || 0));
-    setViewsCount(Number(story.views || 0));
+    const eng = getEngagement(story.id);   // taza shared count ho to wahi (stale props se upar)
+    setLikesCount(eng?.likes ?? Number(story.likes || 0));
+    setCommentsCount(eng?.comments ?? Number(story.comments || 0));
+    setSharesCount(eng?.shares ?? Number(story.shares || 0));
+    // ✅ views: server ka count aaye to wahi lo; lekin stale refresh se local (abhi badha hua) count neeche na gire
+    const srvViews = Math.max(Number(story.views || 0), eng?.views ?? 0);
+    if (viewsStoryIdRef.current !== story.id) {
+      viewsStoryIdRef.current = story.id;
+      setViewsCount(srvViews);
+    } else {
+      setViewsCount((prev) => Math.max(prev, srvViews));
+    }
   }, [story.id, story.likes, story.comments, story.shares, story.views]);
 
   useEffect(() => {
@@ -687,7 +692,11 @@ export default function NewsFeedCard({
         const r = await UserStore.recordNewsView(story.id);
         if (!active || !r?.ok) return;
         // Response ka view_count seedha dikhao; na aaye to local +1
-        setViewsCount((prev) => (r.views != null ? Math.max(Number(r.views) || 0, prev) : prev + 1));
+        setViewsCount((prev) => {
+          const next = r.views != null ? Math.max(Number(r.views) || 0, prev) : prev + 1;
+          publishEngagement(story.id, { views: next }, engId);
+          return next;
+        });
       } catch (_) {}
     })();
     return () => { active = false; };
@@ -806,6 +815,8 @@ export default function NewsFeedCard({
       // to ye stale poll/refresh se aaya story prop trust nahi karenge —
       // warna optimistic update turant "auto unlike" hoke ulta ho jaata tha.
       if (Date.now() - lastOwnLikeActionAtRef.current < 15000) return;
+      const engNow = getEngagement(story.id);
+      if (engNow && engNow.liked !== undefined) { setIsLiked(engNow.liked); return; }   // details / dusre card ka taza like
      const serverLiked = story.liked_by_me !== undefined ? Boolean(story.liked_by_me) : Boolean(Array.isArray(story.liked_by) && story.liked_by.includes(currentEmail));
       // ✅ server false/missing bole tab bhi local saved like ko maano (refresh/page change ke baad red rahe)
       const localLiked = await getLikedIds(currentEmail);
@@ -841,15 +852,30 @@ export default function NewsFeedCard({
   }, [storyAuthorEmail, storyAuthorId]);
   useEffect(() => {
     // ✅ same grace-window guard — apne hi like ke turant baad stale count se overwrite na ho
+    const eng = getEngagement(story.id);
     if (Date.now() - lastOwnLikeActionAtRef.current < 15000) {
-      setCommentsCount(Number(story.comments || 0));
-      setSharesCount(Number(story.shares || 0));
+      setCommentsCount(eng?.comments ?? Number(story.comments || 0));
+      setSharesCount(eng?.shares ?? Number(story.shares || 0));
       return;
     }
-    setLikesCount(Number(story.likes || 0));
-    setCommentsCount(Number(story.comments || 0));
-    setSharesCount(Number(story.shares || 0));
+    setLikesCount(eng?.likes ?? Number(story.likes || 0));
+    setCommentsCount(eng?.comments ?? Number(story.comments || 0));
+    setSharesCount(eng?.shares ?? Number(story.shares || 0));
   }, [story.comments, story.likes, story.shares]);
+
+  // ✅ Details page (ya kahin aur) par like / comment / share / view badla => is card par turant
+  useEffect(() => {
+    if (story.id === undefined || story.id === null) return undefined;
+    const myKey = String(story.id);
+    return subscribeEngagement((id, entry, src) => {
+      if (id !== myKey || src === engId) return;
+      if (entry.liked !== undefined) { setIsLiked(entry.liked); lastOwnLikeActionAtRef.current = Date.now(); }
+      if (entry.likes !== undefined) setLikesCount(entry.likes);
+      if (entry.comments !== undefined) setCommentsCount(entry.comments);
+      if (entry.shares !== undefined) setSharesCount(entry.shares);
+      if (entry.views !== undefined) setViewsCount((prev) => Math.max(prev, entry.views));
+    });
+  }, [story.id, engId]);
 
   const rawImageUri = useMemo(() => {
     const candidates = [
@@ -929,6 +955,26 @@ const safeImage = isValidImageUrl(effectiveImageUri)
   // swipe/scroll chheen leta tha, isliye gallery ke case me plain View use hota hai
   // (image tap MediaGallery ke andar onPressImage se handle hota hai).
   const hasImageGallery = Array.isArray(story.images) && story.images.filter(Boolean).length > 1;
+  // ✅ Breaking-news red frame: sirf tab jab user ne news add karte time frame select kiya ho
+  const framed = Boolean(story.useFrame) && !isAdStory && !isFileAttachment;
+  // Kaunsa template (glossy / bar / banner) — backend `frame_template`; purani news => default template
+  const frameTpl = getFrameTemplate(story.frameTemplate);
+  const frameWin = getFrameWindow(frameTpl);
+  const frameBoxH = mediaWidth ? Math.round(mediaWidth / getFrameBoxAspect(frameTpl)) : 0;
+  const MediaBox = framed ? View : React.Fragment;
+  const mediaBoxProps = framed
+    ? {
+        style: {
+          position: 'absolute',
+          left: `${frameWin.left * 100}%`,
+          top: `${frameWin.top * 100}%`,
+          width: `${frameWin.width * 100}%`,
+          height: `${frameWin.height * 100}%`,
+          overflow: 'hidden',
+          borderRadius: 0,
+        },
+      }
+    : {};
   if (__DEV__) console.log('[GALLERY]', story.id, Platform.OS, 'images:', story.images?.length, JSON.stringify(story.images));
   const fileNameOrUri = String(story.file?.name || story.file?.uri || '').toLowerCase();
   const fileKind = isFileAttachment
@@ -951,7 +997,7 @@ const safeImage = isValidImageUrl(effectiveImageUri)
   );
 
   const [videoPaused, setVideoPaused] = useState(true);
-  const isNativeInView = useNativeInView(cardRef, canPlayVideo && !videoPaused);
+  const [videoEnded, setVideoEnded] = useState(false); // video poora dekh liya -> Replay button
   const [showVideoPoster, setShowVideoPoster] = useState(true);
 
   // ✅ SPEED: video player (aur uska download/buffering) ab tabhi banta hai jab user play dabaye.
@@ -975,20 +1021,17 @@ const safeImage = isValidImageUrl(effectiveImageUri)
     if (!canPlayVideo) return;
     if (!isScreenFocused) {
       safePause(player);
+      restartOnPlayRef.current = true;
       setVideoPaused(true);
       setShowVideoPoster(true);
     }
   }, [canPlayVideo, isScreenFocused, player]);
 
-  useEffect(() => {
-    if (!canPlayVideo) return;
-    // web: IntersectionObserver (isCardVisible), Android/iOS: scroll par measure (isNativeInView)
-    if ((!isCardVisible || !isNativeInView) && !videoPaused) {
-      safePause(player);
-      setVideoPaused(true);
-      setShowVideoPoster(true);
-    }
-  }, [canPlayVideo, isCardVisible, isNativeInView, player, videoPaused]);
+  // Scroll karte hi video pause (position wahi rehti hai, dobara play dabane par wahin se chalega)
+  usePauseOnScroll(cardRef, canPlayVideo && !videoPaused, () => {
+    safePause(player);
+    setVideoPaused(true);
+  });
 
   useEffect(() => {
     // sirf video URL badalne par reset (player naya banne par nahi — warna play turant ruk jata)
@@ -996,6 +1039,7 @@ const safeImage = isValidImageUrl(effectiveImageUri)
     setShowVideoPoster(true);
     setVideoActivated(false);
     setVideoBuffering(false);
+    setVideoEnded(false);
   }, [canPlayVideo, effectiveVideoUri]);
 
   useEffect(() => {
@@ -1016,11 +1060,26 @@ const safeImage = isValidImageUrl(effectiveImageUri)
   // isliye pause/play ke baad dobara play nahi hota tha. End par start par rewind + paused state.
   useEffect(() => {
     if (!canPlayVideo || !player || typeof player.addListener !== 'function') return undefined;
-    const sub = player.addListener('playToEnd', () => {
-      try { player.currentTime = 0; } catch (_) {}
+    // Video khatam hone par: paused state + play button wapas. Kuch platforms par `playToEnd`
+    // nahi aata, isliye `playingChange` se bhi end pakadte hain (playing band + time end ke paas).
+    const onEnded = () => {
+      setVideoEnded(true);   // Replay button dikhao
       setVideoPaused(true);
+      setShowVideoPoster(false); // last frame dikhe, upar Replay button
+    };
+    const subEnd = player.addListener('playToEnd', onEnded);
+    const subPlay = player.addListener('playingChange', (e) => {
+      const playingNow = typeof e === 'object' ? e?.isPlaying : e;
+      if (playingNow) return;
+      try {
+        const dur = Number(player.duration || 0);
+        if (dur > 0 && Number(player.currentTime || 0) >= dur - 0.3) onEnded();
+      } catch (_) {}
     });
-    return () => { try { sub?.remove?.(); } catch (_) {} };
+    return () => {
+      try { subEnd?.remove?.(); } catch (_) {}
+      try { subPlay?.remove?.(); } catch (_) {}
+    };
   }, [canPlayVideo, player]);
 
   const [showVideoModal, setShowVideoModal] = useState(false);
@@ -1029,19 +1088,71 @@ const safeImage = isValidImageUrl(effectiveImageUri)
     // Asli player state dekho (sirf React state par bharosa nahi) — taaki pause ke baad play hamesha chale
     let playingNow = false;
     try { playingNow = Boolean(player?.playing); } catch (_) { playingNow = !videoPaused; }
-    if (!videoPaused && playingNow) {
+    if (!videoEnded && !videoPaused && playingNow) {
       safePause(player);
       setVideoPaused(true);
       return;
     }
-    try {
-      const dur = Number(player?.duration || 0);
-      if (dur > 0 && Number(player?.currentTime || 0) >= dur - 0.2) player.currentTime = 0;
-    } catch (_) {}
+    if (restartOnPlayRef.current) {
+      // scroll out ke baad dobara play => shuru se
+      restartOnPlayRef.current = false;
+      setVideoEnded(false);
+      try { if (player) player.currentTime = 0; } catch (_) { /* ignore */ }
+    }
+    if (videoEnded) {
+      // ✅ REPLAY: video khatam ho chuka hai -> shuru se dobara chalao
+      setVideoEnded(false);
+      try {
+        player.currentTime = 0;
+      } catch (_) { /* ignore */ }
+      try {
+        if (typeof player?.replay === 'function') player.replay();
+      } catch (_) { /* ignore */ }
+    }
     if (!videoActivated) { setVideoActivated(true); setVideoBuffering(true); } // pehli baar: player ab banega
     setShowVideoPoster(false);
     setVideoPaused(false);
     safePlay(player); // state pehle se false ho tab bhi seedha play karo
+  };
+
+  // ── Video controls (prev / -5 / play / +15 / next / progress / time / fullscreen) ──
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const controlsTimer = useRef(null);
+  const pausedRef = useRef(true);
+  pausedRef.current = videoPaused;
+  const pokeControls = useCallback(() => {
+    setControlsVisible(true);
+    if (controlsTimer.current) clearTimeout(controlsTimer.current);
+    // paused me controls chhupte nahi; sirf chalte video me auto-hide
+    if (!pausedRef.current) {
+      controlsTimer.current = setTimeout(() => setControlsVisible(false), 3500);
+    }
+  }, []);
+  useEffect(() => {
+    // paused => controls hamesha dikhen; chalte time kuch second baad chhup jayen
+    if (videoPaused) {
+      if (controlsTimer.current) clearTimeout(controlsTimer.current);
+      setControlsVisible(true);
+    } else {
+      pokeControls();
+    }
+  }, [videoPaused, pokeControls]);
+  useEffect(() => () => { if (controlsTimer.current) clearTimeout(controlsTimer.current); }, []);
+
+  const handleHeroVideoTap = () => {
+    if (videoPaused) { handleVideoPress(); return; } // paused video par tap = play
+    if (controlsVisible) {
+      if (controlsTimer.current) clearTimeout(controlsTimer.current);
+      setControlsVisible(false);
+    } else {
+      pokeControls();
+    }
+  };
+
+  const openVideoFullscreen = () => {
+    safePause(player);
+    setVideoPaused(true);
+    setShowVideoModal(true);
   };
 
   const handleAdPress = useCallback(() => {
@@ -1087,48 +1198,53 @@ const safeImage = isValidImageUrl(effectiveImageUri)
 const handleLike = async () => {
   if (!requireLogin()) return;
   if (likeInFlightRef.current) return;      // is news ka request pending hai — dobara nahi
-  if (isLiked) return;                      // ✅ already liked — dobara like/unlike nahi
-  const savedLikes = await getLikedIds(currentEmail);
-  if (savedLikes[story.id]) { setIsLiked(true); return; }   // ✅ local me liked hai — duplicate POST nahi
   likeInFlightRef.current = true;
 
+  // ✅ FIX: ab like AUR unlike dono chalte hain (pehle "already liked" par return ho jata tha)
   const prevLiked = isLiked;
   const prevCount = likesCount;
-  setIsLiked(!prevLiked);
-  setLikesCount(Math.max(0, prevCount + (prevLiked ? -1 : 1)));
+  const nextLiked = !prevLiked;
+  setIsLiked(nextLiked);
+  setLikesCount(Math.max(0, prevCount + (nextLiked ? 1 : -1)));
   lastOwnLikeActionAtRef.current = Date.now();
 
   try {
-    let adUserId = null;
-    if (isAdStory) {
-      const u = await UserStore.ensureUserId();
-      adUserId = u?.id || u?.user_id || null;
+    let result;
+    const useUnlikeRoute = prevLiked && !isAdStory;   // news: explicit unlike (DELETE /likes/{id})
+    if (useUnlikeRoute) {
+      result = await AuthAPI.unlikeNews(story.id);
+    } else {
+      let adUserId = null;
+      if (isAdStory) {
+        const u = await UserStore.ensureUserId();
+        adUserId = u?.id || u?.user_id || null;
+      }
+      // ✅ News ke liye user_id NAHI jaata
+      result = await AuthAPI.likeNews({
+        userId: adUserId,
+        newsId: isAdStory ? null : story.id,
+        adsId: isAdStory ? story.id : null,
+      });
     }
-    // ✅ News ke liye user_id NAHI jaata
-    const result = await AuthAPI.likeNews({
-      userId: adUserId,
-      newsId: isAdStory ? null : story.id,
-      adsId: isAdStory ? story.id : null,
-    });
 
     if (!result?.ok) {
       setIsLiked(prevLiked);                // exact rollback
       setLikesCount(prevCount);
       lastOwnLikeActionAtRef.current = 0;
       if (result?.isAuth) goToLogin();
-      else Alert.alert('Like', result?.message || 'Unable to update like. Please try again.');
+      else Alert.alert(prevLiked ? 'Unlike' : 'Like', result?.message || 'Unable to update like. Please try again.');
       return;
     }
 
-    // ✅ backend ka response final truth
-    const finalLiked = Boolean(result.liked);
+    // ✅ backend ka response final truth (unlike route par hamesha false)
+    const finalLiked = useUnlikeRoute ? false : Boolean(result.liked);
     setIsLiked(finalLiked);
-    if (finalLiked) setLikedId(currentEmail, story.id, true);   // ✅ like ko phone me save karo
-    if (Number.isFinite(result.likesCount)) {
-      setLikesCount(result.likesCount);
-    } else {
-      setLikesCount(Math.max(0, prevCount + (finalLiked ? 1 : 0) - (prevLiked ? 1 : 0)));
-    }
+    setLikedId(currentEmail, story.id, finalLiked);   // ✅ phone me save / hatao (unlike par local entry delete)
+    const finalCount = Number.isFinite(result.likesCount)
+      ? result.likesCount
+      : Math.max(0, prevCount + (finalLiked ? 1 : 0) - (prevLiked ? 1 : 0));
+    setLikesCount(finalCount);
+    publishEngagement(story.id, { liked: finalLiked, likes: finalCount }, engId);   // ✅ details page me bhi dikhe
   } catch {
     setIsLiked(prevLiked);
     setLikesCount(prevCount);
@@ -1197,7 +1313,9 @@ const handleLike = async () => {
         { id: newComment.id, text: newComment.text, author: newComment.author, avatar: newComment.authorAvatar },
         ...prev,
       ].slice(0, 2));
-      setCommentsCount((c) => (Number.isFinite(result.commentsCount) ? result.commentsCount : c + 1));
+      const nextComments = Number.isFinite(result.commentsCount) ? result.commentsCount : commentsCount + 1;
+      setCommentsCount(nextComments);
+      publishEngagement(story.id, { comments: nextComments }, engId);
       setCommentText('');
     } catch {}
   };
@@ -1264,7 +1382,9 @@ const handleLike = async () => {
       } else {
         setLocalComments((prev) => prev.filter((c) => c.id !== commentId));
         setPreviewComments((prev) => prev.filter((p) => p.id !== commentId));
-        setCommentsCount((c) => (Number.isFinite(result.commentsCount) ? result.commentsCount : Math.max(0, c - 1)));
+        const nextComments = Number.isFinite(result.commentsCount) ? result.commentsCount : Math.max(0, commentsCount - 1);
+        setCommentsCount(nextComments);
+        publishEngagement(story.id, { comments: nextComments }, engId);
       }
       if (editingCommentId === commentId) { setEditingCommentId(null); setEditingCommentText(''); }
       if (replyingToCommentId === commentId) { setReplyingToCommentId(null); setReplyText(''); }
@@ -1364,7 +1484,9 @@ const handleLike = async () => {
     if (isAdStory) return;
     const res = await AuthAPI.shareNews(story.id);
     if (res?.ok) {
-      if (Number.isFinite(res.shareCount)) setSharesCount(res.shareCount);   // backend ka count
+      const nextShares = Number.isFinite(res.shareCount) ? res.shareCount : sharesCount + 1;
+      setSharesCount(nextShares);   // backend ka count
+      publishEngagement(story.id, { shares: nextShares }, engId);
     } else if (res?.rateLimited) {
       Alert.alert('Share', 'Please try again later.');
     }
@@ -1561,7 +1683,7 @@ const handleLike = async () => {
   const heroWrapProps = useGalleryWrap
     ? {}
     : {
-        onPress: canPlayVideo ? handleVideoPress : (isFileAttachment ? handleFileOpen : handleImagePress),
+        onPress: canPlayVideo ? handleHeroVideoTap : (isFileAttachment ? handleFileOpen : handleImagePress),
         activeOpacity: 0.95,
       };
   const authorAvatarUri = isValidImageUrl(story.author_profile_image) ? story.author_profile_image : '';
@@ -1595,7 +1717,7 @@ const handleLike = async () => {
           />
         </View>
       ) : null}
-           <View ref={cardRef} style={[styles.storyCardShell, Platform.OS !== 'web' && styles.androidStoryCardShell, altShade && styles.storyCardShellAlt]}>
+           <View ref={cardRef} collapsable={false} style={[styles.storyCardShell, Platform.OS !== 'web' && styles.androidStoryCardShell, altShade && styles.storyCardShellAlt]}>
 
         {/* ── Ad Top Box ── */}
         <View style={styles.adTopBox}>
@@ -1693,6 +1815,9 @@ const handleLike = async () => {
          hasImageGallery
            ? { height: undefined, backgroundColor: '#ffffff' }
            : null,
+         framed ? { height: frameBoxH || 200, backgroundColor: '#000', borderRadius: 8 } : null,
+         // video poora dikhe (crop nahi): 16:9 frame + contain
+         canPlayVideo && !framed && mediaWidth ? { height: Math.round(mediaWidth * 9 / 16), backgroundColor: '#000' } : null,
        ]}
        onLayout={(event) => {
          const w = Math.round(event.nativeEvent.layout.width);
@@ -1700,17 +1825,19 @@ const handleLike = async () => {
        }}
        {...heroWrapProps}
      >
+          <View ref={heroMeasureRef} collapsable={false} pointerEvents="none" style={StyleSheet.absoluteFill} />
+          <MediaBox {...mediaBoxProps}>
           {canPlayVideo ? (
             <>
               {player ? (
-                <VideoView player={player} style={[StyleSheet.absoluteFill, { width: '100%', height: '100%' }]} contentFit="cover" nativeControls={false} fullscreenOptions={{ enabled: false }} playsInline onFirstFrameRender={() => { setShowVideoPoster(false); setVideoBuffering(false); }} />
+                <VideoView player={player} style={[StyleSheet.absoluteFill, { width: '100%', height: '100%' }]} contentFit="contain" nativeControls={false} fullscreenOptions={{ enabled: false }} playsInline onFirstFrameRender={() => { setShowVideoPoster(false); setVideoBuffering(false); }} />
               ) : null}
               {videoBuffering && !videoPaused ? (
                 <View style={styles.videoLoadingOverlay} pointerEvents="none"><ActivityIndicator size="large" color="#ffffff" /></View>
               ) : null}
               {showPosterOverlay && (
                 posterReady ? (
-                  <Image source={{ uri: videoThumbnail }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                  <Image source={{ uri: videoThumbnail }} style={StyleSheet.absoluteFill} resizeMode="contain" />
                 ) : stillCapturing ? (
                   <View style={styles.videoLoadingOverlay}>
                     <View style={styles.videoLoadingBadge}><Text style={styles.videoLoadingText}>⏳</Text></View>
@@ -1719,18 +1846,18 @@ const handleLike = async () => {
                   <View style={styles.videoLoadingOverlay} />
                 )
               )}
-              {/* Simple controls: video par kahin bhi tap = play/pause. Paused ho to beech me play button. */}
-              {videoPaused && (
-                <View style={styles.storyVideoPlayOverlay} pointerEvents="box-none">
-                  <TouchableOpacity
-                    style={styles.storyVideoPlayBadge}
-                    onPress={(e) => { e?.stopPropagation?.(); handleVideoPress(); }}
-                    activeOpacity={0.85}
-                  >
-                    <Ionicons name="play" size={26} color="#0f172a" style={{ marginLeft: 3 }} />
-                  </TouchableOpacity>
-                </View>
-              )}
+              {/* Controls: ad player jaisa (prev / -5 / play / +15 / next + progress + time). Bada alag play button hata diya. */}
+              <NewsVideoControls
+                player={player}
+                visible={controlsVisible}
+                paused={videoPaused}
+                ended={videoEnded}
+                buffering={videoBuffering}
+                bottomInset={framed ? getLowerBannerHeight(frameTpl, mediaWidth) : 0}
+                onTogglePlay={handleVideoPress}
+                onFullscreen={openVideoFullscreen}
+                onInteract={pokeControls}
+              />
               <TouchableOpacity
                 style={{ position: 'absolute', top: 10, right: 10, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', zIndex: 5 }}
                 onPress={(e) => { e?.stopPropagation?.(); toggleGlobalMuted(); }}
@@ -1760,17 +1887,29 @@ const handleLike = async () => {
           ) : hasImageGallery && mediaWidth ? (
             <MediaGallery
               images={story.images}
-              width={mediaWidth}
-              maxHeight={240}
+              width={framed ? Math.round(mediaWidth * frameWin.width) : mediaWidth}
+              maxHeight={framed ? Math.round(frameBoxH * frameWin.height) : 240}
               fit="cover"
               onPressImage={handleImagePress}
             />
           ) : (
             <Image source={{ uri: safeImage }} style={styles.storyHeroImage} resizeMode="cover" />
           )}
-          {/* ✅ Brand overlay: top-left logo + bottom auto-scroll "RTI INDIA NEWS" ticker */}
-          <MediaLogo />
-          <MediaTicker />
+          </MediaBox>
+          {/* ✅ Frame select hai => red frame + scrolling title/description; warna purana logo + ticker */}
+          {framed ? (
+            <NewsFrameOverlay
+              width={mediaWidth}
+              height={frameBoxH}
+              title={story.title}
+              description={story.description || story.excerpt || story.subtitle || ''}
+              templateId={frameTpl.id}
+            />
+          ) : (
+            <>
+              <MediaLogo />
+            </>
+          )}
           {story.isFeatured ? (
             <View style={styles.topStoryRibbon}>
               <Text style={styles.topStoryRibbonText}>TOP STORY</Text>
@@ -1850,6 +1989,7 @@ const handleLike = async () => {
           ) : null}
 
           {/* Video duration badge (1:29) hata diya */}
+          {!canPlayVideo ? (
           <TouchableOpacity
             style={styles.storyExpandBtn}
             onPress={(e) => {
@@ -1868,6 +2008,7 @@ const handleLike = async () => {
           >
             <Ionicons name="expand-outline" size={16} color="#ffffff" />
           </TouchableOpacity>
+          ) : null}
         </HeroWrap>
 
         {/* ── Headline + Excerpt (ab media ke niche, FB layout) ── */}

@@ -192,12 +192,21 @@ export default function VillageSelectScreen({ navigation, route }) {
 
   const villageList = selectedTaluka ? getVillages(selectedState, selectedDistrict, selectedTaluka) : [];
 
-  const goToHome = (userName) => {
-    navigation.replace('Home', {
-      fromRegistration: true,
-      registrationJustCompleted,
-      userName: userName || 'User',
-    });
+  const goToHome = (userName, shouldLogin = false) => {
+    // ✅ Register complete -> seedha Home. reset() se Register/State/District/Taluka/Village
+    // stack saaf ho jaata hai, isliye back dabane par wapas register screen nahi aati.
+    allowLeaveRef.current = true;
+    const params = { fromRegistration: true, registrationJustCompleted, userName: userName || 'User' };
+    try {
+      navigation.reset({ index: 0, routes: [{ name: 'Home', params }] });
+    } catch (e) {
+      try { navigation.replace('Home', params); } catch (_) { /* ignore */ }
+    }
+    // ✅ login() sabse LAST me, navigation ke baad — pehle login() chalane se navigator re-render hota tha
+    // aur Home par jaate waqt app band ho jaata tha.
+    if (shouldLogin) {
+      setTimeout(() => { try { login(); } catch (_) { /* ignore */ } }, 350);
+    }
   };
 
   // Registration (verified email OTP ke saath) Register screen par hi server par ho chuki hoti hai.
@@ -252,13 +261,14 @@ export default function VillageSelectScreen({ navigation, route }) {
       }
 
       await UserStore.setCurrentUser(pending.email);
-      login();
-      await UserStore.completeLocationSetup(pending.email, selectedState, selectedDistrict, selectedTaluka, villageValue);
-      await UserStore.clearPendingRegistration();
+      try {
+        await UserStore.completeLocationSetup(pending.email, selectedState, selectedDistrict, selectedTaluka, villageValue);
+        await UserStore.clearPendingRegistration();
+      } catch (e) { console.warn('[register] local setup failed:', e?.message || e); }
 
       syncRegistrationLocation(villageValue);
 
-      goToHome(pending.name);
+      goToHome(pending.name, true);
       return;
     }
 
@@ -275,8 +285,7 @@ export default function VillageSelectScreen({ navigation, route }) {
       village:  villageValue,
     }).catch(() => {});
 
-    if (needsLogin) login();
-    goToHome(user.name);
+    goToHome(user.name, !!needsLogin);
   };
 
   const handleSkip = async () => {
@@ -306,13 +315,14 @@ export default function VillageSelectScreen({ navigation, route }) {
       }
 
       await UserStore.setCurrentUser(pending.email);
-      login();
-      await UserStore.completeLocationSetup(pending.email, selectedState, selectedDistrict, selectedTaluka, '');
-      await UserStore.clearPendingRegistration();
+      try {
+        await UserStore.completeLocationSetup(pending.email, selectedState, selectedDistrict, selectedTaluka, '');
+        await UserStore.clearPendingRegistration();
+      } catch (e) { console.warn('[register] local setup failed:', e?.message || e); }
 
       syncRegistrationLocation('');
 
-      goToHome(pending.name);
+      goToHome(pending.name, true);
       return;
     }
 
@@ -320,13 +330,12 @@ export default function VillageSelectScreen({ navigation, route }) {
     if (!user) { allowLeaveRef.current = true; navigation.replace('Login'); return; }
 
     await UserStore.completeLocationSetup(user.email, selectedState, selectedDistrict, selectedTaluka, '');
-    if (needsLogin) login();
-    goToHome(user.name);
+    goToHome(user.name, !!needsLogin);
   };
 
   return (
-    <SafeAreaView style={{ flex: 1 }} edges={[]}>
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: '#B91C1C' }} edges={[]}>
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined} enabled={Platform.OS === 'ios'}>
       <ImageBackground source={require('../assets/images/profile-red.png')} resizeMode="cover" style={styles.root}>
         <View style={[styles.glow, styles.glowTop]} />
         <View style={[styles.glow, styles.glowBottom]} />

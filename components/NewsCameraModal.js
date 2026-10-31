@@ -144,7 +144,7 @@ export default function NewsCameraModal({
           />
         ) : (
           <View style={s.permWrap}>
-            <Text style={s.permText}>Camera / Microphone permission chahiye.</Text>
+            <Text style={s.permText}>Camera / Microphone permission is required.</Text>
             <TouchableOpacity
               style={s.permBtn}
               onPress={async () => { await requestCamPerm(); await requestMicPerm(); }}

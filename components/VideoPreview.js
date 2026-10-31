@@ -20,7 +20,7 @@ function isLikelyPlayableVideoSource(uri) {
   return /^https?:/i.test(uri) && !/\.(jpe?g|png|gif|webp|bmp|svg|heic|avif|pdf)(\?.*)?(#.*)?$/i.test(uri);
 }
 
-export default function VideoPreview({ uri, style, contentFit = 'cover' }) {
+export default function VideoPreview({ uri, style, contentFit = 'contain' }) {
   const [resolved, setResolved] = useState(null);
 
   useEffect(() => {
@@ -61,10 +61,11 @@ export default function VideoPreview({ uri, style, contentFit = 'cover' }) {
    if (!playableUri) return null;
 
   return (
-    <View style={{ position: 'relative' }}>
+    // ✅ kaala background + contain: video crop / zoom nahi hota, poora dikhta hai
+    <View style={{ position: 'relative', backgroundColor: '#000', borderRadius: 8, overflow: 'hidden' }}>
       <VideoView
         player={player}
-        style={style}
+        style={[{ backgroundColor: '#000' }, style]}
         contentFit={contentFit}
         fullscreenOptions={{ enabled: true }}
       />
@@ -78,7 +79,7 @@ export default function VideoPreview({ uri, style, contentFit = 'cover' }) {
 
 const wm = StyleSheet.create({
   bar: {
-    position: 'absolute', bottom: 8, left: 8,
+    position: 'absolute', top: 8, left: 8,
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingHorizontal: 8, paddingVertical: 5,
     backgroundColor: 'rgba(0,0,0,0.58)', borderRadius: 4,

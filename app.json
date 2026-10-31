@@ -45,7 +45,19 @@
         "android.permission.READ_MEDIA_AUDIO",
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
-        "android.permission.POST_NOTIFICATIONS"
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.ACCESS_MEDIA_LOCATION",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
       "googleServicesFile": "./google-services.json"
     },
@@ -107,14 +119,17 @@
     "runtimeVersion": {
       "policy": "appVersion"
     },
-    "owner": "ankitroofzes-team",
+    "owner": "ankityadav3216",
     "extra": {
       "eas": {
-        "projectId": "0c7d31bb-fb96-4cd6-8848-ba39460ed50b"
+        "updates": {
+          "url": "https://u.expo.dev/0c7d31bb-fb96-4cd6-8848-ba39460ed50b"
+        },
+        "projectId": "1dedb0f7-9dc5-47e3-9679-427549c6138a"
       }
     },
     "updates": {
-      "url": "https://u.expo.dev/0c7d31bb-fb96-4cd6-8848-ba39460ed50b"
+      "url": "https://u.expo.dev/1dedb0f7-9dc5-47e3-9679-427549c6138a"
     }
   }
 }

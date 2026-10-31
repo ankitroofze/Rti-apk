@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#EB8C28">
+<title>Member Verification | Bhartiya Mahiti Adhikar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --brand:#EB8C28; --brand-dark:#c96f12; --green:#15803d; --red:#cc2200; --blue:#1d9bf0;
+    --ink:#0f172a; --sub:#64748b; --line:#e5e7eb; --bg:#f1f5f9; --card:#ffffff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{font-family:'Roboto',system-ui,-apple-system,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5;min-height:100vh;
+       padding-bottom:env(safe-area-inset-bottom,0)}
+  .wrap{max-width:720px;margin:0 auto;padding:0 14px 40px}
+
+  /* Header */
+  .top{background:linear-gradient(135deg,var(--brand) 0%,var(--brand-dark) 100%);color:#fff;
+       padding:calc(22px + env(safe-area-inset-top,0)) 18px 86px;text-align:center}
+  .top h1{font-size:22px;font-weight:900;letter-spacing:.3px}
+  .top .net{font-size:12px;font-weight:700;letter-spacing:2px;margin-top:2px;opacity:.95}
+  .top .reg{font-size:10.5px;margin-top:6px;opacity:.85}
+
+  /* Profile card */
+  .profile{background:var(--card);border-radius:18px;margin-top:-62px;padding:0 18px 20px;text-align:center;
+           box-shadow:0 10px 30px rgba(15,23,42,.10);position:relative}
+  .avatar{width:112px;height:112px;border-radius:50%;margin:-56px auto 0;border:4px solid #fff;background:#e2e8f0;
+          box-shadow:0 0 0 3px var(--green);overflow:hidden;display:flex;align-items:center;justify-content:center;
+          font-size:38px;font-weight:700;color:#475569}
+  .avatar img{width:100%;height:100%;object-fit:cover;display:block}
+  .name{margin-top:12px;font-size:23px;font-weight:700;display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:wrap}
+  .tick{width:22px;height:22px;flex:none}
+  .role{display:inline-block;margin-top:8px;background:#fff7ed;color:var(--brand-dark);border:1px solid #fed7aa;
+        padding:5px 14px;border-radius:999px;font-size:13px;font-weight:700;text-transform:capitalize}
+  .seat{margin-top:8px;color:var(--sub);font-size:14px;display:flex;align-items:center;justify-content:center;gap:5px}
+  .status{margin-top:14px;display:inline-flex;align-items:center;gap:7px;padding:8px 16px;border-radius:10px;font-size:13.5px;font-weight:700}
+  .status.ok{background:#ecfdf5;color:#047857;border:1px solid #a7f3d0}
+  .status.no{background:#f1f5f9;color:#475569;border:1px solid var(--line)}
+
+  .stats{display:grid;grid-template-columns:repeat(3,1fr);margin-top:18px;border-top:1px solid var(--line);padding-top:16px}
+  .stat b{display:block;font-size:21px;font-weight:900}
+  .stat span{font-size:12px;color:var(--sub);text-transform:uppercase;letter-spacing:.6px}
+  .stat+.stat{border-left:1px solid var(--line)}
+
+  /* Sections */
+  .sec{background:var(--card);border-radius:16px;margin-top:16px;padding:18px;box-shadow:0 2px 10px rgba(15,23,42,.05)}
+  .sec h2{font-size:13px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--sub);margin-bottom:12px;
+          display:flex;align-items:center;gap:8px}
+  .sec h2::before{content:"";width:4px;height:14px;background:var(--brand);border-radius:2px}
+  .bio{font-size:15px;color:#334155;white-space:pre-line}
+  .rows .row{display:flex;justify-content:space-between;gap:16px;padding:11px 0;border-bottom:1px dashed var(--line);font-size:14.5px}
+  .rows .row:last-child{border-bottom:0}
+  .rows .k{color:var(--sub)}
+  .rows .v{font-weight:700;text-align:right;text-transform:capitalize}
+
+  /* Posts */
+  .post{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+  .post:last-child{border-bottom:0;padding-bottom:0}
+  .post:first-of-type{padding-top:0}
+  .thumb{width:92px;height:76px;border-radius:10px;background:#e2e8f0;object-fit:cover;flex:none}
+  .pbody{min-width:0;flex:1}
+  .cat{display:inline-block;font-size:10.5px;font-weight:700;color:var(--red);background:#fef2f2;border:1px solid #fecaca;
+       padding:1px 8px;border-radius:999px;text-transform:uppercase;letter-spacing:.4px}
+  .ptitle{font-size:15px;font-weight:700;margin-top:4px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .pdesc{font-size:13px;color:var(--sub);margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .pdate{font-size:11.5px;color:#94a3b8;margin-top:4px}
+  .empty{color:var(--sub);font-size:14px;text-align:center;padding:10px 0}
+
+  .foot{text-align:center;color:var(--sub);font-size:12px;margin-top:22px}
+  .foot b{color:var(--ink)}
+
+  /* States */
+  .state{background:var(--card);border-radius:16px;margin-top:-62px;padding:38px 20px;text-align:center;box-shadow:0 10px 30px rgba(15,23,42,.10);position:relative}
+  .state h3{font-size:19px;margin-bottom:6px}
+  .state p{color:var(--sub);font-size:14px}
+  .btn{margin-top:16px;background:var(--brand);color:#fff;border:0;padding:10px 22px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
+  .spin{width:38px;height:38px;border:4px solid #e2e8f0;border-top-color:var(--brand);border-radius:50%;margin:0 auto 14px;animation:s 0.9s linear infinite}
+  @keyframes s{to{transform:rotate(360deg)}}
+
+  @media (max-width:420px){
+    .name{font-size:20px}
+    .thumb{width:78px;height:66px}
+  }
+
+  /* ID card verification (?token=) */
+  .vbadge{margin-top:16px;border:2px solid;border-radius:14px;padding:14px 12px;text-align:center}
+  .vbadge .ic{font-size:30px;line-height:1}
+  .vbadge .tt{font-size:21px;font-weight:900;margin-top:4px}
+  .vbadge .ss{font-size:13px;margin-top:3px}
+  .actions{margin-top:16px;text-align:center}
+</style>
+</head>
+<body>
+  <header class="top">
+    <h1>Bhartiya Mahiti Adhikar</h1>
+    <div class="net">ALL INDIA RTI NEWS NETWORK</div>
+    <div class="reg">RNI.MAH/MUL/66399 &#9733; UDYAM-MH-29-0022246</div>
+  </header>
+  <main class="wrap" id="app">
+    <div class="state"><div class="spin"></div><h3>Verifying member&hellip;</h3><p>Please wait a moment</p></div>
+  </main>
+
+<script>
+(function () {
+  // Pehle isi website ka proxy (CORS se bachne ke liye), fir direct API
+  var API_CANDIDATES = function (id) {
+   return ['https://rtiapi.roofze.in/api/profile/' + id, '/api-proxy/profile/' + id];
+  };
+  var app = document.getElementById('app');
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;   // textContent => user data se XSS nahi
+    return n;
+  }
+  function safeUrl(u) { return /^https?:\/\//i.test(String(u || '')) ? String(u) : ''; }
+  function initials(name) {
+    var p = String(name || '').trim().split(/\s+/).filter(Boolean);
+    return ((p[0] || '?')[0] + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase();
+  }
+  function fmtDate(v) {
+    var d = new Date(v);
+    return isNaN(d) ? '' : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+  function num(n) { return Number(n || 0).toLocaleString('en-IN'); }
+
+  var TICK_SVG = '<svg class="tick" viewBox="0 0 24 24" aria-label="Verified"><path fill="#1d9bf0" d="M22.25 12c0-1.43-.88-2.67-2.19-3.34.46-1.39.2-2.9-.81-3.91s-2.52-1.27-3.91-.81c-.66-1.31-1.91-2.19-3.34-2.19s-2.67.88-3.33 2.19c-1.4-.46-2.91-.2-3.92.81s-1.26 2.52-.8 3.91C2.88 9.33 2 10.57 2 12s.88 2.67 2.19 3.34c-.46 1.39-.2 2.9.81 3.91s2.52 1.26 3.91.81c.67 1.31 1.91 2.19 3.34 2.19s2.68-.88 3.34-2.19c1.39.45 2.9.2 3.91-.81s1.27-2.52.81-3.91c1.31-.67 2.19-1.91 2.19-3.34z"/><path fill="#fff" d="M9.64 15.5 6.5 12.36l1.41-1.41 1.73 1.73 4.95-4.95 1.41 1.41z"/></svg>';
+
+  function showError(title, msg, retry) {
+    app.innerHTML = '';
+    var s = el('div', 'state');
+    s.appendChild(el('h3', null, title));
+    s.appendChild(el('p', null, msg));
+    if (retry) {
+      var b = el('button', 'btn', 'Try again');
+      b.onclick = retry;
+      s.appendChild(b);
+    }
+    app.appendChild(s);
+  }
+
+  function section(title) {
+    var s = el('section', 'sec');
+    s.appendChild(el('h2', null, title));
+    return s;
+  }
+
+  function render(p) {
+    app.innerHTML = '';
+    var verified = p.has_blue_tick === true || p.has_blue_tick === 1 || p.has_blue_tick === '1';
+    var seat = p.state_seat && p.state_seat.seat_name ? p.state_seat.seat_name : '';
+    var role = p.role_label || '';
+    document.title = (p.name ? p.name + ' | ' : '') + 'Member Verification';
+
+    // Profile card
+    var card = el('div', 'profile');
+    var av = el('div', 'avatar');
+    var avUrl = safeUrl(p.avatar || p.profile_image);
+    if (avUrl) {
+      var img = new Image();
+      img.alt = p.name || 'Member';
+      img.onerror = function () { av.textContent = initials(p.name); };
+      img.src = avUrl;
+      av.appendChild(img);
+    } else { av.textContent = initials(p.name); }
+    card.appendChild(av);
+
+    var nm = el('div', 'name');
+    nm.appendChild(el('span', null, p.name || 'Member'));
+    if (verified) { var t = el('span'); t.innerHTML = TICK_SVG; nm.appendChild(t.firstChild); }
+    card.appendChild(nm);
+
+    if (role) card.appendChild(el('div', 'role', role));
+    if (seat) {
+      var st = el('div', 'seat');
+      st.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>';
+      st.appendChild(el('span', null, seat));
+      card.appendChild(st);
+    }
+
+    var status = el('div', 'status ' + (verified ? 'ok' : 'no'),
+      verified ? '\u2714  Verified Member' : 'Registered Member');
+    card.appendChild(status);
+
+    var stats = el('div', 'stats');
+    [['Posts', p.posts_count != null ? p.posts_count : (p.posts || []).length],
+     ['Followers', p.followers_count], ['Following', p.following_count]].forEach(function (x) {
+      var d = el('div', 'stat');
+      d.appendChild(el('b', null, num(x[1])));
+      d.appendChild(el('span', null, x[0]));
+      stats.appendChild(d);
+    });
+    card.appendChild(stats);
+    app.appendChild(card);
+
+    // About
+    if (p.bio) {
+      var about = section('About');
+      about.appendChild(el('p', 'bio', p.bio));
+      app.appendChild(about);
+    }
+
+    // Details
+    var det = section('Member Details');
+    var rows = el('div', 'rows');
+    [['Member ID', '#' + p.id], ['Name', p.name], ['Designation', role], ['Seat / Area', seat],
+     ['Status', verified ? 'Verified' : 'Registered']].forEach(function (r) {
+      if (!r[1] || r[1] === '#undefined') return;
+      var row = el('div', 'row');
+      row.appendChild(el('span', 'k', r[0]));
+      row.appendChild(el('span', 'v', r[1]));
+      rows.appendChild(row);
+    });
+    det.appendChild(rows);
+    app.appendChild(det);
+
+    // Recent posts
+    var posts = Array.isArray(p.posts) ? p.posts : [];
+    var ps = section('Recent News Posts');
+    if (!posts.length) {
+      ps.appendChild(el('div', 'empty', 'No posts published yet.'));
+    } else {
+      posts.slice(0, 8).forEach(function (post) {
+        var row = el('div', 'post');
+        var m = safeUrl(post.media);
+        var isImg = String(post.media_type) === '1' || /\.(png|jpe?g|gif|webp)(\?|$)/i.test(m);
+        if (m && isImg) {
+          var th = new Image();
+          th.className = 'thumb'; th.alt = ''; th.loading = 'lazy';
+          th.onerror = function () { th.style.display = 'none'; };
+          th.src = m;
+          row.appendChild(th);
+        }
+        var b = el('div', 'pbody');
+        if (post.report_type) b.appendChild(el('span', 'cat', post.report_type));
+        b.appendChild(el('div', 'ptitle', post.tittle || post.title || ''));
+        if (post.description) b.appendChild(el('div', 'pdesc', post.description));
+        var dt = fmtDate(post.created_at);
+        if (dt) b.appendChild(el('div', 'pdate', dt));
+        row.appendChild(b);
+        ps.appendChild(row);
+      });
+    }
+    app.appendChild(ps);
+
+    var f = el('div', 'foot');
+    f.innerHTML = 'Verified from the official <b>Bhartiya Mahiti Adhikar</b> database<br>Checked on ' +
+      new Date().toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    app.appendChild(f);
+  }
+
+  // ───────── ID CARD VERIFICATION (QR se: verify.html?token=XXXX) ─────────
+  var CARD_API = function (t) {
+    return ['https://rtiapi.roofze.in/api/id-cards/verify/' + t, '/api-proxy/id-cards/verify/' + t];
+  };
+  var STATUS_UI = {
+    active:    { c: '#15803d', bg: '#ecfdf5', ic: '\u2714', t: 'Valid ID Card' },
+    expired:   { c: '#ea580c', bg: '#fff7ed', ic: '\u23F1', t: 'ID Card Expired' },
+    suspended: { c: '#dc2626', bg: '#fef2f2', ic: '\u2716', t: 'ID Card Suspended' },
+    cancelled: { c: '#dc2626', bg: '#fef2f2', ic: '\u2716', t: 'ID Card Cancelled' },
+    inactive:  { c: '#dc2626', bg: '#fef2f2', ic: '\u2716', t: 'ID Card Inactive' }
+  };
+  var INVALID_UI = { c: '#dc2626', bg: '#fef2f2', ic: '\u26A0', t: 'Invalid / Fake ID Card' };
+
+  function cap(v) { return v ? String(v).replace(/_/g, ' ') : ''; }
+
+  function badge(ui, sub) {
+    var b = el('div', 'vbadge');
+    b.style.borderColor = ui.c; b.style.background = ui.bg; b.style.color = ui.c;
+    b.appendChild(el('div', 'ic', ui.ic));
+    b.appendChild(el('div', 'tt', ui.t));
+    if (sub) b.appendChild(el('div', 'ss', sub));
+    return b;
+  }
+
+  function showInvalid(message) {
+    app.innerHTML = '';
+    var card = el('div', 'profile');
+    card.style.paddingTop = '20px';
+    card.appendChild(badge(INVALID_UI, message || 'This ID card could not be verified.'));
+    app.appendChild(card);
+  }
+
+  function renderIdCard(d) {
+    app.innerHTML = '';
+    var ui = STATUS_UI[String(d.status || '').toLowerCase()] || INVALID_UI;   // rang sirf `status` se
+    document.title = (d.name ? d.name + ' | ' : '') + 'ID Card Verification';
+
+    var card = el('div', 'profile');
+    var av = el('div', 'avatar');
+    av.style.boxShadow = '0 0 0 3px ' + ui.c;
+    var url = safeUrl(d.profile_image_url);
+    if (url) {
+      var img = new Image();
+      img.alt = d.name || 'Member';
+      img.onerror = function () { av.textContent = initials(d.name); };
+      img.src = url;
+      av.appendChild(img);
+    } else { av.textContent = initials(d.name); }
+    card.appendChild(av);
+
+    card.appendChild(el('div', 'name', d.name || 'Member'));
+    if (d.designation) card.appendChild(el('div', 'role', d.designation));
+    card.appendChild(badge(ui));
+    app.appendChild(card);
+
+    var det = section('ID Card Details');
+    var rows = el('div', 'rows');
+    [['Name', d.name], ['Designation', d.designation], ['Role', cap(d.role)],
+     ['Organisation', d.organisation], ['ID Number', d.id_number],
+     ['Valid From', fmtDate(d.valid_from)], ['Valid Until', fmtDate(d.valid_until)],
+     ['Profile Status', cap(d.profile_status)]].forEach(function (r) {
+      if (!r[1]) return;
+      var row = el('div', 'row');
+      row.appendChild(el('span', 'k', r[0]));
+      row.appendChild(el('span', 'v', r[1]));
+      rows.appendChild(row);
+    });
+    det.appendChild(rows);
+    app.appendChild(det);
+
+    var f = el('div', 'foot');
+    f.innerHTML = 'Verified from the official <b>Bhartiya Mahiti Adhikar</b> database<br>Checked on ' +
+      new Date().toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    app.appendChild(f);
+  }
+
+  // PUBLIC API: Authorization header nahi, cache nahi, har baar fresh call
+  async function fetchIdCard(token) {
+    var lastErr = null;
+    var urls = CARD_API(token);
+    for (var i = 0; i < urls.length; i++) {
+      try {
+        var res = await fetch(urls[i], { headers: { Accept: 'application/json' }, cache: 'no-store' });
+        var data = await res.json();               // HTML aaya to yahin fail => agla URL
+        if (res.status === 404 && data && data.status === 'invalid') { var nf = new Error('INVALID'); nf.code = 404; nf.msg = data.message; throw nf; }
+        if (res.status === 200 && data && data.status) return data;
+        lastErr = new Error('BAD_RESPONSE');
+      } catch (e) {
+        if (e && e.code === 404) throw e;
+        lastErr = e;
+      }
+    }
+    throw lastErr || new Error('FAILED');
+  }
+
+  function startCard(token) {
+    app.innerHTML = '<div class="state"><div class="spin"></div><h3>Verifying ID card&hellip;</h3><p>Please wait a moment</p></div>';
+    fetchIdCard(token).then(renderIdCard).catch(function (e) {
+      if (e && e.code === 404) showInvalid(e.msg);
+      else showError('Internet check karo', 'Could not reach the server. Check your internet connection and try again.', function () { startCard(token); });
+    });
+  }
+
+  async function fetchProfile(id) {
+    var lastErr = null;
+    var urls = API_CANDIDATES(id);
+    for (var i = 0; i < urls.length; i++) {
+      try {
+        var res = await fetch(urls[i], { headers: { Accept: 'application/json' } });
+        if (res.status === 404) { var nf = new Error('NOT_FOUND'); nf.code = 404; throw nf; }
+        var data = await res.json();               // HTML aaya to yahin fail => agla URL
+        if (data && data.profile) return data.profile;
+        lastErr = new Error('NO_PROFILE');
+      } catch (e) {
+        if (e && e.code === 404) throw e;
+        lastErr = e;
+      }
+    }
+    throw lastErr || new Error('FAILED');
+  }
+
+  function start() {
+    var token = (new URLSearchParams(location.search).get('token') || '').replace(/[^A-Za-z0-9]/g, '');
+    if (token) { startCard(token); return; }
+    var id = (new URLSearchParams(location.search).get('id') || '').replace(/[^0-9A-Za-z_-]/g, '');
+    if (!id) { showError('Invalid link', 'This verification link is incomplete. Please scan the QR code again.'); return; }
+    app.innerHTML = '<div class="state"><div class="spin"></div><h3>Verifying member&hellip;</h3><p>Please wait a moment</p></div>';
+    fetchProfile(id).then(render).catch(function (e) {
+      if (e && e.code === 404) showError('Member not found', 'No member exists for this QR code. The ID card may be invalid.');
+      else showError('Unable to load', 'Could not reach the server. Check your internet connection and try again.', start);
+    });
+  }
+  start();
+})();
+</script>
+</body>
+</html>

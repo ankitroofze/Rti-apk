@@ -43,7 +43,21 @@ const EMAIL_BANNER    = require('../assets/images/email_banner.png'); // email f
 const SIGNER_NAME = 'Hon. Mr. Shoukat Abdulkalam Naikwadi';
 
 // ✅ Email banner ka original aspect ratio (squash na ho isliye)
-const _emailSrc = Image.resolveAssetSource(EMAIL_BANNER);
+// react-native-web me Image.resolveAssetSource hota hi nahi — direct call karne par app load hote hi crash hota tha.
+const _getAssetSize = (mod) => {
+  try {
+    if (typeof Image.resolveAssetSource === 'function') {
+      const r = Image.resolveAssetSource(mod);
+      if (r && r.width && r.height) return r;
+    }
+  } catch (_) { /* ignore */ }
+  try {
+    const a = Asset.fromModule(mod);
+    if (a && a.width && a.height) return a;
+  } catch (_) { /* ignore */ }
+  return null;
+};
+const _emailSrc = _getAssetSize(EMAIL_BANNER);
 const EMAIL_ASPECT = _emailSrc && _emailSrc.width && _emailSrc.height ? _emailSrc.width / _emailSrc.height : 3.4;
 
 const CERT_WIDTH = 1024;

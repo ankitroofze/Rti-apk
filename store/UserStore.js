@@ -997,6 +997,8 @@ const normalizeNewsFeed = (items = []) => {
     report_type: item.report_type || item.category || '',
     language:    String(item.language || item.lang || item.news_language || '').trim().toLowerCase(),
     mediaType:   item.mediaType || 'None',
+    useFrame:    Boolean(item.useFrame),
+    frameTemplate: item.frameTemplate || '',
     state:       item.state || item.category || 'General',
     district:    item.district || '',
     taluka:      item.taluka || '',
@@ -1128,6 +1130,10 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
     description: apiItem.description || '',
     category: apiItem.report_type || apiItem.category || 'General',
     report_type: apiItem.report_type || apiItem.category || '',
+    // backend `use_frame` (1/0) — red breaking frame lagana hai ya nahi
+    useFrame: [1, '1', true, 'true'].includes(apiItem.use_frame ?? apiItem.useFrame),
+    // backend `frame_template` (glossy2 / glossy1 / redbar / banner); na mile to default template
+    frameTemplate: String(apiItem.frame_template ?? apiItem.frameTemplate ?? '') || 'glossy2',
     mediaType,
     media: mediaType === 'Image' ? undefined : mediaUrl,
 images: mediaType === 'Image' ? collectedImages : [],
@@ -1304,6 +1310,8 @@ const normalizeUserNewsItems = (items = []) => {
       category: item.category || item.state || 'General',
       language: String(item.language || item.lang || item.news_language || '').trim().toLowerCase(),
       mediaType: item.mediaType || 'None',
+      useFrame: Boolean(item.useFrame),
+      frameTemplate: item.frameTemplate || '',
       state: item.state || item.category || 'General',
       district: item.district || '',
       taluka: item.taluka || '',
@@ -1466,6 +1474,8 @@ const normalizeEPapers = (items = []) => {
       state:        item.state        || '',
       status:       item.status       || 'approved',
       mediaType:    item.mediaType    || 'None',
+      useFrame:     Boolean(item.useFrame),
+      frameTemplate: item.frameTemplate || '',
       images:       Array.isArray(item.images) ? item.images : [],
       video:        item.video || null,
       views:        Number(item.views     || 0),
@@ -1874,6 +1884,7 @@ const normalizeUser = (user = {}) => {
     profile_update_status: user.profile_update_status ?? null,
     pending_profile_image:     user.pending_profile_image     ?? null,
     pending_profile_image_url: user.pending_profile_image_url ?? null,
+    profile_image_change_count: Number(user.profile_image_change_count ?? 0) || 0,
     id_card:             user.id_card             || '',
     appointment_letter:  user.appointment_letter  || '',
     my_referral_code:    isSubscribed ? (user.my_referral_code || '') : '',
@@ -3631,8 +3642,19 @@ syncRoleSubscriptionV3: async (existingUser) => {
       const purchasedAt = String(
         activeSub.purchased_at || activeSub.start_date || activeSub.created_at || user.subscription_plan?.purchased_at || today
       ).slice(0, 10);
-      const expiresAt = String(activeSub.expires_at || activeSub.expiry || activeSub.end_date || '').slice(0, 10)
+      const expiresAt = String(activeSub.expires_at || activeSub.seat?.expires_at || activeSub.expiry || activeSub.end_date || '').slice(0, 10)
         || addDaysToDateString(purchasedAt, days);
+      // ✅ NEW: backend ab subscription ke andar `seat` {state,district,taluka,village,expires_at} deta hai —
+      // isse active plan ki chuni hui location milti hai ("My Role Subscription" me dikhane ke liye,
+      // aur level plan sirf usi location par "Currently active" dikhe uske liye).
+      const seatObj = (activeSub.seat && typeof activeSub.seat === 'object') ? activeSub.seat : null;
+      const seatLoc = seatObj
+        ? trimLocationToLevel(matchedPlan?.location_level || normalizeLocationLevel(seatObj.level), {
+            state: seatObj.state, district: seatObj.district, taluka: seatObj.taluka, village: seatObj.village,
+          })
+        : null;
+      const sameSeatLoc = !seatLoc || ['state', 'district', 'taluka', 'village'].every((k) =>
+        String(user.subscription_plan?.[k] || '').trim().toLowerCase() === String(seatLoc[k] || '').trim().toLowerCase());
       const planName = matchedPlan?.plan_name || activeSub.plan_name || activeSub.title || activeSub.name
         || activeSub.plan?.title || user.subscription_plan?.plan_name || 'Subscription Plan';
       const newRole = matchedPlan?.role || getRoleFromPlanName(planName);
@@ -3641,11 +3663,13 @@ syncRoleSubscriptionV3: async (existingUser) => {
       const unchanged = user.is_subscribed && user.role === newRole && local
         && String(local.plan_id) === String(localPlanId ?? planIdRaw ?? local.plan_id)
         && String(local.purchased_at || '').slice(0, 10) === purchasedAt
-        && String(local.expires_at || '').slice(0, 10) === expiresAt;
+        && String(local.expires_at || '').slice(0, 10) === expiresAt
+        && sameSeatLoc;
       if (unchanged) return user;
 
       const mergedPlan = {
         ...(matchedPlan || {}),
+        ...(seatLoc || {}),
         plan_id: localPlanId ?? planIdRaw ?? local?.plan_id,
         plan_name: planName,
         price: matchedPlan?.price ?? num(activeSub.price, activeSub.amount, activeSub.plan?.price, local?.price) ?? 0,
@@ -6386,7 +6410,8 @@ getActiveAdsFeed: async (options = {}) => {
         // ✅ FIX: actual field "redirection_url" hai ("url" nahi), aur usi
         // deep-link (rti-news://profile/<email>) se owner ka email nikal rahe hain
         const redirectionUrl = ad.redirection_url || '';
-        let ownerEmail = ad.owner_email || '';
+        const adOwnerObj = ad.owner || ad.user || ad.advertiser || ad.author || {};
+        let ownerEmail = ad.owner_email || adOwnerObj.email || '';
         const profileMatch = redirectionUrl.match(/profile\/([^/?]+)/);
         if (!ownerEmail && profileMatch?.[1]) {
           try { ownerEmail = decodeURIComponent(profileMatch[1]); } catch { ownerEmail = profileMatch[1]; }
@@ -6424,8 +6449,18 @@ getActiveAdsFeed: async (options = {}) => {
           district: ad.district || '',
                 owner_email: ownerEmail,
           owner_id: ad.owner_id ?? ad.user_id ?? null,
-          owner_name: ad.owner_name || 'Advertiser',
-        owner_profile_image: ad.owner_profile_image || '',
+          // Real advertiser name: backend field -> nested owner/user object -> logged-in user (own ad) -> email id
+          owner_name: (() => {
+            const pick = (...v) => v.map((x) => String(x ?? '').trim()).find(Boolean) || '';
+            const mine = ownerEmail && currentUserEmailForAds && String(ownerEmail).trim().toLowerCase() === currentUserEmailForAds;
+            return pick(
+              ad.owner_name, ad.user_name, ad.advertiser_name, ad.author_name,
+              adOwnerObj.name, adOwnerObj.full_name, adOwnerObj.username,
+              mine ? currentUserForAds?.name : '',
+            ) || (ownerEmail ? String(ownerEmail).split('@')[0] : '') || 'Advertiser';
+          })(),
+          owner_profile_image: ad.owner_profile_image || adOwnerObj.profile_image || adOwnerObj.avatar || adOwnerObj.photo
+            || ((ownerEmail && currentUserEmailForAds && String(ownerEmail).trim().toLowerCase() === currentUserEmailForAds) ? (currentUserForAds?.profile_image || currentUserForAds?.avatar || '') : ''),
                   owner_has_blue_tick: Boolean(
             ad.owner_has_blue_tick ||
             ad.has_blue_tick ||

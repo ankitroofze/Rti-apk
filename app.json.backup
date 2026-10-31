@@ -1,26 +1,37 @@
 {
   "expo": {
-     "name": "rti-news",
-  "slug": "rti-news",
-  "scheme": "rtinews",
+    "name": "rti-news",
+    "slug": "rti-news",
+    "scheme": "rtinews",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/app-icon-certificate.png",
+    "icon": "./assets/images/newlogo.png",
     "userInterfaceStyle": "automatic",
-     "newArchEnabled": true,
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/splash-logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.roofze.rtinews",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
-        "NSCameraUsageDescription": "RTI News needs camera access to broadcast your live stream to YouTube.",
-        "NSMicrophoneUsageDescription": "RTI News needs microphone access to broadcast audio during your live stream."
+        "NSCameraUsageDescription": "RTI News needs camera access to take news photos/videos and to broadcast your live stream.",
+        "NSMicrophoneUsageDescription": "RTI News needs microphone access to record video and broadcast audio during your live stream."
       }
     },
     "android": {
+      "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon-certificate.png",
+        "foregroundImage": "./assets/images/newlogo.png",
+        "backgroundColor": "#ffffff"
+      },
+      "splash": {
+        "image": "./assets/images/splash-logo.png",
+        "resizeMode": "contain",
         "backgroundColor": "#ffffff"
       },
       "package": "com.roofze.rtinews",
@@ -34,30 +45,32 @@
         "android.permission.READ_MEDIA_AUDIO",
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
-        "android.permission.ACCESS_MEDIA_LOCATION",
-        "android.permission.READ_MEDIA_IMAGES",
-        "android.permission.READ_MEDIA_VIDEO",
-        "android.permission.READ_MEDIA_AUDIO",
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
-      ]
+        "android.permission.POST_NOTIFICATIONS"
+      ],
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "favicon": "./assets/images/favicon.png",
       "bundler": "metro",
       "output": "single"
     },
-   "plugins": [
+    "plugins": [
+      "@react-native-firebase/app",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow RTI News to use the camera for news photos/videos and QR scanning.",
+          "microphonePermission": "Allow RTI News to use the microphone to record news videos.",
+          "recordAudioAndroid": true
+        }
+      ],
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon-certificate.png",
-          "imageWidth": 220,
+          "image": "./assets/images/splash-logo.png",
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#ffffff",
+          "imageWidth": 200
         }
       ],
       "react-native-nitro-rtmp-publisher",
@@ -86,19 +99,22 @@
         }
       ],
       "expo-sqlite",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-build-properties",
+      "expo-audio",
+      "expo-asset"
     ],
     "runtimeVersion": {
       "policy": "appVersion"
     },
-    "updates": {
-      "url": "https://u.expo.dev/1e155332-fde2-4b4c-8c21-dc1be8c466f4"
-    },
+    "owner": "ankitroofzes-team",
     "extra": {
       "eas": {
-        "projectId": "1e155332-fde2-4b4c-8c21-dc1be8c466f4"
+        "projectId": "0c7d31bb-fb96-4cd6-8848-ba39460ed50b"
       }
     },
-    "owner": "ankit306600"
+    "updates": {
+      "url": "https://u.expo.dev/0c7d31bb-fb96-4cd6-8848-ba39460ed50b"
+    }
   }
 }
