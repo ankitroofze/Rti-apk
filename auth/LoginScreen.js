@@ -21,6 +21,7 @@ export default function LoginScreen({ navigation, route }) {
   const [errors, setErrors] = useState({ email: '', password: '', general: '' });
   const scrollRef = useRef(null);
   const redirectTo = route?.params?.redirectTo || 'Home';
+  const redirectParams = route?.params?.redirectParams || undefined;
 
   const validate = () => {
     const next = { email: '', password: '', general: '' };
@@ -50,7 +51,7 @@ export default function LoginScreen({ navigation, route }) {
     if (!stored) throw new Error('Unable to restore your account details.');
     await UserStore.setCurrentUser(stored.email);
     login();
-    navigation.reset({ index: 0, routes: [{ name: redirectTo }] });
+    navigation.reset({ index: 0, routes: [{ name: redirectTo, ...(redirectParams ? { params: redirectParams } : {}) }] });
   };
 
   useEffect(() => {
@@ -114,7 +115,7 @@ export default function LoginScreen({ navigation, route }) {
       if (String(localUser.password || '') !== password) { setErrors((prev) => ({ ...prev, password: 'Incorrect password. Please try again.' })); return; }
       await UserStore.setCurrentUser(localUser.email);
       login();
-      navigation.reset({ index: 0, routes: [{ name: redirectTo }] });
+      navigation.reset({ index: 0, routes: [{ name: redirectTo, ...(redirectParams ? { params: redirectParams } : {}) }] });
     } catch {
       setErrors((prev) => ({ ...prev, general: 'Login failed. Please try again.' }));
     } finally { setSubmitting(false); }

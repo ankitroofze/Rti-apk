@@ -470,7 +470,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
     navigation?.navigate?.('NewsDetails', { article: full });
   }, [navigation, trendingStories]);
 
-  const routeArticle = route?.params?.article || null;
+  const routeArticle = route?.params?.article || (route?.params?.id ? { id: route.params.id } : null);
   const initialArticle = useMemo(() => normalizeArticle(routeArticle), [routeArticle]);
 
   const [article, setArticle] = useState(initialArticle);
@@ -530,7 +530,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
     () => String(currentUser?.name || currentUser?.full_name || currentUser?.username || '').trim(),
     [currentUser?.full_name, currentUser?.name, currentUser?.username]
   );
-  const articleId = String(routeArticle?.id || initialArticle.id || '').trim();
+  const articleId = String(routeArticle?.id || route?.params?.id || initialArticle.id || '').trim();
 
   const refreshAuthorFollowState = useCallback(async (authorEmail, userEmail = currentUserEmail) => {
     const targetEmail = String(authorEmail || '').trim().toLowerCase();
@@ -572,7 +572,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
   }, [article.author_email, article.author_id, article.author_name, article.author_profile_image, article.createdBy]);
 
   const loadArticleDetails = useCallback(async () => {
-    const fallbackArticle = normalizeArticle(route?.params?.article);
+    const fallbackArticle = normalizeArticle(route?.params?.article || (articleId ? { id: articleId } : null));
     setArticle(fallbackArticle);
     setLikeCount(fallbackArticle.likes);
     setCommentCount(fallbackArticle.comments);
@@ -675,6 +675,12 @@ export default function NewsDetailsScreen({ route, navigation }) {
   useEffect(() => {
     loadArticleDetails();
   }, [loadArticleDetails]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined' && article?.title) {
+      document.title = `${article.title} | RTI News`;
+    }
+  }, [article?.title]);
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', loadArticleDetails);
@@ -1028,7 +1034,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
                    <View style={[styles.storyCardShell, isCompactLayout && styles.storyCardShellCompact]}>
                 <TouchableOpacity
                   style={styles.backButton}
-                  onPress={() => navigation?.goBack?.()}
+                  onPress={() => { if (navigation?.canGoBack?.()) { navigation.goBack(); } else { navigation?.navigate?.('Home'); } }}
                   activeOpacity={0.84}
                 >
                   <Ionicons name="arrow-back-outline" size={25} color="#64748b" />

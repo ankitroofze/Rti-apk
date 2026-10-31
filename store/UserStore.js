@@ -4486,6 +4486,17 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
           } else if (apiRes.ok && Array.isArray(apiRes.news?.data)) {
             apiItems = apiRes.news.data;
           }
+          if (focusItemId && !apiItems.some((item) => String(item.id || '') === String(focusItemId))) {
+            try {
+              const singleRes = await AuthAPI.getNewsById(focusItemId);
+              if (singleRes?.ok && singleRes.news) {
+                const singleObj = Array.isArray(singleRes.news) ? singleRes.news[0] : singleRes.news;
+                if (singleObj) apiItems.unshift(singleObj);
+              }
+            } catch (err) {
+              console.warn('[UserStore.getNewsFeedSummary] single item fallback lookup failed:', err);
+            }
+          }
         } else {
           // News Feed / My Posts: sirf isi user ke news, dedicated my-news routes se
               const apiRes = focusItemId

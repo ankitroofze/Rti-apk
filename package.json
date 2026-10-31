@@ -11,7 +11,8 @@
     "web": "expo start --web",
     "build": "expo export --platform web --max-workers 1 && node ./scripts/fix-web-base-path.js",
     "lint": "expo lint",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "build:plesk": "npm run build && node ./scripts/prepare-plesk-build.js"
   },
   "dependencies": {
     "@10play/tentap-editor": "^1.0.1",

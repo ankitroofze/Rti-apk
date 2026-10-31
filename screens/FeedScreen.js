@@ -880,6 +880,22 @@ function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditC
   const [replyText, setReplyText] = useState('');
   const [expandedReplyThreads, setExpandedReplyThreads] = useState({});
   const [currentUserEmail, setCurrentUserEmail] = useState(null);
+  const targetReelId = route?.params?.id ? String(route.params.id) : null;
+
+  useEffect(() => {
+    if (targetReelId && posts.length > 0) {
+      const idx = posts.findIndex((p) => String(p.id) === targetReelId);
+      if (idx !== -1 && idx !== activeIndex) {
+        setActiveIndex(idx);
+      }
+    }
+  }, [targetReelId, posts]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      document.title = 'Reels & Feeds | RTI News';
+    }
+  }, []);
   const [currentUserName, setCurrentUserName] = useState(null);
   const [currentUserAvatar, setCurrentUserAvatar] = useState('');
   const keyboardInset = useKeyboardInset();
@@ -2076,7 +2092,7 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
 }
 
 // Main Feed Screen
-export default function FeedScreen({ navigation }) {
+export default function FeedScreen({ navigation, route }) {
   const [posts, setPosts]               = useState([]);
   const [uploadVisible, setUploadVisible] = useState(false);
   const [newsLimitModal, setNewsLimitModal] = useState({ visible: false, message: '' });

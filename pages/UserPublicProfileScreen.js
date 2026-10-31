@@ -542,6 +542,12 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     };
   })();
   const name = String(display?.name || display?.author_name || 'User').trim() || 'User';
+
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      document.title = name ? `${name} | RTI News` : 'User Profile | RTI News';
+    }
+  }, [name]);
   const roleLabel = String(display?.role_label || display?.author_role_label || '').trim();
   const state = String(display?.state || display?.author_state || '').trim();
   const district = String(display?.district || display?.author_district || '').trim();
@@ -883,7 +889,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
   // Public https link (WhatsApp / Facebook me clickable). userId ho to wahi, warna email.
   const shareUserId = String(userId || profile?.id || display?.id || '').trim();
-  const profileShareUrl = `${PROFILE_SHARE_BASE}${PROFILE_SHARE_PATH}?${shareUserId ? `userId=${encodeURIComponent(shareUserId)}` : `email=${encodeURIComponent(resolvedEmail || '')}`}`;
+  const profileShareUrl = shareUserId ? `${PROFILE_SHARE_BASE}/user/${encodeURIComponent(shareUserId)}` : `${PROFILE_SHARE_BASE}/user?email=${encodeURIComponent(resolvedEmail || '')}`;
   const profileShareMessage = `${name} on RTI News\n${profileShareUrl}`;
 
   const handleCopyProfileLink = () => {

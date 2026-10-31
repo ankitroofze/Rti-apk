@@ -70,6 +70,15 @@ import PreviewScreen from '../pages/PreviewScreen';
 import QuizSubscriptionScreen from '../screens/QuizSubscriptionScreen';
 import EcomSubscriptionScreen from '../screens/EcomSubscriptionScreen';
 import LegalPolicyScreen from '../pages/LegalPolicyScreen';
+import InfoPageScreen from '../screens/InfoPageScreen';
+import AdLeadResponseScreen from '../screens/AdLeadResponseScreen';
+import IdCardVerifyScreen from '../screens/IdCardVerifyScreen';
+import QrScannerScreen from '../screens/Qrscannerscreen';
+import ChatListScreen from '../pages/ChatListScreen';
+import ChatConversationScreen from '../pages/ChatConversationScreen';
+import GroupInfoScreen from '../pages/GroupInfoScreen';
+import OtpScreen from '../auth/OtpScreen';
+import { linkingConfig } from './linkingConfig';
 
 const Stack = createNativeStackNavigator();
 const NAVIGATION_STATE_KEY = 'rti-news-navigation-state';
@@ -147,6 +156,14 @@ export default function AppNavigator() {
     { name: 'QuizSubscription', component: QuizSubscriptionScreen },
     { name: 'EcomSubscription', component: EcomSubscriptionScreen },
     { name: 'LegalPolicy', component: LegalPolicyScreen },
+    { name: 'InfoPage', component: InfoPageScreen },
+    { name: 'AdLeadResponse', component: AdLeadResponseScreen },
+    { name: 'IdCardVerify', component: IdCardVerifyScreen },
+    { name: 'QrScanner', component: QrScannerScreen },
+    { name: 'ChatList', component: ChatListScreen },
+    { name: 'ChatConversation', component: ChatConversationScreen },
+    { name: 'GroupInfo', component: GroupInfoScreen },
+    { name: 'Otp', component: OtpScreen },
   ];
 
   useEffect(() => {
@@ -189,7 +206,7 @@ export default function AppNavigator() {
   }
 
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer ref={navigationRef} linking={linkingConfig}>
       <Stack.Navigator initialRouteName="Home" screenOptions={{ headerShown: false }}>
         {stackScreens.map(({ name, component }) => (
           <Stack.Screen key={name} name={name} component={component} />

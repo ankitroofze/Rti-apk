@@ -418,9 +418,64 @@ const WEB_MODULES = [
 // ─────────────────────────────────────────────
 //  WEB LAYOUT
 // ─────────────────────────────────────────────
-function QuickMenuWeb({ navigation }) {
+function QuickMenuWeb({ navigation, route }) {
   const { logout } = useAuth();
-  const [activeScreen, setActiveScreen] = React.useState('Profile');
+  const slugToScreen = {
+    'profile': 'Profile',
+    'post-news': 'Add News',
+    'add-news': 'Add News',
+    'news-feed': 'News Feed',
+    'my-network': 'My Network',
+    'network': 'My Network',
+    'wallet': 'Wallet',
+    'withdraw': 'Withdraw',
+    'subscription-plans': 'Subscription Plans',
+    'plans': 'Subscription Plans',
+    'my-subscriptions': 'My Subscriptions',
+    'my-subscription': 'My Subscriptions',
+    'epaper': 'e-Paper',
+    'e-paper': 'e-Paper',
+    'live-streaming': 'Live Streaming',
+    'live': 'Live Streaming',
+    'certification': 'Certification',
+    'notifications': 'Notifications',
+    'alerts': 'Notifications',
+    'ecome': 'Ecome',
+    'shop': 'Ecome',
+    'my-enquiries': 'MyEnquiries',
+    'ecom-enquiries': 'MyEnquiries',
+    'enquiries': 'MyEnquiries',
+  };
+  const screenToSlug = {
+    'Profile': 'profile',
+    'Add News': 'post-news',
+    'News Feed': 'news-feed',
+    'My Network': 'my-network',
+    'Wallet': 'wallet',
+    'Withdraw': 'withdraw',
+    'Subscription Plans': 'subscription-plans',
+    'My Subscriptions': 'my-subscriptions',
+    'e-Paper': 'epaper',
+    'Live Streaming': 'live-streaming',
+    'Certification': 'certification',
+    'Notifications': 'notifications',
+    'Ecome': 'shop',
+    'MyEnquiries': 'ecom-enquiries',
+  };
+
+  const initialParam = String(route?.params?.screen || '').toLowerCase().trim();
+  const resolvedInitial = slugToScreen[initialParam] || WEB_MODULES.find((m) => m.screen.toLowerCase() === initialParam)?.screen || 'Profile';
+  const [activeScreen, setActiveScreen] = React.useState(resolvedInitial);
+
+  React.useEffect(() => {
+    const param = String(route?.params?.screen || '').toLowerCase().trim();
+    if (param) {
+      const target = slugToScreen[param] || WEB_MODULES.find((m) => m.screen.toLowerCase() === param)?.screen;
+      if (target && target !== activeScreen) {
+        setActiveScreen(target);
+      }
+    }
+  }, [route?.params?.screen]);
   // ✅ FIX (web): embedded screens ko navigate() ke params (jaise editItem) aur `route` pehle milte hi nahi the,
   // isliye News Feed se Edit dabane par Add News hamesha khaali form kholta tha.
   const [screenParams, setScreenParams] = React.useState({});
@@ -525,10 +580,14 @@ function QuickMenuWeb({ navigation }) {
       navigation.navigate(item.screen);
       return;
     }
-    // Sidebar se khulne par hamesha fresh screen (purane edit params / history nahi)
     historyRef.current = [];
     setScreenParams((prev) => ({ ...prev, [item.screen]: undefined }));
     setActiveScreen(item.screen);
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const slug = screenToSlug[item.screen] || item.screen.toLowerCase().replace(/\s+/g, '-');
+      window.history.pushState(null, '', `/menu/${slug}`);
+      document.title = `${item.label} | RTI News`;
+    }
   };
 
   // Sirf resize listener — CSS injection hataya gaya (ab module-level pe hoti hai)
@@ -778,9 +837,9 @@ function QuickMenuMobile({ navigation }) {
 // ─────────────────────────────────────────────
 //  EXPORT
 // ─────────────────────────────────────────────
-export default function QuickMenuScreen({ navigation }) {
-  if (Platform.OS === 'web') return <QuickMenuWeb navigation={navigation} />;
-  return <QuickMenuMobile navigation={navigation} />;
+export default function QuickMenuScreen({ navigation, route }) {
+  if (Platform.OS === 'web') return <QuickMenuWeb navigation={navigation} route={route} />;
+  return <QuickMenuMobile navigation={navigation} route={route} />;
 }
 
 const styles = StyleSheet.create({

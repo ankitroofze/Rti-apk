@@ -1134,7 +1134,7 @@ const handleOpenLeadForm = useCallback((story) => {
       subheadline: source.description || '',
       thumbnails: gallery,
       image,
-      ctaLabel: 'SHOP NOW',
+      ctaLabel: 'Click Me',
       redirect: source.redirect,
       extraValues: source.extraValues,
       owner_email: source.owner_email,
