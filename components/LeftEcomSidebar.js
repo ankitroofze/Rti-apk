@@ -130,7 +130,17 @@ export default function LeftEcomSidebar({ navigation, stories = [], onOpenDetail
 
 const styles = StyleSheet.create({
    sidebarShell: { width: '100%', gap: 12 },
-  card: { borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff', borderRadius: 12, padding: 14, shadowColor: '#0f172a', shadowOpacity: 0.04, shadowRadius: 8, elevation: 2 },
+  card: {
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 14,
+    ...Platform.select({
+      web: { boxShadow: '0 2px 10px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04)' },
+      default: { shadowColor: '#0f172a', shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
+    }),
+  },
   cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   cardTitle: { flex: 1, fontSize: 16, fontWeight: '800', color: '#172033', fontFamily: 'Roboto' },
   viewAll: { color: '#dc2626', fontSize: 12, fontWeight: '800', fontFamily: 'Roboto' },

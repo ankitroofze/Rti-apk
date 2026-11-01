@@ -35,6 +35,41 @@ function copyRecursive(src, dest) {
 copyRecursive(distDir, outDir);
 console.log('[prepare-plesk-build] Copied dist files into out/');
 
+// 2b. Ensure out/index.html has <base href="/" /> and root-absolute paths for deep route refreshes
+const outIndexHtmlPath = path.join(outDir, 'index.html');
+if (fs.existsSync(outIndexHtmlPath)) {
+  let html = fs.readFileSync(outIndexHtmlPath, 'utf8');
+
+  // Insert or update <base href="/" />
+  const baseTag = '<base href="/" />';
+  const baseMetaRe = /<base\s+[^>]*href=(["'])(.*?)\1[^>]*\/?>/i;
+  if (baseMetaRe.test(html)) {
+    html = html.replace(baseMetaRe, baseTag);
+  } else {
+    const charsetRe = /<meta\s+charset=(["']).*?\1\s*\/?>/i;
+    if (charsetRe.test(html)) {
+      html = html.replace(charsetRe, (tag) => `${tag}\n    ${baseTag}`);
+    } else {
+      html = html.replace(/<head(\s[^>]*)?>/i, (tag) => `${tag}\n    ${baseTag}`);
+    }
+  }
+
+  // Enforce root-absolute asset paths
+  html = html.replaceAll('"assets/', '"/assets/');
+  html = html.replaceAll("'assets/", "'/assets/");
+  html = html.replaceAll('"_expo/', '"/_expo/');
+  html = html.replaceAll("'_expo/", "'/_expo/");
+  html = html.replaceAll('"favicon.ico', '"/favicon.ico');
+  html = html.replaceAll("'favicon.ico", "'/favicon.ico");
+  html = html.replaceAll('src="./', 'src="/');
+  html = html.replaceAll('href="./', 'href="/');
+  html = html.replaceAll('"//_expo/', '"/_expo/');
+  html = html.replaceAll('"//assets/', '"/assets/');
+
+  fs.writeFileSync(outIndexHtmlPath, html, 'utf8');
+  console.log('[prepare-plesk-build] Verified root-absolute paths and <base href="/" /> in out/index.html');
+}
+
 // 3. Write web.config for IIS Windows Plesk
 const webConfigContent = `<?xml version="1.0" encoding="UTF-8"?>
 <configuration>
@@ -55,14 +90,20 @@ const webConfigContent = `<?xml version="1.0" encoding="UTF-8"?>
           <action type="Rewrite" url="api-proxy.php?__proxy_endpoint={R:1}" appendQueryString="true" />
         </rule>
 
-        <!-- Rule 2: Single Page Application (SPA) routing fallback to index.html -->
+        <!-- Rule 2: Exclude physical files and directories from SPA rewrite -->
+        <rule name="StaticFiles" stopProcessing="true">
+          <match url=".*" />
+          <conditions logicalGrouping="MatchAny">
+            <add input="{REQUEST_FILENAME}" matchType="IsFile" />
+            <add input="{REQUEST_FILENAME}" matchType="IsDirectory" />
+          </conditions>
+          <action type="None" />
+        </rule>
+
+        <!-- Rule 3: Single Page Application (SPA) routing fallback to root /index.html -->
         <rule name="SPARoutes" stopProcessing="true">
           <match url=".*" />
-          <conditions logicalGrouping="MatchAll">
-            <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
-            <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
-          </conditions>
-          <action type="Rewrite" url="index.html" />
+          <action type="Rewrite" url="/index.html" />
         </rule>
       </rules>
     </rewrite>
@@ -251,7 +292,7 @@ $bodyContent = substr($response, $headerSize);
 http_response_code($httpCode);
 
 // 6. Forward Response Headers
-$headersList = explode("\r\n", $headerContent);
+$headersList = explode("\\r\\n", $headerContent);
 foreach ($headersList as $hdr) {
     $hdrTrimmed = trim($hdr);
     if (empty($hdrTrimmed) || stripos($hdrTrimmed, 'HTTP/') === 0) continue;
@@ -275,10 +316,13 @@ const htaccessContent = `<IfModule mod_rewrite.c>
   # Forward API calls to PHP proxy
   RewriteRule ^api-proxy(/.*)?$ api-proxy.php?__proxy_endpoint=$1 [QSA,L]
 
-  # Single Page Application (SPA) routing fallback to index.html
-  RewriteCond %{REQUEST_FILENAME} !-f
-  RewriteCond %{REQUEST_FILENAME} !-d
-  RewriteRule ^ index.html [L]
+  # Exclude existing physical files and directories from SPA rewrite
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Single Page Application (SPA) routing fallback to root /index.html
+  RewriteRule ^ /index.html [L]
 </IfModule>
 `;
 fs.writeFileSync(path.join(outDir, '.htaccess'), htaccessContent, 'utf8');
@@ -286,11 +330,10 @@ fs.writeFileSync(path.join(outDir, '.htaccess'), htaccessContent, 'utf8');
 // 5. Create out.zip using PowerShell
 try {
   if (fs.existsSync(outZip)) fs.unlinkSync(outZip);
-  execSync(`powershell -NoProfile -Command "Compress-Archive -Path '${outDir}\\*' -DestinationPath '${outZip}' -Force"`);
+  execSync(`powershell -NoProfile -Command "Compress-Archive -Path '${outDir}\\\\*' -DestinationPath '${outZip}' -Force"`);
   console.log('[prepare-plesk-build] Created out.zip successfully.');
 } catch (e) {
   console.warn('[prepare-plesk-build] Could not create zip archive automatically:', e.message);
 }
 
 console.log('[prepare-plesk-build] Finished successfully. Target folder: "out" and archive: "out.zip"');
-

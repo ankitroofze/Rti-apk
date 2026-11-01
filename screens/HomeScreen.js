@@ -52,7 +52,7 @@ function homeStoryFromAd(ad = {}) {
     ad.photo || ad.image || ad.image_url || ad.images?.[0] || ad.photos?.[0] || ''
   ).trim();
   return {
-    id: String(ad.id || ad.feed_id || (ad.ad_id ? `ad-feed-${ad.ad_id}` : 'ad-item')),
+    id: String(ad.feed_id || (ad.id ? (String(ad.id).startsWith('ad-feed-') ? String(ad.id) : `ad-feed-${ad.id}`) : (ad.ad_id ? `ad-feed-${ad.ad_id}` : 'ad-item'))),
     isAd: true,
     title: ad.title || 'Sponsored Advertisement',
     subtitle: 'Sponsored',
@@ -391,7 +391,7 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
           >
             {group.map((a, gi) => (
               <TouchableOpacity
-                key={String(a.id)}
+                key={`group-ad-${a?.id ?? 'ad'}-${gi}`}
                 style={{ width: slideW, alignItems: 'center', alignSelf: 'flex-start' }}
                 activeOpacity={0.92}
                 onPress={() => onPress?.(a)}
@@ -429,7 +429,7 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
           <AdCtaButtons ad={group[Math.min(page, group.length - 1)]} onOpenLeadForm={onOpenLeadForm} />
           <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 8 }}>
             {group.map((a, i) => (
-              <View key={String(a.id)} style={{ width: i === page ? 16 : 6, height: 6, borderRadius: 3, backgroundColor: i === page ? '#f97316' : '#cbd5e1' }} />
+              <View key={`group-dot-${a?.id ?? 'ad'}-${i}`} style={{ width: i === page ? 16 : 6, height: 6, borderRadius: 3, backgroundColor: i === page ? '#f97316' : '#cbd5e1' }} />
             ))}
           </View>
         </View>
@@ -1304,7 +1304,7 @@ const handleOpenLeadForm = useCallback((story) => {
                       ) : null}
                       {allNewsList.map((story, index) => (
                         <NewsFeedCard
-                          key={story.id} story={story} isCompactLayout={isMobileLayout}
+                          key={`all-news-${story.id || 'item'}-${index}`} story={story} isCompactLayout={isMobileLayout}
                           altShade={isMobileLayout && index % 2 === 1}
                           navigation={navigation}
                           onOpenDetails={handleOpenDetails} onOpenLocation={handleOpenLocation}
@@ -1330,9 +1330,9 @@ const handleOpenLeadForm = useCallback((story) => {
                       <Text style={{ color: '#f97316', fontWeight: '800', fontSize: 13 }}>Back to News Feed</Text>
                     </TouchableOpacity>
                     <View style={[styles.storyCardsStack, isMobileLayout && styles.storyCardsStackMobile]}>
-                      {allAdsList.map((story) => (
+                      {allAdsList.map((story, index) => (
                         <NewsFeedCard
-                          key={story.id} story={story} isCompactLayout={isMobileLayout}
+                          key={`all-ad-${story.id || 'item'}-${index}`} story={story} isCompactLayout={isMobileLayout}
                           navigation={navigation}
                           onOpenDetails={handleOpenDetails} onOpenLocation={handleOpenLocation}
                           onOpenCategory={handleOpenCategory} onOpenAuthorProfile={handleOpenAuthorProfile}
@@ -1365,7 +1365,7 @@ const handleOpenLeadForm = useCallback((story) => {
                     ) : null}
                     <View style={[styles.storyCardsStack, isMobileLayout && styles.storyCardsStackMobile]}>
                       {visibleStories.map((story, index) => (
-                        <React.Fragment key={story.id}>
+                        <React.Fragment key={`story-${story.id || 'item'}-${index}`}>
                         {story.isAd ? (
                           <InFeedAdSlot ad={story} onPress={handleSponsoredAdPress} onOpenLeadForm={handleOpenLeadForm} />
                         ) : story.isEcome ? (
@@ -1374,7 +1374,7 @@ const handleOpenLeadForm = useCallback((story) => {
                         : null)
                       ) : (
                                             <NewsFeedCard
-                           key={story.id} story={story} isCompactLayout={isMobileLayout}
+                           key={`news-${story.id || 'item'}-${index}`} story={story} isCompactLayout={isMobileLayout}
                            altShade={isMobileLayout && index % 2 === 1}
   navigation={navigation}
   onOpenDetails={handleOpenDetails} onOpenLocation={handleOpenLocation}
@@ -1476,16 +1476,16 @@ const handleOpenLeadForm = useCallback((story) => {
 }
 
 const styles = StyleSheet.create({
-  screenShell: { flex: 1, backgroundColor: '#ffffff' },
-  pageScrollView: { flex: 1, backgroundColor: '#ffffff' },
-  pageScrollContent: { paddingTop: 4, paddingBottom: 0, backgroundColor: '#ffffff' },
-  pageScrollContentMobile: { paddingTop: 0 },
+  screenShell: { flex: 1, backgroundColor: '#f1f5f9' },
+  pageScrollView: { flex: 1, backgroundColor: '#f1f5f9' },
+  pageScrollContent: { paddingTop: 4, paddingBottom: 0, backgroundColor: '#f1f5f9' },
+  pageScrollContentMobile: { paddingTop: 0, backgroundColor: '#f1f5f9' },
   pageScrollContentWithMobileNav: { paddingBottom: 90 },
   // ✅ center everything below the header: full-width row that centers its
   // child (pageBodyInner) horizontally, so the whole body section sits in
   // the middle of the page instead of drifting to one side
-  pageBodyShell: { paddingHorizontal: 0, paddingTop: 0, marginTop: -1, backgroundColor: '#ffffff', width: '100%', alignItems: 'center' },
-  pageBodyInner: { maxWidth: 1440, width: '100%', alignSelf: 'center', flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 2 },
+  pageBodyShell: { paddingHorizontal: 0, paddingTop: 0, marginTop: -1, backgroundColor: '#f1f5f9', width: '100%', alignItems: 'center' },
+  pageBodyInner: { maxWidth: 1440, width: '100%', alignSelf: 'center', flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 12 },
   pageBodyInnerCompact: { flexDirection: 'column' },
   pageBodyInnerMobile: { maxWidth: '100%' },
 
@@ -1497,10 +1497,39 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f0f2f7',
     marginBottom: 4,
   },
-  topAdSlot: { width: '100%', maxWidth: 970, alignSelf: 'center', marginVertical: 10, alignItems: 'center' },
+  topAdSlot: {
+    width: '100%',
+    maxWidth: 970,
+    alignSelf: 'center',
+    marginVertical: 10,
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 10,
+    ...Platform.select({
+      web: { boxShadow: '0 2px 10px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04)' },
+      default: { elevation: 2, shadowColor: '#0f172a', shadowOpacity: 0.06, shadowRadius: 6 },
+    }),
+  },
   topAdImage: { width: '100%', height: 90, maxWidth: 960, backgroundColor: '#e2e8f0' },
   adCaption: { fontSize: 9, color: '#64748b', fontWeight: '700', marginBottom: 3, letterSpacing: 0.3 },
-   inFeedAdSlot: { width: '100%', marginVertical: 12, alignItems: 'center' },
+   inFeedAdSlot: {
+    width: '100%',
+    marginVertical: 10,
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    ...Platform.select({
+      web: { boxShadow: '0 2px 10px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04)' },
+      default: { elevation: 2, shadowColor: '#0f172a', shadowOpacity: 0.06, shadowRadius: 6 },
+    }),
+  },
   inFeedAdImage: { width: '100%', height: 230, backgroundColor: '#e2e8f0' },
 
   sidebarStickyWrapper: {
@@ -1590,7 +1619,18 @@ const ecomeRowStyles = StyleSheet.create({
 });
 
 const ecomeTopStyles = StyleSheet.create({
-  wrap: { marginBottom: 12, backgroundColor: '#fff', paddingVertical: 10 },
+  wrap: {
+    marginBottom: 12,
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    paddingVertical: 10,
+    ...Platform.select({
+      web: { boxShadow: '0 2px 10px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04)' },
+      default: { elevation: 2, shadowColor: '#0f172a', shadowOpacity: 0.06, shadowRadius: 6 },
+    }),
+  },
   wrapCompact: { marginBottom: 6 },
   headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingHorizontal: 12, marginBottom: 8 },
   heading: { color: '#0f172a', fontSize: 16, fontWeight: '800', fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
@@ -1600,7 +1640,19 @@ const ecomeTopStyles = StyleSheet.create({
 });
 
 const ecomeStyles = StyleSheet.create({
-  card: { flexDirection: 'row', backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#d1d5db', borderRadius: 12, overflow: 'hidden', marginBottom: 12 },
+  card: {
+    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 12,
+    ...Platform.select({
+      web: { boxShadow: '0 2px 10px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04)' },
+      default: { elevation: 2, shadowColor: '#0f172a', shadowOpacity: 0.06, shadowRadius: 6 },
+    }),
+  },
   image: { width: 126, minHeight: 174, backgroundColor: '#f3f4f6' },
   imageFallback: { alignItems: 'center', justifyContent: 'center' },
   body: { flex: 1, padding: 13, minWidth: 0 },

@@ -108,10 +108,14 @@ const styles = StyleSheet.create({
     width: 252,
     backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderTopWidth: 0,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
     padding: 14,
     gap: 10,
+    ...Platform.select({
+      web: { boxShadow: '0 2px 10px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04)' },
+      default: { shadowColor: '#0f172a', shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
+    }),
   },
   sidebarMenuButton: {
     borderWidth: 1,

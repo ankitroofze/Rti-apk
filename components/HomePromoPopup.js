@@ -420,7 +420,7 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
             const active = i === index;
             const fill = done ? 1 : active ? (AD_SECONDS - remaining) / AD_SECONDS : 0;
             return (
-              <View key={String(a.id ?? i)} style={styles.progressTrack}>
+              <View key={`progress-${a?.id ?? 'ad'}-${i}`} style={styles.progressTrack}>
                 <View style={[styles.progressFill, { width: `${Math.round(fill * 100)}%` }]} />
               </View>
             );

@@ -46,21 +46,44 @@ async function patchFile(filePath, basePath) {
     next = next.replaceAll('src="/', `src="${basePath}/`);
     next = next.replaceAll("src='/", `src='${basePath}/`);
   } else {
-    // Make asset paths relative so the build works when opened from a folder/subpath.
-    next = next.replaceAll('"/assets/', '"assets/');
-    next = next.replaceAll("'/assets/", "'assets/");
-    next = next.replaceAll('"/_expo/', '"_expo/');
-    next = next.replaceAll("'/_expo/", "'_expo/");
-    next = next.replaceAll('"/favicon.ico', '"favicon.ico');
-    next = next.replaceAll("'/favicon.ico", "'favicon.ico");
-    next = next.replaceAll('href="/', 'href="./');
-    next = next.replaceAll("href='/", "href='./");
-    next = next.replaceAll('src="/', 'src="./');
-    next = next.replaceAll("src='/", "src='./");
+    // Default root domain deployment (e.g. https://demo.bhartiyamahitiadhikar.com).
+    // Sub-routes like /menu/withdraw, /news/:id, /about REQUIRE root-absolute paths
+    // so refreshing any page never mistakenly resolves assets relative to subfolders.
+    next = next.replaceAll('"assets/', '"/assets/');
+    next = next.replaceAll("'assets/", "'/assets/");
+    next = next.replaceAll('"_expo/', '"/_expo/');
+    next = next.replaceAll("'_expo/", "'/_expo/");
+    next = next.replaceAll('"favicon.ico', '"/favicon.ico');
+    next = next.replaceAll("'favicon.ico", "'/favicon.ico");
+    next = next.replaceAll('href="./', 'href="/');
+    next = next.replaceAll("href='./", "href='/");
+    next = next.replaceAll('src="./', 'src="/');
+    next = next.replaceAll("src='./", "src='/");
+
+    // Clean up any double leading slashes if previously patched
+    next = next.replaceAll('"//_expo/', '"/_expo/');
+    next = next.replaceAll("'//_expo/", "'/_expo/");
+    next = next.replaceAll('"//assets/', '"/assets/');
+    next = next.replaceAll("'//assets/", "'/assets/");
   }
 
-  // Fix viewport to prevent zooming on mobile (and stop iOS "input focus" auto-zoom).
+  // Inject or verify <base href="..." /> in index.html to guarantee all deep links and refreshes resolve correctly
   if (path.basename(filePath).toLowerCase() === 'index.html') {
+    const targetBaseHref = useBasePath ? `${basePath}/` : '/';
+    const baseTag = `<base href="${targetBaseHref}" />`;
+    const baseMetaRe = /<base\s+[^>]*href=(["'])(.*?)\1[^>]*\/?>/i;
+
+    if (baseMetaRe.test(next)) {
+      next = next.replace(baseMetaRe, baseTag);
+    } else {
+      const charsetRe = /<meta\s+charset=(["']).*?\1\s*\/?>/i;
+      if (charsetRe.test(next)) {
+        next = next.replace(charsetRe, (tag) => `${tag}\n    ${baseTag}`);
+      } else {
+        next = next.replace(/<head(\s[^>]*)?>/i, (tag) => `${tag}\n    ${baseTag}`);
+      }
+    }
+
     const desiredViewport = 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no';
     const viewportMetaRe = /<meta\s+[^>]*name=(["'])viewport\1[^>]*>/i;
     const contentAttrRe = /content=(["'])(.*?)\1/i;
@@ -124,7 +147,7 @@ async function main() {
   if (basePath && basePath !== '/') {
     process.stdout.write(`[fix-web-base-path] Patched ${changed} file(s) with basePath="${basePath}".\n`);
   } else {
-    process.stdout.write(`[fix-web-base-path] Patched ${changed} file(s) to use relative asset paths.\n`);
+    process.stdout.write(`[fix-web-base-path] Patched ${changed} file(s) to use root-absolute asset paths with <base href="/".\n`);
   }
 }
 

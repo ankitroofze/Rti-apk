@@ -13,40 +13,41 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     marginRight: 10,
     marginTop: 10,
-    borderRadius: 6, // ✅ Border radius 6px
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#cbcdd1',
-    overflow: 'visible',
+    borderColor: '#e2e8f0',
+    overflow: 'hidden',
     ...Platform.select({
-      web: { boxShadow: '0 2px 12px rgba(15, 23, 42, 0.07)' },
+      web: { boxShadow: '0 2px 10px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04)' },
       default: {
         elevation: 2,
-        shadowColor: '#000000',
+        shadowColor: '#0f172a',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.07,
+        shadowOpacity: 0.06,
         shadowRadius: 6,
       },
     }),
   },
-  // Android home feed is an editorial list: no floating card treatment, only
-  // a clean white surface with a divider between consecutive news posts.
   androidStoryCardShell: {
-    marginLeft: 0,
-    marginRight: 0,
-    marginTop: 0,
-    borderWidth: 0,
-    borderRadius: 0,
-    elevation: 0,
-    shadowOpacity: 0,
+    marginHorizontal: 8,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 12,
+    elevation: 2,
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
   },
 
   cardSeparator: {
-    height: 10,
-    backgroundColor: '#f2f3f5',
+    height: 4,
+    backgroundColor: 'transparent',
   },
   androidCardSeparator: {
-    height: 1,
-    backgroundColor: '#e5e7eb',
+    height: 4,
+    backgroundColor: 'transparent',
   },
 
   // ── Author row ──
