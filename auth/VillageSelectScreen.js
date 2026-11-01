@@ -211,13 +211,14 @@ export default function VillageSelectScreen({ navigation, route }) {
 
   // Registration (verified email OTP ke saath) Register screen par hi server par ho chuki hoti hai.
   // Yahan sirf location server par update hoti hai.
-  const syncRegistrationLocation = async (villageValue = '') => {
+  const syncRegistrationLocation = async (villageValue = '', tokenOverride = null) => {
     try {
       const stateResult = await AuthAPI.updateState({
         state: selectedState,
         district: selectedDistrict,
         taluka: selectedTaluka,
         village: villageValue,
+        token: tokenOverride,
       });
       if (!stateResult.ok) console.warn('[VillageSelect] State API failed:', stateResult.message);
     } catch (error) {
@@ -266,7 +267,7 @@ export default function VillageSelectScreen({ navigation, route }) {
         await UserStore.clearPendingRegistration();
       } catch (e) { console.warn('[register] local setup failed:', e?.message || e); }
 
-      syncRegistrationLocation(villageValue);
+      syncRegistrationLocation(villageValue, commit.token);
 
       goToHome(pending.name, true);
       return;
@@ -320,7 +321,7 @@ export default function VillageSelectScreen({ navigation, route }) {
         await UserStore.clearPendingRegistration();
       } catch (e) { console.warn('[register] local setup failed:', e?.message || e); }
 
-      syncRegistrationLocation('');
+      syncRegistrationLocation('', commit.token);
 
       goToHome(pending.name, true);
       return;

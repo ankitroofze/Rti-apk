@@ -171,19 +171,21 @@ $parsedUrl = parse_url($requestUri);
 $path = $parsedUrl['path'] ?? '';
 $queryString = $parsedUrl['query'] ?? '';
 
-$prefix = '/api-proxy';
 $endpoint = '';
-
-if (stripos($path, $prefix) === 0) {
-    $endpoint = substr($path, strlen($prefix));
-} elseif (isset($_GET['__proxy_endpoint'])) {
+if (isset($_GET['__proxy_endpoint']) && strlen(trim($_GET['__proxy_endpoint'])) > 0) {
     $endpoint = $_GET['__proxy_endpoint'];
+} elseif (preg_match('#^/api-proxy(?:/(.*))?$#i', $path, $m)) {
+    $endpoint = $m[1] ?? '';
 } else {
     $endpoint = $path;
 }
 
 $endpoint = ltrim($endpoint, '/');
-$targetUrl = rtrim($TARGET_BASE, '/') . '/' . $endpoint;
+// Guard: prevent resolving to .php or api-proxy.php
+if ($endpoint === '.php' || $endpoint === 'api-proxy.php') {
+    $endpoint = '';
+}
+$targetUrl = rtrim($TARGET_BASE, '/') . ($endpoint !== '' ? '/' . $endpoint : '');
 
 if (!empty($queryString)) {
     parse_str($queryString, $queryParams);
@@ -199,10 +201,11 @@ $ch = curl_init($targetUrl);
 curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HEADER, true);
-curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+curl_setopt($ch, CURLOPT_FOLLOWLOCATION, false);
 curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
 curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
 curl_setopt($ch, CURLOPT_TIMEOUT, 60);
+curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
 
 // 3. Forward Incoming Headers
 $requestHeaders = [];
@@ -218,18 +221,36 @@ if (function_exists('getallheaders')) {
     }
 }
 
+// FastCGI / IIS Header Fixes:
+if (!empty($_SERVER['CONTENT_TYPE']) && empty($allHeaders['Content-Type']) && empty($allHeaders['content-type'])) {
+    $allHeaders['Content-Type'] = $_SERVER['CONTENT_TYPE'];
+}
+if (empty($allHeaders['Authorization']) && empty($allHeaders['authorization'])) {
+    if (!empty($_SERVER['HTTP_AUTHORIZATION'])) {
+        $allHeaders['Authorization'] = $_SERVER['HTTP_AUTHORIZATION'];
+    } elseif (!empty($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+        $allHeaders['Authorization'] = $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+    }
+}
+
 $isMultipart = false;
+$hasContentType = false;
 foreach ($allHeaders as $name => $value) {
     $lower = strtolower($name);
-    if (in_array($lower, ['host', 'content-length', 'expect'])) {
+    if (in_array($lower, ['host', 'content-length', 'expect', 'connection', 'transfer-encoding'])) {
         continue;
     }
-    if ($lower === 'content-type' && stripos($value, 'multipart/form-data') !== false) {
-        $isMultipart = true;
-        continue;
+    if ($lower === 'content-type') {
+        $hasContentType = true;
+        if (stripos($value, 'multipart/form-data') !== false) {
+            $isMultipart = true;
+            continue; // let cURL handle boundary
+        }
     }
     $requestHeaders[] = "{$name}: {$value}";
 }
+// Disable Expect: 100-continue which causes IIS / WAF to 417 / 403
+$requestHeaders[] = 'Expect:';
 
 // 4. Forward Request Body
 if (!in_array($method, ['GET', 'HEAD', 'OPTIONS'])) {
@@ -261,6 +282,10 @@ if (!in_array($method, ['GET', 'HEAD', 'OPTIONS'])) {
         $rawInput = file_get_contents('php://input');
         if ($rawInput !== false && strlen($rawInput) > 0) {
             curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
+            $requestHeaders[] = 'Content-Length: ' . strlen($rawInput);
+            if (!$hasContentType) {
+                $requestHeaders[] = 'Content-Type: application/json';
+            }
         }
     }
 }
@@ -292,7 +317,7 @@ $bodyContent = substr($response, $headerSize);
 http_response_code($httpCode);
 
 // 6. Forward Response Headers
-$headersList = explode("\\r\\n", $headerContent);
+$headersList = explode("\r\n", $headerContent);
 foreach ($headersList as $hdr) {
     $hdrTrimmed = trim($hdr);
     if (empty($hdrTrimmed) || stripos($hdrTrimmed, 'HTTP/') === 0) continue;

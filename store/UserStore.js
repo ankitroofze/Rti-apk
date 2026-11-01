@@ -3186,7 +3186,7 @@ consumeQuizAttempt: async () => {
     const done = { ...pending, server_registered: true, otp: '' };
     _pendingRegistrationMemory = done;
     try { await AsyncStorage.setItem(PENDING_REG_KEY, JSON.stringify(done)); } catch (_) { /* ignore */ }
-    return { ok: true, pending: done };
+    return { ok: true, pending: done, token: result.token || result.data?.token || null };
   },
 
   clearPendingRegistration: async () => {

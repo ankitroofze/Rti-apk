@@ -16,6 +16,9 @@ config.server = {
           changeOrigin: true,
           secure: true,
           pathRewrite: { '^/api-proxy': '/api' },
+          onProxyReq: (proxyReq) => {
+            proxyReq.removeHeader('transfer-encoding');
+          },
           onError: (err, req2, res2) => {
             console.error('[PROXY ERROR]', req2.url, '->', err.code, err.message);
             res2.writeHead(502, { 'Content-Type': 'application/json' });

@@ -45,7 +45,8 @@ export function filterAndRank(items, query) {
 
 export default function LocationDropdownModal({ visible, title, items, selected, onSelect, onClose, placeholder, emptyText }) {
   const [search, setSearch] = useState('');
-  const [locked, setLocked] = useState(true); // readOnly-until-focus: Chrome autofill popup ko rokta hai
+  const [locked, setLocked] = useState(true);
+  const [isFocused, setIsFocused] = useState(false); // readOnly-until-focus: Chrome autofill popup ko rokta hai
   const [inputName] = useState(() => `rti_loc_${Math.random().toString(36).slice(2, 9)}`);
 
   useEffect(() => { if (!visible) { setSearch(''); setLocked(true); } }, [visible]);
@@ -67,7 +68,7 @@ export default function LocationDropdownModal({ visible, title, items, selected,
           <div style={st.handle} />
           <div style={st.title}>{title}</div>
 
-          <div style={st.searchWrap}>
+          <div style={{ ...st.searchWrap, ...(isFocused ? { borderColor: '#94a3b8', boxShadow: '0 0 0 1px #cbd5e1' } : null) }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B91C1C" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
               <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
@@ -80,7 +81,8 @@ export default function LocationDropdownModal({ visible, title, items, selected,
               placeholder={placeholder || 'Search...'}
               autoFocus
               readOnly={locked}
-              onFocus={() => setLocked(false)}
+              onFocus={() => { setLocked(false); setIsFocused(true); }}
+              onBlur={() => setIsFocused(false)}
               autoComplete="off"
               autoCorrect="off"
               autoCapitalize="none"
@@ -135,7 +137,7 @@ const st = {
   handle: { width: 40, height: 4, background: '#EEEEEE', borderRadius: 99, alignSelf: 'center', marginBottom: 14, flexShrink: 0 },
   title: { fontSize: 16, fontWeight: 800, color: '#111111', marginBottom: 12, textAlign: 'center', fontFamily: FONT, flexShrink: 0 },
   searchWrap: { display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 8, background: '#F8F8F8', border: '1.5px solid #EEEEEE', borderRadius: 12, padding: '9px 12px', marginBottom: 10, flexShrink: 0 },
-  searchInput: { flex: 1, minWidth: 0, fontSize: 14, color: '#111111', padding: 0, border: 'none', outline: 'none', background: 'transparent', fontFamily: FONT },
+  searchInput: { flex: 1, minWidth: 0, fontSize: 14, color: '#111111', padding: 0, border: 'none', outline: 'none', boxShadow: 'none', background: 'transparent', fontFamily: FONT },
   clearBtn: { border: 'none', background: 'transparent', color: '#9ca3af', fontSize: 14, cursor: 'pointer', padding: 0, lineHeight: 1 },
   list: { overflowY: 'auto', maxHeight: 320, minHeight: 0, flex: '0 1 auto' },
   item: { minHeight: 43, display: 'flex', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: '0 14px', borderRadius: 12, marginBottom: 3, cursor: 'pointer', boxSizing: 'border-box' },

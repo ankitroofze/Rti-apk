@@ -54,8 +54,8 @@ function PromoVideoWeb({ uri, onSize }) {
         pr.catch(() => {
           try {
             el.muted = true;
-            el.play?.().catch(() => {});
-          } catch (_) {}
+            el.play?.().catch(() => { });
+          } catch (_) { }
         });
       }
     };
@@ -67,7 +67,7 @@ function PromoVideoWeb({ uri, onSize }) {
     }
 
     return () => {
-      try { el.pause?.(); } catch (_) {}
+      try { el.pause?.(); } catch (_) { }
     };
   }, [uri, onSize]);
 
@@ -122,7 +122,7 @@ function PromoVideo({ uri, poster, onSize }) {
       p.muted = getGlobalMuted();
       p.volume = 1;
       p.play();
-    } catch (_) {}
+    } catch (_) { }
   });
 
   useEffect(() => { safeSetMuted(player, muted); }, [player, muted]);
@@ -133,10 +133,10 @@ function PromoVideo({ uri, poster, onSize }) {
       const sz = track?.size;
       if (sz?.width && sz?.height) onSize({ w: sz.width, h: sz.height });
     };
-    try { report(player.videoTrack); } catch (_) {}
+    try { report(player.videoTrack); } catch (_) { }
     let sub;
-    try { sub = player.addListener?.('videoTrackChange', (e) => report(e?.videoTrack ?? e)); } catch (_) {}
-    return () => { try { sub?.remove?.(); } catch (_) {} };
+    try { sub = player.addListener?.('videoTrackChange', (e) => report(e?.videoTrack ?? e)); } catch (_) { }
+    return () => { try { sub?.remove?.(); } catch (_) { } };
   }, [player, onSize]);
 
   useEffect(() => {
@@ -228,7 +228,7 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
   useEffect(() => {
     list.forEach((a) => {
       const uri = String(a.image || a.brandLogo || '').trim();
-      if (uri) Image.prefetch(uri).catch(() => {});
+      if (uri) Image.prefetch(uri).catch(() => { });
     });
   }, [list]);
 
@@ -279,7 +279,7 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
     const live = new Set(rawListRef.current.map(adKey));
     Object.keys(next).forEach((k) => { if (!live.has(k)) delete next[k]; });
     seenRef.current = next;
-    AsyncStorage.setItem(SEEN_KEY, JSON.stringify(next)).catch(() => {});
+    AsyncStorage.setItem(SEEN_KEY, JSON.stringify(next)).catch(() => { });
   }, [visible, currentKey]);
 
   // Har ad ka 5s countdown
@@ -310,7 +310,7 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
     const uri = String(current.image || current.brandLogo || '').trim();
     if (!uri) return;
     let alive = true;
-    Image.getSize(uri, (w, h) => { if (alive && w && h) setMediaNatural({ w, h }); }, () => {});
+    Image.getSize(uri, (w, h) => { if (alive && w && h) setMediaNatural({ w, h }); }, () => { });
     return () => { alive = false; };
   }, [currentKey]);
 

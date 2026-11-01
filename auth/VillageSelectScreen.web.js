@@ -54,13 +54,14 @@ export default function VillageSelectScreen({ navigation, route }) {
     }
   };
 
-  const syncRegistrationLocation = async (villageValue = '') => {
+  const syncRegistrationLocation = async (villageValue = '', tokenOverride = null) => {
     try {
       const stateResult = await AuthAPI.updateState({
         state: selectedState,
         district: selectedDistrict,
         taluka: selectedTaluka,
         village: villageValue,
+        token: tokenOverride,
       });
       if (!stateResult.ok) console.warn('[VillageSelect] State API failed:', stateResult.message);
     } catch (error) {
@@ -101,7 +102,7 @@ export default function VillageSelectScreen({ navigation, route }) {
         await UserStore.completeLocationSetup(pending.email, selectedState, selectedDistrict, selectedTaluka, villageValue);
         await UserStore.clearPendingRegistration();
       } catch (e) { console.warn('[register] local setup failed:', e?.message || e); }
-      syncRegistrationLocation(villageValue);
+      syncRegistrationLocation(villageValue, commit.token);
       goToHome(pending.name, true);
       return;
     }
@@ -145,7 +146,7 @@ export default function VillageSelectScreen({ navigation, route }) {
         await UserStore.completeLocationSetup(pending.email, selectedState, selectedDistrict, selectedTaluka, '');
         await UserStore.clearPendingRegistration();
       } catch (e) { console.warn('[register] local setup failed:', e?.message || e); }
-      syncRegistrationLocation('');
+      syncRegistrationLocation('', commit.token);
       goToHome(pending.name, true);
       return;
     }

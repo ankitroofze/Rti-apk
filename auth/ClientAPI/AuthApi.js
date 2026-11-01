@@ -52,16 +52,35 @@ const readResponseBody = async (response, context) => {
     return JSON.parse(text);
   } catch (err) {
     const rawBody = text.slice(0, 1000);
+    const isHtml = text.trim().startsWith('<') || /<!doctype|<html/i.test(rawBody);
+
+    let friendlyMessage;
+    if (response.status === 403) {
+      friendlyMessage = 'Server access forbidden (403). Please verify your details and try again.';
+    } else if (response.status === 401) {
+      friendlyMessage = 'Your session has expired. Please sign in again.';
+    } else if (response.status === 404) {
+      friendlyMessage = 'The requested service could not be found (404).';
+    } else if (response.status === 429) {
+      friendlyMessage = 'Too many requests. Please wait a moment and try again.';
+    } else if (response.status >= 500) {
+      friendlyMessage = 'Server is temporarily unavailable. Please try again in a few moments.';
+    } else {
+      friendlyMessage = isHtml
+        ? `Request failed (${response.status}). Please try again.`
+        : (rawBody || `Unexpected response (${response.status}).`);
+    }
+
     console.error('[AuthAPI] Response JSON parse failed:', {
       ...context,
       status: response.status,
       contentType: response.headers?.get?.('content-type'),
-      rawBody,
+      rawBody: isHtml ? '[HTML Error Page]' : rawBody,
       error: serializeError(err),
     });
     return {
-      message: rawBody || `Unexpected non-JSON response (${response.status}).`,
-      rawBody,
+      message: friendlyMessage,
+      rawBody: isHtml ? '[HTML Error Page]' : rawBody,
       parseError: serializeError(err),
     };
   }

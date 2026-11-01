@@ -22,9 +22,46 @@ SplashScreen.preventAutoHideAsync().catch(() => {});
 Text.defaultProps = Text.defaultProps || {};
 Text.defaultProps.style = [{ fontFamily: 'Roboto_400Regular' }, Text.defaultProps.style];
 TextInput.defaultProps = TextInput.defaultProps || {};
-TextInput.defaultProps.style = [{ fontFamily: 'Roboto_400Regular' }, TextInput.defaultProps.style];
+TextInput.defaultProps.style = [
+  { fontFamily: 'Roboto_400Regular' },
+  Platform.OS === 'web' ? { outlineStyle: 'none', outlineWidth: 0 } : null,
+  TextInput.defaultProps.style,
+];
 
 if (typeof document !== 'undefined') {
+  if (!document.getElementById('app-global-textbox-focus')) {
+    const styleEl = document.createElement('style');
+    styleEl.id = 'app-global-textbox-focus';
+    styleEl.textContent = `
+      /* 1. Andar ke input text par KUCH BHI border/outline/box NAHI rahega */
+      input, textarea, select, [contenteditable="true"] {
+        border: none !important;
+        border-width: 0 !important;
+        outline: none !important;
+        outline-style: none !important;
+        outline-width: 0 !important;
+        box-shadow: none !important;
+        -webkit-tap-highlight-color: transparent !important;
+      }
+      input:focus, textarea:focus, select:focus, [contenteditable="true"]:focus {
+        border: none !important;
+        border-width: 0 !important;
+        outline: none !important;
+        outline-style: none !important;
+        outline-width: 0 !important;
+        box-shadow: none !important;
+      }
+
+      /* 2. React Native Web inner wrapper divs par koi border/shadow nahi */
+      [data-focusable="true"],
+      div:has(> input),
+      div:has(> textarea) {
+        outline: none !important;
+      }
+    `;
+    document.head.appendChild(styleEl);
+  }
+
   const observer = new MutationObserver(() => {
     document.querySelectorAll('[aria-hidden="true"]').forEach((el) => {
       if (el.contains(document.activeElement)) {
