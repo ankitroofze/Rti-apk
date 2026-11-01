@@ -427,10 +427,65 @@ const WEB_MODULES = [
 // ─────────────────────────────────────────────
 //  WEB LAYOUT
 // ─────────────────────────────────────────────
+const SLUG_TO_SCREEN = {
+  profile: 'Profile',
+  'post-news': 'Add News',
+  'news-feed': 'News Feed',
+  'my-network': 'My Network',
+  wallet: 'Wallet',
+  withdraw: 'Withdraw',
+  'subscription-plans': 'Subscription Plans',
+  'my-subscription': 'My Subscriptions',
+  'my-subscriptions': 'My Subscriptions',
+  epaper: 'e-Paper',
+  'e-paper': 'e-Paper',
+  'live-streaming': 'Live Streaming',
+  certification: 'Certification',
+  notifications: 'Notifications',
+  ecome: 'Ecome',
+  shop: 'Ecome',
+  'ecom-enquiries': 'MyEnquiries',
+  enquiries: 'MyEnquiries',
+  settings: 'Settings',
+  'my-ads': 'MyAds',
+  farming: 'FarmingBuy',
+};
+
+const SCREEN_TO_SLUG = {
+  Profile: 'profile',
+  'Add News': 'post-news',
+  'News Feed': 'news-feed',
+  'My Network': 'my-network',
+  Wallet: 'wallet',
+  Withdraw: 'withdraw',
+  'Subscription Plans': 'subscription-plans',
+  'My Subscriptions': 'my-subscription',
+  'e-Paper': 'epaper',
+  'Live Streaming': 'live-streaming',
+  Certification: 'certification',
+  Notifications: 'notifications',
+  Ecome: 'ecome',
+  MyEnquiries: 'ecom-enquiries',
+  Settings: 'settings',
+  MyAds: 'my-ads',
+  FarmingBuy: 'farming',
+};
+
 function QuickMenuWeb({ navigation, route }) {
   const { logout } = useAuth();
   // Header / navbar se aaya ho to wahi screen (Profile / Notifications / ...) sidebar ke saath khulegi
-  const initialScreen = (WEB_MODULES.find((m) => m.screen === route?.params?.initialScreen && m.component) || {}).screen || 'Profile';
+  const resolveTargetScreen = (param) => {
+    if (!param) return null;
+    const lower = String(param).toLowerCase();
+    if (SLUG_TO_SCREEN[lower]) return SLUG_TO_SCREEN[lower];
+    const match = WEB_MODULES.find(
+      (m) => m.screen && (m.screen.toLowerCase() === lower || m.label.toLowerCase() === lower)
+    );
+    return match?.screen || null;
+  };
+
+  const initialTarget = resolveTargetScreen(route?.params?.screen) || resolveTargetScreen(route?.params?.initialScreen);
+  const initialScreen = (WEB_MODULES.find((m) => m.screen === initialTarget && m.component) || {}).screen || 'Profile';
   const [activeScreen, setActiveScreen] = React.useState(initialScreen);
   // ✅ FIX (web): embedded screens ko navigate() ke params (jaise editItem) aur `route` pehle milte hi nahi the,
   // isliye News Feed se Edit dabane par Add News hamesha khaali form kholta tha.
@@ -439,12 +494,25 @@ function QuickMenuWeb({ navigation, route }) {
   activeScreenRef.current = activeScreen;
   // QuickMenu pehle se khula ho aur navbar se dobara navigate ho (naya initialScreen) to switch karo
   React.useEffect(() => {
-    const target = route?.params?.initialScreen;
+    const target = resolveTargetScreen(route?.params?.screen) || resolveTargetScreen(route?.params?.initialScreen);
     if (target && WEB_MODULES.find((m) => m.screen === target && m.component)) {
       historyRef.current = [];
       setActiveScreen(target);
     }
-  }, [route?.params?.initialScreen, route?.params?.ts]);
+  }, [route?.params?.screen, route?.params?.initialScreen, route?.params?.ts]);
+
+  React.useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return undefined;
+    const handlePop = () => {
+      const parts = window.location.pathname.split('/').filter(Boolean);
+      if (parts[0] === 'menu' && parts[1]) {
+        const found = resolveTargetScreen(parts[1]);
+        if (found) setActiveScreen(found);
+      }
+    };
+    window.addEventListener('popstate', handlePop);
+    return () => window.removeEventListener('popstate', handlePop);
+  }, []);
   const historyRef = React.useRef([]);
   const [profileTier, setProfileTier] = React.useState(PROFILE_TIERS.common);
 
@@ -557,6 +625,12 @@ function QuickMenuWeb({ navigation, route }) {
     // Sidebar se khulne par hamesha fresh screen (purane edit params / history nahi)
     historyRef.current = [];
     setScreenParams((prev) => ({ ...prev, [item.screen]: undefined }));
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      const slug = SCREEN_TO_SLUG[item.screen] || item.screen.toLowerCase().replace(/\s+/g, '-');
+      try {
+        window.history.pushState(null, '', `/menu/${slug}`);
+      } catch (_) {}
+    }
     setActiveScreen(item.screen);
   };
 

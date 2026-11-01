@@ -530,7 +530,13 @@ export default function NewsDetailsScreen({ route, navigation }) {
     () => String(currentUser?.name || currentUser?.full_name || currentUser?.username || '').trim(),
     [currentUser?.full_name, currentUser?.name, currentUser?.username]
   );
-  const articleId = String(routeArticle?.id || initialArticle.id || '').trim();
+  const articleId = String(route?.params?.id || routeArticle?.id || initialArticle.id || '').trim();
+
+  useEffect(() => {
+    if (typeof document !== 'undefined' && (article?.tittle || article?.title)) {
+      document.title = `${article.tittle || article.title} | RTI News`;
+    }
+  }, [article?.tittle, article?.title]);
 
   const refreshAuthorFollowState = useCallback(async (authorEmail, userEmail = currentUserEmail) => {
     const targetEmail = String(authorEmail || '').trim().toLowerCase();
@@ -1028,7 +1034,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
                    <View style={[styles.storyCardShell, isCompactLayout && styles.storyCardShellCompact]}>
                 <TouchableOpacity
                   style={styles.backButton}
-                  onPress={() => navigation?.goBack?.()}
+                  onPress={() => { if (navigation?.canGoBack?.()) navigation.goBack(); else navigation?.navigate?.('Home'); }}
                   activeOpacity={0.84}
                 >
                   <Ionicons name="arrow-back-outline" size={25} color="#64748b" />

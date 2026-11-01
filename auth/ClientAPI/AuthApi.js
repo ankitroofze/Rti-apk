@@ -2314,10 +2314,7 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
    */
   getNewsById: async (newsId) => {
     try {
-      const token = await getAuthToken();
-      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
-
-      const { status, data } = await getJSON(`/news/${newsId}`, token);
+      const { status, data } = await publicRequest(`/news/${newsId}`);
 
       if (status === 200 || status === 201) {
         return { ok: true, news: data?.data || data?.news || data };

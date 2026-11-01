@@ -4521,12 +4521,25 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
           }
         } else if (feedType === 'all') {
           // Home screen: sabhi users ke news, backend ke /news (index) route se
+          let singleItemRes = null;
+          if (focusItemId) {
+            try {
+              singleItemRes = await AuthAPI.getNewsById(focusItemId);
+            } catch (_) {}
+          }
       const apiRes = await AuthAPI.getNewsList({ per_page: feedPerPage, ...(feedContentType ? { type: feedContentType } : {}), ...(feedCursor ? { cursor: feedCursor } : {}) });
           feedPagination = apiRes.pagination || null;
           if (apiRes.ok && Array.isArray(apiRes.news)) {
             apiItems = apiRes.news;
           } else if (apiRes.ok && Array.isArray(apiRes.news?.data)) {
             apiItems = apiRes.news.data;
+          }
+          if (singleItemRes?.ok && singleItemRes?.news) {
+            const single = singleItemRes.news;
+            const singleId = String(single.id || '');
+            if (!apiItems.some((it) => String(it.id || '') === singleId)) {
+              apiItems.unshift(single);
+            }
           }
         } else {
           // News Feed / My Posts: sirf isi user ke news, dedicated my-news routes se

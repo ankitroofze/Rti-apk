@@ -50,7 +50,7 @@ export default function LoginScreen({ navigation, route }) {
     if (!stored) throw new Error('Unable to restore your account details.');
     await UserStore.setCurrentUser(stored.email);
     login();
-    navigation.reset({ index: 0, routes: [{ name: redirectTo }] });
+    navigation.reset({ index: 0, routes: [{ name: redirectTo, params: route?.params?.redirectParams }] });
   };
 
   useEffect(() => {

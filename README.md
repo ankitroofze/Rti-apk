@@ -59,3 +59,20 @@ Join our community of developers creating universal apps.
 
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+
+## Windows Plesk Production Web Build & Deployment
+
+To generate a production-ready package with IIS `web.config` and Apache `.htaccess` rewrite rules:
+
+```bash
+npm run build:plesk
+```
+
+This command:
+1. Runs `expo export --platform web` and fixes relative paths.
+2. Copies output to `out/`.
+3. Injects `web.config` (IIS rewrite for SPA URL routing and MIME types).
+4. Injects `.htaccess` (Apache rewrite fallback).
+5. Injects `api-proxy.php` (for server-side CORS proxy).
+6. Creates a compressed `out.zip` ready for direct upload to Plesk File Manager.
+

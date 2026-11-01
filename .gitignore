@@ -64,3 +64,7 @@ android-backup/
 *.backup
 _tmp_*
 __test_write*
+
+# Plesk build artifacts
+out/
+out.zip

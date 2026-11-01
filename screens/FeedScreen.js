@@ -2076,8 +2076,20 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
 }
 
 // Main Feed Screen
-export default function FeedScreen({ navigation }) {
+export default function FeedScreen({ navigation, route }) {
+  const targetReelId = route?.params?.id ? String(route.params.id) : null;
   const [posts, setPosts]               = useState([]);
+
+  useEffect(() => {
+    if (!targetReelId || !posts.length) return;
+    const idx = posts.findIndex((p) => String(p.id) === targetReelId);
+    if (idx > 0) {
+      setActiveIndex(idx);
+      try {
+        feedListRef.current?.scrollToIndex?.({ index: idx, animated: false });
+      } catch (_) {}
+    }
+  }, [targetReelId, posts]);
   const [uploadVisible, setUploadVisible] = useState(false);
   const [newsLimitModal, setNewsLimitModal] = useState({ visible: false, message: '' });
   const [commentPost, setCommentPost]   = useState(null);
