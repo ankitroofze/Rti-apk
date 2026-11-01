@@ -351,7 +351,7 @@ export default function NewspaperList({ navigation }) {
           <View style={{ alignItems: 'center', paddingTop: 80 }}>
             <Text style={{ fontSize: 40 }}>📰</Text>
             <Text style={{ fontSize: 14, color: '#888', marginTop: 12, fontWeight: '600' }}>
-              Koi published article nahi hai
+              No published articles available.
             </Text>
           </View>
         ) : sortedDates.map(dateKey => {

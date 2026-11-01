@@ -22,6 +22,7 @@ import { Feather } from '@expo/vector-icons';
 import { UserStore } from '../store/UserStore';
 import { getProfileTier, AVATAR_IMAGE } from '../utils/profileHelpers';
 import { MODULE_HEADER_HEIGHT_WEB, HEADER_BG_IMAGE } from '../constants/subscriptionThemes';
+import { isMobileWebDevice, getResponsiveWindowWidth } from '../utils/webDevice';
 
 // Profile icon ke andar bhi yahi red image lagti hai
 const RED_IMAGE = require('../assets/images/profile-red.png');
@@ -86,6 +87,20 @@ const S = {
   avatarPhoto: { width: '100%', height: '100%', borderRadius: 17 },
 };
 
+// ── Compact (phone browser) overrides — Android header jaisa dikhne ke liye ──
+// Settings icon compact par chhupa hai taaki title + Sell button overlap na ho.
+// Wapas dikhana ho to HIDE_SETTINGS_ON_COMPACT = false kar do.
+const HIDE_SETTINGS_ON_COMPACT = true;
+const C = {
+  bar:     { paddingHorizontal: 12 },
+  left:    { flex: 1, minWidth: 0, gap: 6 },
+  right:   { gap: 6, flexShrink: 0 },
+  backBtn: { width: 34, height: 34, borderRadius: 17, paddingHorizontal: 0, paddingVertical: 0, justifyContent: 'center', backgroundColor: 'transparent' },
+  title:   { flex: 1, minWidth: 0, fontSize: 16, fontWeight: '700' },
+  circle:  { width: 30, height: 30, borderRadius: 15, marginHorizontal: 0 },
+  avatar:  { width: 30, height: 30, borderRadius: 15 },
+};
+
 export default function ModuleWebHeader({
   title,                 // ← sirf yehi har screen me alag hota hai
   navigation,
@@ -101,7 +116,9 @@ export default function ModuleWebHeader({
   showSubscription = true,   // ✅ sab module headers me Subscription button
 }) {
   const { width: headerWinW } = useWindowDimensions();
-  const compactHeader = headerWinW <= 640; // phone / mobile-web: sirf icon, label nahi
+  // ✅ phone / mobile-web: Android jaisa compact header (sirf back arrow + title + chhote icons).
+  // Phone browser ki width galat aaye tab bhi touch device ko compact hi maana jaata hai.
+  const compactHeader = Platform.OS === 'web' && (isMobileWebDevice() || getResponsiveWindowWidth(headerWinW) <= 640);
   // ── Mobile par kuch render nahi — Android/iOS bilkul pehle jaisa ──
    // Profile circle: user ki apni photo (sirf Role/Premium/Verified ke liye) warna default avatar.png
   const [selfAvatar, setSelfAvatar] = useState(null);
@@ -139,25 +156,25 @@ export default function ModuleWebHeader({
       source={bgImage || HEADER_BG_IMAGE}
       resizeMode="cover"
       imageStyle={S.barImg}
-      style={S.bar}
+      style={[S.bar, compactHeader && C.bar]}
     >
-      <View style={S.left}>
+      <View style={[S.left, compactHeader && C.left]}>
         {showBack ? (
-          <TouchableOpacity style={[S.backBtn, { backgroundColor: controlSurface }]} onPress={handleBack} activeOpacity={0.8}>
-            <Feather name="arrow-left" size={15} color={readableColor} />
-            <Text style={[S.backTxt, { color: readableColor }]}>Back</Text>
+          <TouchableOpacity style={[S.backBtn, { backgroundColor: controlSurface }, compactHeader && C.backBtn]} onPress={handleBack} activeOpacity={0.8} accessibilityLabel="Back">
+            <Feather name="arrow-left" size={compactHeader ? 22 : 15} color={readableColor} />
+            {!compactHeader ? <Text style={[S.backTxt, { color: readableColor }]}>Back</Text> : null}
           </TouchableOpacity>
         ) : null}
-        <Text style={[S.title, { color: readableColor }]} numberOfLines={1}>{title}</Text>
+        <Text style={[S.title, { color: readableColor }, compactHeader && C.title]} numberOfLines={1}>{title}</Text>
       </View>
 
-      <View style={S.right}>
+      <View style={[S.right, compactHeader && C.right]}>
         {rightExtra}
 
         {/* Subscription */}
         {showSubscription ? (
           <TouchableOpacity
-            style={[S.subBtn, compactHeader && S.subBtnIconOnly, { backgroundColor: controlSurface, borderColor: controlBorder }]}
+            style={[S.subBtn, compactHeader && S.subBtnIconOnly, compactHeader && C.circle, { backgroundColor: controlSurface, borderColor: controlBorder }]}
             onPress={() => go('Subscription Plans')}
             activeOpacity={0.8}
             accessibilityLabel="Subscription"
@@ -168,14 +185,14 @@ export default function ModuleWebHeader({
         ) : null}
 
         {/* Settings */}
-        {showSettings ? (
-          <TouchableOpacity style={[S.bellBtn, { backgroundColor: controlSurface, borderColor: controlBorder }]} onPress={() => go('Settings')} activeOpacity={0.8} accessibilityLabel="Settings">
+        {showSettings && !(compactHeader && HIDE_SETTINGS_ON_COMPACT) ? (
+          <TouchableOpacity style={[S.bellBtn, compactHeader && C.circle, { backgroundColor: controlSurface, borderColor: controlBorder }]} onPress={() => go('Settings')} activeOpacity={0.8} accessibilityLabel="Settings">
             <Feather name="settings" size={16} color={readableColor} />
           </TouchableOpacity>
         ) : null}
 
         {/* Bell */}
-        <TouchableOpacity style={[S.bellBtn, { backgroundColor: controlSurface, borderColor: controlBorder }]} onPress={() => go('Notifications')} activeOpacity={0.8}>
+        <TouchableOpacity style={[S.bellBtn, compactHeader && C.circle, { backgroundColor: controlSurface, borderColor: controlBorder }]} onPress={() => go('Notifications')} activeOpacity={0.8}>
           <Feather name="bell" size={16} color={readableColor} />
         </TouchableOpacity>
 
@@ -185,7 +202,7 @@ export default function ModuleWebHeader({
            source={avatarBgImage || RED_IMAGE}
             resizeMode="cover"
             imageStyle={S.avatarImg}
-style={[S.avatarBtn, avatarBgColor ? { backgroundColor: avatarBgColor } : null]}
+style={[S.avatarBtn, compactHeader && C.avatar, avatarBgColor ? { backgroundColor: avatarBgColor } : null]}
           >
             {avatarUri || selfAvatar ? (
             <Image source={avatarUri ? { uri: avatarUri } : selfAvatar} style={S.avatarPhoto} />

@@ -301,10 +301,13 @@ const [reporterDate, setReporterDate] = useState('');
                   <Text style={ws.pageSub}>Digital newspaper — rich-text articles with images.</Text>
                 </View>
               </View>
-              <View style={{flexDirection:'row',alignItems:'center',gap:10}}>
+              {/* ✅ Sirf Admin hi e-paper create / clear kar sakta hai — normal user ko ye buttons nahi dikhenge */}
+              {isAdmin ? (
+              <View style={{flexDirection:'row',alignItems:'center',gap:10,flexWrap:'wrap'}}>
                 <TouchableOpacity
                   style={{flexDirection:'row',alignItems:'center',gap:6,paddingVertical:10,paddingHorizontal:18,borderRadius:10,backgroundColor:'#9D0410'}}
                   onPress={() => {
+  if (!isAdmin) return;
   const today = new Date().toISOString().slice(0, 10);
   setReporterName(currentUser?.name || currentUser?.email?.split('@')[0] || '');
   setReporterLocation('');
@@ -332,6 +335,7 @@ const [reporterDate, setReporterDate] = useState('');
                   <Text style={{fontSize: 13, fontFamily: FONT_FAMILY,fontWeight:'700',color:'#9D0410'}}>Clear All</Text>
                 </TouchableOpacity>
               </View>
+              ) : null}
             </View>
             <View style={[ws.metricsRow,{flexWrap:'wrap'}]}>
               <View style={ws.mc}>
@@ -416,10 +420,12 @@ const [reporterDate, setReporterDate] = useState('');
                   <Feather name="file-text" size={40} color="#D6A98A"/>
                 </View>
                 <Text style={{fontSize: 17, fontFamily: FONT_FAMILY,fontWeight:'800',color:'#111111',marginBottom:6}}>No articles yet</Text>
-                <Text style={{fontSize: 13, fontFamily: FONT_FAMILY,color:'#888888',marginBottom:20}}>You haven't published any e-paper articles yet.</Text>
+                <Text style={{fontSize: 13, fontFamily: FONT_FAMILY,color:'#888888',marginBottom:isAdmin?20:0}}>{isAdmin ? "You haven't published any e-paper articles yet." : 'No e-paper articles have been published yet.'}</Text>
+                {isAdmin ? (
                 <TouchableOpacity
                   style={{flexDirection:'row',alignItems:'center',gap:8,backgroundColor:'#9D0410',paddingVertical:12,paddingHorizontal:22,borderRadius:10}}
                   onPress={() => {
+  if (!isAdmin) return;
   const today = new Date().toISOString().slice(0, 10);
   setReporterName(currentUser?.name || currentUser?.email?.split('@')[0] || '');
   setReporterLocation('');
@@ -431,6 +437,7 @@ const [reporterDate, setReporterDate] = useState('');
                   <Feather name="file-plus" size={15} color="#ffffff"/>
                   <Text style={{fontSize: 13, fontFamily: FONT_FAMILY,fontWeight:'700',color:'#ffffff'}}>Add Your First Newspaper</Text>
                 </TouchableOpacity>
+                ) : null}
               </View>
             ):(()=>{
               const grouped = {};
@@ -610,6 +617,7 @@ const [reporterDate, setReporterDate] = useState('');
 
         <TouchableOpacity
           onPress={()=>{
+            if(!isAdmin){showToast('Only admin can create an e-paper.','error');return;}
             if(!reporterName.trim()){showToast('Reporter name required!','error');return;}
             setReporterModal(false);
             navigation.navigate('NewspaperPage',{
@@ -811,7 +819,7 @@ const [reporterDate, setReporterDate] = useState('');
                           if(layout){
                             navigation.navigate('NewspaperPage', { loadLayout: layout });
                           } else {
-                            Alert.alert('Not found', 'No newspaper layout found for this ');
+                            Alert.alert('Not found', 'No newspaper layout was found for this date.');
                           }
                         }}
                       >
@@ -916,13 +924,13 @@ const [reporterDate, setReporterDate] = useState('');
       <Text style={{fontSize: 12, fontFamily: FONT_FAMILY,fontWeight:'700',color:'#555555',marginBottom:6}}>Reporter Name</Text>
       <View style={{flexDirection:'row',alignItems:'center',gap:8,borderWidth:1.5,borderColor:'#E5DDD5',borderRadius:10,paddingHorizontal:12,paddingVertical:10,marginBottom:14,backgroundColor:'#FAFAFA'}}>
         <Feather name="user" size={14} color="#AAAAAA"/>
-        <TextInput value={reporterName} onChangeText={setReporterName} placeholder="fill Your Name" placeholderTextColor="#BBBBBB" style={{flex:1,fontSize: 14, fontFamily: FONT_FAMILY,color:'#111111'}}/>
+        <TextInput value={reporterName} onChangeText={setReporterName} placeholder="Enter your name" placeholderTextColor="#BBBBBB" style={{flex:1,fontSize: 14, fontFamily: FONT_FAMILY,color:'#111111'}}/>
       </View>
 
-      <Text style={{fontSize: 12, fontFamily: FONT_FAMILY,fontWeight:'700',color:'#555555',marginBottom:6}}>Location / Shehar</Text>
+      <Text style={{fontSize: 12, fontFamily: FONT_FAMILY,fontWeight:'700',color:'#555555',marginBottom:6}}>Location / place</Text>
       <View style={{flexDirection:'row',alignItems:'center',gap:8,borderWidth:1.5,borderColor:'#E5DDD5',borderRadius:10,paddingHorizontal:12,paddingVertical:10,marginBottom:14,backgroundColor:'#FAFAFA'}}>
         <Feather name="map-pin" size={14} color="#AAAAAA"/>
-        <TextInput value={reporterLocation} onChangeText={setReporterLocation} placeholder="Shehar ya jagah" placeholderTextColor="#BBBBBB" style={{flex:1,fontSize: 14, fontFamily: FONT_FAMILY,color:'#111111'}}/>
+        <TextInput value={reporterLocation} onChangeText={setReporterLocation} placeholder="Place" placeholderTextColor="#BBBBBB" style={{flex:1,fontSize: 14, fontFamily: FONT_FAMILY,color:'#111111'}}/>
       </View>
 
      {/* Date */}
@@ -953,6 +961,7 @@ const [reporterDate, setReporterDate] = useState('');
         </TouchableOpacity>
         <TouchableOpacity
           onPress={()=>{
+            if(!isAdmin){showToast('Only admin can create an e-paper.','error');return;}
             if(!reporterName.trim()){showToast('Reporter name required!','error');return;}
             setReporterModal(false);
             navigation.navigate('NewspaperPage',{reporterName:reporterName.trim(),reporterLocation:reporterLocation.trim(),publishDate:reporterDate});

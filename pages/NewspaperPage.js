@@ -463,6 +463,12 @@ export default function NewspaperPage({ route, navigation }) {
         setIsSaving(false);
         return;
       }
+      // ✅ Sirf Admin e-paper create / publish kar sakta hai
+      if (String(user.role || '').trim().toLowerCase() !== 'admin') {
+        Alert.alert('Not allowed', 'Only admin can create an e-paper.');
+        setIsSaving(false);
+        return;
+      }
 
       const sectionList = templateId === 'layout1' ? T1_SECTIONS : T2_SECTIONS;
       const articleSections = sectionList.filter(s => s.type === 'article');

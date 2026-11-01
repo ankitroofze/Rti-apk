@@ -14,6 +14,7 @@ import { useToast } from '../components/ui/ToastProvider';
 import { UserStore } from '../store/UserStore';
 import { openRazorpayCheckout } from '../utils/razorpayCheckout';
 import SubscriptionPlanPurchase from '../components/SubscriptionPlanPurchase';
+import { useAutoT } from '../contexts/LanguageContext';
 
 const FEATURES = [
   'Post product listings on the Sell page',
@@ -29,7 +30,7 @@ const PLANS = [
 ];
 
 // Backend/static plan shape -> shared UI ka common plan shape
-const toUiPlan = (plan) => ({
+const toUiPlan = (plan, tr = (x) => x) => ({
   id: plan.id,
   name: plan.label,
   duration: plan.duration,
@@ -37,13 +38,14 @@ const toUiPlan = (plan) => ({
   originalPrice: null,
   popular: plan.tag === 'Popular' || plan.tag === 'Best Value',
   features: [
-    plan.credits ? `${plan.credits} listing credits included` : null,
+    plan.credits ? `${plan.credits} ${tr('listing credits included')}` : null,
     ...FEATURES,
   ].filter(Boolean),
 });
 
 export default function EcomSubscriptionScreen({ navigation, route }) {
   const { showPopup } = useToast();
+  const tr = useAutoT(); // popup / dynamic text ko language ke hisaab se badalne ke liye
 
   // Jahan se user redirect hua tha (default: Sell page) — purchase complete
   // hone ke baad wahi wapas bhej dena hai.
@@ -85,7 +87,7 @@ const [plansLoading, setPlansLoading] = useState(true);
       if (!plan) return;
     // ✅ backend ki asli plan id integer hoti hai; static/string id par order mat banao
     if (!Number.isInteger(Number(plan.id))) {
-      showPopup('Plans have not loaded yet. Please refresh the screen and try again.', 'error');
+      showPopup(tr('Plans have not loaded yet. Please refresh the screen and try again.'), 'error');
       return;
     }
     setProcessingPlanId(plan.id);
@@ -94,7 +96,7 @@ const [plansLoading, setPlansLoading] = useState(true);
       const orderRes = await UserStore.createEcomOrder({ planId: plan.id });
       if (!orderRes?.ok) {
         setLoading(false);
-        showPopup(orderRes?.message || 'Unable to start payment. Please try again.', 'error');
+        showPopup(orderRes?.message || tr('Unable to start payment. Please try again.'), 'error');
         return;
       }
 
@@ -109,13 +111,13 @@ const [plansLoading, setPlansLoading] = useState(true);
           setLoading(false);
 
           if (!verifyRes?.ok) {
-            showPopup(verifyRes?.message || 'Payment verification failed.', 'error');
+            showPopup(verifyRes?.message || tr('Payment verification failed.'), 'error');
             return;
           }
 
           // ✅ FIX: status card ko turant naye credits se update karo
           setExistingCredits(Number(verifyRes.credits || 0));
-          showPopup('E-Commerce Subscription activated! You can now post listings on Sell.', 'success');
+          showPopup(tr('E-Commerce Subscription activated! You can now post listings on Sell.'), 'success');
           navigation.replace(redirectTo, redirectParams);
         },
         onFailed: async (errorInfo) => {
@@ -125,28 +127,28 @@ const [plansLoading, setPlansLoading] = useState(true);
             errorInfo.error_code,
             errorInfo.error_description
           );
-          showPopup(errorInfo.error_description || 'Payment failed or cancelled.', 'error');
+          showPopup(errorInfo.error_description || tr('Payment failed or cancelled.'), 'error');
         },
       });
     } catch (e) {
       setLoading(false);
-      showPopup('Something went wrong. Please try again.', 'error');
+      showPopup(tr('Something went wrong. Please try again.'), 'error');
     }
-  }, [navigation, redirectTo, redirectParams, showPopup]);
+  }, [navigation, redirectTo, redirectParams, showPopup, tr]);
 
   const handlePay = useCallback((uiPlan) => {
     const plan = plans.find((p) => p.id === uiPlan.id);
     if (!plan) return;
     showPopup(
-      `Do you want to subscribe to the ${plan.label} E-Commerce plan for ₹${plan.price}?`,
+      `${tr('Do you want to subscribe to this E-Commerce plan?')} ${plan.label} — ₹${plan.price}`,
       'info',
       {
-        primaryLabel: 'Subscribe',
-        secondaryLabel: 'Cancel',
+        primaryLabel: tr('Subscribe'),
+        secondaryLabel: tr('Cancel'),
         onPrimaryPress: () => doSubscribe(plan),
       }
     );
-  }, [plans, doSubscribe, showPopup]);
+  }, [plans, doSubscribe, showPopup, tr]);
 
   return (
     <SubscriptionPlanPurchase
@@ -155,7 +157,7 @@ const [plansLoading, setPlansLoading] = useState(true);
       heroTitle="Choose Your E-Commerce Plan"
       heroSubtitle="An active subscription is required to post a product on the Sell page."
       loading={plansLoading}
-      plans={plans.map(toUiPlan)}
+      plans={plans.map((p) => toUiPlan(p, tr))}
       selectedPlanId={selectedPlan}
       onSelectPlan={(plan) => setSelectedPlan(plan.id)}
       statusCard={
@@ -163,8 +165,8 @@ const [plansLoading, setPlansLoading] = useState(true);
           ? {
               isActive: existingCredits > 0,
               countLabel: existingCredits > 0
-                ? `${existingCredits} listing credit${existingCredits === 1 ? '' : 's'} remaining`
-                : 'Your listing credits are used up — buy a new plan to keep selling.',
+                ? `${existingCredits} ${tr('listing credits remaining')}`
+                : tr('Your listing credits are used up — buy a new plan to keep selling.'),
             }
           : null
       }

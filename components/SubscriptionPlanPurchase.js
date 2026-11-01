@@ -33,6 +33,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import S from '../styles/SubscriptionPlansStyles';
 import { getCardTheme, HEADER_BG_IMAGE, getNativeThemeImage } from '../constants/subscriptionThemes';
 import SubscriptionStatusCard from './SubscriptionStatusCard';
+import { isMobileWebDevice, getResponsiveWindowWidth } from '../utils/webDevice';
 
 /**
  * props:
@@ -72,7 +73,12 @@ export default function SubscriptionPlanPurchase({
   // Android header + full-width hero + full-width button. Desktop web par purana layout.
   const { width: windowWidth } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
-  const isMobileWeb = isWeb && windowWidth <= 760;
+  // ✅ FIX: phone browser me window width kabhi-kabhi galat (badi) aati hai, tab page desktop
+  // layout (paddingLeft 290 + desktop header) me chala jata tha aur text ek patli column me
+  // dikhta tha. Ab app ka common helper (utils/webDevice) bhi use hota hai — touch/mobile
+  // device ko hamesha mobile-web maana jaata hai.
+  const responsiveWidth = getResponsiveWindowWidth(windowWidth);
+  const isMobileWeb = isWeb && (isMobileWebDevice() || responsiveWidth <= 760);
   const isDesktopWeb = isWeb && !isMobileWeb;
   const [detailsModal, setDetailsModal] = React.useState(null); // Read More click hote hi { plan, theme } set hoga
 
@@ -107,7 +113,7 @@ export default function SubscriptionPlanPurchase({
 )}
 
       <ScrollView
-        contentContainerStyle={[S.scrollContent, showPayBar ? { paddingBottom: 200 } : null]}
+        contentContainerStyle={[S.scrollContent, isMobileWeb ? { width: '100%', maxWidth: '100%', marginHorizontal: 0 } : null, showPayBar ? { paddingBottom: 200 } : null]}
         showsVerticalScrollIndicator={false}
       >
         {/* Hero */}

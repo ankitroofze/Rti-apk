@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import ModuleWebHeader from '../components/Modulewebheader';
+import { useAutoT } from '../contexts/LanguageContext';
 
 /* ─────────────────────────────────────────────────────────────────────────
  * SHURU DESIGN TOKENS (same family as EcomeSellScreen for consistency)
@@ -334,6 +335,7 @@ function EcomeMobile({ navigation }) {
 // ─── Web Layout ───────────────────────────────────────────────────────────────
 
 function EcomeWeb({ navigation }) {
+  const tr = useAutoT(); // raw <div> text ko bhi language ke hisaab se badalne ke liye
   const webItems = ECOME_MENU.map((item) => {
     const ic = ICON_STYLES[item.iconStyle];
     return (
@@ -347,8 +349,8 @@ function EcomeWeb({ navigation }) {
           <div className="ecome-icon" style={{ background: ic.bg }}>
             {item.emoji}
           </div>
-          <div className="ecome-label">{item.label}</div>
-          <div className="ecome-desc">{item.desc}</div>
+          <div className="ecome-label">{tr(item.label)}</div>
+          <div className="ecome-desc">{tr(item.desc)}</div>
         </div>
       </div>
     );
@@ -357,22 +359,22 @@ function EcomeWeb({ navigation }) {
   return (
     <div className="ecome-root">
       {/* ✅ Web header — design ek hi jagah (components/ModuleWebHeader.js) se aata hai */}
-      <ModuleWebHeader title="Ecome (buy / sell)" navigation={navigation} onBack={() => navigation.goBack()} />
+      <ModuleWebHeader title={tr('Ecome (buy / sell)')} navigation={navigation} onBack={() => navigation.goBack()} />
       <div className="ecome-main">
         <div className="ecome-card-wrap">
 
           {/* Hero */}
           <div className="ecome-hero">
             <div className="ecome-hero-left">
-              <div className="ecome-hero-badge">🛒 Ecome Marketplace</div>
-              <div className="ecome-hero-title">Buy, Sell &amp; Grow <span>Together</span></div>
+              <div className="ecome-hero-badge">🛒 {tr('Ecome Marketplace')}</div>
+              <div className="ecome-hero-title">{tr('Buy, Sell & Grow')} <span>{tr('Together')}</span></div>
               <div className="ecome-hero-desc">
-                Explore thousands of products, connect with trusted sellers and buyers, and grow your business in your region.
+                {tr('Explore thousands of products, connect with trusted sellers and buyers, and grow your business in your region.')}
               </div>
               <div className="ecome-hero-features">
-                <div className="ecome-feature-item"><span className="ecome-feature-icon">🛡️</span>Safe Transactions</div>
-                <div className="ecome-feature-item"><span className="ecome-feature-icon">🚚</span>Local &amp; Regional</div>
-                <div className="ecome-feature-item"><span className="ecome-feature-icon">🤝</span>Trusted Community</div>
+                <div className="ecome-feature-item"><span className="ecome-feature-icon">🛡️</span>{tr('Safe Transactions')}</div>
+                <div className="ecome-feature-item"><span className="ecome-feature-icon">🚚</span>{tr('Local & Regional')}</div>
+                <div className="ecome-feature-item"><span className="ecome-feature-icon">🤝</span>{tr('Trusted Community')}</div>
               </div>
             </div>
           </div>
@@ -381,22 +383,22 @@ function EcomeWeb({ navigation }) {
           <div className="ecome-banner">
             <div className="ecome-banner-icon">👑</div>
             <div style={{ flex: 1 }}>
-              <div className="ecome-banner-title">Ecome Marketplace</div>
-              <div className="ecome-banner-sub">Connect with sellers &amp; Buyers across your region</div>
+              <div className="ecome-banner-title">{tr('Ecome Marketplace')}</div>
+              <div className="ecome-banner-sub">{tr('Connect with sellers & buyers across your region')}</div>
             </div>
             <div
               className="ecome-banner-cta"
               onClick={() => navigation.navigate('My Ecom Subscription')}
             >
-              View Plans <span>→</span>
+              {tr('View Plans')} <span>→</span>
             </div>
           </div>
 
           {/* What would you like to do */}
           <div className="ecome-sec-header">
             <div>
-              <div className="ecome-sec-title">What Would You Like To Do?</div>
-              <div className="ecome-sec-sub">Quick access to your marketplace activities</div>
+              <div className="ecome-sec-title">{tr('What Would You Like To Do?')}</div>
+              <div className="ecome-sec-sub">{tr('Quick access to your marketplace activities')}</div>
             </div>
           </div>
           <div className="ecome-grid">

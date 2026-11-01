@@ -26,6 +26,7 @@ import { UserStore } from '../store/UserStore';
 import { useToast } from '../components/ui/ToastProvider';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 import ModuleWebHeader from '../components/Modulewebheader';
+import { isMobileWebDevice } from '../utils/webDevice';
 import Sidebar from '../components/Sidebar';
 import PriceRangeSlider from '../components/PriceRangeSlider';
 
@@ -571,7 +572,7 @@ export default function FarmingBuyScreen({ navigation, route }) {
         onBack={() => navigation.goBack()}
         onMenuPress={() => setSidebarVisible(true)}
         rightExtra={
-          <TouchableOpacity onPress={() => navigation.navigate('Sell')} style={styles.sellBtnHeader} activeOpacity={0.85}>
+          <TouchableOpacity onPress={() => navigation.navigate('Sell')} style={[styles.sellBtnHeader, isWeb && (isMobileWebDevice() || width <= 640) && { paddingHorizontal: 8, paddingVertical: 5, gap: 2 }]} activeOpacity={0.85}>
             <Ionicons name="add" size={16} color="#fff" />
             <Text style={styles.sellBtnText}>Sell</Text>
           </TouchableOpacity>
