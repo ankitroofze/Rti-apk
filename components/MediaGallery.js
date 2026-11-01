@@ -139,7 +139,7 @@ function AdVideoControls({ player, playing, ended, buffering, onToggle, onFullsc
   );
 }
 
-function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio }) {
+function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 0 }) {
   const [ratio, setRatio] = useState(null);
   const [audioOnly, setAudioOnly] = useState(() => isAudioUrl(uri));
   const [st, setSt] = useState({ playing: false, ended: false, cur: 0, dur: 0, muted: false });
@@ -195,7 +195,7 @@ function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio }) {
   const frameH = coverMode ? Math.round(width * 9 / 16) : getVideoBox(width, ratio, maxHeight).h;
 
   return (
-    <View style={{ width, height: frameH, backgroundColor: '#000', overflow: 'hidden' }}>
+    <View style={{ width, height: frameH, backgroundColor: '#000', borderRadius: radius || 0, overflow: 'hidden' }}>
       {React.createElement('video', {
         key: uri,
         ref: setVideoNode,
@@ -242,7 +242,7 @@ function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio }) {
   );
 }
 
-function NativeVideoSlide({ uri, width, maxHeight, coverMode, onRatio }) {
+function NativeVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 0 }) {
   const player = useVideoPlayer({ uri }, (p) => { p.loop = false; });
   const ratio = useVideoRatio(uri, player);
   const [audioOnly, setAudioOnly] = useState(() => isAudioUrl(uri));
@@ -352,7 +352,7 @@ function NativeVideoSlide({ uri, width, maxHeight, coverMode, onRatio }) {
   // ✅ Frame hamesha poori width (kaala background); video asli ratio me beech me (crop / stretch nahi)
   const frameH = coverMode ? Math.round(width * 9 / 16) : getVideoBox(width, ratio, maxHeight).h;
   return (
-    <View ref={boxRef} collapsable={false} style={{ width, height: frameH, backgroundColor: '#000', overflow: 'hidden' }}>
+    <View ref={boxRef} collapsable={false} style={{ width, height: frameH, backgroundColor: '#000', borderRadius: radius || 0, overflow: 'hidden' }}>
       <VideoView
         ref={videoViewRef}
         player={player}
@@ -452,8 +452,8 @@ export default function MediaGallery({ images = [], video = '', width, maxHeight
   if (!count || !width) return null;
 
   return (
-    <View style={{ width }}>
-      <View>
+    <View style={{ width, borderRadius: radius || 0, overflow: 'hidden' }}>
+      <View style={{ borderRadius: radius || 0, overflow: 'hidden' }}>
         <ScrollView
           ref={scrollRef}
           horizontal
@@ -482,7 +482,7 @@ export default function MediaGallery({ images = [], video = '', width, maxHeight
               ]}
             >
               {s.type === 'video' ? (
-                <VideoSlide uri={s.uri} width={width} maxHeight={maxHeight} coverMode={coverMode} onRatio={handleVideoRatio} />
+                <VideoSlide uri={s.uri} width={width} maxHeight={maxHeight} coverMode={coverMode} onRatio={handleVideoRatio} radius={radius} />
               ) : (
                 <TouchableOpacity activeOpacity={0.92} disabled={!onPressImage} onPress={onPressImage}>
                   <AutoFitAdImage

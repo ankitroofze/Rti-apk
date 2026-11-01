@@ -214,9 +214,9 @@ function CommentItem({
 
             {areRepliesExpanded ? (
               <View style={styles.commentReplies}>
-                {comment.replies.map((reply) => (
-                  <CommentItem
-                    key={reply.id}
+                {comment.replies.map((reply, rIdx) => (
+          <CommentItem
+            key={`reply-${reply.id ?? 'rep'}-${rIdx}`}
                   comment={reply}
                     currentUserId={currentUserId}
                     currentUserEmail={currentUserEmail}
@@ -523,9 +523,9 @@ function NewsSectionBlock({ title, items, onPress, onLike, onOpenComments, onSha
         <Text style={styles.sectionBlockTitle}>{title}</Text>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 8 }}>
-        {items.map((item) => (
+        {items.map((item, idx) => (
           <TrendingCard
-            key={item.id}
+            key={`section-item-${item.id ?? 'item'}-${idx}`}
             item={item}
             onPress={onPress}
             onLike={onLike}
@@ -1855,7 +1855,7 @@ const handleLike = async () => {
                 <View style={styles.videoLoadingOverlay} pointerEvents="none"><ActivityIndicator size="large" color="#ffffff" /></View>
               ) : null}
               {showPosterOverlay && (
-                posterReady ? (
+                posterReady && videoThumbnail ? (
                   <Image source={{ uri: videoThumbnail }} style={StyleSheet.absoluteFill} resizeMode="contain" />
                 ) : stillCapturing ? (
                   <View style={styles.videoLoadingOverlay}>
@@ -2093,8 +2093,8 @@ const handleLike = async () => {
                 <Text style={styles.commentPreviewViewAll}>View all {commentsCount} comments</Text>
               </TouchableOpacity>
             ) : null}
-            {previewComments.map((c) => (
-              <View key={c.id} style={styles.commentPreviewRow}>
+            {previewComments.map((c, pIdx) => (
+              <View key={`prev-comm-${c.id ?? 'c'}-${pIdx}`} style={styles.commentPreviewRow}>
                 {c.avatar ? (
                   <Image source={{ uri: c.avatar }} style={styles.commentPreviewAvatar} />
                 ) : (
@@ -2182,9 +2182,9 @@ const handleLike = async () => {
             </View>
             {localComments.length > 0 && (
               <View style={styles.commentsList}>
-                {localComments.map((item) => (
+                {localComments.map((item, cIdx) => (
                   <CommentItem
-                    key={item.id}
+                    key={`comment-${item.id ?? 'comm'}-${cIdx}`}
                     comment={item}
                     currentUserEmail={currentEmail}
                   currentUserId={currentUserId}

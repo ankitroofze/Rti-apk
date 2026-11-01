@@ -10,8 +10,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     paddingTop: 16,
     paddingBottom: 6,
-    marginLeft: 4,
-    marginRight: 10,
+    marginHorizontal: 10,
     marginTop: 10,
     borderRadius: 12,
     borderWidth: 1,
@@ -29,7 +28,7 @@ const styles = StyleSheet.create({
     }),
   },
   androidStoryCardShell: {
-    marginHorizontal: 8,
+    marginHorizontal: 10,
     marginTop: 10,
     borderWidth: 1,
     borderColor: '#e2e8f0',

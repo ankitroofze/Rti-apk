@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, Linking, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { openExternalUrl } from '../utils/adRedirect';
 import VerifiedBadge from './VerifiedBadge';
@@ -193,8 +193,7 @@ export default function RightUtilityPanel({
             </TouchableOpacity>
           </View>
           {ads.map((ad, idx) => (
-            <View
-              key={ad.id}
+            <View key={`sponsored-${ad.id || 'ad'}-${idx}`}
               style={[
                 styles.sponsoredAdBlock,
                 idx === ads.length - 1 && styles.sponsoredAdBlockLast,
@@ -264,8 +263,8 @@ export default function RightUtilityPanel({
             ) : null}
           </View>
           {groupAdsByOwner(ads).slice(0, 3).map((group) => (
-            <SponsoredAdGroup key={String(group[0].id)} group={group}>{(ad) => (
-            <View key={ad.id} style={{ marginBottom: 18, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', paddingBottom: 14 }}>
+            <SponsoredAdGroup key={`ad-group-${group[0]?.id || 'g'}-${group.map(x => x.id).join('-')}`} group={group}>{(ad, aIdx) => (
+            <View key={`group-ad-${ad.id || 'ad'}-${aIdx}`} style={{ marginBottom: 18, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', paddingBottom: 14 }}>
               <SponsoredHeader ad={ad} navigation={navigation} />
               <Text style={styles.sponsoredHeadline}>{ad.title}</Text>
               {ad.description ? (

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image, ImageBackground, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, ImageBackground, Linking, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { UserStore } from '../store/UserStore';
 import { SOCIAL_LINKS } from '../constants/socialLinks';
@@ -90,8 +90,8 @@ export default function LeftEcomSidebar({ navigation, stories = [], onOpenDetail
         icon="cart"
         action={<TouchableOpacity onPress={() => openScreen('FarmingBuy')}><Text style={styles.viewAll}>View All <Ionicons name="arrow-forward" size={12} /></Text></TouchableOpacity>}
       >
-        {products.map((p) => (
-          <View key={p.id} style={styles.productRow}>
+        {products.map((p, pIdx) => (
+          <View key={`ecom-${p.id || 'p'}-${pIdx}`} style={styles.productRow}>
             <Image source={{ uri: p.image }} style={styles.productImage} resizeMode="cover" />
             <View style={{ flex: 1 }}>
               <Text style={styles.productTitle} numberOfLines={1}>{p.title}</Text>

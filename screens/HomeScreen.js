@@ -363,19 +363,26 @@ function TopRotatingAdSlot({ ads = [], onPress }) {
 
 function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
   const { width: winW } = useWindowDimensions();
+  const [slotWidth, setSlotWidth] = useState(0);
   const [page, setPage] = useState(0);
   const [slideHeights, setSlideHeights] = useState({});
   const groupScrollRef = React.useRef(null);
   const groupKey = Array.isArray(ad?.adGroup) ? ad.adGroup.map((x) => x?.id).join('|') : '';
   React.useEffect(() => { setPage(0); setSlideHeights({}); }, [groupKey]);
   const imageOf = (a) => a?.image || a?.photo || a?.image_url || a?.images?.[0] || a?.photos?.[0];
-  // Ek hi user ke 2+ ads: ek slot ke andar side-scroll karke dekho
   const group = Array.isArray(ad?.adGroup) && ad.adGroup.length > 1 ? ad.adGroup : null;
-  const slideW = Math.min(winW - 24, 520);
+  // Content width matches card inner space with identical left/right padding
+  const contentW = slotWidth > 0 ? (slotWidth - 24) : Math.min(winW - 44, 516);
+  const slideW = contentW;
+
+  const handleLayout = (e) => {
+    const w = Math.round(e.nativeEvent.layout.width);
+    if (w && w !== slotWidth) setSlotWidth(w);
+  };
 
   if (group) {
     return (
-      <View style={styles.inFeedAdSlot}>
+      <View style={styles.inFeedAdSlot} onLayout={handleLayout}>
         <Text style={styles.adCaption}>ADVERTISEMENT  •  {Math.min(page + 1, group.length)}/{group.length}</Text>
         <View style={{ width: slideW }}>
           <ScrollView
@@ -401,13 +408,12 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
                 }}
               >
                 {(() => {
-                  // single ad jaisa hi rule: video ya multi-image ho to MediaGallery, nahi to AutoFitAdImage
                   const imgs = Array.isArray(a?.images) ? a.images.filter(Boolean) : [];
                   const first = imageOf(a);
                   if (a?.video || imgs.length > 1) {
                     return <MediaGallery images={imgs.length ? imgs : (first ? [first] : [])} video={a.video} width={slideW} maxHeight={420} onPressImage={() => onPress?.(a)} />;
                   }
-                  return first ? <AutoFitAdImage uri={first} maxWidth={slideW} maxHeight={420} /> : null;
+                  return first ? <AutoFitAdImage uri={first} maxWidth={slideW} maxHeight={420} radius={10} /> : null;
                 })()}
               </TouchableOpacity>
             ))}
@@ -437,23 +443,23 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
     );
   }
 
-   const image = imageOf(ad);
+  const image = imageOf(ad);
   const gallery = Array.isArray(ad?.images) ? ad.images.filter(Boolean) : [];
   const hasVideo = Boolean(ad?.video);
   if (!image && !hasVideo) return null;
 
   if (gallery.length > 1 || hasVideo) {
     return (
-      <View style={styles.inFeedAdSlot}>
+      <View style={styles.inFeedAdSlot} onLayout={handleLayout}>
         <Text style={styles.adCaption}>ADVERTISEMENT</Text>
         <MediaGallery
           images={gallery.length ? gallery : [image]}
           video={ad.video}
-          width={Math.min(winW - 24, 520)}
+          width={contentW}
           maxHeight={420}
           onPressImage={() => onPress?.(ad)}
         />
-        <View style={{ width: Math.min(winW - 24, 520) }}>
+        <View style={{ width: contentW }}>
           <AdCtaButtons ad={ad} onOpenLeadForm={onOpenLeadForm} />
         </View>
       </View>
@@ -461,12 +467,12 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
   }
 
   return (
-    <View style={styles.inFeedAdSlot}>
+    <View style={styles.inFeedAdSlot} onLayout={handleLayout}>
       <TouchableOpacity style={{ width: '100%', alignItems: 'center' }} activeOpacity={0.92} onPress={() => onPress?.(ad)}>
         <Text style={styles.adCaption}>ADVERTISEMENT</Text>
-        <AutoFitAdImage uri={image} maxWidth={Math.min(winW - 24, 520)} maxHeight={420} />
+        <AutoFitAdImage uri={image} maxWidth={contentW} maxHeight={420} radius={10} />
       </TouchableOpacity>
-      <View style={{ width: Math.min(winW - 24, 520) }}>
+      <View style={{ width: contentW }}>
         <AdCtaButtons ad={ad} onOpenLeadForm={onOpenLeadForm} />
       </View>
     </View>
@@ -539,7 +545,7 @@ function SeatSelectModal({ visible, stateName, seats, selectedSeatId, onSelectSe
           {isLoadingSeats && baseSeats.length === 0 ? (
             <Text style={seatStyles.loadingText}>Loading seats…</Text>
           ) : null}
-          {seatsToShow.map((seat) => {
+          {seatsToShow.map((seat, seatIdx) => {
             const isTaken = seat.status === 'taken';
             const isDisabled = seat.status === 'disabled';
             const isSelected = selectedSeatId === seat.id;
@@ -547,7 +553,7 @@ function SeatSelectModal({ visible, stateName, seats, selectedSeatId, onSelectSe
             const disabled = isTaken || isDisabled;
             return (
               <TouchableOpacity
-                key={seat.id}
+                key={`seat-${seat.id ?? seatIdx}-${seatIdx}`}
                 activeOpacity={0.85}
                 disabled={disabled}
                 onPress={() => onSelectSeatId(seat.id)}
@@ -1516,15 +1522,17 @@ const styles = StyleSheet.create({
   topAdImage: { width: '100%', height: 90, maxWidth: 960, backgroundColor: '#e2e8f0' },
   adCaption: { fontSize: 9, color: '#64748b', fontWeight: '700', marginBottom: 3, letterSpacing: 0.3 },
    inFeedAdSlot: {
-    width: '100%',
-    marginVertical: 10,
+    marginHorizontal: 10,
+    marginTop: 10,
+    marginBottom: 6,
     alignItems: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: '#f8fafc',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    overflow: 'hidden',
     ...Platform.select({
       web: { boxShadow: '0 2px 10px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04)' },
       default: { elevation: 2, shadowColor: '#0f172a', shadowOpacity: 0.06, shadowRadius: 6 },
@@ -1565,7 +1573,7 @@ const styles = StyleSheet.create({
 
   // ── Search bar — sabse upar, chota + gol shape. Android par thoda
   // compact rakha gaya hai (kam height/padding). ──────────────────────────
-  sectionSearchRow: { marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4 },
+  sectionSearchRow: { marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4, marginHorizontal: 10 },
   sectionSearchRowCompact: { flexDirection: 'column', alignItems: 'stretch' },
   sectionSearchField: {
     flex: 1,
@@ -1621,6 +1629,7 @@ const ecomeRowStyles = StyleSheet.create({
 const ecomeTopStyles = StyleSheet.create({
   wrap: {
     marginBottom: 12,
+    marginHorizontal: 10,
     backgroundColor: '#ffffff',
     borderRadius: 12,
     borderWidth: 1,
