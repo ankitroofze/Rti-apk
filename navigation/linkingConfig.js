@@ -194,6 +194,65 @@ const routeTitleMap = {
   AdPlans: 'Advertising Plans | RTI News',
 };
 
+const PROTECTED_MENU_PATHS = [
+  '/menu',
+  '/dashboard',
+  '/profile',
+  '/wallet',
+  '/withdraw',
+  '/add-news',
+  '/post-news',
+  '/news-feed',
+  '/my-network',
+  '/network',
+  '/subscription-plans',
+  '/plans',
+  '/my-subscription',
+  '/my-subscriptions',
+  '/certification',
+  '/certificate',
+  '/notifications',
+  '/alerts',
+  '/settings',
+  '/my-enquiries',
+  '/ecom-enquiries',
+  '/enquiries',
+  '/my-ads',
+  '/my-listings',
+  '/listings',
+  '/seller',
+  '/payment-history',
+  '/payment',
+  '/chats',
+  '/chat',
+  '/start-live',
+  '/broadcast',
+  '/blue-tick',
+  '/purchase-blue-tick',
+  '/ad-plans',
+  '/choose-plan',
+  '/quiz-subscription',
+  '/ecom-subscription',
+  '/quiz',
+  '/attempt-quiz',
+  '/my-attempts',
+];
+
+const isProtectedMenuRoute = (pathname) => {
+  const p = String(pathname || '').toLowerCase();
+  return PROTECTED_MENU_PATHS.some((prefix) => p === prefix || p.startsWith(`${prefix}/`));
+};
+
+const checkIsLoggedInSync = () => {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return true;
+  try {
+    const raw = window.localStorage.getItem('current_user_email') || window.localStorage.getItem('@current_user_email');
+    return Boolean(raw && raw !== 'null' && raw !== 'undefined' && raw.trim());
+  } catch (_) {
+    return false;
+  }
+};
+
 export const linkingConfig = {
   prefixes: getDomainPrefixes(),
   config: {
@@ -242,6 +301,23 @@ export const linkingConfig = {
 
       const finalPath = `${mappedPath}${search}`;
       const state = defaultGetStateFromPath(finalPath, options);
+
+      // Agar user login nahi hai aur menu/dashboard ka protected route hai, to /login me throw karo
+      if (!checkIsLoggedInSync() && isProtectedMenuRoute(mappedPath)) {
+        const targetRoute = state?.routes?.[state.routes.length - 1];
+        return {
+          routes: [
+            {
+              name: 'Login',
+              params: {
+                redirectTo: targetRoute?.name || 'QuickMenu',
+                redirectParams: targetRoute?.params || undefined,
+              },
+            },
+          ],
+        };
+      }
+
       if (state) return state;
 
       return {
@@ -271,4 +347,3 @@ export const linkingConfig = {
     },
   },
 };
-

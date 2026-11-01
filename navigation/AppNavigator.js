@@ -79,6 +79,52 @@ import GroupInfoScreen from '../pages/GroupInfoScreen';
 import OtpScreen from '../auth/OtpScreen';
 import InfoPageScreen from '../screens/InfoPageScreen';
 import { linkingConfig } from './linkingConfig';
+import { useAuth } from '../contexts/AuthContext';
+
+const MENU_PROTECTED_SCREENS = new Set([
+  'QuickMenu',
+  'Profile',
+  'Add News',
+  'News Feed',
+  'My Network',
+  'Wallet',
+  'Withdraw',
+  'Subscription Plans',
+  'SubscriptionPlanDetails',
+  'My Subscriptions',
+  'Live Streaming',
+  'Start Live',
+  'Certification',
+  'MyAttempts',
+  'Notifications',
+  'Settings',
+  'PaymentHistory',
+  'BlockedUsersScreen',
+  'My Ads Subscription',
+  'My Ecom Subscription',
+  'My Quiz Subscription',
+  'MyAds',
+  'MyListings',
+  'SellerEnquiryDashboard',
+  'SellerReports',
+  'MyEnquiries',
+  'ViewMember',
+  'EditMember',
+  'VerifyMember',
+  'Payment',
+  'AttemptQuiz',
+  'QuizResult',
+  'CertificatePreview',
+  'CommerceAdsCenter',
+  'AdPlans',
+  'ChoosePlan',
+  'PurchaseBlueTick',
+  'QuizSubscription',
+  'EcomSubscription',
+  'ChatList',
+  'ChatConversation',
+  'GroupInfo',
+]);
 
 const Stack = createNativeStackNavigator();
 const NAVIGATION_STATE_KEY = 'rti-news-navigation-state';
@@ -86,6 +132,34 @@ const NAVIGATION_STATE_KEY = 'rti-news-navigation-state';
 export default function AppNavigator() {
   const exitDialogVisibleRef = useRef(false);
   const [isNavStateReady, setIsNavStateReady] = useState(false);
+  const { isLoggedIn, isAuthLoading } = useAuth();
+
+  const enforceAuth = () => {
+    if (isAuthLoading) return;
+    if (!isLoggedIn) {
+      if (!navigationRef.isReady()) return;
+      const currentRoute = navigationRef.getCurrentRoute();
+      if (!currentRoute) return;
+      if (MENU_PROTECTED_SCREENS.has(currentRoute.name)) {
+        navigationRef.reset({
+          index: 0,
+          routes: [
+            {
+              name: 'Login',
+              params: {
+                redirectTo: currentRoute.name,
+                redirectParams: currentRoute.params,
+              },
+            },
+          ],
+        });
+      }
+    }
+  };
+
+  useEffect(() => {
+    enforceAuth();
+  }, [isLoggedIn, isAuthLoading]);
 
   const stackScreens = [
     { name: 'Home', component: HomeScreen },
@@ -201,13 +275,21 @@ export default function AppNavigator() {
     return () => subscription.remove();
   }, []);
 
-  if (!isNavStateReady) {
+  if (!isNavStateReady || isAuthLoading) {
     return null;
   }
 
   return (
-    <NavigationContainer ref={navigationRef} linking={linkingConfig}>
-      <Stack.Navigator initialRouteName="Home" screenOptions={{ headerShown: false }}>
+    <NavigationContainer
+      ref={navigationRef}
+      linking={linkingConfig}
+      onReady={enforceAuth}
+      onStateChange={enforceAuth}
+    >
+      <Stack.Navigator
+        initialRouteName="Home"
+        screenOptions={{ headerShown: false }}
+      >
         {stackScreens.map(({ name, component }) => (
           <Stack.Screen key={name} name={name} component={component} />
         ))}

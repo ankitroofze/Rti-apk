@@ -13,7 +13,7 @@ import styles from '../styles/LoginStyles';
 export default function LoginScreen({ navigation, route }) {
   useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const insets = useSafeAreaInsets();
-  const { login } = useAuth();
+  const { login, isLoggedIn } = useAuth();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -21,6 +21,12 @@ export default function LoginScreen({ navigation, route }) {
   const [errors, setErrors] = useState({ email: '', password: '', general: '' });
   const scrollRef = useRef(null);
   const redirectTo = route?.params?.redirectTo || 'Home';
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      navigation.reset({ index: 0, routes: [{ name: redirectTo, params: route?.params?.redirectParams }] });
+    }
+  }, [isLoggedIn]);
 
   const validate = () => {
     const next = { email: '', password: '', general: '' };

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -30,13 +30,19 @@ export default function LoginScreen({ navigation, route }) {
   useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const { width } = useWindowDimensions();
   const showImagePanel = width >= 900;
-  const { login } = useAuth();
+  const { login, isLoggedIn } = useAuth();
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errors, setErrors] = useState({ email: '', password: '', general: '' });
   const redirectTo = route?.params?.redirectTo || 'Home';
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      navigation.reset({ index: 0, routes: [{ name: redirectTo, params: route?.params?.redirectParams }] });
+    }
+  }, [isLoggedIn]);
 
   const validate = () => {
     const next = { email: '', password: '', general: '' };

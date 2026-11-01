@@ -52,7 +52,7 @@ function homeStoryFromAd(ad = {}) {
     ad.photo || ad.image || ad.image_url || ad.images?.[0] || ad.photos?.[0] || ''
   ).trim();
   return {
-    id: String(ad.feed_id || `ad-feed-${ad.id || Date.now()}`),
+    id: String(ad.id || ad.feed_id || (ad.ad_id ? `ad-feed-${ad.ad_id}` : 'ad-item')),
     isAd: true,
     title: ad.title || 'Sponsored Advertisement',
     subtitle: 'Sponsored',
@@ -790,6 +790,14 @@ export default function HomeScreen({ navigation, route }) {
   const feedFreshRef = useRef(false); // fresh API data aa chuka ho to cache usko overwrite na kare
   useEffect(() => {
     let alive = true;
+    // Priority 1: Instant ads load on page mount so sponsored popup appears immediately
+    UserStore.getActiveAdsFeed().then((ads) => {
+      if (!alive || !Array.isArray(ads) || !ads.length) return;
+      const adStories = ads.map(homeStoryFromAd);
+      adStoriesRef.current = adStories;
+      setActiveAds(adStories);
+    }).catch(() => {});
+
     AsyncStorage.getItem(HOME_FEED_CACHE_KEY).then((raw) => {
       if (!alive || feedFreshRef.current || !raw) return;
       const cached = JSON.parse(raw);
@@ -849,9 +857,9 @@ export default function HomeScreen({ navigation, route }) {
       const ecomPromise = loadMore
         ? Promise.resolve(null)
         : UserStore.getEcomeMarketplaceSummary().catch(() => null);
-      const [summary, activeAds] = await Promise.all([
+      const [summary, rawAds] = await Promise.all([
         UserStore.getNewsFeedSummary({ feedType: 'all', type: 1, perPage: 10, ...(cursor ? { cursor } : {}) }),
-        loadMore ? Promise.resolve(null) : UserStore.getActiveAdsFeed(),
+        loadMore ? Promise.resolve(null) : UserStore.getActiveAdsFeed().catch(() => null),
       ]);
       if (reqId !== newsReqIdRef.current) return;   // purana response (refresh ke baad) ignore
       if (loadMore && !summary) return;             // temporary fail — cursor/hasMore jaisa tha waisa rahe
@@ -865,10 +873,10 @@ export default function HomeScreen({ navigation, route }) {
         newsStoriesRef.current = [...newsStoriesRef.current, ...pageStories.filter((s) => !seen.has(String(s.id)))];
       } else {
         newsStoriesRef.current = pageStories;
-        adStoriesRef.current = Array.isArray(activeAds) ? activeAds.map(homeStoryFromAd) : [];
-        // ecom listings: pichla jo tha wahi rahe, naya aate hi neeche update ho jayega
-        // Advertisements sirf rotating popup mein, news cards ke beech nahi (existing rule)
-        setActiveAds(adStoriesRef.current);
+        if (Array.isArray(rawAds) && rawAds.length) {
+          adStoriesRef.current = rawAds.map(homeStoryFromAd);
+          setActiveAds(adStoriesRef.current);
+        }
       }
 
       const pg = summary?.pagination || null;

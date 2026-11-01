@@ -1,13 +1,13 @@
 // HomePromoPopup.js
-// Home screen khulte hi aane wala FULL-SCREEN ad popup (image + video dono).
-// Rules (client ke hisaab se):
+// Home screen khulte hi aane wala FULL-SCREEN / Centered Web ad popup (image + video dono).
+// Rules:
 //  - Har ad (image ho ya video) sirf AD_SECONDS = 5 second chalta hai, phir apne aap agla ad.
 //  - Skip button pehle 5 second tak "Skip in 5s" countdown dikhata hai, uske baad chalu hota hai.
-//  - Skip dabane par POORA popup ek baar me band ho jaata hai (agla ad nahi).
-//  - Backdrop / blur area par tap karne se popup KABHI band nahi hota (na 5 sec se pehle, na baad me).
-//    Popup sirf Skip button se band hota hai (5 sec poore hone ke baad).
+//  - Skip dabane par POORA popup ek baar me band ho jaata hai.
+//  - Backdrop / blur area par tap karne se popup KABHI band nahi hota.
 //  - Aakhri ad par ruk jaata hai (loop nahi) — user Skip dabake band kare.
-//  - Sirf ASLI image / video par tap karne se ad ka redirect khulta hai (onPress).
+//  - Sirf ASLI image / video par tap karne se ad ka redirect khulta hai (canSkip ke baad).
+//  - Video aur media ke aspect ratio ke hisaab se popup card ka size match hota hai (no black bars).
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -31,11 +31,10 @@ import { useGlobalMuted, getGlobalMuted } from '../utils/Globalmutestore';
 import { safePause, safePlay, safeSetMuted } from '../utils/videoPlayerSafe';
 
 const AD_SECONDS = 5;          // har ad ka fixed time (image + video)
-const AD_FIT = 'contain';      // ad poora dikhta hai (crop nahi); khaali jagah BLUR background se bharti hai, black se nahi
+const AD_FIT = 'contain';      // ad poora dikhta hai (crop nahi); khaali jagah BLUR background se bharti hai
 const IS_WEB = Platform.OS === 'web';
 
-// ── WEB video: asli <video> tag. Isse video ka asli size (videoWidth/Height) turant milta hai aur
-// popup card video ke aspect ratio ke hisaab se banta hai => poora video bina crop / bina chhote box ke dikhta hai.
+// ── WEB video: asli <video> tag ──────────────────────────────────────────────
 function PromoVideoWeb({ uri, onSize }) {
   const [muted, , toggleMuted] = useGlobalMuted();
   const elRef = useRef(null);
@@ -52,17 +51,31 @@ function PromoVideoWeb({ uri, onSize }) {
     const tryPlay = () => {
       const pr = el.play?.();
       if (pr && pr.catch) {
-        // Browser unmuted autoplay block kare to muted karke chalao
-        pr.catch(() => { try { el.muted = true; el.play?.().catch(() => {}); } catch (_) { /* ignore */ } });
+        pr.catch(() => {
+          try {
+            el.muted = true;
+            el.play?.().catch(() => {});
+          } catch (_) {}
+        });
       }
     };
     tryPlay();
-    return () => { try { el.pause?.(); } catch (_) { /* ignore */ } };
-  }, [uri]);
+
+    // agar video size pehle se available ho
+    if (el.videoWidth && el.videoHeight && onSize) {
+      onSize({ w: el.videoWidth, h: el.videoHeight });
+    }
+
+    return () => {
+      try { el.pause?.(); } catch (_) {}
+    };
+  }, [uri, onSize]);
 
   const reportSize = (e) => {
-    const v = e?.target;
-    if (v?.videoWidth && v?.videoHeight && onSize) onSize({ w: v.videoWidth, h: v.videoHeight });
+    const v = e?.target || elRef.current;
+    if (v?.videoWidth && v?.videoHeight && onSize) {
+      onSize({ w: v.videoWidth, h: v.videoHeight });
+    }
   };
 
   return (
@@ -76,9 +89,15 @@ function PromoVideoWeb({ uri, onSize }) {
         controls: false,
         preload: 'auto',
         onLoadedMetadata: reportSize,
+        onLoadedData: reportSize,
+        onCanPlay: reportSize,
         style: {
-          width: '100%', height: '100%', display: 'block',
-          objectFit: 'contain', backgroundColor: '#000', pointerEvents: 'none',
+          width: '100%',
+          height: '100%',
+          display: 'block',
+          objectFit: 'contain',
+          backgroundColor: '#000',
+          pointerEvents: 'none',
         },
       })}
       <TouchableOpacity
@@ -94,7 +113,7 @@ function PromoVideoWeb({ uri, onSize }) {
   );
 }
 
-// ── Video ad (muted autoplay, 5 sec ke baad parent agla ad / ruk jaata hai) ──
+// ── Native Video ad (muted autoplay) ─────────────────────────────────────────
 function PromoVideo({ uri, poster, onSize }) {
   const [muted, , toggleMuted] = useGlobalMuted();
   const player = useVideoPlayer(uri ? { uri } : null, (p) => {
@@ -103,23 +122,23 @@ function PromoVideo({ uri, poster, onSize }) {
       p.muted = getGlobalMuted();
       p.volume = 1;
       p.play();
-    } catch (_) { /* ignore */ }
+    } catch (_) {}
   });
 
   useEffect(() => { safeSetMuted(player, muted); }, [player, muted]);
 
-  // Video ka asli size batao taaki sirf video ke upar tap redirect ho (blur par nahi)
   useEffect(() => {
     if (!player || !onSize) return undefined;
     const report = (track) => {
       const sz = track?.size;
       if (sz?.width && sz?.height) onSize({ w: sz.width, h: sz.height });
     };
-    try { report(player.videoTrack); } catch (_) { /* ignore */ }
+    try { report(player.videoTrack); } catch (_) {}
     let sub;
-    try { sub = player.addListener?.('videoTrackChange', (e) => report(e?.videoTrack ?? e)); } catch (_) { /* ignore */ }
-    return () => { try { sub?.remove?.(); } catch (_) { /* ignore */ } };
+    try { sub = player.addListener?.('videoTrackChange', (e) => report(e?.videoTrack ?? e)); } catch (_) {}
+    return () => { try { sub?.remove?.(); } catch (_) {} };
   }, [player, onSize]);
+
   useEffect(() => {
     safePlay(player);
     return () => { safePause(player); };
@@ -149,10 +168,7 @@ function PromoVideo({ uri, poster, onSize }) {
   );
 }
 
-// ✅ NEW: Jo ad user ek baar dekh chuka hai wo agli baar app kholne par LAST me aata hai.
-// Naye (unseen) ads pehle, dekhe hue ads baad me — jo sabse pehle dekha tha wo pehle, jo abhi dekha wo sabse last.
-// "Dekha hua" phone me AsyncStorage me save hota hai ({ adId: lastSeenTime }), isliye app band karke
-// dobara kholne par bhi yaad rehta hai.
+// Seen-wise ordered list helper
 const SEEN_KEY = 'home_promo_ads_seen_v1';
 const adKey = (a) => String(a?.id ?? a?.ad_id ?? '');
 const orderBySeen = (src = [], seen = {}) => {
@@ -160,40 +176,36 @@ const orderBySeen = (src = [], seen = {}) => {
   return [...src].sort((a, b) => {
     const sa = Number(seen[adKey(a)]) || 0;
     const sb = Number(seen[adKey(b)]) || 0;
-    if (!sa && !sb) return pos.get(a) - pos.get(b); // dono naye: original order
-    if (!sa) return -1;                              // naya ad pehle
+    if (!sa && !sb) return pos.get(a) - pos.get(b);
+    if (!sa) return -1;
     if (!sb) return 1;
-    return (sa - sb) || (pos.get(a) - pos.get(b));   // dono dekhe hue: purana-dekha pehle, abhi-dekha last
+    return (sa - sb) || (pos.get(a) - pos.get(b));
   });
 };
 
 export default function HomePromoPopup({ ad, ads, onPress }) {
   const insets = useSafeAreaInsets();
   const { width: winW, height: winH } = useWindowDimensions();
-  // Web: chhota centered popup card. Mobile: poori screen.
-  let cardW = Math.min(440, winW * 0.92);
-  let cardH = Math.min(760, winH * 0.8);
-  const topPad = IS_WEB ? 14 : (insets.top || StatusBar.currentHeight || 24) + 8;
-  const bottomPad = IS_WEB ? 16 : Math.max(insets.bottom, 12) + 6;
 
   const [visible, setVisible] = useState(false);
   const [index, setIndex] = useState(0);
   const [remaining, setRemaining] = useState(AD_SECONDS);
-  const [unlocked, setUnlocked] = useState(false);
-  const [areaSize, setAreaSize] = useState({ w: 0, h: 0 });   // media area ka size
-  const [mediaNatural, setMediaNatural] = useState(null);       // image/video ka asli size {w,h}
+  const [, setUnlocked] = useState(false);
+  const [areaSize, setAreaSize] = useState({ w: 0, h: 0 });
+  const [mediaNatural, setMediaNatural] = useState(null);
 
-  // `ads` (array) ho to wahi, warna purana single `ad`. Image YA video wale ads.
+  // `ads` (array) ho to wahi, warna purana single `ad`
   const rawList = useMemo(() => {
     const src = Array.isArray(ads) && ads.length ? ads : (ad ? [ad] : []);
     return src.filter((a) => a && (a.video || a.image || a.brandLogo));
   }, [ads, ad]);
 
-  // ✅ NEW: seen-wise ordered list (order popup khulte waqt fix hota hai, beech me nahi badalta)
   const seenRef = useRef({});
   const rawListRef = useRef(rawList);
   rawListRef.current = rawList;
+  const visibleRef = useRef(false);
   const [list, setList] = useState([]);
+
   const loadSeen = useCallback(async () => {
     try {
       const raw = await AsyncStorage.getItem(SEEN_KEY);
@@ -201,16 +213,18 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
       seenRef.current = parsed && typeof parsed === 'object' ? parsed : {};
     } catch { seenRef.current = {}; }
   }, []);
-  // ✅ FIX (timer 2 baar): popup khula ho tab list ka order KABHI mat badlo.
-  // Pehle parent re-render par `rawList` badalta tha, tab tak current ad "seen" mark ho chuka hota tha,
-  // to wo last me chala jata tha -> current ad badal jata -> countdown 5 se dobara shuru ho jata tha.
-  const visibleRef = useRef(false);
-  useEffect(() => {
-    if (visibleRef.current) return; // popup chal raha hai — list freeze
-    setList(orderBySeen(rawList, seenRef.current));
-  }, [rawList]);
 
-  // ✅ SPEED: popup khulte hi ad turant dikhe isliye saari ad images pehle se download (cache) kar lo
+  // ✅ FIX: List tabhi freeze hoti hai jab popup sach me ek valid ad ke sath khula ho (list.length > 0).
+  // Agar list abhi tak khali hai aur naye ads aa gaye, to list ko turant update karo.
+  useEffect(() => {
+    if (!visibleRef.current || list.length === 0) {
+      if (rawList.length > 0) {
+        setList(orderBySeen(rawList, seenRef.current));
+      }
+    }
+  }, [rawList, list.length]);
+
+  // Ads prefetch
   useEffect(() => {
     list.forEach((a) => {
       const uri = String(a.image || a.brandLogo || '').trim();
@@ -218,53 +232,66 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
     });
   }, [list]);
 
-  // Home screen par har baar aane par popup dobara, countdown naye sire se
+  const openPopupIfReady = useCallback((sourceList) => {
+    const items = Array.isArray(sourceList) && sourceList.length ? sourceList : rawListRef.current;
+    if (!items.length) return;
+    if (visibleRef.current) return;
+    visibleRef.current = true;
+    const sorted = orderBySeen(items, seenRef.current);
+    setList(sorted);
+    setVisible(true);
+    setIndex(0);
+    setRemaining(AD_SECONDS);
+    setUnlocked(false);
+  }, []);
+
+  // Screen focus par dekhe hue ads load karke popup open karo
   useFocusEffect(
     useCallback(() => {
       let alive = true;
-      // pehle "dekhe hue ads" load karo, phir order lagake popup kholo (dekhe hue ads last me)
       loadSeen().then(() => {
         if (!alive) return;
-        // Popup pehle se khula hai (focus event dobara aaya) to countdown / list reset mat karo
-        if (visibleRef.current) return;
-        visibleRef.current = true;
-        setList(orderBySeen(rawListRef.current, seenRef.current));
-        setVisible(true);
-        setIndex(0);
-        setRemaining(AD_SECONDS);
-        setUnlocked(false);
+        if (rawListRef.current.length > 0) {
+          openPopupIfReady(rawListRef.current);
+        }
       });
       return () => { alive = false; };
-    }, [loadSeen])
+    }, [loadSeen, openPopupIfReady])
   );
+
+  // Agar ads network / cache se thoda late aayein to aate hi popup open ho
+  useEffect(() => {
+    if (rawList.length > 0 && !visibleRef.current) {
+      openPopupIfReady(rawList);
+    }
+  }, [rawList, openPopupIfReady]);
 
   const current = list.length ? list[Math.min(index, list.length - 1)] : null;
   const currentKey = current ? `${current.id ?? 'ad'}-${index}` : '';
   const isLast = index >= list.length - 1;
 
-  // ✅ NEW: ad screen par aate hi "dekha hua" mark + save (order agli baar khulne par badlega)
+  // Mark seen
   useEffect(() => {
     if (!visible || !current) return;
     const key = adKey(current);
     if (!key) return;
     const next = { ...seenRef.current, [key]: Date.now() };
-    // purane / hat chuke ads ka record saaf karo (storage chhota rahe)
     const live = new Set(rawListRef.current.map(adKey));
     Object.keys(next).forEach((k) => { if (!live.has(k)) delete next[k]; });
     seenRef.current = next;
     AsyncStorage.setItem(SEEN_KEY, JSON.stringify(next)).catch(() => {});
-  }, [visible, currentKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [visible, currentKey]);
 
-  // Har ad ka 5 sec countdown
+  // Har ad ka 5s countdown
   useEffect(() => {
     if (!visible || !current) return undefined;
     setRemaining(AD_SECONDS);
     setUnlocked(false);
     const timer = setInterval(() => setRemaining((r) => (r > 0 ? r - 1 : 0)), 1000);
     return () => clearInterval(timer);
-  }, [visible, index, Boolean(current)]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [visible, index, Boolean(current)]);
 
-  // 5 sec poore: Skip unlock + (aakhri ad na ho to) agla ad
+  // 5 sec poore: agla ad
   useEffect(() => {
     if (!visible || !current || remaining > 0) return undefined;
     setUnlocked(true);
@@ -273,11 +300,9 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
     return () => clearTimeout(t);
   }, [visible, current, remaining, isLast]);
 
-  // ✅ Skip ka 5 sec countdown SIRF pehle ad par. Pehla ad khatam hone ke baad (index > 0) baaki ads par
-  // Skip seedha available rehta hai — "Skip in 5s" har ad par dobara nahi aata.
   const canSkip = index > 0 || remaining <= 0;
 
-  // Current ad ka asli size nikaalo (image ke liye Image.getSize; video ke liye PromoVideo se aata hai)
+  // Natural size calculation for images
   useEffect(() => {
     setMediaNatural(null);
     if (!current) return;
@@ -287,19 +312,18 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
     let alive = true;
     Image.getSize(uri, (w, h) => { if (alive && w && h) setMediaNatural({ w, h }); }, () => {});
     return () => { alive = false; };
-  }, [currentKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentKey]);
 
-  const close = () => { visibleRef.current = false; setVisible(false); };
+  const close = () => {
+    visibleRef.current = false;
+    setVisible(false);
+  };
   const handleSkip = () => { if (canSkip) close(); };
 
   if (!visible || !current) return null;
 
   const handlePress = () => {
-    // ✅ FIX: 5 sec ka timer poora hone se pehle redirect (profile / website / whatsapp ...) KABHI nahi khulega.
-    // Pehle ad par tap karte hi popup band ho jaata tha aur 5 sec ki timeline bypass ho jaati thi.
-    // Ab redirect tabhi chalta hai jab Skip bhi available ho (canSkip).
-    if (!canSkip) return;
-    // Sirf asli image/video par tap -> ad ka redirect. (Blur par tap kuch nahi karta.)
+    if (!canSkip) return; // 5 sec se pehle tap redirect nahi hota
     if (onPress) onPress(current);
     else if (current.ctaUrl) openExternalUrl(current.ctaUrl);
     close();
@@ -308,23 +332,33 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
   const videoUri = String(current.video || '').trim();
   const imageUri = String(current.image || current.brandLogo || '').trim();
 
-  // ✅ WEB + VIDEO: popup card ko video ke asli aspect ratio par fit karo (crop nahi, chhota box nahi).
+  // ── Responsive Dimensions Calculation ──────────────────────────────────────
+  // Web: Card dimensions match the video's actual aspect ratio (width and height)
+  // Mobile: Full screen presentation
+  let cardW = Math.min(440, winW * 0.92);
+  let cardH = Math.min(760, winH * 0.82);
+  const topPad = IS_WEB ? 14 : (insets.top || StatusBar.currentHeight || 24) + 8;
+  const bottomPad = IS_WEB ? 16 : Math.max(insets.bottom, 12) + 6;
+
   const webVideoFit = IS_WEB && Boolean(videoUri);
-  if (webVideoFit && mediaNatural?.w && mediaNatural?.h) {
+  if (IS_WEB) {
     const maxW = Math.min(winW * 0.94, 960);
-    const maxH = winH * 0.9;
-    const sc = Math.min(maxW / mediaNatural.w, maxH / mediaNatural.h);
-    cardW = Math.max(280, Math.round(mediaNatural.w * sc));
-    cardH = Math.max(200, Math.round(mediaNatural.h * sc));
-  } else if (webVideoFit) {
-    // metadata aane tak bada, neutral card
-    cardW = Math.min(640, winW * 0.94);
-    cardH = Math.min(winH * 0.7, cardW * 0.5625);
+    const maxH = Math.min(winH * 0.88, 720);
+    if (mediaNatural?.w && mediaNatural?.h) {
+      const sc = Math.min(maxW / mediaNatural.w, maxH / mediaNatural.h);
+      cardW = Math.max(280, Math.round(mediaNatural.w * sc));
+      cardH = Math.max(200, Math.round(mediaNatural.h * sc));
+    } else if (webVideoFit) {
+      // metadata load hone tak 16:9 neutral card
+      cardW = Math.min(640, maxW);
+      cardH = Math.min(winH * 0.75, Math.round(cardW * (9 / 16)));
+    } else {
+      cardW = Math.min(480, winW * 0.92);
+      cardH = Math.min(winH * 0.82, 680);
+    }
   }
 
-  // 'contain' ke hisaab se image/video jitni jagah me dikh rahi hai utna hi tappable area
   let hit = { width: '100%', height: '100%' };
-  // Video: always use the full media area with 'contain' so the WHOLE video is visible (track metadata can be wrong/rotated).
   if (!videoUri && areaSize.w && areaSize.h && mediaNatural?.w && mediaNatural?.h) {
     const scale = Math.min(areaSize.w / mediaNatural.w, areaSize.h / mediaNatural.h);
     hit = { width: Math.round(mediaNatural.w * scale), height: Math.round(mediaNatural.h * scale) };
@@ -332,16 +366,24 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
 
   const stage = (
     <View style={IS_WEB ? [styles.webCard, { width: cardW, height: cardH }] : styles.screen}>
-      {/* Blur background: ad ki hi image blur hoke peeche (black nahi) */}
+      {/* Blurred background image if available */}
       {imageUri ? (
-        <Image source={{ uri: imageUri }} style={StyleSheet.absoluteFill} resizeMode="cover" blurRadius={Platform.OS === 'android' ? 25 : 40} />
+        <Image
+          source={{ uri: imageUri }}
+          style={StyleSheet.absoluteFill}
+          resizeMode="cover"
+          blurRadius={Platform.OS === 'android' ? 25 : 40}
+        />
       ) : null}
       <View style={[StyleSheet.absoluteFill, imageUri ? styles.blurTint : styles.noImageBg]} pointerEvents="none" />
 
-      {/* Ad media — top/bottom bar se bachke beech me. Container touch nahi leta (blur par tap = kuch nahi),
-          sirf andar ka asli image/video wala box tappable hai. */}
+      {/* Ad Media Area */}
       <View
-        style={[styles.mediaArea, styles.mediaAreaCenter, webVideoFit ? { top: 0, bottom: 0 } : { top: topPad + 52, bottom: bottomPad }]}
+        style={[
+          styles.mediaArea,
+          styles.mediaAreaCenter,
+          webVideoFit ? { top: 0, bottom: 0 } : { top: topPad + 52, bottom: bottomPad },
+        ]}
         pointerEvents="box-none"
         onLayout={(e) => {
           const { width, height } = e.nativeEvent.layout;
@@ -370,7 +412,7 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
 
       {webVideoFit ? <View style={styles.topScrim} pointerEvents="none" /> : null}
 
-      {/* Top: progress bars + label + skip */}
+      {/* Top Header: Progress row + AD pill + Skip timer */}
       <View style={[styles.topBar, { paddingTop: topPad }]} pointerEvents="box-none">
         <View style={styles.progressRow} pointerEvents="none">
           {list.map((a, i) => {
@@ -410,23 +452,20 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
           </TouchableOpacity>
         </View>
       </View>
-
     </View>
   );
 
   return (
     <Modal
-      visible
+      visible={visible && Boolean(current)}
       transparent={IS_WEB}
       animationType="fade"
       statusBarTranslucent
       presentationStyle={IS_WEB ? undefined : 'fullScreen'}
-      onRequestClose={() => { if (canSkip) close(); }} // Android back: countdown me block
+      onRequestClose={() => { if (canSkip) close(); }}
     >
       {IS_WEB ? (
-        // Web: poora page cover nahi — blurred (black nahi) backdrop + center popup
         <View style={styles.webBackdrop}>
-          {/* backdrop tap se popup band nahi hota — sirf Skip button se */}
           <View style={StyleSheet.absoluteFill} pointerEvents="auto" />
           {stage}
         </View>
@@ -438,29 +477,53 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#0f172a', overflow: 'hidden' },
   webBackdrop: {
-    flex: 1, alignItems: 'center', justifyContent: 'center',
-    backgroundColor: 'rgba(15,23,42,0.35)',
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(15,23,42,0.40)',
     ...(IS_WEB ? { backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)' } : null),
   },
   webCard: {
-    backgroundColor: '#0f172a', borderRadius: 20, overflow: 'hidden',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)',
-    ...(IS_WEB ? { boxShadow: '0 24px 70px rgba(0,0,0,0.45)' } : null),
+    backgroundColor: '#0f172a',
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.18)',
+    ...(IS_WEB ? { boxShadow: '0 24px 70px rgba(0,0,0,0.50)' } : null),
   },
   blurTint: { backgroundColor: 'rgba(15,23,42,0.45)' },
   noImageBg: { backgroundColor: '#1e293b' },
   mediaArea: { position: 'absolute', left: 0, right: 0 },
-  topScrim: { position: 'absolute', top: 0, left: 0, right: 0, height: 84, backgroundColor: 'rgba(0,0,0,0.28)' },
+  topScrim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 84,
+    backgroundColor: 'rgba(0,0,0,0.30)',
+  },
   mediaAreaCenter: { alignItems: 'center', justifyContent: 'center' },
   topBar: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 14 },
   progressRow: { flexDirection: 'row', gap: 4 },
-  progressTrack: { flex: 1, height: 3, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.35)', overflow: 'hidden' },
+  progressTrack: {
+    flex: 1,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.35)',
+    overflow: 'hidden',
+  },
   progressFill: { height: 3, backgroundColor: '#ffffff' },
   topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 },
   adPill: {
-    flexDirection: 'row', alignItems: 'center', gap: 6, height: 28, paddingHorizontal: 11,
-    borderRadius: 14, backgroundColor: 'rgba(0,0,0,0.45)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.22)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    height: 28,
+    paddingHorizontal: 11,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.22)',
   },
   adCaption: { fontSize: 11, color: '#fbbf24', fontWeight: '900', letterSpacing: 1 },
   adCaptionLight: { fontSize: 11, color: 'rgba(255,255,255,0.9)', fontWeight: '600', letterSpacing: 0.3 },
@@ -482,13 +545,14 @@ const styles = StyleSheet.create({
   skipBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
   muteBtn: {
     position: 'absolute',
-    right: 10,
-    bottom: 10,
+    right: 12,
+    bottom: 12,
     width: 40,
     height: 40,
     borderRadius: 20,
     backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
     justifyContent: 'center',
+    zIndex: 10,
   },
 });
