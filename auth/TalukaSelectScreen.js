@@ -240,7 +240,6 @@ export default function TalukaSelectScreen({ navigation, route }) {
 
 
   const handleComplete = async () => {
-        console.log('PENDING AT TALUKA:', await UserStore.getPendingRegistration(), 'needsCreateUser:', needsCreateUser);
     if (!taluka.trim()) {
       showPopup('Please select or enter your taluka', 'error');
       return;

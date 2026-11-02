@@ -329,6 +329,11 @@ foreach ($headersList as $hdr) {
     header($hdrTrimmed, false);
 }
 
+// API responses kabhi browser/CDN cache na karein — warna like/comment/follow refresh ke baad hi dikhte hain
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
+
 echo $bodyContent;
 `;
 fs.writeFileSync(path.join(outDir, 'api-proxy.php'), apiProxyContent, 'utf8');

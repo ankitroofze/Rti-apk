@@ -6,6 +6,7 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { UserStore } from '../store/UserStore';
+import { useAuth } from '../contexts/AuthContext';
 import LayoutOne from '../components/newspaper/LayoutOne';
 import LayoutTwo from '../components/newspaper/LayoutTwo';
 
@@ -134,9 +135,19 @@ export default function NewspaperList({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [activeLayout, setActiveLayout] = useState(null);
   const isWeb = Platform.OS === 'web';
+  const { isLoggedIn, isAuthLoading } = useAuth();
+
+  // ✅ Login nahi hai to E-Paper/Newspaper nahi khulega — seedha Sign in page
+  useFocusEffect(
+    useCallback(() => {
+      if (isAuthLoading || isLoggedIn) return;
+      try { navigation.navigate('Login'); } catch {}
+    }, [isAuthLoading, isLoggedIn, navigation])
+  );
 
   useFocusEffect(
     useCallback(() => {
+      if (isAuthLoading || !isLoggedIn) return undefined;
       let alive = true;
       (async () => {
         setLoading(true);
@@ -173,7 +184,7 @@ export default function NewspaperList({ navigation }) {
         if (alive) setLoading(false);
       })();
       return () => { alive = false; };
-    }, [])
+    }, [isAuthLoading, isLoggedIn])
   );
 
   const sortedDates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
@@ -181,6 +192,9 @@ export default function NewspaperList({ navigation }) {
   // Find layout snapshot for a date
   const getLayout = (dateKey) =>
     layouts.find(l => l.publishDate === dateKey) || null;
+
+  // Login nahi hai: khali page mat dikhao (upar se Login par bheja ja raha hai)
+  if (isAuthLoading || !isLoggedIn) return null;
 
   // ── Web ───────────────────────────────────────────────────────────────────
   if (isWeb) {

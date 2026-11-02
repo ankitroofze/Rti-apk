@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { clearIdCardVerification } from '../utils/idCardService';
+import { UserStore } from '../store/UserStore';
+import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 
 const AuthContext = createContext(null);
 const CURRENT_USER_KEY = 'current_user_email';
@@ -14,6 +16,8 @@ export function AuthProvider({ children }) {
     (async () => {
       try {
         const email = await AsyncStorage.getItem(CURRENT_USER_KEY);
+        // 🔒 Session email nahi hai par purana bearer token bacha hai (purane logout se) -> hata do, reuse na ho
+        if (!email) { try { await AuthAPI.clearAuthToken(); } catch {} }
         if (!mounted) return;
         setIsLoggedIn(Boolean(email));
       } catch {
@@ -25,6 +29,9 @@ export function AuthProvider({ children }) {
     })();
     return () => { mounted = false; };
   }, []);
+
+  // 🔒 Koi bhi screen UserStore.clearCurrentUser()/logoutCleanup() se logout kare, auth state bhi turant false ho
+  useEffect(() => UserStore.subscribeSessionCleared(() => setIsLoggedIn(false)), []);
 
   const refresh = async () => {
     try {
@@ -39,7 +46,11 @@ export function AuthProvider({ children }) {
 
   const login = () => setIsLoggedIn(true);
 
+  // 🔒 Ek hi centralized cleanup: push token unregister -> auth_token + current_user_email hatao -> account caches saaf
   const logout = async () => {
+    try {
+      await UserStore.logoutCleanup();
+    } catch {}
     try {
       await AsyncStorage.removeItem(CURRENT_USER_KEY);
     } catch {}

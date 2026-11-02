@@ -22,7 +22,8 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { getAdRedirectMeta, openAdRedirect } from '../utils/adRedirect';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
 import { getProfileTier } from '../utils/profileHelpers';
-import { getEngagement, publishEngagement, subscribeEngagement, persistLikedLocal } from '../utils/newsEngagementStore';
+import { getEngagement, publishEngagement, subscribeEngagement, persistLikedLocal, defaultApplyEngagement } from '../utils/newsEngagementStore';
+import useLiveRefresh from '../utils/useLiveRefresh';
 import { MODULE_HEADER_HEIGHT_WEB } from '../constants/subscriptionThemes';
 import ModuleWebHeader from '../components/Modulewebheader';
 import MediaGallery from '../components/MediaGallery';
@@ -640,14 +641,15 @@ export default function NewsFeedScreen({ navigation }) {
     }));
   }, []);
 
-const syncFeed = useCallback(async (focusItemId = null) => {
-    setLoading(true);
+const syncFeed = useCallback(async (focusItemId = null, { silent = false } = {}) => {
+    // silent = background auto-refresh: loader / login redirect nahi, bas data chupchap update
+    if (!silent) setLoading(true);
     // ✅ FIX: /my-role-subscriptions ab News Feed khulte waqt yahan sync hoga
-    UserStore.syncSubscriptionFromBackend().catch(() => {});
+    if (!silent) UserStore.syncSubscriptionFromBackend().catch(() => {});
     // News Feed me sirf News (type 1) dikhegi — Feed/Reel (type 2) posts Feed section me jaate hain.
     const data = await UserStore.getNewsFeedSummary(focusItemId ? { focusItemId } : { type: 1 });
-    setLoading(false);
-    if (!data) { navigation.replace('Login'); return null; }
+    if (!silent) setLoading(false);
+    if (!data) { if (!silent) navigation.replace('Login'); return null; }
     const newsOnlyItems = (Array.isArray(data.items) ? data.items : []).filter((item) => Number(item?.type) !== 2);
     const withEngagement = newsOnlyItems.map((it) => {
       const eng = getEngagement(it.id);   // fresh like/comment/share from details page or cards
@@ -678,6 +680,9 @@ const syncFeed = useCallback(async (focusItemId = null) => {
   const loadNewsFeed = useCallback(async () => { await syncFeed(); }, [syncFeed]);
 
   useFocusEffect(useCallback(() => { loadNewsFeed(); }, [loadNewsFeed]));
+
+  // ✅ Naye posts / dusron ke like-comment apne aap dikhein: har 30 sec aur app foreground aate hi chupchap sync
+  useLiveRefresh(() => syncFeed(null, { silent: true }), { intervalMs: 30000, runOnFocus: false });
 
   const handleGoBack = () => {
     if (navigation.canGoBack()) {
@@ -794,26 +799,17 @@ const handleLike = async (item) => {
   // Like / comment / share changed on News Details (or any card) -> update this list instantly
   useEffect(() => subscribeEngagement((id, entry, src) => {
     if (src === 'newsfeed-list') return;
-    setNewsData((prev) => ({
-      ...prev,
-      items: (prev.items || []).map((it) => {
+    setNewsData((prev) => {
+      const email = String(prev.currentUser?.email || '').trim().toLowerCase();
+      let changed = false;
+      const items = (prev.items || []).map((it) => {
         if (String(it.id) !== String(id)) return it;
-        const email = String(prev.currentUser?.email || '').trim().toLowerCase();
-        const next = { ...it };
-        if (entry.likes !== undefined) next.likes = entry.likes;
-        if (entry.comments !== undefined) next.comments = entry.comments;
-        if (entry.shares !== undefined) next.shares = entry.shares;
-        if (entry.liked !== undefined) {
-          next.liked_by_me = entry.liked;
-          if (email) {
-            next.liked_by = entry.liked
-              ? [...new Set([...(it.liked_by || []), email])]
-              : (it.liked_by || []).filter((e) => e !== email);
-          }
-        }
-        return next;
-      }),
-    }));
+        const upd = defaultApplyEngagement(it, entry, email);
+        if (upd !== it) changed = true;
+        return upd;
+      });
+      return changed ? { ...prev, items } : prev;   // koi badlav nahi => re-render nahi
+    });
   }), []);
 
   const handleBookmark = async (item) => {

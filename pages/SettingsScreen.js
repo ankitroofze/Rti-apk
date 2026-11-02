@@ -219,8 +219,8 @@ export default function SettingsScreen({ navigation }) {
   };
 
   const handleLogout = async () => {
-    await UserStore.clearCurrentUser?.();
-    try { await logout(); } catch {}   // auth state bhi clear (warna app logged-in dikhata rahega)
+    // 🔒 logout() = AuthContext + UserStore.logoutCleanup (push token unregister, auth_token + current_user_email, account caches)
+    try { await logout(); } catch {}
     // Logout ke baad Login nahi, Home par hi raho
     navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
   };

@@ -22,6 +22,8 @@ import { useToast } from '../components/ui/ToastProvider';
 import VerifiedBadge from '../components/VerifiedBadge';
 import VideoPreview from '../components/VideoPreview';
 import { UserStore } from '../store/UserStore';
+import { getEngagement, defaultApplyEngagement, useEngagementSync, persistLikedLocal } from '../utils/newsEngagementStore';
+import useLiveRefresh from '../utils/useLiveRefresh';
 import ProfileContentTabs from '../components/ProfileContentTabs';
 import PostMenuButton from '../components/PostMenuButton';
 import { CONTENT_TABS, getPostKind } from '../components/profileContent';
@@ -286,6 +288,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
+  // ✅ Silent reload trigger — screen par wapas aane / app foreground / har 45 sec par bump hota hai
+  const [refreshTick, setRefreshTick] = useState(0);
   const [activeTab, setActiveTab] = useState('posts');
   const [gridView, setGridView] = useState(true);
 
@@ -306,6 +310,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const [shareVisible, setShareVisible] = useState(false);
   const [viewerEmail, setViewerEmail] = useState('');
   const [viewerId, setViewerId] = useState('');
+  const viewerEmailRef = useRef('');
+  viewerEmailRef.current = viewerEmail;
   const [contentTab, setContentTab] = useState('post'); // 'post' | 'reel' | 'ad' | 'ecom'
 
   const [commentModalVisible, setCommentModalVisible] = useState(false);
@@ -408,15 +414,17 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   // ── Load profile + posts ────────────────────────────────────────────────────
   useEffect(() => {
     let active = true;
+    // refreshTick > 0 => chupchap (silent) reload: loader / blank flash nahi, purana data tab tak dikhta rahe
+    const silent = refreshTick > 0;
     (async () => {
-           setLoading(true);
+      if (!silent) setLoading(true);
       let user = userId
         ? await UserStore.getPublicProfileById(userId)
         : (resolvedEmail ? await UserStore.getUser(resolvedEmail) : null);
       if (!active) return;
-      setProfile(user || null);
+      if (!silent || user) setProfile(user || null);
           try {
-        if (active) {
+        if (active && !silent) {
           setFollowStats({
             followers: getNumericCount(user?.followers_count ?? user?.followers ?? user?.referral_count ?? 0),
             following: getNumericCount(user?.following_count ?? user?.following ?? 0),
@@ -428,7 +436,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         // Ab NewsFeedCard jaisa hi live check (getFollowSummary) use karo.
             const targetIdForFollow = userId ?? user?.id ?? null;
                const summary = (resolvedEmail || targetIdForFollow) ? await UserStore.getFollowSummary?.(resolvedEmail, targetIdForFollow) : null;
-        if (active) {
+        // silent reload me network fail (summary null) ya user ke follow-tap ke beech follow state ulta na ho
+        if (active && (summary || !silent) && !(silent && followActionInFlightRef.current)) {
           setIsFollowing(Boolean(summary?.isFollowing));
           // followersCount / followingCount null aaye (target ki id resolve nahi hui) to
           // purane counts mat todo — warna count achanak 0 ho jata tha.
@@ -544,14 +553,24 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           return arr.findIndex((x) => x?.id != null && String(x.id) === id) === index;
         });
 
-            setPosts(merged);
+      // ✅ card / details / feed par abhi badla hua like-comment count server ke purane count se upar dikhe
+      const mergedWithEngagement = merged.map((it) => {
+        const eng = it && !it.isAd && !it.is_ad && !it.is_ecom ? getEngagement(it.id) : null;
+        return eng ? defaultApplyEngagement(it, eng, viewerEmailRef.current) : it;
+      });
+      // silent reload me network fail hua (khaali list) to purani posts mat udao
+      if (!silent || mergedWithEngagement.length) setPosts(mergedWithEngagement);
       setLoading(false);
-      if (!user && resolvedEmail) showToastRef.current?.('User profile not found on this device. Showing available info.', 'error');
+      if (!user && resolvedEmail && !silent) showToastRef.current?.('User profile not found on this device. Showing available info.', 'error');
     })();
     return () => { active = false; };
   // A profile may be opened with only userId (the following API does not
   // always provide email). Include it so moving between profiles reloads.
-  }, [resolvedEmail, userId, author]);
+  }, [resolvedEmail, userId, author, refreshTick]);
+
+  // ✅ LIVE REFRESH: post par like/comment, follow, ya naye post — wapas is screen par aate hi, app foreground par,
+  // aur screen khuli rahe to har 45 sec me apne aap update (manual refresh nahi karna padega).
+  useLiveRefresh(() => setRefreshTick((t) => t + 1), { intervalMs: 45000, skipFirstFocus: true });
 
   // ✅ FIX: is profile ke liye follow button + followers count ab app mein kahin
   // bhi (news card se bhi) follow/unfollow hote hi turant sync ho jayega.
@@ -570,6 +589,9 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     });
     return () => { unsubscribe?.(); };
   }, [resolvedEmail, userId]);
+
+  // ✅ LIVE SYNC: kisi bhi screen par is user ke post pe like / comment / share badle to yahan turant dikhe
+  useEngagementSync(setPosts, (it, patch) => defaultApplyEngagement(it, patch, viewerEmailRef.current));
   // ── Derived profile values ──────────────────────────────────────────────────
 
   // Server profile (GET /profile/{id}) kai baar subscription_plan nahi bhejta, jabki feed
@@ -977,25 +999,39 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     navigation.navigate('NewsDetails', { article: post });
   };
 
+  const likeBusyRef = useRef(new Set());
   const handleLikePost = async (post) => {
     const pid = String(post?.id || '').trim();
-    if (!pid) return;
-    const prevLiked = Boolean(viewerEmail && Array.isArray(post?.liked_by) && post.liked_by.includes(viewerEmail));
+    if (!pid || likeBusyRef.current.has(pid)) return;   // double-tap par ulta (auto unlike) na ho
+    likeBusyRef.current.add(pid);
+    const eng = getEngagement(pid);
+    const prevLiked = eng && eng.liked !== undefined
+      ? eng.liked
+      : Boolean(viewerEmail && Array.isArray(post?.liked_by) && post.liked_by.includes(viewerEmail));
+    const prevLikes = Number(post?.likes || 0);
+    const prevLikedBy = Array.isArray(post?.liked_by) ? post.liked_by : [];
+    const likedByFor = (liked) => (liked ? (viewerEmail ? [viewerEmail] : []) : []);
     patchPostById(pid, {
-      likes: Math.max(0, Number(post?.likes || 0) + (prevLiked ? -1 : 1)),
-      liked_by: prevLiked ? [] : (viewerEmail ? [viewerEmail] : []),
+      likes: Math.max(0, prevLikes + (prevLiked ? -1 : 1)),
+      liked_by: likedByFor(!prevLiked),
     });
-    const result = await UserStore.updateNewsFeedItem(pid, 'like', { liked: prevLiked });
-    if (!result?.ok) {
-      patchPostById(pid, { likes: Number(post?.likes || 0), liked_by: Array.isArray(post?.liked_by) ? post.liked_by : [] });
-      showToast(result?.message || 'Unable to update like.', 'error');
-      return;
-    }
-    if (typeof result.liked === 'boolean') {
-      patchPostById(pid, {
-        likes: Math.max(0, Number(post?.likes || 0) + (result.liked ? 1 : 0) - (prevLiked ? 1 : 0)),
-        liked_by: result.liked && viewerEmail ? [viewerEmail] : [],
-      });
+    try {
+      const result = await UserStore.updateNewsFeedItem(pid, 'like', { liked: prevLiked });
+      if (!result?.ok) {
+        patchPostById(pid, { likes: prevLikes, liked_by: prevLikedBy });
+        showToast(result?.message || 'Unable to update like.', 'error');
+        return;
+      }
+      const finalLiked = typeof result.liked === 'boolean' ? result.liked : !prevLiked;
+      const finalLikes = Number.isFinite(result.likesCount)
+        ? result.likesCount
+        : Math.max(0, prevLikes + (finalLiked ? 1 : 0) - (prevLiked ? 1 : 0));
+      patchPostById(pid, { likes: finalLikes, liked_by: likedByFor(finalLiked) });
+      if (viewerEmail) persistLikedLocal(viewerEmail, pid, finalLiked);
+    } catch {
+      patchPostById(pid, { likes: prevLikes, liked_by: prevLikedBy });
+    } finally {
+      likeBusyRef.current.delete(pid);
     }
   };
 

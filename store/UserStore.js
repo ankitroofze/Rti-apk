@@ -12,7 +12,11 @@ import {
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { unregisterDeviceToken } from '../utils/Pushnotifications';
 import { getAwardeeFontSize } from '../utils/profileHelpers';
+import { makePasswordVerifier, verifyPasswordVerifier } from '../utils/localCredential';
 import { getPostKind } from '../components/profileContent';
+import { publishEngagement, reconcileServerCounts, resetEngagement } from '../utils/newsEngagementStore';
+import { clearIdCardVerification } from '../utils/idCardService';
+import { clearReferralInfo } from '../utils/Referralservice';
 
 const MEDIA_ORIGIN = 'https://rtiapi.roofze.in';
 function resolveMediaUrl(path) {
@@ -23,11 +27,39 @@ function resolveMediaUrl(path) {
 }
 
 const USERS_KEY        = 'users';
+// 🔒 OTP_KEY / PENDING_REG_KEY ab sirf PURANE (legacy) AsyncStorage keys hain — inme kuch bhi likha nahi jata,
+// bas app start par purana raw password/OTP data delete karne ke liye use hote hain (purgeLegacySensitiveStorage).
 const OTP_KEY          = 'mock_reset_otps';
 const CURRENT_USER_KEY = 'current_user_email';
 const STATE_SEATS_KEY  = 'state_seat_allocations_v1';
 const PENDING_REG_KEY  = 'pending_registration_v1';
-let _pendingRegistrationMemory = null; // in-memory backup of pending registration
+// 🔒 Pending registration (password + OTP) SIRF memory me rehti hai, expiry ke saath. Disk/AsyncStorage/localStorage me kabhi nahi.
+const PENDING_REG_TTL_MS = 30 * 60 * 1000;      // register -> OTP -> location steps ke liye
+const PENDING_REG_DONE_TTL_MS = 10 * 60 * 1000; // server par account ban chuka, sirf local save baaki
+let _pendingRegistrationMemory = null;
+let _pendingRegistrationTimer = null;
+// 🔒 Reset-password OTP bhi sirf memory me (expiry ke saath)
+const _resetOtpMemory = new Map();
+let _legacyPurgeStarted = false;
+
+const wipePendingRegistrationMemory = () => {
+  _pendingRegistrationMemory = null;
+  if (_pendingRegistrationTimer) { clearTimeout(_pendingRegistrationTimer); _pendingRegistrationTimer = null; }
+};
+
+const holdPendingRegistration = (payload, ttlMs) => {
+  if (_pendingRegistrationTimer) { clearTimeout(_pendingRegistrationTimer); _pendingRegistrationTimer = null; }
+  _pendingRegistrationMemory = { ...payload, expires_at: Date.now() + ttlMs };
+  // Expiry par password/OTP memory se bhi hata do
+  _pendingRegistrationTimer = setTimeout(wipePendingRegistrationMemory, ttlMs);
+};
+
+// Purane versions raw password/OTP AsyncStorage me likhte the — ek baar saaf kar do (best-effort)
+const purgeLegacySensitiveStorage = () => {
+  if (_legacyPurgeStarted) return;
+  _legacyPurgeStarted = true;
+  AsyncStorage.multiRemove([PENDING_REG_KEY, OTP_KEY]).catch(() => {});
+};
 const NEWS_ACTION_LOG_KEY = 'news_feed_action_log_v1';
 const AD_LEAD_SUBMISSIONS_KEY = 'ad_lead_submissions_v1'; // 👈 NEW
 const ENGAGEMENT_DB_NAME = 'rti_news_engagement_v1.db';
@@ -1538,7 +1570,8 @@ const normalizeNotifications = (items = []) => {
 
 const normalizeSettings = (s = {}) => ({
   language: s.language || defaultSettings.language,
-  password: s.password || defaultSettings.password,
+  // 🔒 settings me raw password kabhi save nahi hota
+  password: defaultSettings.password,
 });
 
 const normalizeStateKey = (state = '') => String(state || '').trim().toLowerCase();
@@ -1860,8 +1893,17 @@ const normalizeUser = (user = {}) => {
   const normalizedMobile = normalizeIndianMobileNumber(user.mobile || user.mobile_number || user.contact_number || '');
   const normalizedMobileNumber = normalizeIndianMobileNumber(user.mobile_number || user.mobile || user.contact_number || '');
 
+  // 🔒 Raw password kabhi save nahi hota: plain password aaye to salted verifier me badal do,
+  // warna pehle se saved verifier hi rakho (offline mobile-number login ke liye).
+  const plainPassword = typeof user.password === 'string' ? user.password : '';
+  const passwordVerifier = plainPassword
+    ? makePasswordVerifier(plainPassword)
+    : (typeof user.password_verifier === 'string' ? user.password_verifier : '');
+
   return {
     ...user,
+    password:            undefined,
+    password_verifier:   passwordVerifier,
     // ✅ FIX: email hamesha lowercase save hogi
       id: user.id ?? user.user_id ?? null,   
      email: user.email ? user.email.trim().toLowerCase() : '',
@@ -1939,14 +1981,26 @@ const normalizeUser = (user = {}) => {
 // ─── Storage Helpers ──────────────────────────────────────────────────────────
 
 // ✅ FIX: getUsersFromStorage mein email normalize karo
+const hasLegacyPlainPassword = (u) =>
+  Boolean(u && ((typeof u.password === 'string' && u.password) ||
+    (u.settings && typeof u.settings.password === 'string' && u.settings.password)));
+
 const getUsersFromStorage = async () => {
+  purgeLegacySensitiveStorage();
   const data  = await AsyncStorage.getItem(USERS_KEY);
-  const users = data ? JSON.parse(data) : [];
-  return users.map((u) => normalizeUser({
+  const rawUsers = data ? JSON.parse(data) : [];
+  const needsMigration = rawUsers.some(hasLegacyPlainPassword);
+  const users = rawUsers.map((u) => normalizeUser({
     ...u,
     // ✅ Purane users jinka email uppercase tha, unhe bhi fix karo
     email: u.email ? u.email.trim().toLowerCase() : u.email,
   }));
+  // 🔒 Purane saved users: raw password -> verifier me badal kar ek baar wapas save karo (login chalta rahega)
+  if (needsMigration) {
+    try { await AsyncStorage.setItem(USERS_KEY, JSON.stringify(users)); }
+    catch (e) { console.warn('[UserStore] password migration write failed:', e?.message); }
+  }
+  return users;
 };
 
 // ─── Network Helper ───────────────────────────────────────────────────────────
@@ -2286,6 +2340,27 @@ const _buildNotificationSummary = (user, res) => {
     hasMore: res.hasMore,
     nextCursor: res.nextCursor,
   };
+};
+
+// ─── 🔒 Centralized logout cleanup ───────────────────────────────────────────
+// Logout / delete-account / account switching ka EK hi raasta. Order zaroori hai:
+//   1) push device token unregister (auth token abhi valid hai)  2) auth_token + current_user_email har storage se
+//   3) account-specific in-memory caches  4) auth state listeners ko batao (AuthContext -> isLoggedIn=false)
+const PUSH_UNREGISTER_TIMEOUT_MS = 4000; // offline / slow network par logout atke nahi
+let _logoutPromise = null;
+const _sessionClearedListeners = new Set();
+
+const clearAccountMemoryCaches = () => {
+  wipePendingRegistrationMemory();   // registration password/OTP
+  _resetOtpMemory.clear();           // reset-password OTP
+  blockedUsersCache = { at: 0, promise: null };
+  _optimisticFollowing.clear();      // pichle user ke follow overrides
+  _followOverrides.clear();
+  lastCreditSyncAt = 0;              // agla user turant fresh credits sync kare
+  cachedBackendPlans = [];           // plans user/location ke hisaab se aate hain
+  try { clearIdCardVerification(); } catch {}
+  try { clearReferralInfo(); } catch {}
+  try { resetEngagement(); } catch {}  // pichle user ka liked/views state
 };
 
 export const UserStore = {
@@ -3086,9 +3161,39 @@ consumeQuizAttempt: async () => {
     return user;
   } catch (err) { console.log('[ensureUserId] ERROR', err); return null; }
 },
+  // 🔒 Centralized logout cleanup — saare logout paths (AuthContext.logout, clearCurrentUser) yahin aate hain.
+  // Kabhi throw nahi karta; dobara call karna safe hai (in-flight call share hoti hai).
+  logoutCleanup: () => {
+    if (_logoutPromise) return _logoutPromise;
+    _logoutPromise = (async () => {
+      // 1) Push token backend se hatao — token hatne se PEHLE. Offline ho to timeout ke baad aage badho.
+      let timer = null;
+      try {
+        await Promise.race([
+          unregisterDeviceToken(),
+          new Promise((resolve) => { timer = setTimeout(resolve, PUSH_UNREGISTER_TIMEOUT_MS); }),
+        ]);
+      } catch {}
+      if (timer) clearTimeout(timer);
+      // 2) auth_token + current_user_email (AsyncStorage + web localStorage/sessionStorage)
+      try { await AuthAPI.clearSession(); } catch {}
+      try { await AsyncStorage.removeItem(CURRENT_USER_KEY); } catch {}
+      // 3) account-specific caches
+      clearAccountMemoryCaches();
+      // 4) auth state
+      _sessionClearedListeners.forEach((cb) => { try { cb(); } catch {} });
+      return true;
+    })().finally(() => { _logoutPromise = null; });
+    return _logoutPromise;
+  },
+
+  subscribeSessionCleared: (cb) => {
+    _sessionClearedListeners.add(cb);
+    return () => { _sessionClearedListeners.delete(cb); };
+  },
+
   clearCurrentUser: async () => {
-    try { await unregisterDeviceToken(); } catch {} // logout se PEHLE push token hatao (auth abhi valid hai)
-    try { await AsyncStorage.removeItem(CURRENT_USER_KEY); return true; }
+    try { await UserStore.logoutCleanup(); return true; }
     catch { return false; }
   },
 
@@ -3117,7 +3222,8 @@ consumeQuizAttempt: async () => {
 
    setPendingRegistration: async (data = {}) => {
     try {
-             const payload = {
+      purgeLegacySensitiveStorage();
+      const payload = {
         name: String(data.name || '').trim(),
         mobile: normalizeIndianMobileNumber(data.mobile || ''),
         email: String(data.email || '').trim().toLowerCase(),
@@ -3135,10 +3241,8 @@ consumeQuizAttempt: async () => {
         created_at: new Date().toISOString(),
       };
       if (!payload.email) return false;
-      // ✅ Memory copy pehle — storage fail/late ho tab bhi Taluka/Village ko data mil jaye
-      _pendingRegistrationMemory = payload;
-      try { await AsyncStorage.setItem(PENDING_REG_KEY, JSON.stringify(payload)); }
-      catch (e) { console.warn('[setPendingRegistration] storage write failed:', e?.message); }
+      // 🔒 Sirf memory (expiry ke saath) — password/OTP kabhi AsyncStorage me nahi jayega
+      holdPendingRegistration(payload, PENDING_REG_TTL_MS);
       return true;
     } catch {
       return false;
@@ -3147,14 +3251,9 @@ consumeQuizAttempt: async () => {
 
   getPendingRegistration: async () => {
     try {
-      let parsed = null;
-      try {
-        const raw = await AsyncStorage.getItem(PENDING_REG_KEY);
-        if (raw) parsed = JSON.parse(raw);
-      } catch {}
-      // Storage me na mile to memory wali copy use karo
-      if (!parsed || !parsed.email) parsed = _pendingRegistrationMemory;
+      const parsed = _pendingRegistrationMemory;
       if (!parsed || !parsed.email) return null;
+      if (parsed.expires_at && Date.now() > parsed.expires_at) { wipePendingRegistrationMemory(); return null; }
       return {
         ...parsed,
         email: String(parsed.email).trim().toLowerCase(),
@@ -3193,16 +3292,17 @@ consumeQuizAttempt: async () => {
           : (result.message || 'Registration failed. Please try again.'),
       };
     }
-    const done = { ...pending, server_registered: true, otp: '' };
-    _pendingRegistrationMemory = done;
-    try { await AsyncStorage.setItem(PENDING_REG_KEY, JSON.stringify(done)); } catch (_) { /* ignore */ }
+    // 🔒 OTP use ho chuka — turant memory se hata do; password sirf local save (saveUser) tak chahiye
+    const { expires_at: _exp, ...rest } = pending;
+    const done = { ...rest, server_registered: true, otp: '' };
+    holdPendingRegistration(done, PENDING_REG_DONE_TTL_MS);
     return { ok: true, pending: done, token: result.token || result.data?.token || null };
   },
 
   clearPendingRegistration: async () => {
-    _pendingRegistrationMemory = null;
+    wipePendingRegistrationMemory();
     try {
-      await AsyncStorage.removeItem(PENDING_REG_KEY);
+      await AsyncStorage.removeItem(PENDING_REG_KEY); // purana leftover bhi saaf
       return true;
     } catch {
       return false;
@@ -4756,6 +4856,10 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
       // sirf backend API se, aur bina login ke like possible nahi hai.
       const finalItems = itemsWithEngagement;
 
+      // ✅ LIVE SYNC: jab bhi server se fresh list aaye, uske like/comment/share/view counts
+      // screen par mounted saare cards & lists par apne aap push ho jaate hain (refresh nahi karna padta).
+      try { reconcileServerCounts(finalItems); } catch { /* best-effort */ }
+
       return {
         currentUser,
              items: finalItems,
@@ -4896,6 +5000,8 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
             if (res.isAuth) return { ok: false, message: 'Session expired. Please login again.' };
             return { ok: false, message: res.message || 'Unable to unlike.' };
           }
+          // ✅ Shared engagement store: har screen (Feed, Profile, Home cards, Details) par turant dikhe
+          publishEngagement(postId, { liked: false, ...(Number.isFinite(res.likesCount) ? { likes: res.likesCount } : {}) }, 'userstore');
           return { ok: true, liked: false, likesCount: Number.isFinite(res.likesCount) ? res.likesCount : null };
         }
 
@@ -4907,6 +5013,7 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
           if (res.isAuth) return { ok: false, message: 'Session expired. Please login again.' };
           return { ok: false, message: res.message || 'Unable to like.' };
         }
+        publishEngagement(postId, { liked: Boolean(res.liked), ...(Number.isFinite(res.likesCount) ? { likes: res.likesCount } : {}) }, 'userstore');
         return { ok: true, liked: Boolean(res.liked), likesCount: Number.isFinite(res.likesCount) ? res.likesCount : null };
       }
 
@@ -5171,6 +5278,10 @@ const db = await getEngagementDb();
         mapped.author_avatar = user.profile_image || '';
         mapped.author_has_blue_tick = hasBlueTick(user);
       }
+      // ✅ comment count har screen par turant (Feed, Home card, Details, Profile)
+      if (!options.isAd && apiRes.commentsCount != null && Number.isFinite(Number(apiRes.commentsCount))) {
+        publishEngagement(postId, { comments: Number(apiRes.commentsCount) }, 'userstore');
+      }
       return { ok: true, comment: mapped, commentsCount: apiRes.commentsCount ?? null };
     } catch { return { ok: false, message: 'Unable to add comment.' }; }
   },
@@ -5240,7 +5351,7 @@ const db = await getEngagementDb();
   },
 
   // ✅ Delete -> comment: purani DELETE /comments/{id} (comments_count milta hai) | reply: DELETE /comment-replies/{id} (replies_count milta hai)
-  deleteNewsComment: async (itemId, commentId) => {
+  deleteNewsComment: async (itemId, commentId, options = {}) => {
     try {
       const user = await UserStore.getCurrentUser();
       if (!user) return { ok: false, isAuth: true, message: 'Please login again.' };
@@ -5255,6 +5366,9 @@ const db = await getEngagementDb();
       const apiRes = await AuthAPI.deleteComment(ref.id);
       if (!apiRes.ok) {
         return { ok: false, isAuth: Boolean(apiRes.isAuth), notFound: Boolean(apiRes.notFound), message: apiRes.message || 'Unable to delete comment.' };
+      }
+      if (!options?.isAd && apiRes.commentsCount != null && Number.isFinite(Number(apiRes.commentsCount))) {
+        publishEngagement(String(itemId || '').trim(), { comments: Number(apiRes.commentsCount) }, 'userstore');
       }
       return { ok: true, commentsCount: apiRes.commentsCount ?? null };
     } catch { return { ok: false, message: 'Unable to delete comment.' }; }
@@ -5827,8 +5941,10 @@ downloadCertificateForAttempt: async (item) => {
     try {
       const user = await UserStore.getCurrentUser();
       if (!user) return { ok: false, message: 'Please login again.' };
-      const nextPassword = password || user.password;
-      const updatedUser  = await UserStore.updateUser(user.email, { password: nextPassword, settings: { language, password: password || '' } });
+      // 🔒 Naya password diya ho tabhi bhejo (normalizeUser use verifier me badal dega); settings me raw password nahi
+      const updates = { settings: { language, password: '' } };
+      if (password) updates.password = password;
+      const updatedUser  = await UserStore.updateUser(user.email, updates);
       if (!updatedUser) return { ok: false, message: 'Unable to update settings.' };
       return { ok: true, user: updatedUser };
     } catch { return { ok: false, message: 'Unable to update settings.' }; }
@@ -5838,10 +5954,10 @@ downloadCertificateForAttempt: async (item) => {
     try {
       const user = await UserStore.getCurrentUser();
       if (!user) return { ok: false, message: 'Please login again.' };
-      if (!currentPassword || currentPassword !== user.password) return { ok: false, message: 'Current password is incorrect.' };
+      if (!currentPassword || !verifyPasswordVerifier(currentPassword, user.password_verifier)) return { ok: false, message: 'Current password is incorrect.' };
       if (!newPassword || newPassword.length < 4) return { ok: false, message: 'New password must be at least 4 characters.' };
-      if (newPassword === user.password) return { ok: false, message: 'New password must be different from the current password.' };
-      const updatedUser = await UserStore.updateUser(user.email, { password: newPassword, settings: { ...normalizeSettings(user.settings), password: newPassword } });
+      if (verifyPasswordVerifier(newPassword, user.password_verifier)) return { ok: false, message: 'New password must be different from the current password.' };
+      const updatedUser = await UserStore.updateUser(user.email, { password: newPassword, settings: normalizeSettings(user.settings) });
       if (!updatedUser) return { ok: false, message: 'Unable to change password.' };
       return { ok: true, user: updatedUser };
     } catch { return { ok: false, message: 'Unable to change password.' }; }
@@ -5855,21 +5971,26 @@ downloadCertificateForAttempt: async (item) => {
       const users   = data ? JSON.parse(data) : [];
       const updated = users.map((u) => {
         const userEmail = u.email ? u.email.trim().toLowerCase() : '';
-        return userEmail === normalizedEmail ? { ...u, password } : u;
+        if (userEmail !== normalizedEmail) return u;
+        // 🔒 raw password nahi — salted verifier save karo (purana raw password/settings.password bhi hata do)
+        const { password: _oldPlain, ...rest } = u;
+        return {
+          ...rest,
+          password_verifier: makePasswordVerifier(password),
+          settings: rest.settings ? { ...rest.settings, password: '' } : rest.settings,
+        };
       });
       await AsyncStorage.setItem(USERS_KEY, JSON.stringify(updated));
       return updated.some((u) => (u.email || '').trim().toLowerCase() === normalizedEmail);
     } catch { return false; }
   },
 
+  // 🔒 Reset OTP sirf memory me, expiry ke saath (AsyncStorage me kabhi nahi)
   saveResetOtp: async ({ email, otp, expiresAt }) => {
     try {
-      // ✅ FIX: OTP bhi lowercase email se save karo
       const normalizedEmail = email ? email.trim().toLowerCase() : '';
-      const data   = await AsyncStorage.getItem(OTP_KEY);
-      const otpMap = data ? JSON.parse(data) : {};
-      otpMap[normalizedEmail] = { otp, expiresAt };
-      await AsyncStorage.setItem(OTP_KEY, JSON.stringify(otpMap));
+      if (!normalizedEmail) return false;
+      _resetOtpMemory.set(normalizedEmail, { otp, expiresAt: Number(expiresAt) || (Date.now() + 10 * 60 * 1000) });
       return true;
     } catch { return false; }
   },
@@ -5877,22 +5998,28 @@ downloadCertificateForAttempt: async (item) => {
   getResetOtp: async (email) => {
     try {
       const normalizedEmail = email ? email.trim().toLowerCase() : '';
-      const data   = await AsyncStorage.getItem(OTP_KEY);
-      const otpMap = data ? JSON.parse(data) : {};
-      return otpMap[normalizedEmail] || null;
+      const record = _resetOtpMemory.get(normalizedEmail);
+      if (!record) return null;
+      if (record.expiresAt && Date.now() > record.expiresAt) {
+        // expire ho gaya: OTP value hata do, sirf expiry time rakho (timer 0 dikhane ke liye)
+        const expired = { otp: '', expiresAt: record.expiresAt, expired: true };
+        _resetOtpMemory.set(normalizedEmail, expired);
+        return expired;
+      }
+      return record;
     } catch { return null; }
   },
 
   clearResetOtp: async (email) => {
     try {
       const normalizedEmail = email ? email.trim().toLowerCase() : '';
-      const data   = await AsyncStorage.getItem(OTP_KEY);
-      const otpMap = data ? JSON.parse(data) : {};
-      delete otpMap[normalizedEmail];
-      await AsyncStorage.setItem(OTP_KEY, JSON.stringify(otpMap));
+      _resetOtpMemory.delete(normalizedEmail);
       return true;
     } catch { return false; }
   },
+
+  // 🔒 Offline (mobile-number) login ke liye: raw password compare nahi hota, salted verifier check hota hai
+  verifyLocalPassword: (user, password) => verifyPasswordVerifier(password, user?.password_verifier),
 
 followUser: async (targetUserEmail, targetUserId) => {
     try {

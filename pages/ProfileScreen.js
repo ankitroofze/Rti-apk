@@ -8,6 +8,8 @@ import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { LinearGradient } from 'expo-linear-gradient';
 import ModuleWebHeader from '../components/Modulewebheader';
 import { useFocusEffect } from '@react-navigation/native';
+import { getEngagement, defaultApplyEngagement, useEngagementSync, persistLikedLocal, getLikedLocal } from '../utils/newsEngagementStore';
+import useLiveRefresh from '../utils/useLiveRefresh';
 
 import * as ImagePicker from 'expo-image-picker';
 import * as Print from 'expo-print';
@@ -37,6 +39,8 @@ import AutoIdCardPreview from '../components/IdCardPreview';
 import AutoIdCardBackPreview from '../components/IdCardBackPreview';
 import ScaledCard from '../components/ScaledCard';
 import PostGridThumb from '../components/PostGridThumb';
+import ProfileContentTabs from '../components/ProfileContentTabs';
+import { CONTENT_TABS, getPostKind as getContentKind } from '../components/profileContent';
 import { PageLoader, useAppFontsReady } from '../components/WebReadyGate';
 import VerifiedBadge from '../components/VerifiedBadge';
 import { useToast } from '../components/ui/ToastProvider';
@@ -284,7 +288,7 @@ const w = {
   viewAllLink: { fontSize: 13, fontWeight: '500' },
   
   profileHeadRow: { flexDirection: 'row', gap: 20, alignItems: 'flex-start' },
-  profileHeadRowNarrow: { flexDirection: 'column', alignItems: 'center' },
+  profileHeadRowNarrow: { flexDirection: 'column', alignItems: 'center', gap: 8 },
   
   avatarBox: { width: 120, height: 120, borderRadius: 60, position: 'relative', flexShrink: 0 },
   avatarImg: { width: '100%', height: '100%', borderRadius: 60 },
@@ -292,6 +296,8 @@ const w = {
   cameraBtn: { position: 'absolute', bottom: 4, right: 4, width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#ffffff' },
   
   profileInfoCol: { flex: 1, gap: 4 },
+  // Mobile-web: flex:1 column me extra khali jagah bana raha tha — isliye auto height + center
+  profileInfoColNarrow: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', width: '100%', alignItems: 'center', gap: 3 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
    nameText: { fontSize: 22, fontWeight: '400', color: '#111827', fontFamily: "'Roboto', sans-serif" },
   memberIdText: { fontSize: 13, color: '#6b7280', fontWeight: '400', fontFamily: "'Roboto', sans-serif" },
@@ -302,6 +308,7 @@ const w = {
   tierPillText: { fontSize: 12, fontWeight: '400', fontFamily: "'Roboto', sans-serif" },
   
   statsBox: { flexDirection: 'row', gap: 28, paddingTop: 4 },
+  statsBoxNarrow: { width: '100%', justifyContent: 'space-around', gap: 0, paddingTop: 0, marginTop: 2 },
   statItem: { flexDirection: 'column', alignItems: 'center' },
   statNum: { fontSize: 18, fontWeight: '400', color: '#111827', fontFamily: "'Roboto', sans-serif" },
   statLabel: { fontSize: 13, color: '#6b7280', fontWeight: '400', fontFamily: "'Roboto', sans-serif" },
@@ -459,6 +466,7 @@ function ProfileScreenInner({ navigation, route }) {
    const [showSavedProfile, setShowSavedProfile] = useState(Platform.OS === 'web');
   const [activeMenu, setActiveMenu] = useState('posts'); // profile menu: jis item pe click kiya wo Edit Profile button ke color me dikhega
   const [postViewMode, setPostViewMode] = useState('grid');
+  const [contentTab, setContentTab] = useState('post'); // 'post' | 'reel' | 'ad' | 'ecom' — Posts · Reels · Ads · Ecom icon tabs
   const [approvalNoticeDismissed, setApprovalNoticeDismissed] = useState(false); // NEW: approved/rejected banner ka cross button
     const loadCurrentUser = useCallback(async () => {
     const revisionAtStart = followRevisionRef.current;
@@ -578,7 +586,9 @@ function ProfileScreenInner({ navigation, route }) {
       if (seenIds.has(key)) return false;
       seenIds.add(key);
       return true;
-    }).sort((a, b) => postTs(b) - postTs(a)); // newest first (news + ads ek saath)
+    }).sort((a, b) => postTs(b) - postTs(a)) // newest first (news + ads ek saath)
+      // ✅ card / details / feed par abhi badla hua like-comment count yahan bhi dikhe (server ke purane count se upar)
+      .map((item) => { const eng = getEngagement(item?.id); return eng ? defaultApplyEngagement(item, eng, user.email) : item; });
     setUserPosts(userPostsData);
 
     if (revisionAtStart === followRevisionRef.current) {
@@ -626,6 +636,83 @@ function ProfileScreenInner({ navigation, route }) {
     });
     return () => { unsubscribe?.(); };
   }, []);
+
+  // ✅ LIVE SYNC: kisi bhi screen par like / comment / share badle to My Posts me turant dikhe
+  useEngagementSync(
+    setUserPosts,
+    (item, patch) => defaultApplyEngagement(item, patch, savedProfileRef.current?.email || '')
+  );
+
+  // ✅ Profile khula rahe to chupchap fresh data: app foreground par poora reload, har 30 sec me sirf
+  // counts (post likes/comments + followers/following) — pull-to-refresh / manual refresh ki zarurat nahi.
+  useLiveRefresh(
+    async ({ reason } = {}) => {
+      if (reason !== 'interval') { await loadCurrentUser(); return; }
+      const mail = savedProfileRef.current?.email;
+      const rev = followRevisionRef.current;
+      const [, fs] = await Promise.all([
+        UserStore.getNewsFeedSummary?.().catch?.(() => null),   // reconcile => post counts live push
+        mail ? UserStore.getFollowSummary(mail).catch(() => null) : Promise.resolve(null),
+      ]);
+      if (fs && fs.followersCount != null && fs.followingCount != null && rev === followRevisionRef.current) {
+        setProfileStats((prev) => ({ ...prev, followers: Number(fs.followersCount), following: Number(fs.followingCount) }));
+        setFollowLists({
+          followers: Array.isArray(fs.followers) ? fs.followers : [],
+          following: Array.isArray(fs.following) ? fs.following : [],
+        });
+      }
+    },
+    { intervalMs: 30000, runOnFocus: false }
+  );
+
+  // ✅ FIX: Profile ke post par like dabane se count turant badalna chahiye (pehle server call hoti thi par
+  // UI refresh ke baad hi badalta tha, aur 'liked' state na bhejne se unlike bhi nahi hota tha).
+  const profileLikeBusyRef = useRef(new Set());
+  const [profileLikedIds, setProfileLikedIds] = useState({});
+  useEffect(() => {
+    let alive = true;
+    const mail = savedProfile?.email;
+    if (!mail) return undefined;
+    getLikedLocal(mail).then((m) => { if (alive) setProfileLikedIds(m || {}); }).catch(() => {});
+    return () => { alive = false; };
+  }, [savedProfile?.email]);
+  const isProfilePostLiked = (post) => {
+    const mail = String(savedProfile?.email || '').trim().toLowerCase();
+    const eng = getEngagement(post?.id);
+    if (eng && eng.liked !== undefined) return eng.liked;
+    if (post?.liked_by_me !== undefined && post.liked_by_me !== null) return Boolean(post.liked_by_me) || Boolean(profileLikedIds[post.id]);
+    return Boolean((mail && Array.isArray(post?.liked_by) && post.liked_by.some((e) => String(e || '').trim().toLowerCase() === mail)) || profileLikedIds[post?.id]);
+  };
+  const handleProfilePostLike = async (post) => {
+    const pid = String(post?.id || '').trim();
+    if (!pid || profileLikeBusyRef.current.has(pid)) return;
+    profileLikeBusyRef.current.add(pid);
+    const wasLiked = isProfilePostLiked(post);
+    const prevLikes = Number(post.likes || 0);
+    const apply = (liked, likes) => {
+      setProfileLikedIds((m) => { const n = { ...m }; if (liked) n[pid] = true; else delete n[pid]; return n; });
+      setUserPosts((prev) => prev.map((p) => (String(p.id) === pid && !p.is_ad ? { ...p, liked_by_me: liked, likes } : p)));
+    };
+    apply(!wasLiked, Math.max(0, prevLikes + (wasLiked ? -1 : 1)));   // instant UI
+    try {
+      const result = await UserStore.updateNewsFeedItem(pid, 'like', { liked: wasLiked });
+      if (!result?.ok) {
+        apply(wasLiked, prevLikes);
+        showToast(result?.message || 'Unable to update like.', 'error');
+        return;
+      }
+      const finalLiked = result.liked !== undefined ? Boolean(result.liked) : !wasLiked;
+      const finalCount = Number.isFinite(result.likesCount)
+        ? result.likesCount
+        : Math.max(0, prevLikes + (finalLiked ? 1 : 0) - (wasLiked ? 1 : 0));
+      apply(finalLiked, finalCount);
+      if (savedProfile?.email) persistLikedLocal(savedProfile.email, pid, finalLiked);
+    } catch {
+      apply(wasLiked, prevLikes);
+    } finally {
+      profileLikeBusyRef.current.delete(pid);
+    }
+  };
 
   const openEdit = () => {
     // Common user (koi subscription / role / blue tick nahi) profile edit nahi kar sakta —
@@ -1407,6 +1494,11 @@ const handlePickImage = async () => {
     ]);
     const getPostKind = (post = {}) => String(post.mediaType || post.type || '').toLowerCase();
 
+    // Tab ke hisaab se filter (Posts / Reels / Ads / Ecom)
+    const shownPosts = userPosts.filter((p) => getContentKind(p) === contentTab);
+    const tabEmptyText = (CONTENT_TABS.find((t) => t.key === contentTab) || CONTENT_TABS[0]).emptyText;
+    const isWebNarrowGrid = Platform.OS === 'web' && isWebNarrow;
+
     if (userPosts.length === 0) {
       return (
         <View style={w.fullCard}>
@@ -1448,9 +1540,16 @@ const handlePickImage = async () => {
           </TouchableOpacity>
         </View>
 
-        {isGrid ? (
+        <ProfileContentTabs active={contentTab} onChange={setContentTab} accent={profileTier?.accent || ORANGE} />
+
+        {shownPosts.length === 0 ? (
+          <View style={{ alignItems: 'center', paddingVertical: 32 }}>
+            <MaterialCommunityIcons name={(CONTENT_TABS.find((t) => t.key === contentTab) || CONTENT_TABS[0]).icon} size={34} color="#cbd5e1" />
+            <Text style={{ marginTop: 8, color: '#64748b', fontSize: 14 }}>{tabEmptyText}</Text>
+          </View>
+        ) : isGrid ? (
           <View style={[w.postGrid, isNativeApp && { gap: 0, paddingHorizontal: 0 }]}>
-            {userPosts.map((post, index) => {
+            {shownPosts.map((post, index) => {
               const postImage = getPostImage(post);
               const postVideo = getPostVideo(post);
               const postKind = getPostKind(post);
@@ -1460,6 +1559,7 @@ const handlePickImage = async () => {
                   key={post.id || index}
                   style={[
                     w.postGridItem,
+                    isWebNarrowGrid && { width: 'calc(33.333% - 2px)' },
                     isNativeApp && {
                       width: nativeTileSize,
                       height: nativeTileSize,
@@ -1508,7 +1608,7 @@ const handlePickImage = async () => {
             })}
           </View>
         ) : (
-          userPosts.map((post, index) => (
+          shownPosts.map((post, index) => (
             <TouchableOpacity key={post.id || index} style={w.postCard} onPress={() => openUserPost(post)} activeOpacity={0.85}>
               <View style={w.postHeader}>
                 <Image
@@ -1537,15 +1637,10 @@ const handlePickImage = async () => {
   <TouchableOpacity
     style={w.postActionBtn}
     activeOpacity={0.75}
-    onPress={async () => {
-      try {
-        if (post.id) await UserStore.updateNewsFeedItem(post.id, 'like');
-        openUserPost(post);
-      } catch {}
-    }}
+    onPress={() => handleProfilePostLike(post)}
   >
-    <Feather name="heart" size={18} color="#64748b" />
-    <Text style={w.postActionText}>{post.likes || 0}</Text>
+    <Feather name="heart" size={18} color={isProfilePostLiked(post) ? '#ef4444' : '#64748b'} />
+    <Text style={[w.postActionText, isProfilePostLiked(post) ? { color: '#ef4444' } : null]}>{Number(post.likes || 0)}</Text>
   </TouchableOpacity>
   ) : null}
 
@@ -1556,7 +1651,7 @@ const handlePickImage = async () => {
     onPress={() => openUserPost(post)}
   >
     <Feather name="message-circle" size={18} color="#64748b" />
-    <Text style={w.postActionText}>{post.comments || 0}</Text>
+    <Text style={w.postActionText}>{Array.isArray(post.comments) ? post.comments.length : (Number(post.comments) || 0)}</Text>
   </TouchableOpacity>
   ) : null}
 
@@ -1748,8 +1843,8 @@ const handlePickImage = async () => {
                     </TouchableOpacity>
                   </View>
 
-                  <View style={w.profileInfoCol}>
-                    <View style={w.nameRow}>
+                  <View style={[w.profileInfoCol, isWebNarrow && w.profileInfoColNarrow]}>
+                    <View style={[w.nameRow, isWebNarrow && { justifyContent: 'center' }]}>
                       <Text style={[w.nameText, { color: primaryProfileText }]}>{displayProfile.name || 'Your Name'}</Text>
                       {displayHasBlueTick ? <VerifiedBadge size={16} /> : null}
                     </View>
@@ -1757,16 +1852,16 @@ const handlePickImage = async () => {
                       <Text style={[w.memberIdText, { color: secondaryProfileText }]}>Member ID: {generateMemberId(displayProfile.email)}</Text>
                     ) : null}
                                {displayProfile.state ? (
-                      <View style={w.locationRow}>
+                      <View style={[w.locationRow, isWebNarrow && { justifyContent: 'center' }]}>
                         <Feather name="map-pin" size={12} color={secondaryProfileText} />
                         <Text style={[w.locationText, { color: secondaryProfileText }]}>{displayProfile.state}, India</Text>
                       </View>
                     ) : null}
                     {displayProfile.bio ? (
-                      <Text style={[w.profileBioText, { color: primaryProfileText }]}>{displayProfile.bio}</Text>
+                      <Text style={[w.profileBioText, { color: primaryProfileText }, isWebNarrow && { textAlign: 'center' }]}>{displayProfile.bio}</Text>
                     ) : null}
                     {canSeeReferral && referralCode ? (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: isWebNarrow ? 'center' : 'flex-start', gap: 8, marginTop: 4 }}>
                         <Text style={[w.memberIdText, { color: secondaryProfileText }]}>Referral Code:</Text>
                         <Text style={[w.referralCodeCompact, { color: accent }]}>{referralCode}</Text>
                         <TouchableOpacity onPress={handleCopyReferralCode} activeOpacity={0.7}>
@@ -1774,12 +1869,12 @@ const handlePickImage = async () => {
                         </TouchableOpacity>
                       </View>
                     ) : null}
-                    <View style={[w.tierPill, { backgroundColor: `${accent}1F`, borderColor: accent }]}>
+                    <View style={[w.tierPill, { backgroundColor: `${accent}1F`, borderColor: accent }, isWebNarrow && { alignSelf: 'center' }]}>
                                            <Text style={[w.tierPillText, { color: accent }]}>{profileTierLabel}</Text>
                     </View>
                   </View>
 
-                  <View style={[w.statsBox, isWebNarrow && { marginTop: 12 }]}>
+                  <View style={[w.statsBox, isWebNarrow && w.statsBoxNarrow]}>
                     <View style={w.statItem}>
                       <Text style={w.statNum}>{userPosts.length}</Text>
                       <Text style={w.statLabel}>Posts</Text>
@@ -1795,7 +1890,7 @@ const handlePickImage = async () => {
                   </View>
                 </View>
 
-                              <View style={[w.actionsRow, { alignItems: 'center' }]}>
+                              <View style={[w.actionsRow, { alignItems: 'center' }, isWebNarrow && { marginTop: 8, paddingTop: 10 }]}>
                   <TouchableOpacity onPress={openEdit} activeOpacity={0.85} style={{ flex: 1 }}>
                     <LinearGradient
                       colors={gradient}

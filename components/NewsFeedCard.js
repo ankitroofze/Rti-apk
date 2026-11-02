@@ -1356,7 +1356,7 @@ const handleLike = async () => {
 
    const handleDeleteComment = async (commentId) => {
     try {
-      const result = await UserStore.deleteNewsComment(story.id, commentId);
+      const result = await UserStore.deleteNewsComment(story.id, commentId, { isAd: isAdStory });
       if (result?.notFound) {
         // already deleted / available nahi — list ko backend se reconcile karo
         await loadComments({ reset: true });

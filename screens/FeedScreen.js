@@ -28,6 +28,9 @@ import { mergeAudioOnDevice, getLastMergeError } from '../utils/mergeAudioOnDevi
 import { useGlobalMuted, getGlobalMuted, setGlobalMuted } from '../utils/Globalmutestore';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
 import { getAdRedirectMeta, openAdRedirect } from '../utils/adRedirect';
+import { getEngagement, subscribeEngagement } from '../utils/newsEngagementStore';
+import useLiveRefresh from '../utils/useLiveRefresh';
+import { useAuth } from '../contexts/AuthContext';
 
 const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 const MOBILE_BREAKPOINT = 900;
@@ -130,6 +133,42 @@ function countFeedComments(comments = []) {
     (total, comment) => total + 1 + countFeedComments(comment.replies),
     0
   );
+}
+
+// ✅ Shared engagement store (like / comment / share / view) ko reel post par lagao.
+// Kisi bhi screen (Home card, News Details, Profile, ya dusre user ka like) se aaya count yahan turant dikhe.
+// ✅ FIX: server ka feed `comments` count kabhi stale/galat hota hai (list me 0 comment, count 1).
+// Asli comment list se verify hua count yaha rakhte hain: server wahi stale value dobara push kare to real count dikhao.
+const feedCommentVerify = new Map(); // postId -> { server, real }
+
+function applyFeedEngagement(post, patch) {
+  if (!post || !patch || post.isAd) return post;
+  let next = post;
+  const set = (key, value) => {
+    if (next[key] === value) return;
+    if (next === post) next = { ...post };
+    next[key] = value;
+  };
+  if (patch.likes !== undefined) set('likes', patch.likes);
+  if (patch.liked !== undefined) set('liked', patch.liked);
+  if (patch.comments !== undefined) {
+    let nextCount = patch.comments;
+    const verified = feedCommentVerify.get(String(post.id));
+    if (verified) {
+      if (Number(nextCount) === verified.server) nextCount = verified.real;
+      else feedCommentVerify.delete(String(post.id));
+    }
+    set('commentsCount', nextCount);
+  }
+  if (patch.shares !== undefined) set('shares', patch.shares);
+  if (patch.views !== undefined) set('views', Math.max(Number(post.views || 0), patch.views));
+  return next;
+}
+
+// Server se aayi fresh list par local (taza) engagement ka overlay — purane cached count se upar
+function overlayFeedEngagement(post) {
+  const eng = getEngagement(post?.id);
+  return eng ? applyFeedEngagement(post, eng) : post;
 }
 
 function getDisplayCommentAvatar(comment = {}, fallbackAvatar = '') {
@@ -1463,7 +1502,7 @@ function LocalVoiceOver({ voiceUri, musicUrl, musicVolume = 0.6, playing }) {
 }
 
 // Reel Card
-function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription, onProfilePress, onAdPress, onFollow, isActive, isNear = true, bottomInset = 0, cardWidth, cardHeight, isMobileLayout }) {
+function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription, onProfilePress, onAdPress, onFollow, onVerifyComments, isActive, isNear = true, bottomInset = 0, cardWidth, cardHeight, isMobileLayout }) {
   const safePost = post || {};
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const flashAnim = useRef(new Animated.Value(0)).current; // resume par center me pause icon flash
@@ -1496,6 +1535,13 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription,
   const role        = String(safePost.role || safePost.author_role || '');
   const time        = String(safePost.time || '');
     const postId      = String(safePost.id || '');
+  // ✅ FIX: reel active hote hi asli comment list se count verify karo (bina comment ke "View all 1 comments" na dikhe)
+  useEffect(() => {
+    if (!isActive || !postId || safePost.isAd) return;
+    if (Number(safePost.commentsCount || 0) > 0) onVerifyComments?.(postId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isActive, postId]);
+
   // View API: reel active hone par ek baar view record
   const [viewBump, setViewBump] = useState(0);
   useEffect(() => {
@@ -2075,6 +2121,35 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
   );
 }
 
+// Login required popup
+function LoginRequiredModal({ visible, onClose, onLogin }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <View style={{ width: '100%', maxWidth: 360, backgroundColor: '#ffffff', borderRadius: 18, padding: 22, alignItems: 'center' }}>
+          <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: '#fff7ed', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+            <Ionicons name="log-in-outline" size={28} color="#f97316" />
+          </View>
+          <Text style={{ fontSize: 18, fontWeight: '800', color: '#0f172a', marginBottom: 6 }}>Sign in required</Text>
+          <Text style={{ fontSize: 14, color: '#475569', textAlign: 'center', marginBottom: 18 }}>
+            Please sign in to like, comment or save posts.
+          </Text>
+          <TouchableOpacity
+            onPress={onLogin}
+            activeOpacity={0.85}
+            style={{ alignSelf: 'stretch', backgroundColor: '#f97316', borderRadius: 12, paddingVertical: 12, alignItems: 'center', marginBottom: 8 }}
+          >
+            <Text style={{ color: '#ffffff', fontWeight: '800', fontSize: 15 }}>Sign in</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={onClose} activeOpacity={0.7} style={{ paddingVertical: 8 }}>
+            <Text style={{ color: '#64748b', fontWeight: '700', fontSize: 14 }}>Not now</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // Main Feed Screen
 export default function FeedScreen({ navigation, route }) {
   const targetReelId = route?.params?.id ? String(route.params.id) : null;
@@ -2290,10 +2365,53 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
           );
           if (!exists) next = [...next, ensureComment];
         }
-        return { ...post, comments: next, commentsCount: countFeedComments(next) };
+        const realCount = countFeedComments(next);
+        // server ka stale count 20s live-refresh me wapas na aaye
+        if (item && !ensureComment && next === normalizedComments) {
+          feedCommentVerify.set(String(id), { server: Number(item.comments), real: realCount });
+        }
+        return { ...post, comments: next, commentsCount: realCount };
       }));
     } catch {}
   }, [commentProfilesByEmail]);
+
+  // ✅ FIX: reel dikhte hi (silently) asli comments se count theek karo — har post ke liye ek baar
+  const commentsVerifiedRef = useRef(new Set());
+  const handleVerifyComments = useCallback(async (id) => {
+    const key = String(id);
+    if (commentsVerifiedRef.current.has(key)) return;
+    commentsVerifiedRef.current.add(key);
+    try {
+      const res = await AuthAPI.getCommentsDetailed(key);
+      if (!res?.ok || !Array.isArray(res.comments) || res.hasMore) {
+        commentsVerifiedRef.current.delete(key); // fail / bahut zyada comments — count ko haath mat lagao
+        return;
+      }
+      const real = res.comments.reduce(
+        (sum, c) => sum + 1 + Number(c?.replies_count ?? (Array.isArray(c?.replies) ? c.replies.length : 0) ?? 0),
+        0
+      );
+      setPosts((prev) => prev.map((p) => {
+        if (String(p.id) !== key) return p;
+        const server = Number(p.commentsCount || 0);
+        if (server === real) return p;
+        feedCommentVerify.set(key, { server, real });
+        return { ...p, commentsCount: real };
+      }));
+    } catch {
+      commentsVerifiedRef.current.delete(key);
+    }
+  }, []);
+
+  // ✅ Login required popup (like / comment / save bina login ke nahi)
+  const { isLoggedIn } = useAuth();
+  const [loginPromptVisible, setLoginPromptVisible] = useState(false);
+  const requireLogin = useCallback((closeSheets = false) => {
+    if (isLoggedIn) return true;
+    if (closeSheets) { setCommentPost(null); setDescPost(null); }
+    setLoginPromptVisible(true);
+    return false;
+  }, [isLoggedIn]);
 
   // ✅ FIX: ek post pe ek waqt sirf ek hi like-request in-flight rahe —
   // isse fast double-tap ke wajah se backend pe do POST /likes call jaake
@@ -2301,6 +2419,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
   const likeInFlightRef = useRef(new Set());
 
   const handleLike = useCallback(async (id) => {
+    if (!requireLogin()) return;
     const targetPost = posts.find((post) => String(post.id) === String(id));
     if (targetPost?.isAd) {
       setPosts(prev => prev.map(p => p.id === id ? {
@@ -2351,9 +2470,10 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     } finally {
       likeInFlightRef.current.delete(key);
     }
-  }, [posts]);
+  }, [posts, requireLogin]);
 
   const handleBookmark = useCallback(async (id) => {
+    if (!requireLogin()) return;
     const targetPost = posts.find((post) => String(post.id) === String(id));
     if (targetPost?.isAd) {
       setPosts(prev => prev.map(p => p.id === id ? { ...p, bookmarked: !p.bookmarked } : p));
@@ -2370,7 +2490,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     } catch {
       setPosts(prev => prev.map(p => p.id === id ? { ...p, bookmarked: !p.bookmarked } : p));
     }
-  }, [posts]);
+  }, [posts, requireLogin]);
 
   const handleComment = useCallback(async (id) => {
     setCommentPost(id);
@@ -2389,6 +2509,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
 
   const handleAddComment = useCallback(async (text, replyToId = null, targetPostId = commentPost || descPost) => {
     if (!targetPostId) return;
+    if (!requireLogin(true)) return;
     const tempId = Date.now().toString();
     const currentAvatar = String(currentUser.avatar || currentUser.profile_image || '').trim();
     const newComment = {
@@ -2447,7 +2568,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     } catch {
       await syncPostComments(targetPostId, { keepIfEmpty: true });
     }
-  }, [commentPost, currentUser.avatar, currentUser.name, currentUser.profile_image, currentUserEmail, descPost, syncPostComments, commentProfilesByEmail]);
+  }, [commentPost, currentUser.avatar, currentUser.name, currentUser.profile_image, currentUserEmail, descPost, syncPostComments, commentProfilesByEmail, requireLogin]);
 
   const handleEditComment = useCallback(async (commentId, newText) => {
     setPosts(prev =>
@@ -2471,25 +2592,31 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
   }, [commentPost]);
 
   const handleDeleteComment = useCallback(async (commentId) => {
+    // ✅ FIX: pehle yahan SAARI reels ka comment count 1-1 kam ho jaata tha (sirf target post ka hona chahiye),
+    // aur server fail hone par comment wapas bhi nahi aata tha.
+    const targetId = commentPost || descPost;
     setPosts(prev =>
-      prev.map(p => ({
-        ...p,
-        comments: Array.isArray(p.comments) ? p.comments.filter(c => {
-          if (c.id === commentId) return false;
-          if (Array.isArray(c.replies)) {
-            c.replies = c.replies.filter(r => r.id !== commentId);
-          }
-          return true;
-        }) : p.comments,
-        commentsCount: Math.max(0, (p.commentsCount ?? (Array.isArray(p.comments) ? p.comments.length : 0)) - 1)
-      }))
+      prev.map(p => {
+        if (String(p.id) !== String(targetId)) return p;
+        const before = countFeedComments(p.comments);
+        const nextComments = (Array.isArray(p.comments) ? p.comments : [])
+          .filter(c => c.id !== commentId)
+          .map(c => (Array.isArray(c.replies) ? { ...c, replies: c.replies.filter(r => r.id !== commentId) } : c));
+        const removed = Math.max(0, before - countFeedComments(nextComments));
+        const baseCount = Number(p.commentsCount ?? before);
+        return { ...p, comments: nextComments, commentsCount: Math.max(0, baseCount - removed) };
+      })
     );
     try {
-      await UserStore.deleteNewsComment(commentPost, commentId);
-    } catch {}
-  }, [commentPost]);
+      const res = await UserStore.deleteNewsComment(targetId, commentId);
+      if (!res?.ok) await syncPostComments(targetId, { keepIfEmpty: false });
+    } catch {
+      await syncPostComments(targetId, { keepIfEmpty: false });
+    }
+  }, [commentPost, descPost, syncPostComments]);
 
   const handleLikeComment = useCallback(async (commentId) => {
+    if (!requireLogin(true)) return;
     setPosts(prev =>
       prev.map(p => ({
         ...p,
@@ -2527,9 +2654,12 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       }))
     );
     try {
-      await UserStore.likeNewsComment(commentPost, commentId);
-    } catch {}
-  }, [commentPost, currentUserEmail]);
+      const res = await UserStore.likeNewsComment(commentPost || descPost, commentId);
+      if (!res?.ok) await syncPostComments(commentPost || descPost, { keepIfEmpty: true });
+    } catch {
+      await syncPostComments(commentPost || descPost, { keepIfEmpty: true });
+    }
+  }, [commentPost, descPost, currentUserEmail, syncPostComments, requireLogin]);
 
   const handleNewPost = useCallback(async ({ caption, headline, tag, mediaUri, mediaType, audioMix = null }) => {
   const isVideoPost = mediaType === 'Video';
@@ -2652,6 +2782,32 @@ const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
       setActiveIndex((cur) => (cur < 0 ? (lastViewableIndexRef.current || 0) : cur));
     }
   }, [isScreenFocused]);
+
+  // ✅ LIVE SYNC: kisi bhi jagah (Home card, Details, Profile, ya server se dusre user ka like/comment) count badle
+  // to is feed ke reels par turant dikhe — refresh nahi karna padega.
+  useEffect(() => subscribeEngagement((id, patch) => {
+    setPosts((prev) => {
+      if (!Array.isArray(prev) || !prev.length) return prev;
+      let changed = false;
+      const next = prev.map((p) => {
+        if (String(p.id) !== String(id)) return p;
+        const upd = applyFeedEngagement(p, patch);
+        if (upd !== p) changed = true;
+        return upd;
+      });
+      return changed ? next : prev;
+    });
+  }), []);
+
+  // Feed khula rahe to har 20 sec me chupchap latest counts lao (UserStore ise live push kar deta hai).
+  // App background se wapas aane par bhi turant.
+  useLiveRefresh(
+    async () => {
+      if (feedLoadingRef.current) return;
+      await UserStore.getNewsFeedSummary({ type: 2, feedType: 'feeds', perPage: 10, comments: 0 });
+    },
+    { intervalMs: 20000, runOnFocus: false }
+  );
 
   // ✅ FIX: Android back button se app band ho jaata tha (Feed stack ka root ban jaata hai).
   // Ab back = pichli screen, aur agar pichli screen nahi hai to Home. App tabhi band hoga
@@ -2805,13 +2961,14 @@ image: item.image || null,
             setPosts((prevPosts) => {
               if (loadMore) {
                 const seen = new Set(prevPosts.map((post) => String(post.id)));
-                return [...prevPosts, ...cleanedPosts.filter((post) => !seen.has(String(post.id)))];
+                return [...prevPosts, ...cleanedPosts.filter((post) => !seen.has(String(post.id))).map(overlayFeedEngagement)];
               }
               return cleanedPosts.map((np) => {
                 const old = prevPosts.find((op) => String(op.id) === String(np.id));
-                return (old && Array.isArray(old.comments) && old.comments.length && !(np.comments && np.comments.length))
+                const merged = (old && Array.isArray(old.comments) && old.comments.length && !(np.comments && np.comments.length))
                   ? { ...np, comments: old.comments }
                   : np;
+                return overlayFeedEngagement(merged);
               });
             });
           } else {
@@ -2869,6 +3026,7 @@ image: item.image || null,
                 onComment={handleComment}
                 onShare={handleShare}
                 onDescription={handleDescription}
+                onVerifyComments={handleVerifyComments}
                           onProfilePress={(postData) =>
                   navigation.navigate('UserProfile', {
                     userId: postData.author_id || undefined,
@@ -2949,6 +3107,15 @@ image: item.image || null,
           navigation.navigate('Subscription Plans', { returnTo: 'Feed' });
         }}
         onCancel={() => setNewsLimitModal((prev) => ({ ...prev, visible: false }))}
+      />
+
+      <LoginRequiredModal
+        visible={loginPromptVisible}
+        onClose={() => setLoginPromptVisible(false)}
+        onLogin={() => {
+          setLoginPromptVisible(false);
+          try { navigation.navigate('Login'); } catch {}
+        }}
       />
 
       {activeCommentData ? (

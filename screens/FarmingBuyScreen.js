@@ -547,7 +547,16 @@ export default function FarmingBuyScreen({ navigation, route }) {
     Linking.openURL(url);
   };
 
-  const openEnquiry = (product) => {
+  const openEnquiry = async (product) => {
+    // ✅ Login ke bina enquiry form nahi khulega — Login screen par bhejo
+    let user = null;
+    try { user = await UserStore.getCurrentUser(); } catch {}
+    if (!user) {
+      setSelectedProduct(null);
+      notify('Login required', 'Please login to send an enquiry.');
+      navigation?.navigate?.('Login');
+      return;
+    }
     setSelectedProduct(null);
     setEnquiryProduct(product);
   };
@@ -583,7 +592,7 @@ export default function FarmingBuyScreen({ navigation, route }) {
 {/* White native header removed — red ModuleAndroidHeader hi use hota hai */}
       {/* Search row — header ke neeche, apni line me */}
       <View style={styles.searchRow}>
-        <View style={[styles.searchWrap, { flex: 0, width: '100%' }, isWideWeb && styles.searchWrapWide]}>
+        <View style={[styles.searchWrap, { width: '100%' }, isWideWeb && styles.searchWrapWide]}>
           <Ionicons name="search-outline" size={18} color="#94a3b8" />
           <TextInput
             value={searchQuery}
@@ -1085,9 +1094,13 @@ const styles = StyleSheet.create(withRobotoOnIOS({
    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
   },
   searchWrap: {
-    flex: 1,
+    // flexGrow/flexBasis fixed: pehle `flex:1` + inline `flex:0` se box mobile web par sikud kar line ban jata tha
+    flexGrow: 0,
+    flexShrink: 0,
+    flexBasis: 'auto',
     maxWidth: 640,
     height: 46,
+    minHeight: 46,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
@@ -1105,7 +1118,8 @@ const styles = StyleSheet.create(withRobotoOnIOS({
   },
   searchInput: {
     flex: 1,
-    height: '100%',
+    minWidth: 0,
+    height: 44,
     fontSize: 14.5,
     color: BRAND.ink,
     padding: 0,
@@ -1137,9 +1151,11 @@ const styles = StyleSheet.create(withRobotoOnIOS({
     paddingVertical: 7,
   },
   searchRow: {
+    flexShrink: 0,
+    width: '100%',
     paddingHorizontal: 16,
     paddingTop: 14,
-    paddingBottom: 4,
+    paddingBottom: 10,
     alignItems: Platform.OS === 'web' ? 'center' : 'stretch',
   },
   sellBtnText: {

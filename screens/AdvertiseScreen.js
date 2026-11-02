@@ -16,6 +16,7 @@ import AdVideoPlayer from '../components/AdVideoPlayer';
 import { getResponsiveWindowWidth } from '../utils/webDevice';
 import { UserStore } from '../store/UserStore';
 import { useToast } from '../components/ui/ToastProvider';
+import { useAuth } from '../contexts/AuthContext';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
 
 // ── Design tokens — matched to source (Shuru) promotion form ───────────────────
@@ -549,10 +550,13 @@ export default function AdvertiseScreen({ navigation, route }) {
 const editAd = route?.params?.editAd || null;
   const isEditing = Boolean(editAd?.id);
   const { showToast } = useToast();
+  const { isLoggedIn, isAuthLoading } = useAuth();
 
   // ── Agar subscription/credits nahi hai to form dikhane se pehle hi AdPlans pe bhej do ──
   useEffect(() => {
     if (isEditing) return;
+    // ✅ FIX: login nahi hai to subscription notice/redirect mat karo (login page apne aap aata hai)
+    if (isAuthLoading || !isLoggedIn) return;
     let active = true;
     (async () => {
       const adSummary = await UserStore.getAdCreditsSummary();
@@ -563,7 +567,7 @@ const editAd = route?.params?.editAd || null;
       }
     })();
     return () => { active = false; };
-  }, [isEditing]);
+  }, [isEditing, isLoggedIn, isAuthLoading]);
 
     const [photo, setPhoto] = useState(editAd?.photo || null);
   const [extraPhotos, setExtraPhotos] = useState([]);
@@ -930,6 +934,7 @@ const editAd = route?.params?.editAd || null;
     // }
 
     if (!isEditing) {
+      if (!isLoggedIn) { navigation.navigate('Login'); return; }
       const adSummary = await UserStore.getAdCreditsSummary();
       const hasCredits = adSummary && !adSummary.expired && adSummary.credits > 0;
 

@@ -24,6 +24,7 @@ import {
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
 import { openExternalUrl, buildWhatsappUrl } from '../utils/adRedirect';
 import { emitFeedScroll } from '../utils/feedScrollBus';
+import useLiveRefresh from '../utils/useLiveRefresh';
 import NewsFeedCard from '../components/NewsFeedCard';
 import NewsMenuSidebar from '../components/NewsMenuSidebar';
 import LeftEcomSidebar from '../components/LeftEcomSidebar';
@@ -971,6 +972,51 @@ export default function HomeScreen({ navigation, route }) {
     return () => { mounted = false; };
   }, [fromRegistration, loadCurrentUser, loadNewsStories, registrationJustCompleted, showToast]));
 
+  // ✅ LIVE HOME FEED: naye posts / ads apne aap list ke upar aa jaate hain (scroll position aur "load more" ka
+  // cursor bina chhede), aur like/comment counts UserStore se cards par live push hote hain.
+  // Har 30 sec + app foreground par chalta hai. Focus par pehle se poora load hota hai.
+  const silentRefreshNews = useCallback(async () => {
+    if (newsLoadingRef.current) return;
+    const reqId = newsReqIdRef.current;
+    const [summary, rawAds] = await Promise.all([
+      UserStore.getNewsFeedSummary({ feedType: 'all', type: 1, perPage: 10 }),
+      UserStore.getActiveAdsFeed().catch(() => null),
+    ]);
+    if (!summary || newsLoadingRef.current || reqId !== newsReqIdRef.current) return;
+
+    const fresh = Array.isArray(summary.items)
+      ? summary.items.map((item, index) => normalizeStoryItem(item, index)).filter(Boolean)
+      : [];
+    const seen = new Set(newsStoriesRef.current.map((s) => String(s.id)));
+    const added = fresh.filter((s) => !seen.has(String(s.id)));
+
+    let adsChanged = false;
+    if (Array.isArray(rawAds) && rawAds.length) {
+      const nextAds = rawAds.map(homeStoryFromAd);
+      const sig = (list) => list.map((a) => String(a.id)).join('|');
+      if (sig(nextAds) !== sig(adStoriesRef.current)) {
+        adStoriesRef.current = nextAds;
+        setActiveAds(nextAds);
+        adsChanged = true;
+      }
+    }
+    if (!added.length && !adsChanged) return;
+
+    const sortByNewest = (a, b) => {
+      const dateA = new Date(a.createdAt || a.created_at || a.date || 0).getTime() || 0;
+      const dateB = new Date(b.createdAt || b.created_at || b.date || 0).getTime() || 0;
+      if (dateB !== dateA) return dateB - dateA;
+      return String(b.id || '').localeCompare(String(a.id || ''), undefined, { numeric: true });
+    };
+    if (added.length) newsStoriesRef.current = [...added, ...newsStoriesRef.current];
+    const news = [...newsStoriesRef.current].sort(sortByNewest);
+    const mixed = [...news, ...groupAdStories(adStoriesRef.current)].sort(sortByNewest);
+    const next = interleaveHomeStories(mixed, [], ecomeStoriesRef.current);
+    setLiveStories(next);
+    persistHomeFeedCache(next, adStoriesRef.current);
+  }, []);
+  useLiveRefresh(silentRefreshNews, { intervalMs: 30000, runOnFocus: false });
+
   const handlePlanPress = (plan) => {
     setPendingPlan(plan);
     const stateName = seatSummary?.state || currentUser?.state || '';
@@ -1131,10 +1177,18 @@ const allStories = useMemo(() => {
     navigation?.navigate?.('UserPublicProfile', { email: story.createdBy || '', author: fallbackAuthor, userId: story.author_id || null });
   }, [navigation]);
 
-const handleOpenLeadForm = useCallback((story) => {
+const handleOpenLeadForm = useCallback(async (story) => {
   if (!story) return;
+  // ✅ Login ke bina lead/enquiry form nahi khulega — Login screen par bhejo
+  let user = null;
+  try { user = await UserStore.getCurrentUser(); } catch {}
+  if (!user) {
+    showToast('Please login to send an enquiry.', 'error');
+    navigation?.navigate?.('Login');
+    return;
+  }
   setLeadFormAd(story);
-}, []);
+}, [navigation, showToast]);
 
   const handleSponsoredAdPress = useCallback((ad) => {
     if (!ad) return;

@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
   ImageBackground,
+  useWindowDimensions,
 } from 'react-native';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -22,11 +23,11 @@ import { UserStore } from '../store/UserStore';
 import { MODULE_HEADER_HEIGHT_WEB } from '../constants/subscriptionThemes';
 import ModuleWebHeader from '../components/Modulewebheader';
 // Compact "input-style" dropdown — click to open a small anchored menu, not a full-screen modal.
-function DropdownField({ label, value, options, onChange, placeholder = 'Select', disabled = false, icon = 'chevron-down' }) {
+function DropdownField({ label, value, options, onChange, placeholder = 'Select', disabled = false, icon = 'chevron-down', stacked = false }) {
   const [open, setOpen] = useState(false);
   const selected = options.find((o) => o.value === value);
   return (
-    <View style={{ flex: 1 }}>
+    <View style={[stacked ? { width: '100%' } : { flex: 1 }, { zIndex: open ? 50 : 1 }]}>
       <Text style={{ fontSize: 14, fontWeight: '800', color: '#111111', marginBottom: 8 }}>{label}</Text>
       <TouchableOpacity
         activeOpacity={disabled ? 1 : 0.7}
@@ -94,6 +95,8 @@ function DropdownField({ label, value, options, onChange, placeholder = 'Select'
 export default function CertificationScreen({ navigation }) {
   const { showToast } = useToast();
   const insets = useSafeAreaInsets();
+  const { width: winWidth } = useWindowDimensions();
+  const isCompact = winWidth < 640; // mobile / mobile-web: stack karke professional look
 const [loading, setLoading] = useState(false);
 useBusy(loading);
   const [certData, setCertData] = useState({
@@ -300,29 +303,25 @@ const handleAttemptQuiz = useCallback((item) => {
             width: '100%',
             maxWidth: 1100,
             alignSelf: 'center',
-            borderRadius: 12,
-            padding: 22,
+            borderRadius: 14,
+            paddingVertical: isCompact ? 22 : 22,
+            paddingHorizontal: isCompact ? 18 : 22,
             marginBottom: 16,
-            flexDirection: 'row',
+            flexDirection: isCompact ? 'column' : 'row',
             alignItems: 'center',
             overflow: 'hidden',
             backgroundColor: '#7f1d1d',
           }}
         >
-          {/* <Image
-            source={require('../assets/images/profile-red.png')}
-            resizeMode="cover"
-            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%', borderRadius: 12 }}
-          /> */}
-          <View style={{ width: 54, height: 54, borderRadius: 32, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center', marginRight: 16 }}>
+          <View style={{ width: 54, height: 54, borderRadius: 27, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center', marginRight: isCompact ? 0 : 16, marginBottom: isCompact ? 12 : 0 }}>
             <Feather name="award" size={28} color="#ffffff" />
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.85)', letterSpacing: 1, textTransform: 'uppercase' }}>RTI Certification</Text>
-            <Text style={{ fontSize: 24, fontWeight: '800', color: '#ffffff', marginTop: 2 }}>My Certifications</Text>
-            <Text style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', marginTop: 3 }}>Manage your certifications, track progress and download your records.</Text>
+          <View style={{ flex: isCompact ? 0 : 1, width: isCompact ? '100%' : undefined, alignItems: isCompact ? 'center' : 'flex-start' }}>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.85)', letterSpacing: 1, textTransform: 'uppercase', textAlign: isCompact ? 'center' : 'left' }}>RTI Certification</Text>
+            <Text style={{ fontSize: isCompact ? 22 : 24, fontWeight: '800', color: '#ffffff', marginTop: 4, textAlign: isCompact ? 'center' : 'left' }}>My Certifications</Text>
+            <Text style={{ fontSize: 13, lineHeight: 19, color: 'rgba(255,255,255,0.85)', marginTop: 6, textAlign: isCompact ? 'center' : 'left', maxWidth: isCompact ? 320 : undefined }}>Manage your certifications, track progress and download your records.</Text>
           </View>
-          <Feather name="file-text" size={64} color="rgba(255,255,255,0.15)" style={{ marginLeft: 10 }} />
+          {!isCompact && <Feather name="file-text" size={64} color="rgba(255,255,255,0.15)" style={{ marginLeft: 10 }} />}
         </View>
 
                      {/* My Attempts + Quiz Subscription */}
@@ -353,31 +352,31 @@ const handleAttemptQuiz = useCallback((item) => {
         </View>
                     {/* Metrics */}
         <View style={{ width: '100%', maxWidth: 1100, alignSelf: 'center', flexDirection: 'row', gap: 10, marginBottom: 16 }}>
-          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#FDF3F3', borderWidth: 1, borderColor: '#EDE8E1', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 10, overflow: 'hidden' }}>
+          <View style={{ flex: 1, flexDirection: isCompact ? 'column' : 'row', alignItems: 'center', gap: isCompact ? 6 : 8, backgroundColor: '#FDF3F3', borderWidth: 1, borderColor: '#EDE8E1', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 8, overflow: 'hidden' }}>
             <View style={{ width: Platform.OS === 'web' ? 36 : 32, height: Platform.OS === 'web' ? 36 : 32, borderRadius: Platform.OS === 'web' ? 18 : 16, backgroundColor: '#FBC7C7', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Feather name="file-text" size={Platform.OS === 'web' ? 16 : 14} color="#dc2626" />
             </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
+            <View style={{ flex: isCompact ? 0 : 1, minWidth: 0, alignItems: isCompact ? 'center' : 'flex-start' }}>
               <Text style={{ fontSize: 18, fontWeight: '800', color: '#111111' }}>{certData.totalAttempts}</Text>
               <Text style={{ fontSize: 10, fontWeight: '700', color: '#888888', textTransform: 'uppercase', letterSpacing: 0.3 }} numberOfLines={1}>Attempts</Text>
             </View>
           </View>
 
-          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F1FAF4', borderWidth: 1, borderColor: '#EDE8E1', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 10, overflow: 'hidden' }}>
+          <View style={{ flex: 1, flexDirection: isCompact ? 'column' : 'row', alignItems: 'center', gap: isCompact ? 6 : 8, backgroundColor: '#F1FAF4', borderWidth: 1, borderColor: '#EDE8E1', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 8, overflow: 'hidden' }}>
             <View style={{ width: Platform.OS === 'web' ? 36 : 32, height: Platform.OS === 'web' ? 36 : 32, borderRadius: Platform.OS === 'web' ? 18 : 16, backgroundColor: '#A7E3BE', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Feather name="check" size={Platform.OS === 'web' ? 16 : 14} color="#15803D" />
             </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
+            <View style={{ flex: isCompact ? 0 : 1, minWidth: 0, alignItems: isCompact ? 'center' : 'flex-start' }}>
               <Text style={{ fontSize: 18, fontWeight: '800', color: '#111111' }}>{certData.passedCount}</Text>
               <Text style={{ fontSize: 10, fontWeight: '700', color: '#888888', textTransform: 'uppercase', letterSpacing: 0.3 }} numberOfLines={1}>Passed</Text>
             </View>
           </View>
 
-          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#F1F6FE', borderWidth: 1, borderColor: '#EDE8E1', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 10, overflow: 'hidden' }}>
+          <View style={{ flex: 1, flexDirection: isCompact ? 'column' : 'row', alignItems: 'center', gap: isCompact ? 6 : 8, backgroundColor: '#F1F6FE', borderWidth: 1, borderColor: '#EDE8E1', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 8, overflow: 'hidden' }}>
             <View style={{ width: Platform.OS === 'web' ? 36 : 32, height: Platform.OS === 'web' ? 36 : 32, borderRadius: Platform.OS === 'web' ? 18 : 16, backgroundColor: '#AFC9F5', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Feather name="download" size={Platform.OS === 'web' ? 16 : 14} color="#1D4ED8" />
             </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
+            <View style={{ flex: isCompact ? 0 : 1, minWidth: 0, alignItems: isCompact ? 'center' : 'flex-start' }}>
               <Text style={{ fontSize: 18, fontWeight: '800', color: '#111111' }}>{certData.totalDownloads}</Text>
               <Text style={{ fontSize: 10, fontWeight: '700', color: '#888888', textTransform: 'uppercase', letterSpacing: 0.3 }} numberOfLines={1}>Downloads</Text>
             </View>
@@ -398,9 +397,10 @@ const handleAttemptQuiz = useCallback((item) => {
 
           {/* Subject + Test Type + Difficulty */}
               <View style={{ width: '100%', maxWidth: 1100, alignSelf: 'center', backgroundColor: '#ffffff', borderRadius: 14, borderWidth: 1, borderColor: '#EDE8E1', padding: 20, marginBottom: 16, zIndex: 20, elevation: Platform.OS === 'android' ? 20 : 0 }}>
-                   <View style={{ flexDirection: Platform.OS === 'web' ? 'row' : 'column', gap: 16, zIndex: 30, elevation: Platform.OS === 'android' ? 20 : 0 }}>
+                   <View style={{ flexDirection: isCompact ? 'column' : 'row', gap: 16, zIndex: 30, elevation: Platform.OS === 'android' ? 20 : 0 }}>
             <DropdownField
               label="Subject"
+              stacked={isCompact}
               value={subject}
               options={SUBJECTS}
               onChange={setSubject}
@@ -410,6 +410,7 @@ const handleAttemptQuiz = useCallback((item) => {
 
             <DropdownField
               label="Test Type"
+              stacked={isCompact}
               value={testType}
               options={TEST_TYPES}
               onChange={(v) => { setTestType(v); if (v !== 'practice') setDifficulty(null); }}
@@ -419,6 +420,7 @@ const handleAttemptQuiz = useCallback((item) => {
 
             <DropdownField
               label="Difficulty"
+              stacked={isCompact}
               value={difficulty}
               options={DIFFICULTIES}
               onChange={setDifficulty}

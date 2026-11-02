@@ -117,7 +117,7 @@ export default function LoginScreen({ navigation, route }) {
       const users = await UserStore.getAllUsers();
       const localUser = !isEmail && Array.isArray(users) ? users.find((user) => String(user.mobile || '').trim() === mobile) : null;
       if (!localUser) { setErrors((prev) => ({ ...prev, email: isEmail ? 'Unable to connect. Please try again.' : 'Account not found. Please sign up first.' })); return; }
-      if (String(localUser.password || '') !== password) { setErrors((prev) => ({ ...prev, password: 'Incorrect password. Please try again.' })); return; }
+      if (!UserStore.verifyLocalPassword(localUser, password)) { setErrors((prev) => ({ ...prev, password: 'Incorrect password. Please try again.' })); return; }
       await UserStore.setCurrentUser(localUser.email);
       login();
       navigation.reset({ index: 0, routes: [{ name: redirectTo }] });

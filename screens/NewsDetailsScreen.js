@@ -32,6 +32,7 @@ import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice'
 import { safePause, safePlay } from '../utils/videoPlayerSafe';
 import MediaGallery from '../components/MediaGallery';
 import { getEngagement, publishEngagement, subscribeEngagement, getLikedLocal, persistLikedLocal } from '../utils/newsEngagementStore';
+import useLiveRefresh from '../utils/useLiveRefresh';
 
 const IS_WEB = Platform.OS === 'web';
 
@@ -688,6 +689,16 @@ export default function NewsDetailsScreen({ route, navigation }) {
     const unsubscribe = navigation.addListener('focus', loadArticleDetails);
     return unsubscribe;
   }, [loadArticleDetails, navigation]);
+
+  // ✅ Details khuli rahe to dusron ke like / comment / share / view count apne aap badhte dikhein (30 sec + foreground).
+  // UserStore fresh counts shared store me push karta hai, jo is screen ka subscribeEngagement apply kar deta hai.
+  useLiveRefresh(
+    async () => {
+      if (!articleId) return;
+      await UserStore.getNewsFeedSummary({ focusItemId: articleId, feedType: 'all' });
+    },
+    { intervalMs: 30000, runOnFocus: false }
+  );
 
   const locationLabel = useMemo(() => buildLocationLabel(article), [article]);
   const articleParagraphs = useMemo(() => buildArticleParagraphs(article), [article]);

@@ -19,6 +19,7 @@ import styles, { C } from '../styles/NotificationsStyles';
 import { UserStore } from '../store/UserStore';
 import { navigateFromNotification } from '../utils/Notificationnavigation';
 import { subscribePushEvents, refreshBadge } from '../utils/Pushnotifications';
+import useLiveRefresh from '../utils/useLiveRefresh';
 
 const getNotificationAccent = (item = {}) => {
   const haystack = `${item.title || ''} ${item.message || ''}`.toLowerCase();
@@ -99,17 +100,34 @@ export default function NotificationsScreen({ navigation }) {
   });
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const loadNotifications = useCallback(async () => {
-    setLoading(true);
+  // Silent refresh me "Load more" se khule purane items na girein: fresh pehla page + purane items jo us page me nahi
+  const mergeFresh = (prev, data) => {
+    if (!prev || !Array.isArray(prev.items) || prev.items.length <= data.items.length) return data;
+    const ids = new Set(data.items.map((i) => i.id));
+    return {
+      ...data,
+      items: [...data.items, ...prev.items.filter((i) => !ids.has(i.id))],
+      hasMore: prev.hasMore,
+      nextCursor: prev.nextCursor,
+    };
+  };
+
+  const loadNotifications = useCallback(async ({ silent = false } = {}) => {
+    if (!silent) setLoading(true);
     const data = await UserStore.getNotificationsSummary();
-    setLoading(false);
+    if (!silent) setLoading(false);
 
     if (!data) {
-      navigation.replace('Login');
+      if (!silent) navigation.replace('Login');
       return;
     }
-    setNotificationData(data);
+    setNotificationData((prev) => (silent ? mergeFresh(prev, data) : data));
+    if (silent) refreshBadge();
   }, [navigation]);
+
+  // ✅ Naya notification aaye to list + badge apne aap update (push na aaye tab bhi) — har 30 sec,
+  // aur app foreground par aate hi. Focus par pehle se load hota hai.
+  useLiveRefresh(loadNotifications, { intervalMs: 30000, runOnFocus: false });
 
   useFocusEffect(
     useCallback(() => {
@@ -121,7 +139,7 @@ export default function NotificationsScreen({ navigation }) {
   useEffect(() => {
     const unsub = subscribePushEvents(async () => {
       const data = await UserStore.getNotificationsSummary();
-      if (data) setNotificationData(data);
+      if (data) setNotificationData((prev) => mergeFresh(prev, data));
     });
     return () => unsub?.();
   }, []);

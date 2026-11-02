@@ -240,6 +240,26 @@ if (typeof document !== 'undefined') {
       .ecome-grid { grid-template-columns: 1fr; }
       .ecome-stats-grid { grid-template-columns: 1fr; }
       .ecome-banner { flex-wrap: wrap; }
+
+      /* ── Sell / Buy cards (mobile view) ──────────────────────────
+         Pehle text image ke upar aa raha tha (Buy me "produce or equipment" khet par,
+         Sell me image zoom/crop). Ab: image poori card me cover, text ke peeche
+         left se soft white fade, taaki text clear padha jaye aur image bhi saaf dikhe. */
+      .ecome-card { min-height: 210px; padding: 22px 20px; }
+      .ecome-card--sell {
+        background-size: cover; background-position: right center; background-repeat: no-repeat;
+      }
+      .ecome-card--buy {
+        background-size: cover; background-position: right center;
+      }
+      .ecome-card::before {
+        content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+        background: linear-gradient(90deg, rgba(255,255,255,0.92) 0%, rgba(255,255,255,0.78) 42%, rgba(255,255,255,0) 78%);
+      }
+      .ecome-card-body { max-width: 58%; padding: 6px 4px; }
+      .ecome-label { font-size: 22px; }
+      .ecome-desc { font-size: 13px; color: #475569; }
+      .ecome-go-btn { top: 14px; right: 14px; }
     }
   `;
   document.head.appendChild(el);

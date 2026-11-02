@@ -107,8 +107,18 @@ const fetchWithDebug = async (endpoint, options = {}, debugBody = null, customTi
   });
 
   try {
+    // ✅ FIX (stale data): GET responses browser / iOS NSURLSession cache se purane aa jaate the —
+    // isliye like/comment/follow badalne ke baad bhi refresh karna padta tha. GET hamesha server se fresh.
+    const isGet = String(options.method || 'GET').toUpperCase() === 'GET';
+    const noCacheOptions = isGet
+      ? {
+          ...options,
+          cache: 'no-store',
+          headers: { ...(options.headers || {}), 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+        }
+      : options;
     const response = await fetch(url, {
-      ...options,
+      ...noCacheOptions,
       signal: controller?.signal,
     });
     const data = await readResponseBody(response, context);
@@ -155,20 +165,32 @@ const getAuthToken = async () => {
   return null;
 };
 
-// ✅ NEW: expired token hatane ke liye
-const clearAuthToken = async () => {
-  try { await AsyncStorage.removeItem('auth_token'); } catch {}
-  try { if (typeof localStorage !== 'undefined') localStorage.removeItem('auth_token'); } catch {}
+// 🔒 Bearer token jin-jin jagah save hota hai (AsyncStorage + web localStorage/sessionStorage + purane '@' keys)
+const AUTH_TOKEN_KEYS = ['auth_token', '@auth_token'];
+const SESSION_EMAIL_KEYS = ['current_user_email', '@current_user_email'];
+
+const removeKeysEverywhere = async (keys) => {
+  for (const key of keys) {
+    try { await AsyncStorage.removeItem(key); } catch {}
+    try { if (typeof localStorage !== 'undefined') localStorage.removeItem(key); } catch {}
+    try { if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(key); } catch {}
+  }
 };
 
-// ✅ NEW: delete ke baad local token + user data saaf karne ke liye
+// ✅ expired / purana token hatane ke liye (har storage se)
+const clearAuthToken = async () => {
+  await removeKeysEverywhere(AUTH_TOKEN_KEYS);
+};
+
+// 🔒 Logout / delete: PEHLE token, phir session email — beech me crash ho to bhi purana token reuse na ho
 const clearLocalSession = async () => {
   await clearAuthToken();
-  try { await AsyncStorage.removeItem('current_user_email'); } catch {}
+  await removeKeysEverywhere(SESSION_EMAIL_KEYS);
 };
 
 // ✅ NEW: login/reactivate response se token save karo (dono ka response same hai)
 const saveAuthToken = async (token) => {
+  await clearAuthToken(); // 🔒 purana token hata do, chahe naya token mile ya na mile
   if (!token) return;
   try {
     await AsyncStorage.setItem('auth_token', token);
@@ -392,6 +414,8 @@ export const AuthAPI = {
       if (status === 200 || status === 201) {
         // Token save karo future requests ke liye
         const token = data?.token || data?.access_token || data?.authorization?.token || null;
+        // 🔒 Naya account: pehle purana token hata do (account switching me purana token reuse na ho)
+        await clearAuthToken();
         if (token) {
           try {
             await AsyncStorage.setItem('auth_token', token);
@@ -448,15 +472,14 @@ export const AuthAPI = {
 
       if (status === 200 || status === 201) {
         const token = data?.token || data?.access_token || data?.authorization?.token || null;
-        console.log('[AuthAPI.login] Response data:', JSON.stringify(data));
-        console.log('[AuthAPI.login] Token found:', token);
+        // 🔒 Naya login: pehle purana token hata do (account switching me purana token reuse na ho)
+        await clearAuthToken();
         if (token) {
           try {
             await AsyncStorage.setItem('auth_token', token);
             if (typeof localStorage !== 'undefined') {
               localStorage.setItem('auth_token', token);
             }
-            console.log('[AuthAPI.login] Token saved successfully');
           } catch (e) {
             console.warn('[AuthAPI.login] Token save failed:', e);
           }
@@ -1857,6 +1880,12 @@ if (status === 200 || status === 201) {
       return { ok: false, isNetwork: true, message: 'Network error.' };
     }
   },
+
+  /** 🔒 Local session saaf: auth_token + current_user_email (AsyncStorage, localStorage, sessionStorage). Logout cleanup yahin use karta hai. */
+  clearSession: async () => { await clearLocalSession(); },
+
+  /** 🔒 Sirf bearer token hatao (har storage se) */
+  clearAuthToken: async () => { await clearAuthToken(); },
 
   /** DELETE /device-tokens  { token } — logout se PEHLE call karo */
   unregisterDeviceToken: async (token) => {

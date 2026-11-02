@@ -19,7 +19,8 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
-import { subscribeBadgeRefresh, unregisterDeviceToken } from '../utils/Pushnotifications';
+import { subscribeBadgeRefresh } from '../utils/Pushnotifications';
+import useLiveRefresh from '../utils/useLiveRefresh';
 import { getSiteCopy } from '../constants/siteCopy';
 import RefreshButton from './RefreshButton';
 import { UserStore } from '../store/UserStore';
@@ -246,21 +247,25 @@ function NavbarLanguageSelector({ compact = false }) {
 // ─── Profile Dropdown ──────────────────────────────────────────────────────
 function NotificationBell({ navigation, style }) {
   const [count, setCount] = useState(0);
+  const aliveRef = useRef(true);
+  const loadCount = useCallback(async () => {
+    try {
+      const n = await UserStore.getUnreadNotificationCount();
+      if (aliveRef.current) setCount(n || 0);
+    } catch {
+      // network error par badge 0 mat karo — purana count dikhta rahe
+    }
+  }, []);
   useEffect(() => {
-    let alive = true;
-    const loadCount = async () => {
-      try {
-        const n = await UserStore.getUnreadNotificationCount();
-        if (alive) setCount(n || 0);
-      } catch {
-        if (alive) setCount(0);
-      }
-    };
+    aliveRef.current = true;
     loadCount();
     // foreground push aaye to badge turant refresh
     const unsub = subscribeBadgeRefresh(loadCount);
-    return () => { alive = false; unsub?.(); };
-  }, []);
+    return () => { aliveRef.current = false; unsub?.(); };
+  }, [loadCount]);
+  // ✅ FIX: badge pehle sirf mount par load hota tha — ab screen par wapas aane, app foreground aane
+  // aur har 30 sec par apne aap refresh hota hai (bell ka count ke liye refresh nahi karna padega).
+  useLiveRefresh(loadCount, { intervalMs: 30000 });
   return (
     <TouchableOpacity
       style={[styles.notificationBellBtn, style]}
@@ -336,8 +341,7 @@ function ProfileDropdown({ navigation, showNameLabel }) {
   };
 
   const handleLogout = async () => {
-    await unregisterDeviceToken(); // ✅ pehle device token hatao, phir logout
-    await logout();
+    await logout(); // 🔒 logout() ke andar centralized cleanup: pehle device token unregister, phir token/session/caches saaf
     setIsOpen(false);
     setAvatarError(false);
     setAvatarUri('');
@@ -732,17 +736,20 @@ export default function AppNavbar({ activeScreen, navigation, hideTopHeader = fa
             onPress={() => navigation?.navigate?.('Settings')}
             label="Settings"
           />
-          <DesktopNavItem
-            item={{ icon: 'ribbon-outline', screen: 'Subscription Plans' }}
-            isActive={activeScreen === 'Subscription Plans'}
-            onPress={() => openWithSidebar(navigation, 'Subscription Plans')}
-            label="Subscription"
-          />
         </View>
 
         <View style={styles.desktopUtilityRow}>
           <NavbarLanguageSelector />
-<NotificationBell navigation={navigation} style={{ marginRight: 6 }} />
+<NotificationBell navigation={navigation} style={{ marginRight: 0 }} />
+          {/* Bell ke just right side me: sirf Subscription icon (naam nahi) */}
+          <TouchableOpacity
+            style={[styles.notificationBellBtn, { marginHorizontal: 0 }]}
+            onPress={() => openWithSidebar(navigation, 'Subscription Plans')}
+            activeOpacity={0.85}
+            accessibilityLabel="Subscription"
+          >
+            <Ionicons name="ribbon-outline" size={20} color="#0f172a" />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.desktopActionsRow}>
