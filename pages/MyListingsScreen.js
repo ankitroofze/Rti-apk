@@ -18,6 +18,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
 import { UserStore } from '../store/UserStore';
+import PostMenuButton from '../components/PostMenuButton';
 
 const IS_WEB = Platform.OS === 'web';
 const FONT = { regular: 'Roboto_400Regular', medium: 'Roboto_500Medium', bold: 'Roboto_700Bold', black: 'Roboto_900Black' };
@@ -50,7 +51,7 @@ const STATUS_CONFIG = {
 };
 
 // ─── Mobile card ───────────────────────────────────────────────────────────────
-const ListingCardMobile = ({ item }) => {
+const ListingCardMobile = ({ item, onDelete }) => {
   const status = (item.status || 'active').toLowerCase();
   const pill = STATUS_CONFIG[status] || STATUS_CONFIG.active;
   return (
@@ -69,6 +70,7 @@ const ListingCardMobile = ({ item }) => {
         <View style={[styles.statusPill, { backgroundColor: pill.bg }]}>
           <Text style={[styles.statusText, { color: pill.text }]}>{item.status || 'active'}</Text>
         </View>
+        {onDelete ? <PostMenuButton inline dark size={28} label="product" onDelete={() => onDelete(item)} style={{ marginLeft: 6 }} /> : null}
       </View>
       {item.description ? (
         <Text style={styles.description} numberOfLines={2}>{item.description}</Text>
@@ -94,7 +96,7 @@ const ListingCardMobile = ({ item }) => {
 };
 
 // ─── Web table row ─────────────────────────────────────────────────────────────
-const ListingRowWeb = ({ item }) => {
+const ListingRowWeb = ({ item, onDelete }) => {
   const status = (item.status || 'active').toLowerCase();
   const pill = STATUS_CONFIG[status] || STATUS_CONFIG.active;
   return (
@@ -112,6 +114,9 @@ const ListingRowWeb = ({ item }) => {
         <View style={[styles.statusPill, { backgroundColor: pill.bg, alignSelf: 'flex-start' }]}>
           <Text style={[styles.statusText, { color: pill.text }]}>{item.status || 'active'}</Text>
         </View>
+      </View>
+      <View style={{ width: 36, alignItems: 'flex-end', justifyContent: 'center' }}>
+        {onDelete ? <PostMenuButton inline dark size={28} label="product" onDelete={() => onDelete(item)} /> : null}
       </View>
     </View>
   );
@@ -165,6 +170,13 @@ export default function MyListingsScreen({ navigation }) {
       loadListings();
     }, [loadListings])
   );
+
+  // ✅ 3-dot → Delete (DELETE /ecom-details/{id})
+  const handleDeleteListing = useCallback(async (item) => {
+    const result = await UserStore.deleteEcomeListing(item.id);
+    if (result?.ok) setListings((prev) => prev.filter((l) => String(l.id) !== String(item.id)));
+    return result;
+  }, []);
 
   const activeCount = listings.filter((l) => (l.status || 'active').toLowerCase() === 'active').length;
 
@@ -281,6 +293,7 @@ export default function MyListingsScreen({ navigation }) {
                   <Text style={styles.tableHdrText}>Qty</Text>
                   <Text style={styles.tableHdrText}>Date</Text>
                   <Text style={styles.tableHdrText}>Status</Text>
+                  <View style={{ width: 36 }} />
                 </View>
               )}
 
@@ -289,9 +302,9 @@ export default function MyListingsScreen({ navigation }) {
                 {filteredListings.length > 0 ? (
                   filteredListings.map((item) =>
                     IS_WEB ? (
-                      <ListingRowWeb key={String(item.id)} item={item} />
+                      <ListingRowWeb key={String(item.id)} item={item} onDelete={handleDeleteListing} />
                     ) : (
-                      <ListingCardMobile key={String(item.id)} item={item} />
+                      <ListingCardMobile key={String(item.id)} item={item} onDelete={handleDeleteListing} />
                     )
                   )
                 ) : (
@@ -466,7 +479,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e2e8f0',
     borderRadius: 14,
-    overflow: 'hidden',
+    overflow: 'visible', // 3-dot dropdown clip na ho
   },
   tableHeader: {
     flexDirection: 'row',

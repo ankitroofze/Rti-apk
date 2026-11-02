@@ -2,7 +2,7 @@
 // News video ke upar controls — bilkul ad player (screenshot) jaise:
 //   beech me:  |<   (5)↺   ( ▶ )   ↻(15)   >|
 //   neeche:    progress bar
-//              00:12 · 01:29   (1:17 baki)                 ⚙  ⛶
+//              00:12 · 01:29                              ⚙  ⛶
 // Bada alag play button nahi; yahi play/pause hai. Video chalte time controls
 // kuch second baad chhup jaate hain, video par tap karne se wapas aate hain.
 import React, { useEffect, useRef, useState } from 'react';
@@ -178,9 +178,6 @@ export default function NewsVideoControls({
           <Text style={st.time} numberOfLines={1}>
             {fmt(cur)} <Text style={st.timeDim}>·</Text> {dur > 0 ? fmt(dur) : '--:--'}
           </Text>
-          {dur > 0 ? (
-            <Text style={st.left} numberOfLines={1}>{fmt(left)} baki</Text>
-          ) : null}
           <View style={{ flex: 1 }} />
           <TouchableOpacity
             onPress={(e) => { e?.stopPropagation?.(); cycleSpeed(); }}

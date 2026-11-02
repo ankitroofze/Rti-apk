@@ -13,12 +13,18 @@ import AutoIdCardPreview from '../components/IdCardPreview';
 import AutoIdCardBackPreview from '../components/IdCardBackPreview';
 import ScaledCard from '../components/ScaledCard';
 import AutoAppointmentLetterPreview from '../components/AppointmentLetterPreview';
-import { hasPublicDocumentSource, getProfileTier, generateMemberId, getSubscriptionName, resolveAreaText, cleanRoleNames, pickPhoneNumber } from '../utils/profileHelpers';
+import { hasPublicDocumentSource, getProfileTier, generateMemberId, getSubscriptionName, resolveAreaText, cleanRoleNames, pickPhoneNumber, safeName } from '../utils/profileHelpers';
+import * as Print from 'expo-print';
+import * as Sharing from 'expo-sharing';
+import { buildIdCardFrontAndBackHtml, buildAppointmentLetterHtml } from '../utils/documentGenerator';
 import { cardFromProfile } from '../utils/idCardService';
 import { useToast } from '../components/ui/ToastProvider';
 import VerifiedBadge from '../components/VerifiedBadge';
 import VideoPreview from '../components/VideoPreview';
 import { UserStore } from '../store/UserStore';
+import ProfileContentTabs from '../components/ProfileContentTabs';
+import PostMenuButton from '../components/PostMenuButton';
+import { CONTENT_TABS, getPostKind } from '../components/profileContent';
 import { isValidImageUrl } from '../utils/storyHelpers';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 import styles from '../styles/UserPublicProfileStyles';
@@ -299,6 +305,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const [menuVisible, setMenuVisible] = useState(false);
   const [shareVisible, setShareVisible] = useState(false);
   const [viewerEmail, setViewerEmail] = useState('');
+  const [viewerId, setViewerId] = useState('');
+  const [contentTab, setContentTab] = useState('post'); // 'post' | 'reel' | 'ad' | 'ecom'
 
   const [commentModalVisible, setCommentModalVisible] = useState(false);
   const [activeCommentPostId, setActiveCommentPostId] = useState(null);
@@ -329,7 +337,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         const user = await UserStore.getCurrentUser();
         if (!alive) return;
         setViewerEmail(String(user?.email || '').trim().toLowerCase());
-      } catch { if (!alive) return; setViewerEmail(''); }
+        setViewerId(user?.id != null ? String(user.id).trim() : '');
+      } catch { if (!alive) return; setViewerEmail(''); setViewerId(''); }
     })();
     return () => { alive = false; };
   }, []);
@@ -373,6 +382,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   // GET /profile/{id} kai baar phone nahi bhejta (ya web par alag shape me aata hai) — tab ID card
   // me "Mo:-" gayab ho jata tha. Pehle route `author`, phir news feed ke `author_mobile` se number lo.
   const [fallbackMobile, setFallbackMobile] = useState('');
+  const [downloadingDoc, setDownloadingDoc] = useState(''); // 'id-card' | 'appointment-letter' | ''
   useEffect(() => {
     let alive = true;
     const direct = pickPhoneNumber(profile || {}) || pickPhoneNumber(author || {});
@@ -497,6 +507,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         })
         .map((ad) => ({
           ...ad,
+          ad_id: ad.id, // asli ad id (delete ke liye)
           id: String(ad.feed_id || `ad-${ad.id}`),
           isAd: true,
           title: ad.title || 'Sponsored Advertisement',
@@ -509,7 +520,23 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           date: ad.updated_at || ad.created_at || '',
         }));
 
-      const merged = [...fromFeed, ...fromProfile, ...profileAds]
+      // ✅ Ecom tab: is user ke products
+      let ecomPosts = [];
+      try { ecomPosts = await UserStore.getMyEcomPosts({ email: effectiveEmail, id: effectiveId }); } catch { ecomPosts = []; }
+      // ✅ Reels tab: apni profile ho to apni reels (type 2) bhi lao
+      let ownReels = [];
+      try {
+        const viewer = await UserStore.getCurrentUser();
+        const viewerEmailNow = String(viewer?.email || '').trim().toLowerCase();
+        const viewerIdNow = viewer?.id != null ? String(viewer.id).trim() : '';
+        const isSelf = Boolean((viewerEmailNow && effectiveEmail && viewerEmailNow === effectiveEmail) || (viewerIdNow && effectiveId && viewerIdNow === effectiveId));
+        if (isSelf) {
+          const reelSummary = await UserStore.getNewsFeedSummary({ type: 2, skipBlockedUsers: true });
+          ownReels = Array.isArray(reelSummary?.items) ? reelSummary.items : [];
+        }
+      } catch { ownReels = []; }
+
+      const merged = [...fromFeed, ...ownReels, ...fromProfile, ...profileAds, ...(Array.isArray(ecomPosts) ? ecomPosts : [])]
         .filter(Boolean)
         .filter((it, index, arr) => {
           const id = it?.id != null ? String(it.id) : '';
@@ -674,7 +701,97 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   // ── "ID & Letter" tab content — apne ProfileScreen ke "Documents" section jaisa hi layout ──
   // stacked=true  -> mobile web / Android / iOS: ID front + back upar-neeche (220px), phir letter
   // stacked=false -> desktop web: ID front + back side-by-side (220px), phir letter
-  // Sizes ProfileScreen jaise hi: ID 220/360, Letter 194/560. Download button visitor ko nahi dikhta.
+  // Sizes ProfileScreen jaise hi: ID 220/360, Letter 194/560. Download buttons (PDF) ID aur Letter dono ke neeche.
+  // ── ID Card / Appointment Letter PDF download (ProfileScreen jaisa hi flow) ──
+  const handleDownloadDocument = async (type) => {
+    if (downloadingDoc) return;
+    try {
+      setDownloadingDoc(type);
+      const isWeb = Platform.OS === 'web' && typeof window !== 'undefined';
+      let printWindow = null;
+      if (isWeb) {
+        printWindow = window.open('', '_blank');
+        if (printWindow) {
+          try {
+            printWindow.document.open();
+            printWindow.document.write('<!doctype html><html><head><meta charset="utf-8"/><title>Generating…</title></head><body style="font-family:Arial,sans-serif;padding:18px;color:#111827;"><h3 style="margin:0 0 8px 0;">Generating…</h3><div style="color:#6b7280;">Please wait.</div></body></html>');
+            printWindow.document.close();
+          } catch (_) {}
+        }
+      }
+      const opts = { webPreview: isWeb && Boolean(printWindow) };
+      const html = type === 'id-card'
+        ? await buildIdCardFrontAndBackHtml(display, opts)
+        : await buildAppointmentLetterHtml(display, opts);
+
+      if (isWeb && printWindow) {
+        printWindow.document.open(); printWindow.document.write(html); printWindow.document.close();
+        const start = Date.now();
+        const timer = setInterval(() => {
+          if (!printWindow || printWindow.closed) { clearInterval(timer); return; }
+          if (printWindow.__PDF_READY__) {
+            clearInterval(timer);
+            try { printWindow.focus(); printWindow.print(); } catch (_) {}
+            return;
+          }
+          if (Date.now() - start > 20000) {
+            clearInterval(timer);
+            try { printWindow.focus(); } catch (_) {}
+            showToast('PDF tab is open. Click "Download PDF" in that tab to print/save.', 'success');
+          }
+        }, 120);
+        showToast('Preparing PDF... print dialog will open.', 'success');
+        return;
+      }
+      if (isWeb && typeof document !== 'undefined') {
+        // Popup block ho gaya — hidden iframe se print dialog kholo
+        const iframe = document.createElement('iframe');
+        iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;';
+        document.body.appendChild(iframe);
+        const win = iframe.contentWindow;
+        const doc = iframe.contentDocument || win?.document;
+        if (!win || !doc) throw new Error('iframe not ready');
+        doc.open(); doc.write(html); doc.close();
+        const begin = Date.now();
+        while (Date.now() - begin < 15000) {
+          const imgs = Array.from(doc.images || []);
+          if (imgs.every((img) => img.complete)) break;
+          await new Promise((r) => setTimeout(r, 80));
+        }
+        try { win.focus(); } catch (_) {}
+        win.print();
+        setTimeout(() => { try { iframe.remove(); } catch (_) {} }, 1200);
+        showToast('Print dialog opened. Choose "Save as PDF" to download.', 'success');
+        return;
+      }
+      const { uri } = await Print.printToFileAsync({ html, base64: false, width: 595, height: 842 });
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: type === 'id-card' ? 'Save ID Card PDF' : 'Save Appointment Letter PDF',
+          UTI: 'com.adobe.pdf',
+        });
+        showToast('PDF ready!', 'success');
+      } else {
+        showToast(`PDF saved: ${String(uri).split('/').pop()}`, 'success');
+      }
+    } catch (err) {
+      showToast('Unable to generate PDF. Please try again.', 'error');
+    } finally {
+      setDownloadingDoc('');
+    }
+  };
+  const renderDownloadBtn = (type, label) => (
+    <TouchableOpacity
+      onPress={() => handleDownloadDocument(type)}
+      disabled={Boolean(downloadingDoc)}
+      activeOpacity={0.85}
+      style={{ marginTop: 12, width: '100%', borderRadius: 6, backgroundColor: '#B91C1C', paddingVertical: 10, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, opacity: downloadingDoc && downloadingDoc !== type ? 0.6 : 1 }}
+    >
+      <Feather name="download" size={15} color="#ffffff" />
+      <Text style={{ fontSize: 13, fontWeight: '600', color: '#ffffff' }}>{downloadingDoc === type ? 'Preparing PDF…' : label}</Text>
+    </TouchableOpacity>
+  );
   const docCardStyle = { backgroundColor: '#ffffff', borderRadius: 8, padding: 16, borderWidth: 1, borderColor: '#e5e7eb', marginBottom: 12 };
   const renderDocumentsTab = (stacked = true) => (
     <View style={{ marginTop: 16, paddingHorizontal: 12, paddingBottom: 24, width: '100%' }}>
@@ -690,6 +807,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
             <AutoIdCardBackPreview />
           </ScaledCard>
         </View>
+        {renderDownloadBtn('id-card', 'Download ID Card (PDF)')}
       </View>
 
       {/* Appointment Letter */}
@@ -699,6 +817,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
             <AutoAppointmentLetterPreview profile={display} />
           </ScaledCard>
         </View>
+        {renderDownloadBtn('appointment-letter', 'Download Appointment Letter (PDF)')}
       </View>
     </View>
   );
@@ -720,33 +839,62 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     display?.state_seat?.area || display?.state_seat?.area_name || display?.state_seat?.location || display?.area || display?.author_area || ''
   ).trim();
   const roleAreaPlace = seatArea || resolveAreaText(display) || locationLine;
-  const hasContactCard = Boolean(roleAreaRole || roleAreaPlace || mobileText || memberIdText);
-  const renderContactCard = (extraStyle) => (hasContactCard ? (
-    <View style={[{ marginHorizontal: 12, marginTop: 12, backgroundColor: '#ffffff', borderRadius: 12, borderWidth: 1, borderColor: '#e5e7eb', paddingVertical: 6, paddingHorizontal: 14 }, extraStyle]}>
-      {[
-        { key: 'role', icon: 'award', label: 'Role', value: roleAreaRole },
-        { key: 'area', icon: 'map-pin', label: 'Area', value: roleAreaPlace },
-        { key: 'mobile', icon: 'smartphone', label: 'Mobile', value: mobileText, onPress: mobileText ? () => Linking.openURL(`tel:${mobileText}`).catch(() => {}) : null },
-        { key: 'id', icon: 'credit-card', label: 'ID No', value: memberIdText },
-      ].filter((r) => r.value).map((r, i, arr) => (
+  // Plan ki duration / validity (sirf jab subscription ho aur backend ne di ho)
+  const _plan = display?.subscription_plan || display?.active_plan || display?.role_subscription_plan || null;
+  const planDurationText = (() => {
+    if (!_plan || typeof _plan !== 'object') return '';
+    const label = String(_plan.duration_label || _plan.duration_text || '').trim();
+    if (label) return label;
+    const raw = _plan.duration ?? _plan.duration_days ?? _plan.validity_days ?? _plan.days;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n > 0) return n % 365 === 0 ? `${n / 365} Year` : n % 30 === 0 ? `${n / 30} Month` : `${n} Days`;
+    return typeof raw === 'string' ? raw.trim() : '';
+  })();
+  const planValidTill = (() => {
+    const raw = _plan?.expires_at || _plan?.expiry || _plan?.end_date;
+    if (!raw) return '';
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  })();
+
+  // Icon + value (label text nahi) — profile header ke andar hi simple details
+  const detailItems = [
+    { key: 'role', icon: 'award', value: roleAreaRole },
+    { key: 'seat', icon: 'briefcase', value: (seatName || seatId) && (seatName || seatId) !== roleAreaRole ? (seatName || seatId) : '' },
+    { key: 'plan', icon: 'clock', value: planDurationText ? `${planDurationText}${planValidTill ? ` · Valid till ${planValidTill}` : ''}` : (planValidTill ? `Valid till ${planValidTill}` : '') },
+    { key: 'area', icon: 'map-pin', value: roleAreaPlace || shownLocationLine },
+    { key: 'mobile', icon: 'phone', value: mobileText, onPress: mobileText ? () => Linking.openURL(`tel:${mobileText}`).catch(() => {}) : null },
+    { key: 'id', icon: 'credit-card', value: memberIdText },
+    { key: 'since', icon: 'calendar', value: accountAge ? `Member ${accountAge}` : '' },
+  ].filter((r) => r.value);
+  const hasContactCard = detailItems.length > 0;
+  const renderDetailRows = (columns = 1) => (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 24, rowGap: 10 }}>
+      {detailItems.map((r) => (
         <TouchableOpacity
           key={r.key}
           activeOpacity={r.onPress ? 0.7 : 1}
           onPress={r.onPress || undefined}
-          style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, borderBottomWidth: i === arr.length - 1 ? 0 : 1, borderBottomColor: '#f1f5f9' }}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 10, width: columns === 2 ? '46%' : '100%', minWidth: columns === 2 ? 220 : 0 }}
         >
-          <Feather name={r.icon} size={15} color={profileTier.accent} />
-          <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748b', marginLeft: 8, width: 58 }}>{r.label}</Text>
-          <Text style={{ flex: 1, fontSize: 13, fontWeight: '700', color: '#0f172a' }} numberOfLines={2}>{r.value}</Text>
+          <View style={{ width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: pillTheme.bg || '#f1f5f9' }}>
+            <Feather name={r.icon} size={14} color={profileTier.accent} />
+          </View>
+          <Text style={{ flexShrink: 1, fontSize: 13.5, fontWeight: '600', color: '#0f172a' }} numberOfLines={2}>{r.value}</Text>
         </TouchableOpacity>
       ))}
+    </View>
+  );
+  const renderContactCard = (extraStyle) => (hasContactCard ? (
+    <View style={[{ marginHorizontal: 12, marginTop: 12, backgroundColor: '#ffffff', borderRadius: 14, borderWidth: 1, borderColor: '#eef0f3', paddingVertical: 14, paddingHorizontal: 14 }, extraStyle]}>
+      {renderDetailRows(1)}
     </View>
   ) : null);
   const resolvedProfilePhoto = useResolvedUri(safePhotoUri || null);
 
   // ── Sorted posts ────────────────────────────────────────────────────────────
 
-  const sortedPosts = useMemo(() => {
+  const allSortedPosts = useMemo(() => {
     const src = Array.isArray(posts) ? posts : [];
     const sortValue = (it) => {
       const createdAt = new Date(it?.createdAt || it?.date || 0).getTime();
@@ -756,10 +904,43 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     return [...src].sort((a, b) => sortValue(b) - sortValue(a));
   }, [posts]);
 
+  // Instagram jaise 4 icon tabs: active tab ke hisaab se filter (Posts · Reels · Ads · Ecom)
+  const sortedPosts = useMemo(
+    () => allSortedPosts.filter((p) => getPostKind(p) === contentTab),
+    [allSortedPosts, contentTab]
+  );
+  const contentTabLabel = ({ post: 'post', reel: 'reel', ad: 'ad', ecom: 'product' })[contentTab] || 'post';
+  const contentEmptyText = (CONTENT_TABS.find((t) => t.key === contentTab) || CONTENT_TABS[0]).emptyText;
+
+  // Kya ye profile viewer ki apni hai? (apni profile par, public view me bhi 3-dot delete dikhana hai)
+  const profileEmailLc = String(resolvedEmail || profile?.email || '').trim().toLowerCase();
+  const profileIdStr = String(userId ?? profile?.id ?? '').trim();
+  const isOwnProfile = Boolean(
+    (viewerEmail && profileEmailLc && viewerEmail === profileEmailLc)
+    || (viewerId && profileIdStr && viewerId === profileIdStr)
+  );
+
+  const handleDeletePost = async (post) => {
+    const result = await UserStore.deleteMyPost(post);
+    if (result?.ok) {
+      setPosts((prev) => (Array.isArray(prev) ? prev.filter((x) => String(x?.id || '') !== String(post?.id || '')) : prev));
+      showToast('Deleted successfully', 'success');
+    }
+    return result;
+  };
+
+  // Detail page se delete hone par bhi list turant update
+  useEffect(() => {
+    const unsubscribe = UserStore.subscribePostDeleted?.(({ id }) => {
+      setPosts((prev) => (Array.isArray(prev) ? prev.filter((x) => String(x?.id || '') !== String(id || '')) : prev));
+    });
+    return () => { unsubscribe?.(); };
+  }, []);
+
   // Posts count: backend ka total (agar bheje) aur loaded posts me se jo bada ho.
   const postsCount = (() => {
     const backend = getNumericCount(display?.posts_count ?? display?.news_count ?? display?.total_posts ?? 0);
-    return Math.max(sortedPosts.length, Number.isFinite(backend) ? backend : 0);
+    return Math.max(allSortedPosts.length, Number.isFinite(backend) ? backend : 0);
   })();
 
   // ── Post helpers ────────────────────────────────────────────────────────────
@@ -790,6 +971,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
   const openPost = async (post) => {
     if (!post) return;
+    // Ecom product: apni profile ho to My Listings, warna koi news detail nahi
+    if (post.is_ecom) { if (isOwnProfile) navigation.navigate('MyListings'); return; }
     try { if (post.id) await UserStore.updateNewsFeedItem(post.id, 'view'); } catch {}
     navigation.navigate('NewsDetails', { article: post });
   };
@@ -1138,6 +1321,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           <Feather name="eye" size={10} color="#ffffff" />
           <Text style={styles.postThumbOverlayText}>{Number(p.views || 0)}</Text>
         </View>
+        <PostMenuButton canDelete={isOwnProfile} label={contentTabLabel} onDelete={() => handleDeletePost(p)} />
       </TouchableOpacity>
     );
   };
@@ -1169,7 +1353,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     const liked = Boolean(viewerEmail && Array.isArray(p.liked_by) && p.liked_by.includes(viewerEmail));
 
     return (
-      <View key={p.id || `${postTitle}-${p.date}`} style={styles.feedCard}>
+      <View key={p.id || `${postTitle}-${p.date}`} style={[styles.feedCard, { position: 'relative' }]}>
         <View style={styles.feedHeader}>
           <TouchableOpacity onPress={() => openImageModal(postAuthorPhoto, postAuthorName)} activeOpacity={0.8}>
             <ProfileAvatar uri={postAuthorPhoto} size={34} style={styles.feedAvatar} />
@@ -1226,6 +1410,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
             <Text style={styles.feedActionText}>{Number(p.views || 0)}</Text>
           </View>
         </View>
+        <PostMenuButton dark canDelete={isOwnProfile} label={contentTabLabel} onDelete={() => handleDeletePost(p)} />
       </View>
     );
   };
@@ -1253,28 +1438,27 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     scroll: { flex: 1 },
     scrollContent: { alignItems: 'center', paddingBottom: 60 },
     col: { width: WEB_COL_WIDTH, maxWidth: '100%', paddingHorizontal: 20 },
-    profileRow: { flexDirection: 'row', alignItems: 'flex-start', paddingTop: 40, paddingBottom: 24, gap: 80 },
-    avatarWrap: { width: 160, height: 160, borderRadius: 80, borderWidth: 3, borderColor: ORANGE, flexShrink: 0 },
-    avatar: { width: '100%', height: '100%', borderRadius: 78 },
-    profileInfo: { flex: 1, paddingTop: 8 },
-    nameRow: { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 20, flexWrap: 'wrap' },
-    name: { fontSize: 26, fontWeight: '300', color: '#0f172a', letterSpacing: -0.3 },
-    followBtn: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 8, backgroundColor: '#0095f6' },
+    profileCard: { marginTop: 20, backgroundColor: '#ffffff', borderRadius: 18, borderWidth: 1, borderColor: '#e8ebf0', overflow: 'hidden', shadowColor: '#0f172a', shadowOpacity: 0.06, shadowRadius: 18, shadowOffset: { width: 0, height: 6 } },
+    coverBand: { height: 110, width: '100%' },
+    profileRow: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 28, gap: 28, marginTop: -56 },
+    avatarWrap: { width: 132, height: 132, borderRadius: 66, borderWidth: 4, borderColor: '#ffffff', backgroundColor: '#ffffff', flexShrink: 0, overflow: 'hidden' },
+    avatar: { width: '100%', height: '100%', borderRadius: 66 },
+    profileInfo: { flex: 1, paddingTop: 64 },
+    nameRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 14, marginBottom: 12, flexWrap: 'wrap' },
+    name: { fontSize: 24, fontWeight: '700', color: '#0f172a', letterSpacing: -0.3 },
+    followBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 18, paddingVertical: 9, borderRadius: 10, backgroundColor: '#0095f6' },
     followBtnActive: { backgroundColor: '#e5e7eb', borderWidth: 1, borderColor: '#d1d5db' },
     followBtnText: { fontSize: 14, fontWeight: '600', color: '#ffffff' },
     followBtnTextActive: { color: '#475569' },
-    shareBtn: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 8, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#dbdbdb' },
+    shareBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#dbdbdb' },
     shareBtnText: { fontSize: 14, fontWeight: '600', color: '#0f172a' },
-    moreBtn: { padding: 4 },
-    statsRow: { flexDirection: 'row', gap: 40, marginBottom: 18 },
-    statItem: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
-    statNum: { fontSize: 16, fontWeight: '600', color: '#0f172a' },
-    statLabel: { fontSize: 16, color: '#0f172a' },
-    bioSection: { gap: 4 },
-    bioRole: { fontSize: 14, fontWeight: '700', color: '#0f172a' },
-    bioSeat: { fontSize: 14, color: '#0f172a' },
-    bioText: { fontSize: 14, color: '#0f172a', lineHeight: 20 },
-    bioLocation: { fontSize: 14, color: '#737373' },
+    moreBtn: { padding: 6 },
+    statsRow: { flexDirection: 'row', gap: 32, marginBottom: 4 },
+    statItem: { flexDirection: 'row', alignItems: 'baseline', gap: 5 },
+    statNum: { fontSize: 17, fontWeight: '700', color: '#0f172a' },
+    statLabel: { fontSize: 14, color: '#64748b', fontWeight: '500' },
+    profileBody: { paddingHorizontal: 28, paddingTop: 18, paddingBottom: 24, gap: 12 },
+    bioText: { fontSize: 14, color: '#334155', lineHeight: 21 },
     divider: { height: 1, backgroundColor: '#dbdbdb', marginBottom: 0 },
     tabsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 60, position: 'relative', marginBottom: 8 },
     tabBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 14, paddingHorizontal: 4, borderTopWidth: 1, borderTopColor: 'transparent' },
@@ -1505,6 +1689,10 @@ export default function UserPublicProfileScreen({ route, navigation }) {
             ) : null}
           </View>
 
+          {effectiveTab !== 'documents' ? (
+            <ProfileContentTabs active={contentTab} onChange={setContentTab} accent={profileTier?.accent || ORANGE} />
+          ) : null}
+
           {/* ── Tab Content ── */}
           {effectiveTab === 'documents' ? (
             renderDocumentsTab(true)
@@ -1547,6 +1735,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                         <Feather name="eye" size={10} color="#ffffff" />
                         <Text style={{ fontSize: 10, color: '#ffffff', fontWeight: '600' }}>{Number(p.views || 0)}</Text>
                       </View>
+                      <PostMenuButton canDelete={isOwnProfile} label={contentTabLabel} onDelete={() => handleDeletePost(p)} />
                     </TouchableOpacity>
                   );
                 })}
@@ -1558,7 +1747,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
             )
           ) : (
             <View style={styles.activityCard}>
-              <Text style={styles.mutedText}>No posts found.</Text>
+              <Text style={styles.mutedText}>{allSortedPosts.length ? contentEmptyText : 'No posts found.'}</Text>
             </View>
           )}
 
@@ -1589,78 +1778,78 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         <ScrollView style={webSt.scroll} contentContainerStyle={webSt.scrollContent} showsVerticalScrollIndicator={false}>
           <View style={webSt.col}>
 
-            {/* ── Profile Header Row ── */}
-            <View style={webSt.profileRow}>
-              {/* LEFT: Avatar */}
-              <TouchableOpacity
-                                style={[webSt.avatarWrap, { borderColor: pillTheme.border }]}
-                onPress={() => openImageModal(profileTier.key === 'common' ? '' : (resolvedProfilePhoto || safePhotoUri), name)}
-                activeOpacity={0.85}
-              >
-               <ProfileAvatar uri={resolvedProfilePhoto || safePhotoUri} size={150} style={webSt.avatar} forceDefault={profileTier.key === 'common'} />
-              </TouchableOpacity>
+            {/* ── Profile Header Card (professional) ── */}
+            <View style={webSt.profileCard}>
+              <ImageBackground source={profileTier.bgImage} resizeMode="cover" imageStyle={RED_HEADER_IMG} style={[webSt.coverBand, { backgroundColor: profileTier.gradientDark?.[1] || profileTier.accent }]} />
+              <View style={webSt.profileRow}>
+                <TouchableOpacity
+                  style={[webSt.avatarWrap, { borderColor: '#ffffff' }]}
+                  onPress={() => openImageModal(profileTier.key === 'common' ? '' : (resolvedProfilePhoto || safePhotoUri), name)}
+                  activeOpacity={0.85}
+                >
+                  <ProfileAvatar uri={resolvedProfilePhoto || safePhotoUri} size={132} style={webSt.avatar} forceDefault={profileTier.key === 'common'} />
+                </TouchableOpacity>
 
-              {/* RIGHT: Info */}
-              <View style={webSt.profileInfo}>
-                {/* Row 1: name + verified + buttons */}
-                <View style={webSt.nameRow}>
-                  <Text style={webSt.name}>{name}</Text>
-                  {isVerified ? <VerifiedBadge size={22} iconSize={13} /> : null}
-                  <TouchableOpacity
-                                     style={[webSt.followBtn, !isFollowing && { backgroundColor: pillTheme.border }, isFollowing && webSt.followBtnActive, followLoading && { opacity: 0.7 }]}
-                    onPress={handleFollow}
-                    activeOpacity={0.85}
-                    disabled={followLoading}
-                  >
-                    <Text style={[webSt.followBtnText, isFollowing && webSt.followBtnTextActive]}>
-                      {followLoading ? '...' : isFollowing ? 'Following' : 'Follow'}
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={webSt.shareBtn} onPress={openShareSheet} activeOpacity={0.85}>
-                    <Text style={webSt.shareBtnText}>Share Profile</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={webSt.moreBtn} onPress={() => setMenuVisible(true)} activeOpacity={0.8}>
-                    <Feather name="more-horizontal" size={22} color="#0f172a" />
-                  </TouchableOpacity>
-                </View>
-
-                {/* Row 2: posts · followers · following */}
-                <View style={webSt.statsRow}>
-                  <View style={webSt.statItem}>
-                    <Text style={webSt.statNum}>{postsCount}</Text>
-                    <Text style={webSt.statLabel}> posts</Text>
+                <View style={webSt.profileInfo}>
+                  <View style={webSt.nameRow}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 }}>
+                      <Text style={webSt.name} numberOfLines={2}>{name}</Text>
+                      {isVerified ? <VerifiedBadge size={22} iconSize={13} /> : null}
+                    </View>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <TouchableOpacity
+                        style={[webSt.followBtn, !isFollowing && { backgroundColor: pillTheme.border }, isFollowing && webSt.followBtnActive, followLoading && { opacity: 0.7 }]}
+                        onPress={handleFollow}
+                        activeOpacity={0.85}
+                        disabled={followLoading}
+                      >
+                        <Feather name={isFollowing ? 'user-check' : 'user-plus'} size={15} color={isFollowing ? '#475569' : '#ffffff'} />
+                        <Text style={[webSt.followBtnText, isFollowing && webSt.followBtnTextActive]}>
+                          {followLoading ? '...' : isFollowing ? 'Following' : 'Follow'}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={webSt.shareBtn} onPress={openShareSheet} activeOpacity={0.85}>
+                        <Feather name="share-2" size={15} color="#0f172a" />
+                        <Text style={webSt.shareBtnText}>Share Profile</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={webSt.moreBtn} onPress={() => setMenuVisible(true)} activeOpacity={0.8}>
+                        <Feather name="more-horizontal" size={20} color="#0f172a" />
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                  <TouchableOpacity style={webSt.statItem} onPress={() => setFollowModalType('followers')} activeOpacity={0.75}>
-                    <Text style={webSt.statNum}>{followersCount > 999 ? `${(followersCount / 1000).toFixed(1)}k` : followersCount}</Text>
-                    <Text style={webSt.statLabel}> followers</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={webSt.statItem} onPress={() => setFollowModalType('following')} activeOpacity={0.75}>
-                    <Text style={webSt.statNum}>{followingCount}</Text>
-                    <Text style={webSt.statLabel}> following</Text>
-                  </TouchableOpacity>
-                </View>
 
-                {/* Row 3: bio section */}
-                <View style={webSt.bioSection}>
-                  {shownPillText ? <Text style={webSt.bioRole}>{shownPillText}</Text> : null}
-                  {(seatName || seatId) && (seatName || seatId) !== shownPillText
-                    ? <Text style={webSt.bioSeat}>{seatName || seatId}</Text>
-                    : null}
-                                 {shownBio ? <Text style={webSt.bioText}>{shownBio}</Text> : null}
-                  {shownLocationLine ? <Text style={webSt.bioLocation}>📍 {shownLocationLine}</Text> : null}
-                  {accountAge ? <Text style={webSt.bioLocation}>🗓 Member {accountAge}</Text> : null}
+                  <View style={webSt.statsRow}>
+                    <View style={webSt.statItem}>
+                      <Text style={webSt.statNum}>{postsCount}</Text>
+                      <Text style={webSt.statLabel}>posts</Text>
+                    </View>
+                    <TouchableOpacity style={webSt.statItem} onPress={() => setFollowModalType('followers')} activeOpacity={0.75}>
+                      <Text style={webSt.statNum}>{followersCount > 999 ? `${(followersCount / 1000).toFixed(1)}k` : followersCount}</Text>
+                      <Text style={webSt.statLabel}>followers</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={webSt.statItem} onPress={() => setFollowModalType('following')} activeOpacity={0.75}>
+                      <Text style={webSt.statNum}>{followingCount}</Text>
+                      <Text style={webSt.statLabel}>following</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
+              </View>
+
+              <View style={webSt.profileBody}>
+                {shownBio ? <Text style={webSt.bioText}>{shownBio}</Text> : null}
+                {hasContactCard ? renderDetailRows(2) : null}
+                {referralCode ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: hasContactCard ? 10 : 0 }}>
+                    <View style={{ width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FEF2F2' }}>
+                      <Feather name="gift" size={14} color={REFERRAL_RED} />
+                    </View>
+                    <Text style={{ fontSize: 13.5, fontWeight: '700', color: '#111111' }}>Referral Code: <Text style={{ color: REFERRAL_RED }}>{referralCode}</Text></Text>
+                  </View>
+                ) : null}
               </View>
             </View>
 
-            {referralCode ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 10, gap: 6 }}>
-                <Feather name="gift" size={12} color={REFERRAL_RED} />
-                <Text style={{ fontSize: 12, fontWeight: '700', color: '#111111' }}>Referral Code: <Text style={{ color: REFERRAL_RED }}>{referralCode}</Text></Text>
-              </View>
-            ) : null}
-
-            {renderContactCard({ marginHorizontal: 0, marginBottom: 16 })}
+            <View style={{ height: 16 }} />
 
             {/* ── Divider ── */}
             <View style={webSt.divider} />
@@ -1697,6 +1886,10 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                 </View>
               ) : null}
             </View>
+
+            {effectiveTab !== 'documents' ? (
+              <ProfileContentTabs active={contentTab} onChange={setContentTab} accent={profileTier?.accent || ORANGE} />
+            ) : null}
 
             {/* ── Posts Grid / List / Empty ── */}
             {effectiveTab === 'documents' ? (
@@ -1739,6 +1932,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                           <Feather name="eye" size={13} color="#ffffff" />
                           <Text style={webSt.gridOverlayText}>{Number(p.views || 0)}</Text>
                         </View>
+                        <PostMenuButton canDelete={isOwnProfile} label={contentTabLabel} onDelete={() => handleDeletePost(p)} />
                       </TouchableOpacity>
                     );
                   })}
@@ -1751,7 +1945,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
             ) : (
               <View style={webSt.emptyCard}>
                 <Feather name="camera-off" size={40} color="#cbd5e1" style={{ marginBottom: 12 }} />
-                <Text style={webSt.emptyText}>No posts yet.</Text>
+                <Text style={webSt.emptyText}>{contentEmptyText}</Text>
               </View>
             )}
 
@@ -1935,6 +2129,12 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           </View>
         ) : null}
 
+        {effectiveTab !== 'documents' ? (
+          <View style={{ paddingTop: 8 }}>
+            <ProfileContentTabs active={contentTab} onChange={setContentTab} accent={profileTier?.accent || ORANGE} />
+          </View>
+        ) : null}
+
         {/* ── Tab Content ── */}
         {effectiveTab === 'documents' ? (
           renderDocumentsTab(true)
@@ -1950,7 +2150,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           )
         ) : (
           <View style={styles.activityCard}>
-            <Text style={styles.mutedText}>No posts found.</Text>
+            <Text style={styles.mutedText}>{allSortedPosts.length ? contentEmptyText : 'No posts found.'}</Text>
           </View>
         )}
 

@@ -37,7 +37,7 @@ export function getAdRedirectMeta(ad = {}) {
       type: redirect,
       label: 'WhatsApp',
       icon: 'logo-whatsapp',
-      url: phone ? `https://wa.me/${phone}` : '',
+      url: buildWhatsappUrl(ad),
     };
   }
 
@@ -56,6 +56,17 @@ export function getAdRedirectMeta(ad = {}) {
     icon: 'person-circle-outline',
     url: '',
   };
+}
+
+// WhatsApp number -> wa.me link. 10 digit number par 91 lagta hai; pehle se country code ho
+// (12 digit, 91...) to dobara 91 nahi lagta (pehle wa.me/9191XXXXXXXXXX ban jaata tha => ad "run" nahi hoti thi).
+export function buildWhatsappUrl(ad = {}) {
+  const extra = ad.extraValues || {};
+  let digits = getPhoneDigits(extra.whatsapp_number || ad.owner_mobile || ad.mobile || ad.phone);
+  if (!digits) return '';
+  digits = digits.replace(/^0+/, '');
+  if (digits.length === 10) digits = `91${digits}`;
+  return `https://wa.me/${digits}`;
 }
 
 export function getAdCallUrl(ad = {}) {

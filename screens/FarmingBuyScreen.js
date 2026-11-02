@@ -31,7 +31,6 @@ import Sidebar from '../components/Sidebar';
 import PriceRangeSlider from '../components/PriceRangeSlider';
 
 // Hero / banner — full banner image, drop your file at assets/images/ecom-buy-h.jpeg
-const ECOM_HERO_IMAGE = require('../assets/images/ecom-buy-h.jpeg');
 
 const BRAND = {
   primary: '#dc2626',
@@ -607,10 +606,6 @@ export default function FarmingBuyScreen({ navigation, route }) {
         contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 28 }]}
         showsVerticalScrollIndicator={false}
       >
-               {/* ── Hero banner — single full-width image only ── */}
-        {Platform.OS === 'web' ? (
-          <Image source={ECOM_HERO_IMAGE} style={styles.heroBannerImage} resizeMode="cover" />
-        ) : null}
         {/* ── Category chips (Mobile only) ── */}
         {!isWideWeb && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
@@ -1091,32 +1086,35 @@ const styles = StyleSheet.create(withRobotoOnIOS({
   },
   searchWrap: {
     flex: 1,
-    maxWidth: 500,
+    maxWidth: 640,
+    height: 46,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#f8fafc',
+    gap: 10,
+    backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: BRAND.line,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderColor: '#e2e8f0',
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    ...(Platform.OS === 'web' ? { boxShadow: '0 2px 10px rgba(15,23,42,0.06)' } : { elevation: 2 }),
   },
   searchWrapWide: {
-    maxWidth: 600,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 12,
+    maxWidth: 720,
+    height: 50,
+    paddingHorizontal: 22,
   },
   searchInput: {
     flex: 1,
-    fontSize: 14,
+    height: '100%',
+    fontSize: 14.5,
     color: BRAND.ink,
     padding: 0,
+    backgroundColor: 'transparent',
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none', outlineWidth: 0 } : {}),
     fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_400Regular',
   },
   searchInputWide: {
-    fontSize: 16,
+    fontSize: 15.5,
   },
   sellBtn: {
     flexDirection: 'row',
@@ -1140,7 +1138,8 @@ const styles = StyleSheet.create(withRobotoOnIOS({
   },
   searchRow: {
     paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingTop: 14,
+    paddingBottom: 4,
     alignItems: Platform.OS === 'web' ? 'center' : 'stretch',
   },
   sellBtnText: {

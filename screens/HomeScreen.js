@@ -22,7 +22,7 @@ import {
   buildHomeStateFromParams, buildPanelContent, buildStateDistrictList,
 } from '../utils/storyHelpers';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
-import { openExternalUrl } from '../utils/adRedirect';
+import { openExternalUrl, buildWhatsappUrl } from '../utils/adRedirect';
 import { emitFeedScroll } from '../utils/feedScrollBus';
 import NewsFeedCard from '../components/NewsFeedCard';
 import NewsMenuSidebar from '../components/NewsMenuSidebar';
@@ -31,7 +31,7 @@ import StateDirectorySection from '../components/StateDirectorySection';
 import RightUtilityPanel from '../components/RightUtilityPanel';
 import MarqueeMenuBar from '../components/MarqueeMenuBar';
 import AutoFitAdImage from '../components/AutoFitAdImage';
-import AdCtaButtons from '../components/AdCtaButtons';
+import AdOverlayCta from '../components/AdOverlayCta';
 import MediaGallery from '../components/MediaGallery';
 import { groupAdStories } from '../utils/adGrouping';
 const PINK = '#FF2D78';
@@ -384,7 +384,7 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
     return (
       <View style={styles.inFeedAdSlot} onLayout={handleLayout}>
         <Text style={styles.adCaption}>ADVERTISEMENT  •  {Math.min(page + 1, group.length)}/{group.length}</Text>
-        <View style={{ width: slideW }}>
+        <View style={{ width: slideW, position: 'relative' }}>
           <ScrollView
             horizontal
             pagingEnabled
@@ -432,13 +432,13 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
               ) : null}
             </>
           ) : null}
-          <AdCtaButtons ad={group[Math.min(page, group.length - 1)]} onOpenLeadForm={onOpenLeadForm} />
+          {(() => { const cur = group[Math.min(page, group.length - 1)]; return <AdOverlayCta ad={cur} onOpenLeadForm={onOpenLeadForm} bottom={cur?.video ? 46 : 12} />; })()}
+        </View>
           <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 8 }}>
             {group.map((a, i) => (
               <View key={`group-dot-${a?.id ?? 'ad'}-${i}`} style={{ width: i === page ? 16 : 6, height: 6, borderRadius: 3, backgroundColor: i === page ? '#f97316' : '#cbd5e1' }} />
             ))}
           </View>
-        </View>
       </View>
     );
   }
@@ -452,15 +452,15 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
     return (
       <View style={styles.inFeedAdSlot} onLayout={handleLayout}>
         <Text style={styles.adCaption}>ADVERTISEMENT</Text>
-        <MediaGallery
-          images={gallery.length ? gallery : [image]}
-          video={ad.video}
-          width={contentW}
-          maxHeight={420}
-          onPressImage={() => onPress?.(ad)}
-        />
-        <View style={{ width: contentW }}>
-          <AdCtaButtons ad={ad} onOpenLeadForm={onOpenLeadForm} />
+        <View style={{ width: contentW, position: 'relative' }}>
+          <MediaGallery
+            images={gallery.length ? gallery : [image]}
+            video={ad.video}
+            width={contentW}
+            maxHeight={420}
+            onPressImage={() => onPress?.(ad)}
+          />
+          <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={hasVideo ? 46 : 12} />
         </View>
       </View>
     );
@@ -470,11 +470,11 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
     <View style={styles.inFeedAdSlot} onLayout={handleLayout}>
       <TouchableOpacity style={{ width: '100%', alignItems: 'center' }} activeOpacity={0.92} onPress={() => onPress?.(ad)}>
         <Text style={styles.adCaption}>ADVERTISEMENT</Text>
-        <AutoFitAdImage uri={image} maxWidth={contentW} maxHeight={420} radius={10} />
+        <View style={{ width: contentW, position: 'relative', alignItems: 'center' }}>
+          <AutoFitAdImage uri={image} maxWidth={contentW} maxHeight={420} radius={10} />
+          <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={12} />
+        </View>
       </TouchableOpacity>
-      <View style={{ width: contentW }}>
-        <AdCtaButtons ad={ad} onOpenLeadForm={onOpenLeadForm} />
-      </View>
     </View>
   );
 }
@@ -746,6 +746,8 @@ export default function HomeScreen({ navigation, route }) {
   const isDesktopRailLayout = IS_WEB && !isMobileDeviceWeb && responsiveWidth >= 1180;
   const isCompactLayout = !isDesktopRailLayout;
   const isMobileLayout = !IS_WEB || isMobileDeviceWeb || responsiveWidth < 768;
+  // Desktop web: 3 independent scroll columns (left / center / right). Mouse jis column par hai wahi scroll hota hai.
+  const isThreeColScroll = IS_WEB && isDesktopRailLayout;
 
   const routeInitialView = route?.params?.initialView;
   const routeInitialMenuKey = route?.params?.initialMenuKey;
@@ -784,6 +786,7 @@ export default function HomeScreen({ navigation, route }) {
  const [pendingPlan, setPendingPlan] = useState(null);
   const [leadFormAd, setLeadFormAd] = useState(null);
   const [showAllAds, setShowAllAds] = useState(false);
+  const [colsViewportHeight, setColsViewportHeight] = useState(0);
   const [showAllTrending, setShowAllTrending] = useState(false); // ✅ Trending "See All" -> saari news ka page
   const initialHomeState = buildHomeStateFromParams(route?.params);
   const [viewMode, setViewMode] = useState(initialHomeState.nextViewMode);
@@ -822,7 +825,7 @@ export default function HomeScreen({ navigation, route }) {
   // center feed continues. This avoids a top gap and keeps all three columns
   // moving together at the start of scrolling.
   const railStickAfterFullyVisible = useCallback((railHeight) => {
-    if (!IS_WEB || !isDesktopRailLayout || !railHeight) return null;
+    if (!IS_WEB || !isDesktopRailLayout || !railHeight || isThreeColScroll) return null; // 3-col mode me sticky nahi, har column apna scroll
     return {
       position: 'sticky',
       top: Math.min(0, windowHeight - railHeight),
@@ -1091,7 +1094,8 @@ const allStories = useMemo(() => {
 
   const handleOpenDetails = useCallback(async (story) => {
     if (!story) return;
-    try { if (story.id) await UserStore.updateNewsFeedItem(story.id, 'view'); } catch { }
+    // View count background me — API slow / fail ho (ads par aksar hota hai) to bhi navigation block na ho
+    try { if (story.id && !story.isAd) Promise.resolve(UserStore.updateNewsFeedItem(story.id, 'view')).catch(() => {}); } catch { }
     navigation?.navigate?.('NewsDetails', { article: story });
   }, [navigation]);
 
@@ -1134,18 +1138,8 @@ const handleOpenLeadForm = useCallback((story) => {
 
   const handleSponsoredAdPress = useCallback((ad) => {
     if (!ad) return;
-    if (ad.redirect === 'lead_form') { handleOpenLeadForm(ad); return; }
-    if (ad.redirect === 'whatsapp') {
-      const phone = String(ad.extraValues?.whatsapp_number || ad.owner_mobile || '').replace(/\D/g, '');
-      if (phone) openExternalUrl(`https://wa.me/91${phone}`);
-      return;
-    }
-    if (ad.redirect === 'website' || ad.redirect === 'shop') {
-      openExternalUrl(ad.redirect === 'shop' ? ad.extraValues?.shop_url : ad.extraValues?.website_url);
-      return;
-    }
-    if (ad.redirect === 'profile') {
-      handleOpenAuthorProfile({
+    // Advertiser ka profile kholne wala fallback — jab ad par link / number set na ho to bhi click kuch kare
+    const openAdvertiserProfile = () => handleOpenAuthorProfile({
         ...ad,
         createdBy: ad.createdBy || ad.owner_email || ad.created_by || '',
         author_name: ad.author_name || ad.owner_name || '',
@@ -1153,8 +1147,23 @@ const handleOpenLeadForm = useCallback((story) => {
         author_role_label: ad.author_role_label || ad.owner_role_label || 'Sponsored',
         author_has_blue_tick: Boolean(ad.author_has_blue_tick || ad.owner_has_blue_tick),
       });
-      return;
+    const hasAdvertiser = Boolean(ad.createdBy || ad.owner_email || ad.created_by || ad.author_name || ad.owner_name);
+    const redirect = String(ad.redirect || '').trim();
+    const extra = ad.extraValues || {};
+
+    if (redirect === 'lead_form') { handleOpenLeadForm(ad); return; }
+    if (redirect === 'whatsapp') {
+      const waUrl = buildWhatsappUrl(ad);
+      if (waUrl) { openExternalUrl(waUrl); return; }
     }
+    if (redirect === 'website' || redirect === 'shop') {
+      const link = redirect === 'shop' ? extra.shop_url : extra.website_url;
+      if (String(link || '').trim()) { openExternalUrl(link); return; }
+    }
+    // redirect set nahi / link khaali: koi bhi available link, warna advertiser profile, warna details
+    const anyLink = extra.website_url || extra.shop_url;
+    if (!redirect && String(anyLink || '').trim()) { openExternalUrl(anyLink); return; }
+    if (hasAdvertiser) { openAdvertiserProfile(); return; }
     handleOpenDetails(ad);
   }, [handleOpenAuthorProfile, handleOpenDetails, handleOpenLeadForm]);
 
@@ -1182,21 +1191,42 @@ const handleOpenLeadForm = useCallback((story) => {
     };
   }).filter(Boolean), [allAdsList]);
 
-  const handleViewMoreAds = useCallback(() => setShowAllAds(true), []);
+  // Center feed ko upar scroll karo (desktop: center column, mobile/compact: page scroll)
+  const scrollFeedToTop = useCallback(() => {
+    const go = () => {
+      try { pageScrollRef.current?.scrollTo?.({ y: 0, animated: true }); } catch (_) { /* ignore */ }
+      try { if (IS_WEB && typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (_) { /* ignore */ }
+    };
+    go();
+    setTimeout(go, 60); // naya content render hone ke baad bhi top par rahe
+  }, []);
+  const handleViewMoreAds = useCallback(() => { setShowAllAds(true); scrollFeedToTop(); }, [scrollFeedToTop]);
   // ✅ Trending News ke "See All" par: saari news ek page (center column) me, latest pehle
   const handleViewAllTrending = useCallback(() => {
     setShowAllAds(false);
     setShowAllTrending(true);
-    try { if (IS_WEB && typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' }); } catch (_) { /* ignore */ }
-  }, []);
-  const handleBackFromTrending = useCallback(() => setShowAllTrending(false), []);
+    scrollFeedToTop();
+  }, [scrollFeedToTop]);
+  // Dusre page (e.g. News Details) ke Trending "See All" se aaye to seedha All News list center me khule
+  const routeShowAllTrending = route?.params?.showAllTrending;
+  const routeShowAllTrendingTs = route?.params?.showAllTrendingTs;
+  useEffect(() => {
+    if (routeShowAllTrending) {
+      setShowAllAds(false);
+      setViewMode?.((prev) => (prev === 'states' ? 'feed' : prev));
+      setShowAllTrending(true);
+      scrollFeedToTop();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeShowAllTrending, routeShowAllTrendingTs]);
+  const handleBackFromTrending = useCallback(() => { setShowAllTrending(false); scrollFeedToTop(); }, [scrollFeedToTop]);
   const allNewsList = useMemo(
     () => allStories
       .filter((s) => !s.isAd && !s.isEcome)
       .sort((a, b) => new Date(b?.date || b?.createdAt || 0) - new Date(a?.date || a?.createdAt || 0)),
     [allStories]
   );
-  const handleBackFromAds = useCallback(() => setShowAllAds(false), []);
+  const handleBackFromAds = useCallback(() => { setShowAllAds(false); scrollFeedToTop(); }, [scrollFeedToTop]);
   // ── Search bar — ab feed column ke sabse upar, koi duplicate "post" bar
   // uske niche nahi hai (wo fake input hata diya gaya hai). Android par
   // thoda compact height rakha gaya hai. ──────────────────────────────────
@@ -1240,9 +1270,26 @@ const handleOpenLeadForm = useCallback((story) => {
 
   const shouldShowRightRail = viewMode !== 'states';
 
+  // Center column scroll: infinite load + video pause (desktop 3-column mode)
+  const handleCenterScroll = (e) => {
+    const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+    scrollYRef.current = contentOffset.y;
+    emitFeedScroll(contentOffset.y);
+    if (viewMode !== 'states' && contentOffset.y + layoutMeasurement.height >= contentSize.height - 900) {
+      handleLoadMoreNews();
+    }
+  };
+  const LeftBox = isThreeColScroll ? ScrollView : View;
+  const FeedBox = isThreeColScroll ? ScrollView : View;
+  const RightBox = isThreeColScroll ? ScrollView : View;
+  const colExtra = isThreeColScroll ? { showsVerticalScrollIndicator: false } : {};
+  const feedBoxExtra = isThreeColScroll
+    ? { ref: pageScrollRef, onScroll: handleCenterScroll, scrollEventThrottle: 16, showsVerticalScrollIndicator: false, contentContainerStyle: { alignItems: 'center' } }
+    : {};
+
   const pageContent = (
     <>
-      <View style={styles.pageBodyShell}>
+      <View style={[styles.pageBodyShell, isThreeColScroll && styles.pageBodyShellCols]}>
 
         {/* ✅ FULL WIDTH MARQUEE — search bar ke niche, sidebar ke upar, sirf web desktop pe
         {IS_WEB && !isMobileDeviceWeb && viewMode !== 'states' && (
@@ -1256,16 +1303,18 @@ const handleOpenLeadForm = useCallback((story) => {
         )} */}
 
 
-        <View style={[styles.pageBodyInner, isCompactLayout && styles.pageBodyInnerCompact, isMobileLayout && styles.pageBodyInnerMobile]}>
+        <View style={[styles.pageBodyInner, isCompactLayout && styles.pageBodyInnerCompact, isMobileLayout && styles.pageBodyInnerMobile, isThreeColScroll && styles.pageBodyInnerCols]}>
 
           {/* ✅ Left sidebar — web desktop: Marketplace (Ecom) + Popular Posts. Native: category menu. */}
           {/* Desktop side rails are temporarily hidden.  The central home feed remains full-width. */}
           {!isMobileLayout && (
-         <View
+         <LeftBox
+              {...colExtra}
               style={[
                 styles.sidebarStickyWrapper,
                 isCompactLayout && styles.sidebarStickyWrapperCompact,
                 railStickAfterFullyVisible(leftRailHeight),
+                isThreeColScroll && styles.colScroll,
               ]}
               onLayout={(event) => setLeftRailHeight(event.nativeEvent.layout.height)}
             >
@@ -1279,14 +1328,20 @@ const handleOpenLeadForm = useCallback((story) => {
               ) : (
                 <NewsMenuSidebar activeMenuKey={selectedMenuKey} onSelectMenu={handleMenuSelection} isCompactLayout={isCompactLayout} commonCopy={commonCopy} />
               )}
-            </View>
+            </LeftBox>
           )}
 
-          <View style={[styles.workspaceShell, isCompactLayout && styles.workspaceShellCompact, isMobileLayout && styles.workspaceShellMobile]}>
+          <View style={[styles.workspaceShell, isCompactLayout && styles.workspaceShellCompact, isMobileLayout && styles.workspaceShellMobile, isThreeColScroll && styles.workspaceShellCols]}>
             {false && isCompactLayout && shouldShowRightRail && !isMobileLayout ? (
               <View style={[styles.utilityStickyWrapper, styles.utilityStickyWrapperCompact]}>{utilityPanel}</View>
             ) : null}
-            <View style={[styles.feedColumnShell, viewMode === 'states' && styles.feedColumnShellStatesView, isCompactLayout && styles.feedColumnShellCompact, isMobileLayout && styles.feedColumnShellMobile]}>
+            <FeedBox
+              {...feedBoxExtra}
+              style={isThreeColScroll
+                // ScrollView ke style me alignItems/justifyContent allowed nahi — wo contentContainerStyle (feedBoxExtra) me hai
+                ? [styles.colScroll, styles.feedColumnShellScroll, viewMode === 'states' && styles.feedColumnShellStatesView]
+                : [styles.feedColumnShell, viewMode === 'states' && styles.feedColumnShellStatesView, isCompactLayout && styles.feedColumnShellCompact, isMobileLayout && styles.feedColumnShellMobile]}
+            >
               <View style={[styles.feedColumn, viewMode === 'states' && styles.feedColumnStatesView, isMobileLayout && styles.feedColumnMobile]}>
                 {viewMode === 'states' ? (
                   <StateDirectorySection
@@ -1404,25 +1459,46 @@ const handleOpenLeadForm = useCallback((story) => {
                   </>
                 )}
               </View>
-            </View>
-           {!isCompactLayout && shouldShowRightRail ? (
-              <View
-                style={[styles.utilityStickyWrapper, railStickAfterFullyVisible(rightRailHeight)]}
+              {/* Desktop 3-column: loader + footer center column ke andar, feed ke turant baad (neeche khali space nahi) */}
+              {isThreeColScroll ? (
+                loadingMore ? <ActivityIndicator style={{ marginVertical: 16 }} color="#f97316" /> : null
+              ) : null}
+            </FeedBox>
+            {!isCompactLayout && shouldShowRightRail ? (
+              <RightBox
+                {...colExtra}
+                style={[styles.utilityStickyWrapper, railStickAfterFullyVisible(rightRailHeight), isThreeColScroll && styles.colScroll]}
                 onLayout={(event) => setRightRailHeight(event.nativeEvent.layout.height)}
               >
                 {utilityPanel}
-              </View>
+              </RightBox>
             ) : null}
           </View>
         </View>
       </View>
-      {IS_WEB ? <AppFooter navigation={navigation} /> : null}
+      {/* Mobile / compact: loader footer ke UPAR, taaki footer ke neeche khali space/loader na aaye */}
+      {!isThreeColScroll && loadingMore ? <ActivityIndicator style={{ marginVertical: 16 }} color="#f97316" /> : null}
+      {IS_WEB && !isThreeColScroll ? <AppFooter navigation={navigation} /> : null}
     </>
   );
 
   const page = (
-    <View style={styles.screenShell}>
+    <View style={[styles.screenShell, IS_WEB && windowHeight > 0 && { height: windowHeight, overflow: 'hidden' }]}>
       <AppNavbar navigation={navigation} activeScreen="Home" hideBottomBar={true} />
+      {isThreeColScroll ? (
+        <ScrollView
+          style={styles.colsPageBody}
+          contentContainerStyle={{ flexGrow: 1 }}
+          showsVerticalScrollIndicator={false}
+          onLayout={(e) => setColsViewportHeight(Math.round(e.nativeEvent.layout.height))}
+        >
+          {/* Columns poori visible height lete hain; footer unke neeche full width me aata hai */}
+          <View style={{ height: colsViewportHeight || Math.max(400, windowHeight - 70), width: '100%' }}>{pageContent}</View>
+          <View style={{ width: '100%', alignSelf: 'stretch' }}>
+            <AppFooter navigation={navigation} />
+          </View>
+        </ScrollView>
+      ) : (
       <ScrollView
         ref={pageScrollRef}
       onScroll={(e) => {
@@ -1434,6 +1510,8 @@ const handleOpenLeadForm = useCallback((story) => {
           }
         }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefreshNews} tintColor="#f97316" colors={['#f97316']} />}
+        keyboardShouldPersistTaps="handled"
+        nestedScrollEnabled
         scrollEventThrottle={16}
         style={styles.pageScrollView}
         contentContainerStyle={[
@@ -1444,8 +1522,8 @@ const handleOpenLeadForm = useCallback((story) => {
         showsVerticalScrollIndicator={false}
       >
      {pageContent}
-        {loadingMore ? <ActivityIndicator style={{ marginVertical: 16 }} color="#f97316" /> : null}
       </ScrollView>
+      )}
       {isMobileLayout && (
         <AppNavbar navigation={navigation} activeScreen="Home" hideTopHeader={true} />
       )}
@@ -1493,6 +1571,12 @@ const styles = StyleSheet.create({
   pageBodyShell: { paddingHorizontal: 0, paddingTop: 0, marginTop: -1, backgroundColor: '#f1f5f9', width: '100%', alignItems: 'center' },
   pageBodyInner: { maxWidth: 1440, width: '100%', alignSelf: 'center', flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'center', gap: 12 },
   pageBodyInnerCompact: { flexDirection: 'column' },
+  // Desktop web 3 independent scroll columns
+  colsPageBody: { flex: 1, minHeight: 0, backgroundColor: '#f1f5f9' },
+  pageBodyShellCols: { flex: 1, minHeight: 0, marginTop: 0, paddingTop: 4 },
+  pageBodyInnerCols: { flex: 1, minHeight: 0, alignItems: 'stretch' },
+  workspaceShellCols: { alignItems: 'stretch', alignSelf: 'stretch', minHeight: 0 },
+  colScroll: { alignSelf: 'stretch', minHeight: 0, flexGrow: 0, flexShrink: 0, ...(IS_WEB ? { overscrollBehavior: 'auto' } : {}) },
   pageBodyInnerMobile: { maxWidth: '100%' },
 
   // ✅ Full width marquee wrapper
@@ -1556,6 +1640,7 @@ const styles = StyleSheet.create({
   workspaceShellMobile: { paddingHorizontal: 0, gap: 0 },
   feedColumnShell: { width: 560, minWidth: 0, alignItems: 'center', paddingHorizontal: 0 },
   feedColumnShellStatesView: { width: 840 },
+  feedColumnShellScroll: { width: 560, minWidth: 0, flexShrink: 1 },
   feedColumnShellCompact: { width: '100%' },
   feedColumnShellMobile: { paddingHorizontal: 0, alignItems: 'stretch' },
   feedColumn: { width: '100%', minWidth: 0, maxWidth: 560, paddingBottom: 24, paddingTop: 4 },

@@ -25,6 +25,8 @@ import WebLayout from '../components/WebLayout';
 import LeftEcomSidebar from '../components/LeftEcomSidebar';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { UserStore } from '../store/UserStore';
+import PostMenuButton from '../components/PostMenuButton';
+import { isOwnPost } from '../components/profileContent';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
 import { safePause, safePlay } from '../utils/videoPlayerSafe';
@@ -926,6 +928,24 @@ export default function NewsDetailsScreen({ route, navigation }) {
     await loadArticleDetails();
   }, [article.id, loadArticleDetails]);
 
+  // ✅ Apni post / reel ko detail page ke 3-dot menu se delete karo
+  const canDeleteArticle = useMemo(() => {
+    if (!currentUser) return false;
+    if (String(currentUser?.role || '').trim().toLowerCase() === 'admin') return true;
+    return isOwnPost(article, currentUser);
+  }, [article, currentUser]);
+
+  const handleDeleteArticle = useCallback(async () => {
+    const result = await UserStore.deleteMyPost(article);
+    if (result?.ok) {
+      try {
+        if (navigation?.canGoBack?.()) navigation.goBack();
+        else navigation?.navigate?.('Home');
+      } catch {}
+    }
+    return result;
+  }, [article, navigation]);
+
   const handleDeleteComment = useCallback(async (commentId) => {
     const confirmed = IS_WEB
       ? window.confirm('Are you sure you want to delete this comment?')
@@ -1075,6 +1095,15 @@ export default function NewsDetailsScreen({ route, navigation }) {
                       })()}
                     </View>
                   </View>
+                  {canDeleteArticle ? (
+                    <PostMenuButton
+                      inline
+                      dark
+                      size={36}
+                      label={Number(routeArticle?.type) === 2 ? 'reel' : 'post'}
+                      onDelete={handleDeleteArticle}
+                    />
+                  ) : null}
                  {false ? (
                     <TouchableOpacity
                       style={[styles.followAuthorButton, isFollowingAuthor && styles.followAuthorButtonActive, followLoading && styles.followAuthorButtonDisabled]}
@@ -1501,17 +1530,12 @@ const styles = StyleSheet.create({
   storyHeadlineTextCompact: { fontSize: 24, lineHeight: 32, fontFamily: Platform.OS === 'ios' ? 'Roboto_400Regular' : 'Roboto' },
   storySubtitleText: { color: '#334155', fontSize: 18, lineHeight: 28, marginTop: 12, fontWeight: '700', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   storyExcerptText: { color: '#475569', fontSize: 16, lineHeight: 25, marginTop: 12, fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
-  storyMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 16 },
+  storyMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 18, flexWrap: 'wrap', marginTop: 16 },
    storyMetaPill: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#f8fafc',
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 2,
   },
   storyMetaPillText: { color: '#64748b', fontSize: 13, fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   storyHeroImageWrap: { marginTop: 18, height: 220, borderRadius: 5, overflow: 'hidden', backgroundColor: '#e2e8f0', marginBottom: 16, zIndex: 0, position: 'relative', flexShrink: 0 },
@@ -1528,18 +1552,21 @@ const styles = StyleSheet.create({
     marginTop: 18,
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    paddingBottom: 16,
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingBottom: 14,
+    paddingTop: 2,
     borderBottomWidth: 1,
     borderBottomColor: '#e2e8f0',
-    rowGap: 10,
     columnGap: 8,
   },
   storyStatItem: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingRight: 8,
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 6,
   },
   storyStatText: { color: '#374151', fontSize: 14.5, fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   likedText: { color: '#ef4444' },

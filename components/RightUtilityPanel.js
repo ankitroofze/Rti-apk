@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Linking, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { openExternalUrl } from '../utils/adRedirect';
+import { openExternalUrl, buildWhatsappUrl } from '../utils/adRedirect';
+import AdOverlayCta from './AdOverlayCta';
 import VerifiedBadge from './VerifiedBadge';
 import { groupAdsByOwner } from '../utils/adGrouping';
 import UserStore from '../store/UserStore';
@@ -175,7 +176,7 @@ export default function RightUtilityPanel({
   const latestUpdates = useMemo(() => {
     return [...trendingStories]
       .sort((a, b) => new Date(b?.date || 0) - new Date(a?.date || 0))
-      .slice(0, 4);
+      .slice(0, 5); // exactly 5 — aadha/chhupa 6th item ka bhram na ho
   }, [trendingStories]);
 
   return (
@@ -208,44 +209,11 @@ export default function RightUtilityPanel({
                   </Text>
                 </TouchableOpacity>
               ) : null}
-            <SponsoredImage ad={ad} />
-              <View style={styles.sponsoredBtnRow}>
-                {ad.redirect === 'lead_form' ? (
-                  <TouchableOpacity style={[styles.sponsoredBtn, { backgroundColor: '#ea580c' }]} activeOpacity={0.88} onPress={() => onOpenLeadForm?.(ad)}>
-                    <Ionicons name="document-text-outline" size={14} color="#fff" />
-                    <Text style={styles.sponsoredBtnText}>Fill Leads Form</Text>
-                  </TouchableOpacity>
-                ) : null}
-              {(ad.redirect === 'website' || ad.redirect === 'shop' || ad.redirect === 'whatsapp') ? (
-                  <TouchableOpacity
-                    style={[styles.sponsoredBtn, { backgroundColor: '#ea580c' }]}
-                    activeOpacity={0.88}
-                    onPress={() => {
-                      if (ad.redirect === 'whatsapp') {
-                        const phone = String(ad.extraValues?.whatsapp_number || ad.owner_mobile || '').replace(/\D/g, '');
-                        if (phone) openExternalUrl(`https://wa.me/91${phone}`);
-                        return;
-                      }
-                      openExternalUrl(ad.redirect === 'shop' ? ad.extraValues?.shop_url : ad.extraValues?.website_url);
-                    }}
-                  >
-                    <Ionicons
-                      name={ad.redirect === 'shop' ? 'storefront-outline' : ad.redirect === 'whatsapp' ? 'logo-whatsapp' : 'globe-outline'}
-                      size={14}
-                      color="#fff"
-                    />
-                    <Text style={styles.sponsoredBtnText}>
-                      {ad.redirect === 'shop' ? 'Visit Shop' : ad.redirect === 'whatsapp' ? 'Message on Whatsapp' : 'Visit Website'}
-                    </Text>
-                  </TouchableOpacity>
-                ) : null}
-                {ad.owner_mobile && ad.allowCalls !== false ? (
-                  <TouchableOpacity style={[styles.sponsoredBtn, { backgroundColor: '#16a34a' }]} activeOpacity={0.88} onPress={() => Linking.openURL(`tel:${ad.owner_mobile}`)}>
-                    <Ionicons name="call" size={14} color="#fff" />
-                    <Text style={styles.sponsoredBtnText}>Call Now</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
+            <View style={{ position: 'relative' }}>
+              <SponsoredImage ad={ad} />
+              <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={(ad.video || ad.video_url) && !(ad.image || ad.photo || ad.image_url || ad.images?.[0] || ad.photos?.[0]) ? 46 : 12} />
+            </View>
+              
             </View>
           ))}
         </View>
@@ -274,31 +242,11 @@ export default function RightUtilityPanel({
                   </Text>
                 </TouchableOpacity>
               ) : null}
-          <SponsoredImage ad={ad} />
-              <View style={styles.sponsoredBtnRow}>
-                {ad.redirect === 'lead_form' ? (
-                  <TouchableOpacity style={[styles.sponsoredBtn, { backgroundColor: '#ea580c' }]} activeOpacity={0.88} onPress={() => onOpenLeadForm?.(ad)}>
-                    <Ionicons name="document-text-outline" size={14} color="#fff" />
-                    <Text style={styles.sponsoredBtnText}>Fill Leads Form</Text>
-                  </TouchableOpacity>
-                ) : null}
-                {(ad.redirect === 'website' || ad.redirect === 'shop') ? (
-                  <TouchableOpacity
-                    style={[styles.sponsoredBtn, { backgroundColor: '#ea580c' }]}
-                    activeOpacity={0.88}
-                    onPress={() => openExternalUrl(ad.redirect === 'shop' ? ad.extraValues?.shop_url : ad.extraValues?.website_url)}
-                  >
-                    <Ionicons name={ad.redirect === 'shop' ? 'storefront-outline' : 'globe-outline'} size={14} color="#fff" />
-                    <Text style={styles.sponsoredBtnText}>{ad.redirect === 'shop' ? 'Visit Shop' : 'Visit Website'}</Text>
-                  </TouchableOpacity>
-                ) : null}
-                {ad.owner_mobile && ad.allowCalls !== false ? (
-                  <TouchableOpacity style={[styles.sponsoredBtn, { backgroundColor: '#16a34a' }]} activeOpacity={0.88} onPress={() => Linking.openURL(`tel:${ad.owner_mobile}`)}>
-                    <Ionicons name="call" size={14} color="#fff" />
-                    <Text style={styles.sponsoredBtnText}>Call Now</Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
+          <View style={{ position: 'relative' }}>
+              <SponsoredImage ad={ad} />
+              <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={(ad.video || ad.video_url) && !(ad.image || ad.photo || ad.image_url || ad.images?.[0] || ad.photos?.[0]) ? 46 : 12} />
+            </View>
+              
             </View>
           )}</SponsoredAdGroup>
           ))}
@@ -312,10 +260,10 @@ export default function RightUtilityPanel({
           <Ionicons name="trending-up" size={18} color="#dc2626" />
           <Text style={styles.cardTitle}>Trending News</Text>
           </View>
-          <TouchableOpacity onPress={() => (onViewAllTrending ? onViewAllTrending() : navigation?.navigate?.('Home'))}><Text style={styles.viewMoreText}>See All <Ionicons name="arrow-forward" size={12} /></Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => (onViewAllTrending ? onViewAllTrending() : navigation?.navigate?.('Home', { showAllTrending: true, showAllTrendingTs: Date.now() }))}><Text style={styles.viewMoreText}>See All <Ionicons name="arrow-forward" size={12} /></Text></TouchableOpacity>
         </View>
         {(latestUpdates.length ? latestUpdates : []).map((story, i) => (
-          <TouchableOpacity key={story.id || i} style={styles.updateRow} activeOpacity={0.8} onPress={() => onOpenDetails?.(story)}>
+          <TouchableOpacity key={story.id || i} style={[styles.updateRow, i === latestUpdates.length - 1 && styles.updateRowLast]} activeOpacity={0.8} onPress={() => onOpenDetails?.(story)}>
             <TrendingThumb story={story} index={i} />
             <View style={{ flex: 1 }}>
               <Text style={styles.updateCategory}>{String(story.category || 'India')}</Text>
@@ -500,6 +448,7 @@ const styles = StyleSheet.create({
     color: '#f97316',
   },
   // Updates
+  updateRowLast: { borderBottomWidth: 0, paddingBottom: 4 },
   updateRow: {
     flexDirection: 'row',
     gap: 12,

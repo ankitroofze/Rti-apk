@@ -5,7 +5,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, Linking, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { openExternalUrl } from '../utils/adRedirect';
+import { openExternalUrl, buildWhatsappUrl } from '../utils/adRedirect';
 
 export default function AdCtaButtons({ ad, onOpenLeadForm, style }) {
   if (!ad) return null;
@@ -16,8 +16,8 @@ export default function AdCtaButtons({ ad, onOpenLeadForm, style }) {
 
   const onLinkPress = () => {
     if (ad.redirect === 'whatsapp') {
-      const phone = String(ad.extraValues?.whatsapp_number || ad.owner_mobile || '').replace(/\D/g, '');
-      if (phone) openExternalUrl(`https://wa.me/91${phone}`);
+      const waUrl = buildWhatsappUrl(ad);
+      if (waUrl) openExternalUrl(waUrl);
       return;
     }
     openExternalUrl(ad.redirect === 'shop' ? ad.extraValues?.shop_url : ad.extraValues?.website_url);

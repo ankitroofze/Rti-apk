@@ -2491,13 +2491,14 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
         },
       });
 
-      const json = await response.json();
+      let json = {};
+      try { json = await response.json(); } catch { json = {}; } // 204 No Content me body nahi hoti
 
       if (response.status === 200 || response.status === 201 || response.status === 204) {
         return { ok: true, message: json?.message || 'News deleted successfully!', data: json };
       }
       if (response.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
-      if (response.status === 404) return { ok: false, message: 'News not found.' };
+      if (response.status === 404) return { ok: false, notFound: true, message: 'News not found.' };
       return { ok: false, message: json?.message || `Server error (${response.status}).` };
     } catch (err) {
       console.error('[AuthAPI.deleteNews] Error:', err);

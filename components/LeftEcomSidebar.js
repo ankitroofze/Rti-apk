@@ -56,18 +56,23 @@ export default function LeftEcomSidebar({ navigation, stories = [], onOpenDetail
 
   const products = useMemo(() => {
     const fromListings = ecomListings.slice(0, 3).map((p) => ({
-      id: `listing-${p.id}`, title: p.title, subtitle: p.description || 'Ecome listing',
+      id: `listing-${p.id}`, listingId: String(p.id), title: p.title, subtitle: p.description || 'Ecome listing',
       price: p.price || '', image: p.image || p.mediaItems?.[0]?.uri || '',
     }));
     if (fromListings.length) return fromListings;
     const real = stories.filter((s) => s.isEcome).slice(0, 3);
     return real.length ? real.map((p) => ({
-      id: p.id, title: p.title, subtitle: p.description || 'Ecome listing',
+      id: p.id, listingId: String(p.ecomId || p.id || '').replace(/^listing-/, ''), title: p.title, subtitle: p.description || 'Ecome listing',
       price: p.price || '', image: p.image,
     })) : DEMO_PRODUCTS;
   }, [ecomListings, stories]);
 
   const openScreen = (screenName) => navigation?.navigate?.(screenName);
+  // Product par click => FarmingBuy khule aur usi product ka detail turant dikhe
+  const openProduct = (p) => {
+    const id = p?.listingId && !String(p.id).startsWith('demo-') ? p.listingId : undefined;
+    navigation?.navigate?.('FarmingBuy', { openListingId: id });
+  };
 
   return (
     <View style={styles.sidebarShell}>
@@ -76,8 +81,8 @@ export default function LeftEcomSidebar({ navigation, stories = [], onOpenDetail
         {(trendingTopics.length ? trendingTopics : [
           'Lok Sabha Election 2024', 'NEET UG Result 2024', 'Monsoon Update India',
           'Indian Economy Growth', 'India vs Bangladesh T20',
-        ]).map((topic, i) => (
-          <TouchableOpacity key={i} style={styles.trendRow} activeOpacity={0.75} onPress={() => onOpenDetails?.({ title: topic })}>
+        ]).map((topic, i, arr) => (
+          <TouchableOpacity key={i} style={[styles.trendRow, i === arr.length - 1 && { borderBottomWidth: 0 }]} activeOpacity={0.75} onPress={() => onOpenDetails?.({ title: topic })}>
             <Ionicons name="trending-up" size={18} color="#ad1010" />
             <Text style={styles.trendText} numberOfLines={1}>{topic}</Text>
           </TouchableOpacity>
@@ -91,14 +96,14 @@ export default function LeftEcomSidebar({ navigation, stories = [], onOpenDetail
         action={<TouchableOpacity onPress={() => openScreen('FarmingBuy')}><Text style={styles.viewAll}>View All <Ionicons name="arrow-forward" size={12} /></Text></TouchableOpacity>}
       >
         {products.map((p, pIdx) => (
-          <View key={`ecom-${p.id || 'p'}-${pIdx}`} style={styles.productRow}>
+          <TouchableOpacity key={`ecom-${p.id || 'p'}-${pIdx}`} style={styles.productRow} activeOpacity={0.9} onPress={() => openProduct(p)}>
             <Image source={{ uri: p.image }} style={styles.productImage} resizeMode="cover" />
             <View style={{ flex: 1 }}>
               <Text style={styles.productTitle} numberOfLines={1}>{p.title}</Text>
               <Text style={styles.productSubtitle} numberOfLines={1}>{p.subtitle}</Text>
               <Text style={styles.productPrice}>₹{p.price}</Text>
               <View style={styles.productActions}>
-                <TouchableOpacity style={styles.viewBtn} activeOpacity={0.85} onPress={() => openScreen('FarmingBuy')}>
+                <TouchableOpacity style={styles.viewBtn} activeOpacity={0.85} onPress={() => openProduct(p)}>
                   <ImageBackground source={require('../assets/images/profile-red.png')} resizeMode="cover" imageStyle={styles.buttonImage} style={styles.imageButton}><Text style={styles.viewBtnText}>View</Text></ImageBackground>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.callBtn} activeOpacity={0.85} onPress={() => Linking.openURL('tel:')}>
@@ -106,7 +111,7 @@ export default function LeftEcomSidebar({ navigation, stories = [], onOpenDetail
                 </TouchableOpacity>
               </View>
             </View>
-          </View>
+          </TouchableOpacity>
         ))}
     <TouchableOpacity style={styles.exploreBtn} activeOpacity={0.88} onPress={() => openScreen('FarmingBuy')}>
           <ImageBackground source={require('../assets/images/profile-red.png')} resizeMode="cover" imageStyle={styles.buttonImage} style={[styles.imageButton, styles.exploreButtonImage]}><Ionicons name="storefront-outline" size={16} color="#fff" /><Text style={styles.exploreBtnText}>Explore All Products</Text></ImageBackground>

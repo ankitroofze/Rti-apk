@@ -1,6 +1,6 @@
 // contexts/LanguageContext.js
 import React, { createContext, useState, useContext, useEffect } from 'react';
-import { Alert, Text, TextInput } from 'react-native';
+import { Alert, Platform, Text, TextInput } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // सभी 22 भाषाओं के लिए translations
@@ -647,7 +647,9 @@ export const useLanguage = () => {
 };
 
 export const LanguageProvider = ({ children }) => {
-  const [language, setLanguage] = useState('hi'); // Default Hindi
+  // Web par URL kholne par default English; Android/iOS par Hindi. Agar user ne pehle koi language
+  // chuni hai to wahi (app_language) use hoti hai.
+  const [language, setLanguage] = useState(Platform.OS === 'web' ? 'en' : 'hi');
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {

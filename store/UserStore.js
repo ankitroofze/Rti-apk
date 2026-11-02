@@ -12,6 +12,7 @@ import {
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { unregisterDeviceToken } from '../utils/Pushnotifications';
 import { getAwardeeFontSize } from '../utils/profileHelpers';
+import { getPostKind } from '../components/profileContent';
 
 const MEDIA_ORIGIN = 'https://rtiapi.roofze.in';
 function resolveMediaUrl(path) {
@@ -2167,6 +2168,9 @@ const saveCertificateSvg = async (svgMarkup, fileName) => {
 // (news card, public profile, followers/following list). Follow/unfollow hote
 // hi sabko turant notify karne ke liye ye chhota pub/sub.
 const _followStateListeners = new Set();
+// Post / reel / ad / ecom delete hone par screens ko batane ke liye
+const _postDeletedListeners = new Set();
+const _emitPostDeleted = (payload) => { _postDeletedListeners.forEach((cb) => { try { cb(payload); } catch {} }); };
 // The follow-list endpoints can briefly return an older snapshot immediately
 // after a mutation. Keep successful mutations in this session so a screen
 // focus/refetch cannot undo a follow the user has just made.
@@ -2337,6 +2341,12 @@ export const UserStore = {
     return () => _followStateListeners.delete(callback);
   },
   matchesFollowTarget: (payload, email, id) => _matchesFollowTarget(payload, email, id),
+
+  // ✅ Post delete hote hi (kahin se bhi) live update: callback({ id, kind }) milega.
+  subscribePostDeleted: (callback) => {
+    _postDeletedListeners.add(callback);
+    return () => _postDeletedListeners.delete(callback);
+  },
 
   // ✅ NEW: kisi bhi user ka public profile uske numeric id se laata hai
   // (GET /profile/{id}). posts[] ko mapApiNewsToFeedItem se normalize karta hai
@@ -5031,6 +5041,9 @@ const db = await getEngagementDb();
     } catch { return { ok: false, message: 'Unable to update news item.' }; }
   },
 
+  // ✅ FIX: pehle ye sirf local storage se delete karta tha (backend ka post bacha rehta tha aur
+  // "News item not found" aa jata tha). Ab pehle DELETE /news/{id} chalta hai, phir local cache saaf hota hai.
+  // Posts, Reels (type 2) dono isi route se delete hote hain.
   deleteNewsFeedItem: async (itemId) => {
     try {
       const user = await UserStore.getCurrentUser();
@@ -5039,46 +5052,31 @@ const db = await getEngagementDb();
       const postId = String(itemId || '').trim();
       if (!postId) return { ok: false, message: 'Invalid post id.' };
 
-      const users = await UserStore.getAllUsers();
-      let foundPost = false;
-      let allowed = false;
+      const apiRes = await AuthAPI.deleteNews(postId);
+      // 404 = server par pehle hi delete ho chuka — UI se hata dena hi sahi hai
+      if (!apiRes.ok && !apiRes.notFound) {
+        return { ok: false, isAuth: Boolean(apiRes.isAuth), message: apiRes.message || 'Unable to delete post.' };
+      }
 
-      const updatedUsers = users.map((entry) => {
-        const nextFromNews = removeNewsItemFromCollection(entry.news, postId);
-        const nextFromFeed = removeNewsItemFromCollection(entry.news_feed, postId);
-
-        if (nextFromNews.found || nextFromFeed.found) {
-          foundPost = true;
-          const matchedItem = (Array.isArray(entry.news) ? entry.news : []).find((item) => String(item?.id || '').trim() === postId)
-            || (Array.isArray(entry.news_feed) ? entry.news_feed : []).find((item) => String(item?.id || '').trim() === postId)
-            || null;
-
-          if (!canManageNewsItem(user, matchedItem)) {
-            return entry;
-          }
-
-          allowed = true;
-        }
-
-        if (!nextFromNews.changed && !nextFromFeed.changed) {
-          return entry;
-        }
-
-        return normalizeUser({
-          ...entry,
-          news: nextFromNews.items,
-          news_feed: nextFromFeed.items,
+      // Local cache cleanup (best-effort — fail ho to bhi delete success hai)
+      try {
+        const users = await UserStore.getAllUsers();
+        const updatedUsers = users.map((entry) => {
+          const nextFromNews = removeNewsItemFromCollection(entry.news, postId);
+          const nextFromFeed = removeNewsItemFromCollection(entry.news_feed, postId);
+          if (!nextFromNews.changed && !nextFromFeed.changed) return entry;
+          return normalizeUser({ ...entry, news: nextFromNews.items, news_feed: nextFromFeed.items });
         });
-      });
+        await AsyncStorage.setItem(USERS_KEY, JSON.stringify(updatedUsers));
+        await clearNewsItemEngagement(postId);
+      } catch (e) {
+        console.warn('[deleteNewsFeedItem] local cleanup failed:', e);
+      }
 
-      if (!foundPost) return { ok: false, message: 'News item not found.' };
-      if (!allowed) return { ok: false, message: 'You cannot delete this news item.' };
-
-      await AsyncStorage.setItem(USERS_KEY, JSON.stringify(updatedUsers));
-      await clearNewsItemEngagement(postId);
+      _emitPostDeleted({ id: postId, kind: 'post' });
       return { ok: true };
     } catch {
-      return { ok: false, message: 'Unable to delete news item.' };
+      return { ok: false, message: 'Unable to delete post.' };
     }
   },
 
@@ -6442,6 +6440,73 @@ getMyAdPosts: async () => {
       };
     });
   } catch (e) { console.log('[getMyAdPosts] failed:', e); return []; }
+},
+
+// ✅ NEW: Profile "Ecom" tab ke liye — user ke apne ecom products (GET /ecom-details me se owner match).
+// Har product ko post-shape me convert karta hai; id 'ecom-<id>' hoti hai taaki news ki id se na takraye.
+getMyEcomPosts: async (target = {}) => {
+  try {
+    const me = await UserStore.getCurrentUser();
+    const email = String(target.email || me?.email || '').trim().toLowerCase();
+    const uid = String(target.id ?? me?.id ?? '').trim();
+    if (!email && !uid) return [];
+    const res = await AuthAPI.getEcomDetails();
+    if (!res?.ok || !Array.isArray(res.details)) return [];
+    return res.details
+      .filter((raw) => {
+        const owner = raw?.user || raw?.owner || {};
+        const rawUid = String(raw?.user_id ?? owner?.id ?? '').trim();
+        const rawEmail = String(owner?.email || raw?.owner_email || '').trim().toLowerCase();
+        return Boolean((uid && rawUid && rawUid === uid) || (email && rawEmail && rawEmail === email));
+      })
+      .map((raw) => {
+        const item = normalizeEcomDetail(raw);
+        const img = item.mediaItems?.[0]?.uri || '';
+        return {
+          id: `ecom-${item.id}`,
+          ecom_id: item.id,
+          is_ecom: true,
+          post_type: 'ecom',
+          title: item.title,
+          content: item.title,
+          description: item.description,
+          price: item.price,
+          image: img,
+          images: (item.mediaItems || []).map((m) => m.uri),
+          createdAt: item.createdAt,
+          created_at: item.createdAt,
+          owner_email: item.owner_email,
+          owner_id: String(raw?.user_id ?? '').trim(),
+          createdBy: item.owner_email,
+          author_name: item.owner_name,
+          views: 0,
+          likes: 0,
+          comments: 0,
+        };
+      });
+  } catch (e) { console.log('[getMyEcomPosts] failed:', e); return []; }
+},
+
+// ✅ NEW: ek hi function se kisi bhi tarah ka apna post delete karo (post / reel / ad / ecom).
+// Profile, Public Profile aur Post detail — teeno yahi use karte hain.
+deleteMyPost: async (post = {}) => {
+  try {
+    const kind = getPostKind(post);
+    let result;
+    if (kind === 'ad') {
+      const rawId = post.ad_id ?? post.adId ?? String(post.id || '').replace(/^ad-/, '');
+      result = await UserStore.deleteAd(rawId);
+    } else if (kind === 'ecom') {
+      const rawId = post.ecom_id ?? String(post.id || '').replace(/^ecom-/, '');
+      result = await UserStore.deleteEcomeListing(rawId);
+    } else {
+      result = await UserStore.deleteNewsFeedItem(post.id);
+    }
+    if (result?.ok && kind !== 'post') _emitPostDeleted({ id: String(post.id || ''), kind });
+    return result || { ok: false, message: 'Unable to delete.' };
+  } catch {
+    return { ok: false, message: 'Unable to delete.' };
+  }
 },
 
 getActiveAdsFeed: async (options = {}) => {
