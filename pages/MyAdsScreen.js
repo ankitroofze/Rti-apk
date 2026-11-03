@@ -1,3 +1,4 @@
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import { smartGoBack } from '../utils/smartBack';
 import React, { useState, useCallback } from 'react';
 import {
@@ -275,7 +276,7 @@ const ac = StyleSheet.create({
 });
 
 // ── Main Screen ────────────────────────────────────────────────────────────────
-export default function MyAdsScreen({ navigation }) {
+function MyAdsScreen__Inner({ navigation }) {
   const { showToast } = useToast();
   const [credits, setCredits]   = useState(0);
   const [ads, setAds]           = useState([]);
@@ -412,6 +413,7 @@ export default function MyAdsScreen({ navigation }) {
               <TouchableOpacity
                 style={[ws.postBtn, isCompactWeb && ws.postBtnCompact, credits <= 0 && ws.postBtnDim]}
                 onPress={handlePostAd}
+                disabled={credits <= 0}
                 activeOpacity={0.85}
               >
                 <Ionicons name="add-circle-outline" size={17} color="#fff" />
@@ -469,6 +471,7 @@ export default function MyAdsScreen({ navigation }) {
                     >
                       <Text style={ws.buyPlanBtnText}>View Plans →</Text>
                     </TouchableOpacity>
+                    <Text style={ws.noPlanNote}>Note: Your plan is not active. Buy a plan to post ads.</Text>
                   </View>
                 )}
               </View>
@@ -588,6 +591,7 @@ export default function MyAdsScreen({ navigation }) {
         <TouchableOpacity
           style={[s.postBtn, credits <= 0 && s.postBtnDim]}
           onPress={handlePostAd}
+          disabled={credits <= 0}
           activeOpacity={0.85}
         >
           <Ionicons name="add-circle-outline" size={18} color="#fff" />
@@ -650,7 +654,7 @@ const s = StyleSheet.create({
   bottomLeft:    { flexDirection: 'row', alignItems: 'center', gap: 6 },
   bottomCredits: { fontSize: 14, fontWeight: '700', color: C.orange },
   postBtn:       { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: C.orange, borderRadius: 14, paddingHorizontal: 20, paddingVertical: 13, elevation: 4, shadowColor: C.orange, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 6 },
-  postBtnDim:    { backgroundColor: '#ccc' },
+  postBtnDim:    { backgroundColor: '#ccc', opacity: 0.8, ...(Platform.OS === 'web' ? { cursor: 'not-allowed' } : {}) },
   postBtnText:   { color: '#fff', fontSize: 14, fontWeight: '800' },
 });
 
@@ -674,7 +678,7 @@ const ws = StyleSheet.create({
   pageTitle:    { fontSize: 24, fontWeight: '800', color: C.text, marginBottom: 4 },
   pageSub:      { fontSize: 14, color: C.textSub },
   postBtn:      { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: C.orange, borderRadius: 12, paddingHorizontal: 16, paddingVertical: 10, flexShrink: 0 },
-  postBtnDim:   { backgroundColor: '#ccc' },
+  postBtnDim:   { backgroundColor: '#ccc', opacity: 0.8, ...(Platform.OS === 'web' ? { cursor: 'not-allowed' } : {}) },
   postBtnText:  { color: '#fff', fontSize: 14, fontWeight: '800' },
 
   statsRow:    { flexDirection: 'row', gap: 14, marginBottom: 24, flexWrap: 'wrap' },
@@ -690,6 +694,7 @@ const ws = StyleSheet.create({
 
   noPlanWrap:  { alignItems: 'flex-start', gap: 10 },
   noPlanText:  { fontSize: 14, color: C.textSub },
+  noPlanNote:  { fontSize: 13, fontWeight: '800', color: '#dc2626', marginTop: 10 },
   buyPlanBtn:  { paddingHorizontal: 16, paddingVertical: 8, backgroundColor: C.orange, borderRadius: 10 },
   buyPlanBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
 
@@ -702,3 +707,11 @@ const ws = StyleSheet.create({
   adsGrid:         { gap: 12 },
   adsGridWide:     { flexDirection: 'row', flexWrap: 'wrap' },
 });
+
+
+// Desktop web par ye page hamesha sidebar wale shell (QuickMenu) ke andar khulta hai
+export default function MyAdsScreen(props) {
+  const redirecting = useQuickMenuRedirect(props.navigation, 'MyAds');
+  if (redirecting) return null;
+  return <MyAdsScreen__Inner {...props} />;
+}

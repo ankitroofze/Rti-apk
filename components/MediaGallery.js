@@ -6,6 +6,8 @@ import AutoFitAdImage from './AutoFitAdImage';
 import MediaControlBar, { isAudioUrl } from './MediaControlBar';
 import NewsVideoControls from './NewsVideoControls';
 import { subscribeUserScroll } from '../utils/feedScrollBus';
+import * as MediaDownloadButtonModule from './MediaDownloadButton';
+const MediaDownloadButton = MediaDownloadButtonModule.MediaDownloadButton || MediaDownloadButtonModule.default;
 
 // Video ka asli width/height ratio nikalta hai (native + web) taaki video bina zoom/crop/stretch ke
 // bilkul waisa dikhe jaisa upload kiya gaya tha.
@@ -60,9 +62,9 @@ function getVideoBox(width, ratio, maxHeight) {
 // Video chal raha ho aur user scroll karke use screen se bahar kar de to video khud pause ho jaye.
 // Video chal raha ho aur user SCROLL kare => pause. Bina scroll kiye kabhi pause nahi.
 // (auto-slide / sidebar / marquee ke scroll se nahi — sirf asli user scroll se: utils/feedScrollBus.js)
-function useWebAutoPause(vref) {
+function useWebAutoPause(vref, enabled = true) {
   useEffect(() => {
-    if (Platform.OS !== 'web') return undefined;
+    if (Platform.OS !== 'web' || !enabled) return undefined;
     const el = vref.current;
     if (!el) return undefined;
     let unsub = null;
@@ -81,7 +83,7 @@ function useWebAutoPause(vref) {
       el.removeEventListener('pause', stop);
       el.removeEventListener('ended', stop);
     };
-  }, [vref]);
+  }, [vref, enabled]);
 }
 
 function useNativeAutoPause(viewRef, player) {
@@ -139,7 +141,7 @@ function AdVideoControls({ player, playing, ended, buffering, onToggle, onFullsc
   );
 }
 
-function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 0 }) {
+function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 0, adAutoPlay = false, active = true }) {
   const [ratio, setRatio] = useState(null);
   const [audioOnly, setAudioOnly] = useState(() => isAudioUrl(uri));
   const [st, setSt] = useState({ playing: false, ended: false, cur: 0, dur: 0, muted: false });
@@ -148,7 +150,33 @@ function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 0 }
   const vref = useRef(null);
   // stable callback ref (naya function har render par banta to ref baar-baar reset hota)
   const setVideoNode = useCallback((n) => { vref.current = n; setVel(n); }, []);
-  useWebAutoPause(vref);
+  useWebAutoPause(vref, !adAutoPlay);
+  const userPausedRef = useRef(false);
+
+  // AD MODE: video apne aap chale + MUTE rahe; screen se bahar / dusri slide par jaye to pause,
+  // wapas dikhe to chale (jab tak user ne khud pause na kiya ho).
+  useEffect(() => {
+    if (!adAutoPlay || !vel) return undefined;
+    try { vel.muted = true; } catch (e) { /* ignore */ }
+    const tryPlay = () => {
+      if (userPausedRef.current) return;
+      const pr = vel.play?.();
+      if (pr && pr.catch) pr.catch(() => { try { vel.muted = true; vel.play?.().catch(() => {}); } catch (e) { /* ignore */ } });
+    };
+    let visible = true;
+    let io = null;
+    if (typeof IntersectionObserver !== 'undefined') {
+      io = new IntersectionObserver((entries) => {
+        visible = entries.some((en) => en.isIntersecting && en.intersectionRatio >= 0.4);
+        if (visible && active) tryPlay(); else { try { vel.pause?.(); } catch (e) { /* ignore */ } }
+      }, { threshold: [0, 0.4, 1] });
+      io.observe(vel);
+    } else if (active) {
+      tryPlay();
+    }
+    if (!active) { try { vel.pause?.(); } catch (e) { /* ignore */ } }
+    return () => { try { io?.disconnect(); } catch (e) { /* ignore */ } };
+  }, [adAutoPlay, vel, active]);
 
   const sync = (e) => {
     const v = e?.currentTarget || e?.target || vref.current;
@@ -178,7 +206,7 @@ function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 0 }
   const toggle = () => {
     const v = vref.current;
     if (!v) return;
-    if (v.paused || v.ended) { if (v.ended) v.currentTime = 0; v.play?.(); } else v.pause();
+    if (v.paused || v.ended) { userPausedRef.current = false; if (v.ended) v.currentTime = 0; v.play?.(); } else { userPausedRef.current = true; v.pause(); }
   };
 
   const goFullscreen = () => {
@@ -202,7 +230,8 @@ function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 0 }
         src: uri,
         controls: false,
         playsInline: true,
-        preload: 'metadata',
+        ...(adAutoPlay ? { autoPlay: true, muted: true, loop: true } : {}),
+        preload: adAutoPlay ? 'auto' : 'metadata',
         onLoadedMetadata: handleMeta,
         onPlay: sync,
         onPause: sync,
@@ -238,19 +267,43 @@ function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 0 }
           onFullscreen={goFullscreen}
         />
       )}
+      {adAutoPlay && !audioOnly ? (
+        <TouchableOpacity
+          onPress={() => { if (vref.current) vref.current.muted = !vref.current.muted; }}
+          activeOpacity={0.8}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityLabel={st.muted ? 'Unmute' : 'Mute'}
+          style={{ position: 'absolute', top: 10, right: 10, zIndex: 6, width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Ionicons name={st.muted ? 'volume-mute' : 'volume-high'} size={20} color="#fff" />
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
 
-function NativeVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 0 }) {
-  const player = useVideoPlayer({ uri }, (p) => { p.loop = false; });
+function NativeVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 0, adAutoPlay = false, active = true }) {
+  const player = useVideoPlayer({ uri }, (p) => {
+    p.loop = Boolean(adAutoPlay);
+    if (adAutoPlay) { try { p.muted = true; p.play(); } catch (e) { /* ignore */ } }
+  });
+  const [adMuted, setAdMuted] = useState(true);
+  const userPausedRef = useRef(false);
+  // AD MODE: dusri slide par jaane par pause, wapas aane par (user ne pause na kiya ho to) play
+  useEffect(() => {
+    if (!adAutoPlay) return;
+    try {
+      if (!active) player.pause();
+      else if (!userPausedRef.current) { player.muted = adMuted; player.play(); }
+    } catch (e) { /* ignore */ }
+  }, [active, adAutoPlay, player]);
   const ratio = useVideoRatio(uri, player);
   const [audioOnly, setAudioOnly] = useState(() => isAudioUrl(uri));
   const [st, setSt] = useState({ playing: false, cur: 0, dur: 0, muted: false });
   const [np, setNp] = useState({ playing: false, ended: false, loading: false });
   const boxRef = useRef(null);
   const videoViewRef = useRef(null);
-  useNativeAutoPause(boxRef, player);
+  useNativeAutoPause(boxRef, adAutoPlay ? null : player);
 
   useEffect(() => { if (ratio) onRatio?.(uri, ratio); }, [ratio, uri, onRatio]);
   useEffect(() => { if (ratio) setAudioOnly(false); }, [ratio]);
@@ -312,7 +365,8 @@ function NativeVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 
 
   const toggle = () => {
     try {
-      if (player.playing) { player.pause(); return; }
+      if (player.playing) { userPausedRef.current = true; player.pause(); return; }
+      userPausedRef.current = false;
       const dur = Number(player.duration) || 0;
       if (np.ended || (dur > 0 && Number(player.currentTime) >= dur - 0.3)) player.currentTime = 0;
       player.play();
@@ -363,6 +417,17 @@ function NativeVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 
         surfaceType={surface}
       />
       {bar}
+      {adAutoPlay && !audioOnly ? (
+        <TouchableOpacity
+          onPress={() => { try { const next = !adMuted; player.muted = next; setAdMuted(next); } catch (e) { /* ignore */ } }}
+          activeOpacity={0.8}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityLabel={adMuted ? 'Unmute' : 'Mute'}
+          style={{ position: 'absolute', top: 10, right: 10, zIndex: 6, width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Ionicons name={adMuted ? 'volume-mute' : 'volume-high'} size={20} color="#fff" />
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
@@ -372,7 +437,7 @@ function VideoSlide(props) {
 }
 
 // images = [url, url...], video = 'url' (optional). Swipe + auto-slide (Android, iOS, web)
-export default function MediaGallery({ images = [], video = '', width, maxHeight = 420, onPressImage, radius = 0, fit = 'contain' }) {
+export default function MediaGallery({ images = [], video = '', width, maxHeight = 420, onPressImage, radius = 0, fit = 'contain', adAutoPlay = false, downloadable = false }) {
   const [page, setPage] = useState(0);
   const [failedUris, setFailedUris] = useState([]);
   const scrollRef = useRef(null);
@@ -423,15 +488,19 @@ export default function MediaGallery({ images = [], video = '', width, maxHeight
     scrollRef.current?.scrollTo({ x: n * width, y: 0, animated: true });
   }, [count, width]);
 
-  // Auto-slide: har 4 sec, user swipe kar raha ho to ruk jata hai
+  // Auto-slide: har 4 sec, user swipe kar raha ho to ruk jata hai.
+  // AD MODE me video slide aa jaye to auto-slide ruk jata hai (video chalta rahe); user dots / arrows / swipe se aage ja sakta hai.
+  const slidesRef = useRef(slides);
+  slidesRef.current = slides;
   useEffect(() => {
     if (count < 2 || !width) return undefined;
     const timer = setInterval(() => {
       if (touchingRef.current) return;
+      if (adAutoPlay && slidesRef.current[pageRef.current]?.type === 'video') return;
       goTo((pageRef.current + 1) % count);
     }, 4000);
     return () => clearInterval(timer);
-  }, [count, width, goTo]);
+  }, [count, width, goTo, adAutoPlay]);
 
   // Reset sirf tab jab images sach me badal jayein (reference badalne se nahi)
   useEffect(() => {
@@ -482,7 +551,7 @@ export default function MediaGallery({ images = [], video = '', width, maxHeight
               ]}
             >
               {s.type === 'video' ? (
-                <VideoSlide uri={s.uri} width={width} maxHeight={maxHeight} coverMode={coverMode} onRatio={handleVideoRatio} radius={radius} />
+                <VideoSlide uri={s.uri} width={width} maxHeight={maxHeight} coverMode={coverMode} onRatio={handleVideoRatio} radius={radius} adAutoPlay={adAutoPlay} active={i === page} />
               ) : (
                 <TouchableOpacity activeOpacity={0.92} disabled={!onPressImage} onPress={onPressImage}>
                   <AutoFitAdImage
@@ -503,6 +572,16 @@ export default function MediaGallery({ images = [], video = '', width, maxHeight
         {count > 1 ? (
           <View style={{ position: 'absolute', top: 8, right: 8, backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 3 }}>
             <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>{page + 1}/{count}</Text>
+          </View>
+        ) : null}
+
+        {/* Download button (current slide ki image / video) — top-right, mute / counter ke neeche */}
+        {downloadable && currentSlide ? (
+          <View
+            pointerEvents="box-none"
+            style={{ position: 'absolute', top: (count > 1 || (adAutoPlay && currentSlide.type === 'video')) ? 46 : 10, right: 10, zIndex: 8, elevation: 8 }}
+          >
+            <MediaDownloadButton uri={currentSlide.uri} type={currentSlide.type} size={32} />
           </View>
         ) : null}
 

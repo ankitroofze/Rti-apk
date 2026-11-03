@@ -1,5 +1,6 @@
 // pages/MyAdSubscriptionScreen.js
 // Dikhata hai ki user ka Ads subscription active hai ya nahi.
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useState, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, StatusBar, Platform, ImageBackground } from 'react-native';
@@ -16,7 +17,7 @@ const FONT = {
   medium:  Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
 };
 
-export default function MyAdSubscriptionScreen({ navigation }) {
+function MyAdSubscriptionScreen__Inner({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [sub, setSub] = useState(null);
   const [credits, setCredits] = useState(0);
@@ -115,3 +116,11 @@ const styles = StyleSheet.create({
   heroTitlePlain: { fontSize: 24, fontFamily: FONT.medium, fontWeight: '600', color: '#dc2626', marginBottom: 6 },
   heroSubtitlePlain: { fontSize: 14, fontFamily: FONT.regular, color: '#374151', lineHeight: 20 },
 });
+
+
+// Desktop web par ye page hamesha sidebar wale shell (QuickMenu) ke andar khulta hai
+export default function MyAdSubscriptionScreen(props) {
+  const redirecting = useQuickMenuRedirect(props.navigation, 'MyAdSubscription');
+  if (redirecting) return null;
+  return <MyAdSubscriptionScreen__Inner {...props} />;
+}

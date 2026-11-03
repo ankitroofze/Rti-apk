@@ -224,9 +224,11 @@ const styles = StyleSheet.create({
   footerShell: {
     backgroundColor: '#073b44',
     marginTop: 28,
+    width: '100%',
+    alignSelf: 'stretch',
   },
   footerInner: {
-    maxWidth: 1360,
+    maxWidth: 1600,
     width: '100%',
     alignSelf: 'center',
     paddingHorizontal: Platform.OS === 'web' ? 32 : 18,

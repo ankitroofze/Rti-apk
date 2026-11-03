@@ -7,7 +7,9 @@ import VerifiedBadge from './VerifiedBadge';
 import { groupAdsByOwner } from '../utils/adGrouping';
 import UserStore from '../store/UserStore';
 import ProfileAvatar from './ProfileAvatar';
-import AdVideoPlayer from './AdVideoPlayer';
+import MediaGallery from './MediaGallery';
+import * as MediaDownloadButtonModule from './MediaDownloadButton';
+const MediaDownloadButton = MediaDownloadButtonModule.MediaDownloadButton || MediaDownloadButtonModule.default;
 import PostGridThumb from './PostGridThumb';
 
 // India ke Chief Editor ki user ID yahan daalo (backend/admin panel se dekh lo).
@@ -38,11 +40,46 @@ const formatCount = (n) => {
   return String(v);
 };
 
+// Ad ki saari images (duplicate hata kar): pehle main image, phir ad.images / ad.photos
+function collectAdImages(ad) {
+  const list = [];
+  const seen = new Set();
+  const push = (u) => { const s = String(u || '').trim(); if (s && !seen.has(s)) { seen.add(s); list.push(s); } };
+  push(ad.image || ad.photo || ad.image_url);
+  (Array.isArray(ad.images) ? ad.images : []).forEach(push);
+  (Array.isArray(ad.photos) ? ad.photos : []).forEach(push);
+  return list;
+}
+
+// Video wale ads (ya 2+ images) — bilkul center ke ads jaisa player (MediaGallery + adAutoPlay):
+//  • apne aap chalta hai, shuru me MUTE, user volume button se unmute kar sakta hai
+//  • play/pause, seek, fullscreen controls; user pause kare to pause hi rehta hai
+//  • download button (image / video)
+function SponsoredMedia({ images, videoUri }) {
+  const [w, setW] = useState(0);
+  return (
+    <View
+      style={{ width: '100%', backgroundColor: '#000', borderRadius: 2, overflow: 'hidden' }}
+      onLayout={(e) => {
+        const nw = Math.round(e.nativeEvent.layout.width);
+        if (nw && nw !== w) setW(nw);
+      }}
+    >
+      {w > 0 ? (
+        <MediaGallery images={images} video={videoUri} width={w} maxHeight={420} adAutoPlay downloadable />
+      ) : (
+        <View style={{ width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000' }} />
+      )}
+    </View>
+  );
+}
+
 function SponsoredImage({ ad }) {
   const [failedToLoad, setFailedToLoad] = useState(false);
   const [ratio, setRatio] = useState(null);
-  const imageUri = ad.image || ad.photo || ad.image_url || ad.images?.[0] || ad.photos?.[0] || '';
-  const videoUri = ad.video || ad.video_url || '';
+  const images = useMemo(() => collectAdImages(ad), [ad]);
+  const imageUri = images[0] || '';
+  const videoUri = String(ad.video || ad.video_url || '').trim();
   useEffect(() => {
     if (!imageUri) return undefined;
     let alive = true;
@@ -50,9 +87,9 @@ function SponsoredImage({ ad }) {
     return () => { alive = false; };
   }, [imageUri]);
 
-  // ✅ video ad (media_type 2): image nahi hoti — video player dikhao (muted autoplay + controls)
-  if ((!imageUri || failedToLoad) && videoUri) {
-    return <AdVideoPlayer key={videoUri} uri={videoUri} autoPlay style={[styles.sponsoredImage, { height: undefined, aspectRatio: 16 / 9 }]} />;
+  // ✅ Video ad (ya multi-image ad): center jaisa auto-play player
+  if (videoUri || images.length > 1) {
+    return <SponsoredMedia images={images} videoUri={videoUri} />;
   }
 
   if (!imageUri || failedToLoad) {
@@ -64,18 +101,23 @@ function SponsoredImage({ ad }) {
     );
   }
 
-  // Poori image dikhe (crop nahi): asli ratio ke hisaab se height, contain
+  // Poori image dikhe (crop nahi): asli ratio ke hisaab se height, contain + download button
   return (
-    <Image
-      source={{ uri: imageUri }}
-      style={[styles.sponsoredImage, { height: undefined, aspectRatio: ratio || 1.5, maxHeight: 420 }]}
-      resizeMode="contain"
-      onLoad={(e) => {
-        const { width: w, height: h } = e?.nativeEvent?.source || {};
-        if (w && h) setRatio(w / h);
-      }}
-      onError={() => setFailedToLoad(true)}
-    />
+    <View style={{ position: 'relative' }}>
+      <Image
+        source={{ uri: imageUri }}
+        style={[styles.sponsoredImage, { height: undefined, aspectRatio: ratio || 1.5, maxHeight: 420 }]}
+        resizeMode="contain"
+        onLoad={(e) => {
+          const { width: w, height: h } = e?.nativeEvent?.source || {};
+          if (w && h) setRatio(w / h);
+        }}
+        onError={() => setFailedToLoad(true)}
+      />
+      <View pointerEvents="box-none" style={{ position: 'absolute', top: 10, right: 10, zIndex: 8, elevation: 8 }}>
+        <MediaDownloadButton uri={imageUri} type="image" size={32} />
+      </View>
+    </View>
   );
 }
 
@@ -209,9 +251,9 @@ export default function RightUtilityPanel({
                   </Text>
                 </TouchableOpacity>
               ) : null}
-            <View style={{ position: 'relative' }}>
+            <View style={{ position: 'relative', marginBottom: (ad.video || ad.video_url) ? 14 : 0 }}>
               <SponsoredImage ad={ad} />
-              <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={(ad.video || ad.video_url) && !(ad.image || ad.photo || ad.image_url || ad.images?.[0] || ad.photos?.[0]) ? 46 : 12} />
+              <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={(ad.video || ad.video_url) ? 46 : 12} />
             </View>
               
             </View>
@@ -242,9 +284,9 @@ export default function RightUtilityPanel({
                   </Text>
                 </TouchableOpacity>
               ) : null}
-          <View style={{ position: 'relative' }}>
+          <View style={{ position: 'relative', marginBottom: (ad.video || ad.video_url) ? 14 : 0 }}>
               <SponsoredImage ad={ad} />
-              <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={(ad.video || ad.video_url) && !(ad.image || ad.photo || ad.image_url || ad.images?.[0] || ad.photos?.[0]) ? 46 : 12} />
+              <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={(ad.video || ad.video_url) ? 46 : 12} />
             </View>
               
             </View>

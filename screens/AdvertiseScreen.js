@@ -1,3 +1,4 @@
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
@@ -539,7 +540,7 @@ function LeadFormBuilderModal({
 }
 
 // ── Main Screen ────────────────────────────────────────────────────────────────
-export default function AdvertiseScreen({ navigation, route }) {
+function AdvertiseScreen__Inner({ navigation, route }) {
   // ============================================================
   // ALL HOOKS MUST BE CALLED FIRST, UNCONDITIONALLY, EVERY RENDER
   // ============================================================
@@ -1659,3 +1660,11 @@ const ws = StyleSheet.create({
   nextBtnFull: { width: '100%' },
   nextBtnText: { color: '#ffffff', fontSize: 15, fontFamily: FONT.bold },
 });
+
+
+// Desktop web par ye page hamesha sidebar wale shell (QuickMenu) ke andar khulta hai
+export default function AdvertiseScreen(props) {
+  const redirecting = useQuickMenuRedirect(props.navigation, 'Advertise');
+  if (redirecting) return null;
+  return <AdvertiseScreen__Inner {...props} />;
+}

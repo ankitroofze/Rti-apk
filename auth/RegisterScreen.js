@@ -68,7 +68,7 @@ function Toast({ toast, opacity, translateY }) {
   if (!toast) return null;
   const config = {
     success: { bg: '#f0fdf4', border: '#16a34a', icon: 'checkmark-circle', iconColor: '#16a34a', textColor: '#166534', label: 'Success' },
-    error: { bg: '#fef2f2', border: '#dc2626', icon: 'close-circle', iconColor: '#dc2626', textColor: '#991b1b', label: 'Error' },
+    error: { bg: '#fef2f2', border: '#dc2626', icon: 'close-circle', iconColor: '#dc2626', textColor: '#991b1b', label: 'Oops!' },
     info: { bg: '#eff6ff', border: '#3b82f6', icon: 'information-circle', iconColor: '#3b82f6', textColor: '#1e40af', label: 'Info' },
   };
   const c = config[toast.type] || config.error;

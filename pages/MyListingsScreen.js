@@ -1,3 +1,4 @@
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useCallback, useState } from 'react';
 import {
@@ -81,8 +82,8 @@ const ListingCardMobile = ({ item, onDelete }) => {
           <Text style={[styles.chipText, styles.chipTextPrice]}>{money(item.price)}</Text>
         </View>
         <View style={styles.chip}>
-          <Ionicons name="layers-outline" size={13} color="#94a3b8" />
-          <Text style={styles.chipText}>Qty {item.quantity || 'N/A'}</Text>
+          <Ionicons name={item.in_stock === false ? 'close-circle-outline' : 'checkmark-circle-outline'} size={13} color={item.in_stock === false ? '#dc2626' : '#16a34a'} />
+          <Text style={[styles.chipText, { color: item.in_stock === false ? '#dc2626' : '#16a34a' }]}>{item.in_stock === false ? 'Out of Stock' : 'In Stock'}</Text>
         </View>
         {formatDate(item.createdAt) ? (
           <View style={styles.chip}>
@@ -108,7 +109,7 @@ const ListingRowWeb = ({ item, onDelete }) => {
         </Text>
       </View>
       <Text style={[styles.rowCell, styles.rowPrice]}>{money(item.price)}</Text>
-      <Text style={styles.rowCell}>{item.quantity || '—'}</Text>
+      <Text style={[styles.rowCell, { color: item.in_stock === false ? '#dc2626' : '#16a34a' }]}>{item.in_stock === false ? 'Out of Stock' : 'In Stock'}</Text>
       <Text style={styles.rowCell}>{formatDate(item.createdAt) || '—'}</Text>
       <View style={{ flex: 1 }}>
         <View style={[styles.statusPill, { backgroundColor: pill.bg, alignSelf: 'flex-start' }]}>
@@ -132,7 +133,7 @@ const StatCard = ({ label, value, sub, subColor }) => (
 );
 
 // ─── Main screen ───────────────────────────────────────────────────────────────
-export default function MyListingsScreen({ navigation }) {
+function MyListingsScreen__Inner({ navigation }) {
   const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const { width: winWidth } = useWindowDimensions();
   const isTablet = !IS_WEB && winWidth >= 768;
@@ -290,7 +291,7 @@ export default function MyListingsScreen({ navigation }) {
                 <View style={styles.tableHeader}>
                   <Text style={[styles.tableHdrText, { flex: 2.5 }]}>Product</Text>
                   <Text style={styles.tableHdrText}>Price</Text>
-                  <Text style={styles.tableHdrText}>Qty</Text>
+                  <Text style={styles.tableHdrText}>Stock</Text>
                   <Text style={styles.tableHdrText}>Date</Text>
                   <Text style={styles.tableHdrText}>Status</Text>
                   <View style={{ width: 36 }} />
@@ -599,3 +600,11 @@ const styles = StyleSheet.create({
   },
   emptyBtnText: { color: '#fff', fontSize: 13, fontWeight: '600' },
 });
+
+
+// Desktop web par ye page hamesha sidebar wale shell (QuickMenu) ke andar khulta hai
+export default function MyListingsScreen(props) {
+  const redirecting = useQuickMenuRedirect(props.navigation, 'MyListings');
+  if (redirecting) return null;
+  return <MyListingsScreen__Inner {...props} />;
+}

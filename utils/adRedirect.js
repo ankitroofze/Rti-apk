@@ -58,15 +58,39 @@ export function getAdRedirectMeta(ad = {}) {
   };
 }
 
-// WhatsApp number -> wa.me link. 10 digit number par 91 lagta hai; pehle se country code ho
-// (12 digit, 91...) to dobara 91 nahi lagta (pehle wa.me/9191XXXXXXXXXX ban jaata tha => ad "run" nahi hoti thi).
+// WhatsApp number -> wa.me link.
+// Number kahin se bhi aa sakta hai: extraValues.whatsapp_number, ad.url / redirection_url (post karte waqt
+// "https://wa.me/91XXXXXXXXXX" save hota hai), ya owner ka mobile. Sab handle hote hain.
+// 10 digit par 91 lagta hai; pehle se 91 ho to dobara nahi lagta.
 export function buildWhatsappUrl(ad = {}) {
   const extra = ad.extraValues || {};
-  let digits = getPhoneDigits(extra.whatsapp_number || ad.owner_mobile || ad.mobile || ad.phone);
-  if (!digits) return '';
-  digits = digits.replace(/^0+/, '');
-  if (digits.length === 10) digits = `91${digits}`;
-  return `https://wa.me/${digits}`;
+  const isWa = ad.redirect === 'whatsapp' || ad.redirection === 'whatsapp';
+  const candidates = [
+    extra.whatsapp_number,
+    ad.whatsapp_number,
+    ad.whatsapp,
+    isWa ? (ad.url || ad.redirection_url) : '',
+    ad.owner_mobile,
+    ad.mobile,
+    ad.phone,
+    ad.contact_number,
+  ];
+  for (const cand of candidates) {
+    const raw = String(cand || '').trim();
+    if (!raw || /^rti-news:/i.test(raw)) continue;
+    let digits = '';
+    if (/^(https?:|whatsapp:)/i.test(raw)) {
+      const m = raw.match(/wa\.me\/\+?(\d+)/i) || raw.match(/[?&]phone=\+?(\d+)/i);
+      digits = m ? m[1] : '';
+    } else {
+      digits = getPhoneDigits(raw);
+    }
+    digits = digits.replace(/^0+/, '');
+    if (digits.length === 14 && digits.startsWith('9191')) digits = digits.slice(2); // purana double-91 data
+    if (digits.length === 10) digits = `91${digits}`;
+    if (digits.length >= 11) return `https://wa.me/${digits}`;
+  }
+  return '';
 }
 
 export function getAdCallUrl(ad = {}) {

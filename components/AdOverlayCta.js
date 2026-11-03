@@ -4,7 +4,7 @@
 // teeno jagah yahi component use hota hai taaki sab ek jaisa dikhe.
 // Parent View `position: 'relative'` hona chahiye (media ko wrap karne wala).
 import React from 'react';
-import { View, Text, TouchableOpacity, Linking, StyleSheet, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, Linking, StyleSheet, Platform, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { openExternalUrl, buildWhatsappUrl } from '../utils/adRedirect';
 
@@ -23,7 +23,13 @@ export default function AdOverlayCta({ ad, onOpenLeadForm, bottom = 12, right = 
     stop(e);
     if (ad.redirect === 'whatsapp') {
       const waUrl = buildWhatsappUrl(ad);
-      if (waUrl) openExternalUrl(waUrl);
+      if (waUrl) {
+        openExternalUrl(waUrl);
+      } else if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.alert('This advertiser has not added a WhatsApp number yet.');
+      } else {
+        Alert.alert('WhatsApp', 'This advertiser has not added a WhatsApp number yet.');
+      }
       return;
     }
     openExternalUrl(ad.redirect === 'shop' ? ad.extraValues?.shop_url : ad.extraValues?.website_url);
@@ -57,7 +63,8 @@ export default function AdOverlayCta({ ad, onOpenLeadForm, bottom = 12, right = 
 const styles = StyleSheet.create({
   strip: {
     position: 'absolute',
-    zIndex: 6,
+    zIndex: 30,
+    elevation: 30,
     flexDirection: 'row',
     gap: 8,
     backgroundColor: 'rgba(0,0,0,0.65)',
@@ -66,6 +73,7 @@ const styles = StyleSheet.create({
     maxWidth: '94%',
   },
   half: {
+    ...(Platform.OS === 'web' ? { cursor: 'pointer' } : null),
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,

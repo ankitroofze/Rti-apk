@@ -55,7 +55,7 @@ storyAuthorRow: {
     alignItems: 'center', // ✅ Center aligned
     paddingHorizontal: CARD_H_PAD,
     marginBottom: 12,
-    ...(Platform.OS !== 'web' && { flexWrap: 'wrap' }),
+    flexWrap: 'nowrap',
     gap: 6,
   },
   storyAuthorAvatar: {
@@ -78,7 +78,8 @@ storyAuthorRow: {
   },
 storyAuthorTextWrap: {
     flex: 1,
-    minWidth: 90,
+    flexShrink: 1,
+    minWidth: 0,
     gap: 3,
   },
   storyAuthorNameRow: {
@@ -105,6 +106,7 @@ storyAuthorTextWrap: {
   },
   // ── Follow Button ──
 storyFollowBtnWrap: {
+    flexShrink: 0,
     borderRadius: 999,
     overflow: 'hidden',
     backgroundColor: '#ffffff',
@@ -114,10 +116,10 @@ storyFollowBtnWrap: {
  storyFollowBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    minHeight: 40,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+    gap: 5,
+    minHeight: 34,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
     borderRadius: 999,
   },
    storyFollowBtnActive: {
@@ -131,7 +133,7 @@ storyFollowBtnWrap: {
   },
     storyFollowBtnText: {
     color: '#dc2626',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600', // ✅ Weight 600
    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
   },
@@ -179,7 +181,8 @@ storyFollowBtnWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Platform.OS === 'web' ? 13 : 8,
-    flexWrap: Platform.OS === 'web' ? 'wrap' : 'nowrap',
+    flexWrap: 'wrap',
+    rowGap: 2,
   },
   storyMetaPill: {
     flexDirection: 'row',

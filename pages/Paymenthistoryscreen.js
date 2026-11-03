@@ -9,6 +9,7 @@
 // backend se hi hota hai. Agar API fail ho jaye to purana local
 // payment_history (UserStore.getPaymentSummary) fallback ke taur pe dikhta hai.
 // ─────────────────────────────────────────────────────────────────
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import React, { useState, useCallback } from 'react';
 import {
   View,
@@ -66,7 +67,7 @@ const isPlanExpired = (expiresAt) => {
   return !Number.isNaN(t) && Date.now() > t;
 };
 
-export default function PaymentHistoryScreen({ navigation }) {
+function PaymentHistoryScreen__Inner({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState('all');
@@ -390,4 +391,12 @@ export default function PaymentHistoryScreen({ navigation }) {
       </View>
     </SafeAreaView>
   );
+}
+
+
+// Desktop web par ye page hamesha sidebar wale shell (QuickMenu) ke andar khulta hai
+export default function PaymentHistoryScreen(props) {
+  const redirecting = useQuickMenuRedirect(props.navigation, 'PaymentHistory');
+  if (redirecting) return null;
+  return <PaymentHistoryScreen__Inner {...props} />;
 }

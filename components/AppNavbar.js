@@ -750,6 +750,24 @@ export default function AppNavbar({ activeScreen, navigation, hideTopHeader = fa
           >
             <Ionicons name="ribbon-outline" size={20} color="#0f172a" />
           </TouchableOpacity>
+          {/* Subscription ke just right side me Referral icon */}
+          <TouchableOpacity
+            style={[styles.notificationBellBtn, { marginHorizontal: 0 }]}
+            onPress={() => openWithSidebar(navigation, 'Refer')}
+            activeOpacity={0.85}
+            accessibilityLabel="Referral"
+          >
+            <Ionicons name="gift-outline" size={20} color="#0f172a" />
+          </TouchableOpacity>
+          {/* Referral ke just right side me Ecom icon (Buy Product page) */}
+          <TouchableOpacity
+            style={[styles.notificationBellBtn, { marginHorizontal: 0 }]}
+            onPress={() => openWithSidebar(navigation, 'FarmingBuy')}
+            activeOpacity={0.85}
+            accessibilityLabel="Ecom"
+          >
+            <Ionicons name="storefront-outline" size={20} color="#0f172a" />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.desktopActionsRow}>

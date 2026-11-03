@@ -144,12 +144,6 @@ export default function AutoIdCardPreview({ profile, viewOnly = false, fallbackM
           <Text style={{ fontSize: 13, color: '#cc2200', fontWeight: Platform.OS === 'web' ? '900' : 'normal', marginLeft: 3, fontFamily: ID_CARD_FONT_BLACK }}>{validUpto}</Text>
         </View>
 
-        {/* Verification URL — backend se aaya hua, as-is */}
-        {idCard?.verification_url ? (
-          <Text numberOfLines={1} style={{ fontSize: 8, color: '#1a3a8a', marginBottom: 4 }}>
-            Verify: {idCard.verification_url}
-          </Text>
-        ) : null}
 
       </View>
 

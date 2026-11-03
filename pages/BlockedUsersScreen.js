@@ -1,3 +1,4 @@
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import NameWithTick from '../components/NameWithTick';
 import React, { useCallback, useState } from 'react';
 import {
@@ -66,7 +67,7 @@ const UnblockConfirmModal = ({ visible, name, onCancel, onConfirm }) => (
   </Modal>
 );
 
-export default function BlockedUsersScreen({ navigation }) {
+function BlockedUsersScreen__Inner({ navigation }) {
 const insets = useSafeAreaInsets();
 const { showToast, showPopup } = useToast();
   const [loading, setLoading] = useState(true);
@@ -201,4 +202,12 @@ const { showToast, showPopup } = useToast();
       />
     </SafeAreaView>
   );
+}
+
+
+// Desktop web par ye page hamesha sidebar wale shell (QuickMenu) ke andar khulta hai
+export default function BlockedUsersScreen(props) {
+  const redirecting = useQuickMenuRedirect(props.navigation, 'BlockedUsersScreen');
+  if (redirecting) return null;
+  return <BlockedUsersScreen__Inner {...props} />;
 }

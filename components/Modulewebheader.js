@@ -114,6 +114,7 @@ export default function ModuleWebHeader({
   highContrast = false,
   showSettings = true,       // ✅ sab module headers me Settings icon (Profile jaisa)
   showSubscription = true,   // ✅ sab module headers me Subscription button
+  showReferral = true,       // ✅ Subscription ke just right side me Referral icon
 }) {
   const { width: headerWinW } = useWindowDimensions();
   // ✅ phone / mobile-web: Android jaisa compact header (sirf back arrow + title + chhote icons).
@@ -181,6 +182,18 @@ export default function ModuleWebHeader({
           >
             <Feather name="award" size={16} color={readableColor} />
             {!compactHeader ? <Text style={[S.subTxt, { color: readableColor }]}>Subscription</Text> : null}
+          </TouchableOpacity>
+        ) : null}
+
+        {/* Referral — Subscription ke just right side me */}
+        {showReferral ? (
+          <TouchableOpacity
+            style={[S.bellBtn, compactHeader && C.circle, { backgroundColor: controlSurface, borderColor: controlBorder }]}
+            onPress={() => go('Refer')}
+            activeOpacity={0.8}
+            accessibilityLabel="Referral"
+          >
+            <Feather name="gift" size={16} color={readableColor} />
           </TouchableOpacity>
         ) : null}
 

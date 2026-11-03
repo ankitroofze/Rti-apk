@@ -1,6 +1,7 @@
 import { smartGoBack } from '../utils/smartBack';
 import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
+import ModuleWebHeader from '../components/Modulewebheader';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Platform,
@@ -211,7 +212,9 @@ export default function NotificationsScreen({ navigation }) {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.root}>
         {/* Header */}
-        {Platform.OS === 'android' ? (
+        {Platform.OS === 'web' ? (
+<ModuleWebHeader title="Notifications" navigation={navigation} onBack={() => smartGoBack(navigation, 'Home')} />
+) : Platform.OS === 'android' ? (
 <ModuleAndroidHeader title="Notifications" onBack={() => smartGoBack(navigation, 'QuickMenu')} />
 ) : (
 <>

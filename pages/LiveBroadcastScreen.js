@@ -1,4 +1,6 @@
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
+import ModuleWebHeader from '../components/Modulewebheader';
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import Constants from 'expo-constants';
 import { Share } from 'react-native';
@@ -57,6 +59,8 @@ const requestCameraAndMicPermission = async () => {
 };
 
 export default function LiveBroadcastScreen({ navigation }) {
+  // Desktop web par ye page kabhi bina sidebar ke na khule
+  const redirectingToSidebar = useQuickMenuRedirect(navigation, 'Start Live');
   const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const { width: winWidth } = useWindowDimensions();
   const isTablet = winWidth >= 768;
@@ -306,10 +310,17 @@ setIsSaving(true);
           ? 'A request is in progress, please wait...'
           : '';
 
+  if (redirectingToSidebar) return null;
+
   return (
     <SafeAreaView style={LiveStreamingStyles.root} edges={Platform.OS === 'android' ? ['left', 'right', 'bottom'] : ['top', 'left', 'right', 'bottom']}>
       {/* Top Bar with Back Arrow — matches AdvertiseScreen header style */}
-      {Platform.OS === 'android' ? (
+      {Platform.OS === 'web' ? (
+<ModuleWebHeader title="Start Live" navigation={navigation} onBack={async () => {
+ await endLiveOnExit();
+ navigation.goBack();
+ }} />
+) : Platform.OS === 'android' ? (
 <ModuleAndroidHeader title="Start Live" onBack={async () => {
  await endLiveOnExit();
  navigation.goBack();

@@ -1,3 +1,4 @@
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
@@ -37,7 +38,7 @@ const BENEFITS = [
 ];
 
 // ── Main Screen ────────────────────────────────────────────────────────────────
-export default function PurchaseBlueTickScreen({ navigation, route }) {
+function PurchaseBlueTickScreen__Inner({ navigation, route }) {
   const user = route?.params?.user || {};
   const [loading, setLoading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -426,3 +427,11 @@ const s = StyleSheet.create({
   successText:  { flex: 1, color: '#fff', fontSize: 13.5, fontWeight: '600', marginLeft: 10, marginRight: 6 },
   successClose: { padding: 4 },
 });
+
+
+// Desktop web par ye page hamesha sidebar wale shell (QuickMenu) ke andar khulta hai
+export default function PurchaseBlueTickScreen(props) {
+  const redirecting = useQuickMenuRedirect(props.navigation, 'PurchaseBlueTick');
+  if (redirecting) return null;
+  return <PurchaseBlueTickScreen__Inner {...props} />;
+}

@@ -31,6 +31,8 @@ import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaS
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
 import { safePause, safePlay } from '../utils/videoPlayerSafe';
 import MediaGallery from '../components/MediaGallery';
+import * as MediaDownloadButtonModule from '../components/MediaDownloadButton';
+const MediaDownloadButton = MediaDownloadButtonModule.MediaDownloadButton || MediaDownloadButtonModule.default;
 import { getEngagement, publishEngagement, subscribeEngagement, getLikedLocal, persistLikedLocal } from '../utils/newsEngagementStore';
 import useLiveRefresh from '../utils/useLiveRefresh';
 
@@ -1181,6 +1183,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
                       video={effectiveVideoUri}
                       width={Math.max(1, heroWrapWidth || Math.min(responsiveWidth - (isCompactLayout ? 32 : 64), 668))}
                       maxHeight={heroFrameHeight}
+                      downloadable
                     />
                   ) : article.images.length > 1 ? (
                     <MediaGallery
@@ -1189,9 +1192,17 @@ export default function NewsDetailsScreen({ route, navigation }) {
                       fit="cover"
                       maxHeight={heroFrameHeight}
                       radius={5}
+                      downloadable
                     />
                   ) : heroImageSource ? (
-                    <Image source={heroImageSource} style={styles.storyHeroImage} resizeMode="cover" />
+                    <>
+                      <Image source={heroImageSource} style={styles.storyHeroImage} resizeMode="cover" />
+                      {heroImageSource?.uri ? (
+                        <View pointerEvents="box-none" style={{ position: 'absolute', top: 10, right: 10, zIndex: 8, elevation: 8 }}>
+                          <MediaDownloadButton uri={heroImageSource.uri} type="image" size={32} />
+                        </View>
+                      ) : null}
+                    </>
                   ) : (
                     <View style={styles.imagePlaceholder}>
                       <Ionicons name="image-outline" size={48} color="#94a3b8" />
@@ -1204,7 +1215,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
                 <View style={styles.storyStatsRow}>
                   <View style={styles.storyStatItem}>
                     <Ionicons name="eye-outline" size={21} color="#64748b" />
-                    <Text style={styles.storyStatText}>{viewCount.toLocaleString()} Views</Text>
+                    <Text style={styles.storyStatText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>{viewCount.toLocaleString()} Views</Text>
                   </View>
                   <TouchableOpacity style={styles.storyStatItem} onPress={handleLike} activeOpacity={0.7}>
                     <Ionicons
@@ -1212,7 +1223,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
                       size={21}
                       color={isLiked ? "#ef4444" : "#64748b"}
                     />
-                    <Text style={[styles.storyStatText, isLiked && styles.likedText]}>
+                    <Text style={[styles.storyStatText, isLiked && styles.likedText]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
                       {likeCount.toLocaleString()} {likeCount === 1 ? 'Like' : 'Likes'}
                     </Text>
                   </TouchableOpacity>
@@ -1222,13 +1233,13 @@ export default function NewsDetailsScreen({ route, navigation }) {
                     activeOpacity={0.7}
                   >
                     <Ionicons name="chatbubble-outline" size={21} color="#64748b" />
-                    <Text style={styles.storyStatText}>
+                    <Text style={styles.storyStatText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
                       {commentCount.toLocaleString()} {commentCount === 1 ? 'Comment' : 'Comments'}
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.storyStatItem} onPress={handleShare} activeOpacity={0.7}>
                     <Ionicons name="share-social-outline" size={21} color="#64748b" />
-                    <Text style={styles.storyStatText}>
+                    <Text style={styles.storyStatText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75}>
                       {shareCount.toLocaleString()} {shareCount === 1 ? 'Share' : 'Shares'}
                     </Text>
                   </TouchableOpacity>
@@ -1573,13 +1584,15 @@ const styles = StyleSheet.create({
   },
   storyStatItem: {
     flex: 1,
-    flexDirection: 'row',
+    minWidth: 0,
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 7,
+    gap: 4,
     paddingVertical: 6,
+    paddingHorizontal: 2,
   },
-  storyStatText: { color: '#374151', fontSize: 14.5, fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
+  storyStatText: { color: '#374151', fontSize: 13, textAlign: 'center', fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   likedText: { color: '#ef4444' },
   articleBodyWrap: { marginTop: 24 },
   articleBodyParagraph: {

@@ -74,12 +74,18 @@ const enquirerName = (e = {}) =>
 const initialsOf = (name) =>
   String(name || '?').split(' ').filter(Boolean).map((w) => w[0]).join('').slice(0, 2).toUpperCase() || '?';
 
-// ⚠️ status 1/2 ka exact matlab backend se confirm karke labels badal lena
+// Enquiry flow:  1 = New  →  (Call / WhatsApp dabate hi)  3 = Review  →  (Close dabate hi)  2 = Closed
+const ST_NEW = 1;
+const ST_REVIEW = 3;
+const ST_CLOSED = 2;
 const STATUS_MAP = {
-  1: { bg: '#FEF2F2', text: '#b91c1c', icon: 'information-circle', label: 'Open' },
-  2: { bg: '#f1f5f9', text: '#475569', icon: 'checkmark-done-circle', label: 'Closed' },
+  [ST_NEW]:    { bg: '#FEF2F2', text: '#b91c1c', icon: 'information-circle', label: 'New' },
+  [ST_REVIEW]: { bg: '#FFF7ED', text: '#c2410c', icon: 'time', label: 'Review' },
+  [ST_CLOSED]: { bg: '#f1f5f9', text: '#475569', icon: 'checkmark-done-circle', label: 'Closed' },
 };
-const getStatus = (s) => STATUS_MAP[Number(s)] || STATUS_MAP[1];
+const normStatus = (v) => (Number(v) === ST_CLOSED ? ST_CLOSED : Number(v) === ST_REVIEW ? ST_REVIEW : ST_NEW);
+const getStatus = (v) => STATUS_MAP[normStatus(v)];
+const STATUS_STORE_KEY = 'ecom_enquiry_status_overrides';
 
 // ─── small UI pieces ──────────────────────────────────────────────────────────
 const Thumb = ({ uri, size = 64, radius = 12 }) =>
@@ -137,8 +143,30 @@ const Segment = ({ tab, setTab, receivedCount, sentCount }) => (
   </View>
 );
 
+const STAGES = [
+  { key: ST_NEW, label: 'New', icon: 'sparkles-outline' },
+  { key: ST_REVIEW, label: 'Review', icon: 'time-outline' },
+  { key: ST_CLOSED, label: 'Closed', icon: 'checkmark-done-outline' },
+];
+const StageTabs = ({ stage, setStage, counts }) => (
+  <View style={s.stageWrap}>
+    {STAGES.map((t) => {
+      const active = stage === t.key;
+      return (
+        <TouchableOpacity key={t.key} style={[s.stageBtn, active && s.stageBtnActive]} onPress={() => setStage(t.key)} activeOpacity={0.85}>
+          <Ionicons name={t.icon} size={14} color={active ? ORANGE : '#64748b'} />
+          <Text style={[s.stageText, active && { color: ORANGE }]}>{t.label}</Text>
+          <View style={[s.stageCount, active && { backgroundColor: ORANGE }]}>
+            <Text style={[s.stageCountText, active && { color: '#fff' }]}>{counts[t.key] || 0}</Text>
+          </View>
+        </TouchableOpacity>
+      );
+    })}
+  </View>
+);
+
 // ─── Enquiry card ─────────────────────────────────────────────────────────────
-const EnquiryCard = ({ item, mode, onOpen, onCall, onWhatsApp }) => {
+const EnquiryCard = ({ item, mode, onOpen, onCall, onWhatsApp, onClose }) => {
   const st = getStatus(item.status);
   const isReceived = mode === 'received';
   const ecom = ecomOf(item);
@@ -206,7 +234,7 @@ const EnquiryCard = ({ item, mode, onOpen, onCall, onWhatsApp }) => {
 
         {/* actions */}
         <View style={s.actionsRow}>
-          <TouchableOpacity style={[s.actBtn, { backgroundColor: '#0f172a' }]} onPress={() => onCall(phone)} activeOpacity={0.85}>
+          <TouchableOpacity style={[s.actBtn, { backgroundColor: '#0f172a' }]} onPress={() => onCall(phone, item)} activeOpacity={0.85}>
             <Ionicons name="call" size={14} color="#fff" />
             <Text style={s.actText}>{isReceived ? 'Call' : 'Call Seller'}</Text>
           </TouchableOpacity>
@@ -214,6 +242,12 @@ const EnquiryCard = ({ item, mode, onOpen, onCall, onWhatsApp }) => {
             <Ionicons name="logo-whatsapp" size={14} color="#fff" />
             <Text style={s.actText}>WhatsApp</Text>
           </TouchableOpacity>
+          {isReceived && normStatus(item.status) === ST_REVIEW ? (
+            <TouchableOpacity style={[s.actBtn, { backgroundColor: '#dc2626' }]} onPress={() => onClose(item)} activeOpacity={0.85}>
+              <Ionicons name="close-circle" size={14} color="#fff" />
+              <Text style={s.actText}>Close</Text>
+            </TouchableOpacity>
+          ) : null}
           <TouchableOpacity style={s.viewBtn} onPress={() => onOpen(item)} activeOpacity={0.8}>
             <Text style={s.viewBtnText}>Details</Text>
             <Ionicons name="chevron-forward" size={13} color={ORANGE} />
@@ -225,7 +259,7 @@ const EnquiryCard = ({ item, mode, onOpen, onCall, onWhatsApp }) => {
 };
 
 // ─── Detail modal ─────────────────────────────────────────────────────────────
-const DetailModal = ({ visible, item, mode, onClose, onCall, onWhatsApp, onEmail }) => {
+const DetailModal = ({ visible, item, mode, onClose, onCall, onWhatsApp, onEmail, onCloseEnquiry }) => {
   const { width: winW } = useWindowDimensions();
   // Wide screens: 2-column layout so everything fits without any scrolling.
   const wide = IS_WEB && winW >= 760;
@@ -280,7 +314,7 @@ const DetailModal = ({ visible, item, mode, onClose, onCall, onWhatsApp, onEmail
                 <Row label="Name" value={ecomName(item)} />
                 <Row label="Category" value={ecom.category} />
                 <Row label="Price" value={money(ecom.price)} highlight />
-                <Row label="Available" value={ecom.quantity != null ? String(ecom.quantity) : ''} />
+                <Row label="Stock" value={ecom.in_stock === false || ecom.in_stock === 0 || ecom.in_stock === '0' ? 'Out of Stock' : 'In Stock'} />
                 <Row label="City" value={ecom.city} />
                 {ecom.description ? <Row label="About" value={ecom.description} multiline /> : null}
               </View>
@@ -320,7 +354,7 @@ const DetailModal = ({ visible, item, mode, onClose, onCall, onWhatsApp, onEmail
           })()}
 
           <View style={m.actions}>
-            <TouchableOpacity style={[m.actBtn, { backgroundColor: '#0f172a' }]} onPress={() => onCall(phone)} activeOpacity={0.85}>
+            <TouchableOpacity style={[m.actBtn, { backgroundColor: '#0f172a' }]} onPress={() => onCall(phone, item)} activeOpacity={0.85}>
               <Ionicons name="call" size={16} color="#fff" />
               <Text style={m.actText}>Call</Text>
             </TouchableOpacity>
@@ -328,6 +362,12 @@ const DetailModal = ({ visible, item, mode, onClose, onCall, onWhatsApp, onEmail
               <Ionicons name="logo-whatsapp" size={16} color="#fff" />
               <Text style={m.actText}>WhatsApp</Text>
             </TouchableOpacity>
+            {isReceived && normStatus(item.status) === ST_REVIEW ? (
+              <TouchableOpacity style={[m.actBtn, { backgroundColor: '#dc2626' }]} onPress={() => onCloseEnquiry(item)} activeOpacity={0.85}>
+                <Ionicons name="close-circle" size={16} color="#fff" />
+                <Text style={m.actText}>Close Enquiry</Text>
+              </TouchableOpacity>
+            ) : null}
             {isReceived && item.email ? (
               <TouchableOpacity style={[m.actBtn, { backgroundColor: ORANGE }]} onPress={() => onEmail(item.email, item)} activeOpacity={0.85}>
                 <Ionicons name="mail" size={16} color="#fff" />
@@ -367,6 +407,8 @@ export default function MyEnquiriesScreen({ navigation, route }) {
 
   const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [stage, setStage] = useState(ST_NEW);          // Received tab: New / Review / Closed
+  const [overrides, setOverrides] = useState({});      // { [enquiryId]: status } — turant UI + device par yaad rakhne ke liye
 
   const loadReceived = useCallback(async (reset = false) => {
     if (recvBusy.current) return;
@@ -412,7 +454,36 @@ export default function MyEnquiriesScreen({ navigation, route }) {
   useFocusEffect(useCallback(() => {
     loadReceived(true);
     loadSent();
+    (async () => {
+      try {
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        const raw = await AsyncStorage.getItem(STATUS_STORE_KEY);
+        if (raw) setOverrides(JSON.parse(raw) || {});
+      } catch (_) { /* ignore */ }
+    })();
   }, [loadReceived, loadSent]));
+
+  // Status badlo: pehle screen par turant, phir device par save, phir backend (best-effort)
+  const changeStatus = useCallback(async (item, status) => {
+    if (!item?.id) return;
+    setOverrides((prev) => {
+      const next = { ...prev, [item.id]: status };
+      (async () => {
+        try {
+          const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+          await AsyncStorage.setItem(STATUS_STORE_KEY, JSON.stringify(next));
+        } catch (_) { /* ignore */ }
+      })();
+      return next;
+    });
+    try { await AuthAPI.updateEcomEnquiry(item.id, { status }); } catch (_) { /* local status already saved */ }
+  }, []);
+
+  const handleCloseEnquiry = useCallback((item) => {
+    changeStatus(item, ST_CLOSED);
+    setSelected(null);
+    setStage(ST_CLOSED);
+  }, [changeStatus]);
 
   const onRefresh = async () => {
     setRefreshing(true);
@@ -420,11 +491,17 @@ export default function MyEnquiriesScreen({ navigation, route }) {
     setRefreshing(false);
   };
 
-  const handleCall = (contact) => {
+  // Received me New enquiry par Call / WhatsApp karte hi wo Review me chali jaati hai
+  const moveToReview = (item) => {
+    if (tab === 'received' && item && normStatus(item.status) === ST_NEW) changeStatus(item, ST_REVIEW);
+  };
+
+  const handleCall = (contact, item) => {
     const phone = toPhone(contact);
     if (!phone) return notify('No Contact', 'Phone number is not available.');
     const url = `tel:+${phone}`;
     IS_WEB ? window.open(url) : Linking.openURL(url);
+    moveToReview(item);
   };
 
   const handleWhatsApp = (contact, item) => {
@@ -435,6 +512,7 @@ export default function MyEnquiriesScreen({ navigation, route }) {
       : `Hi, I have sent an enquiry for this product: ${ecomName(item)}\nPrice: ${money(ecomOf(item).price)}`;
     const url = `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
     IS_WEB ? window.open(url, '_blank') : Linking.openURL(url);
+    moveToReview(item);
   };
 
   const handleEmail = (email, item) => {
@@ -443,7 +521,12 @@ export default function MyEnquiriesScreen({ navigation, route }) {
   };
 
   const isReceived = tab === 'received';
-  const data = isReceived ? received : sent;
+  const withStatus = (list) => list.map((e) => ({ ...e, status: overrides[e.id] ?? e.status }));
+  const receivedAll = withStatus(received);
+  const sentAll = withStatus(sent);
+  const stageCounts = receivedAll.reduce((acc, e) => { const k = normStatus(e.status); acc[k] = (acc[k] || 0) + 1; return acc; }, {});
+  const data = isReceived ? receivedAll.filter((e) => normStatus(e.status) === stage) : sentAll;
+  const selectedView = selected ? { ...selected, status: overrides[selected.id] ?? selected.status } : null;
   const loading = isReceived ? recvLoading : sentLoading;
   const error = isReceived ? recvError : sentError;
 
@@ -479,6 +562,7 @@ export default function MyEnquiriesScreen({ navigation, route }) {
         </View>
       )}
       <Segment tab={tab} setTab={setTab} receivedCount={received.length} sentCount={sent.length} />
+      {isReceived ? <StageTabs stage={stage} setStage={setStage} counts={stageCounts} /> : null}
       {ecomId && isReceived ? (
         <View style={s.filterBanner}>
           <Ionicons name="funnel-outline" size={13} color={ORANGE} />
@@ -509,9 +593,9 @@ export default function MyEnquiriesScreen({ navigation, route }) {
       <View style={s.emptyIconWrap}>
         <Ionicons name={isReceived ? 'mail-open-outline' : 'paper-plane-outline'} size={30} color="#FCA5A5" />
       </View>
-      <Text style={s.emptyTitle}>{isReceived ? 'No enquiries received yet' : 'You have not sent any enquiries yet'}</Text>
+      <Text style={s.emptyTitle}>{isReceived ? (receivedAll.length ? `No ${getStatus(stage).label.toLowerCase()} enquiries` : 'No enquiries received yet') : 'You have not sent any enquiries yet'}</Text>
       <Text style={s.emptySub}>
-        {isReceived ? 'When someone enquires about your product, it will appear here.' : 'Enquiries you send on a product will appear here.'}
+        {isReceived ? (stage === ST_NEW ? 'New enquiries appear here. Call or WhatsApp moves them to Review.' : stage === ST_REVIEW ? 'Enquiries you contacted appear here. Tap Close when done.' : 'Closed enquiries appear here.') : 'Enquiries you send on a product will appear here.'}
       </Text>
     </View>
   );
@@ -523,7 +607,7 @@ export default function MyEnquiriesScreen({ navigation, route }) {
         data={data}
         keyExtractor={(it) => `${tab}-${it.id}`}
         renderItem={({ item }) => (
-          <EnquiryCard item={item} mode={tab} onOpen={setSelected} onCall={handleCall} onWhatsApp={handleWhatsApp} />
+          <EnquiryCard item={item} mode={tab} onOpen={setSelected} onCall={handleCall} onWhatsApp={handleWhatsApp} onClose={handleCloseEnquiry} />
         )}
         ListHeaderComponent={listHeader}
         ListEmptyComponent={emptyView}
@@ -540,12 +624,13 @@ export default function MyEnquiriesScreen({ navigation, route }) {
       />
       <DetailModal
         visible={Boolean(selected)}
-        item={selected}
+        item={selectedView}
         mode={tab}
         onClose={() => setSelected(null)}
         onCall={handleCall}
         onWhatsApp={handleWhatsApp}
         onEmail={handleEmail}
+        onCloseEnquiry={handleCloseEnquiry}
       />
     </SafeAreaView>
   );
@@ -570,6 +655,13 @@ const s = StyleSheet.create({
   segText: { fontSize: 13, color: '#64748b', fontFamily: FONT.bold, fontWeight: '600' },
   segCount: { minWidth: 20, paddingHorizontal: 6, height: 18, borderRadius: 9, backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' },
   segCountText: { fontSize: 10, color: '#475569', fontWeight: '700' , fontFamily: FONT.bold },
+
+  stageWrap: { flexDirection: 'row', gap: 8, marginBottom: 14 },
+  stageBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff' },
+  stageBtnActive: { borderColor: ORANGE, backgroundColor: '#FEF2F2' },
+  stageText: { fontSize: 12.5, color: '#64748b', fontWeight: '600', fontFamily: FONT.bold },
+  stageCount: { minWidth: 20, paddingHorizontal: 6, height: 18, borderRadius: 9, backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' },
+  stageCountText: { fontSize: 10, color: '#475569', fontWeight: '700', fontFamily: FONT.bold },
 
   filterBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 12 },
   filterText: { fontSize: 12, color: '#991B1B' , fontFamily: FONT.regular },

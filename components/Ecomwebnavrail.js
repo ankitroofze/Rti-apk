@@ -30,7 +30,9 @@ const NAV_ITEMS = [
   { label: 'Live Streaming', icon: 'radio-outline' },
   { label: 'Certification', icon: 'ribbon-outline' },
   { label: 'Notifications', icon: 'notifications-outline' },
-  { label: 'Ecome (buy / sell)', icon: 'pricetag-outline', screen: 'Ecome' },
+  { label: 'Buy Product', icon: 'cart-outline', screen: 'FarmingBuy' },
+  { label: 'Sell Product', icon: 'cloud-upload-outline', screen: 'Sell' },
+  { label: 'My Ecom Product', icon: 'storefront-outline', screen: 'CommerceAdsCenter' },
   { label: 'Logout', icon: 'log-out-outline' },
 ];
 

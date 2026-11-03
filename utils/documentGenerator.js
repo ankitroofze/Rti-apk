@@ -76,8 +76,8 @@ export async function buildIdCardHtml(profile, { webPreview = Platform.OS === 'w
   const micIconSrc = await resolveModuleImageSrc(MIC_ICON, 'image/png');
   const micSvg = `<img src="${esc(micIconSrc || MIC_ICON_B64)}" style="width:40px;height:40px;object-fit:contain;border-radius:50%;"/>`;
   const qrDataUri = await buildQrDataUri(profile);
-  const verifyUrl = (await getIdCardVerification())?.verification_url || '';
-  const verifyLineHtml = verifyUrl ? `<div style="font-size:8px;color:#1a3a8a;word-break:break-all;margin-top:2px;">Verify: ${esc(verifyUrl)}</div>` : '';
+  // Verify URL text ID card par nahi dikhana (sirf QR rahega)
+  const verifyLineHtml = '';
   const qrInnerHtml = qrDataUri
     ? `<div class="id-card-qr-inner"><img src="${esc(qrDataUri)}" style="width:100%;height:100%;object-fit:contain;"/></div>`
     : '<div class="id-card-qr-inner"><div class="title">QR</div></div>';
@@ -372,8 +372,8 @@ export async function buildIdCardFrontAndBackHtml(profile, { webPreview = Platfo
   const micIconSrc = await resolveModuleImageSrc(MIC_ICON, 'image/png');
   const micSvg = `<img src="${esc(micIconSrc || MIC_ICON_B64)}" style="width:40px;height:40px;object-fit:contain;border-radius:50%;"/>`;
   const qrDataUri = await buildQrDataUri(profile);
-  const verifyUrl = (await getIdCardVerification())?.verification_url || '';
-  const verifyLineHtml = verifyUrl ? `<div style="font-size:8px;color:#1a3a8a;word-break:break-all;margin-top:2px;">Verify: ${esc(verifyUrl)}</div>` : '';
+  // Verify URL text ID card par nahi dikhana (sirf QR rahega)
+  const verifyLineHtml = '';
   const qrInnerHtml = qrDataUri
     ? `<div class="id-card-qr-inner"><img src="${esc(qrDataUri)}" style="width:100%;height:100%;object-fit:contain;"/></div>`
     : '<div class="id-card-qr-inner"><div class="title">QR</div></div>';

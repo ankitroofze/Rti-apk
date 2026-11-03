@@ -1,7 +1,9 @@
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import React, { useRef, useState, useEffect } from 'react';
 import { Keyboard, findNodeHandle } from 'react-native';
 import KeyboardAwareScroll from '../components/KeyboardAwareScroll';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
+import ModuleWebHeader from '../components/Modulewebheader';
 import {
   View,
   Text,
@@ -17,6 +19,7 @@ import {
   ActivityIndicator,
   useWindowDimensions,
   ImageBackground,
+  Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -153,12 +156,13 @@ const getCityChoices = (user = {}) => {
 
 // ─── Shared Form Logic (hook) ─────────────────────────────────────────────────
 
-function useSellForm(navigation) {
+function useSellForm(navigation, editListing) {
   const { showToast } = useToast();
+  const isEditing = Boolean(editListing && editListing.id);
   const [sectorOpen, setSectorOpen] = useState(false);
   const [sector, setSector] = useState('');
   const [whatSelling, setWhatSelling] = useState('');
-  const [quantity, setQuantity] = useState('');
+  const [inStock, setInStock] = useState(true); // ✅ quantity ki jagah In Stock toggle
   const [price, setPrice] = useState('');
   const [description, setDescription] = useState('');
   const [city, setCity] = useState('');
@@ -202,6 +206,24 @@ function useSellForm(navigation) {
     loadSummary();
     return () => { alive = false; };
   }, []);
+
+  // EDIT MODE: Commerce & Ads Center se aaye product ka data form me pre-fill karo
+  React.useEffect(() => {
+    if (!editListing || !editListing.id) return;
+    setSector(editListing.sector || editListing.category || '');
+    setWhatSelling(editListing.title || '');
+    setInStock(editListing.in_stock !== false);
+    setPrice(String(editListing.price ?? ''));
+    setDescription(editListing.description || '');
+    setCity(editListing.city || '');
+    setContact(String(editListing.contact || '').replace(/\D/g, '').slice(-10));
+    const items = Array.isArray(editListing.mediaItems) && editListing.mediaItems.length
+      ? editListing.mediaItems
+      : (editListing.image ? [{ uri: editListing.image, type: 'image' }] : []);
+    setMediaItems(items);
+    setMediaUri(items[0]?.uri || '');
+    setMediaType(items[0] ? 'image' : '');
+  }, [editListing && editListing.id]);
 
   const openMediaPicker = async () => {
     if (Platform.OS !== 'web') {
@@ -256,7 +278,7 @@ function useSellForm(navigation) {
 
   const handleSubmit = async () => {
     if (saving) return;
-    if (subscriptionExpired) {
+    if (subscriptionExpired && !isEditing) {
       showToast('Your subscription has expired. Please buy a new plan to continue selling.', 'error');
       return;
     }
@@ -264,7 +286,7 @@ function useSellForm(navigation) {
       showToast('Please fill Category and What are you selling.', 'error');
       return;
     }
-    if (!mediaItems.length) {
+    if (!isEditing && !mediaItems.length) {
       showToast('Please upload at least one product image.', 'error');
       return;
     }
@@ -294,7 +316,7 @@ function useSellForm(navigation) {
       sector,
       ecomSubId: ECOME_SUB_ID_BY_SECTOR[sector] || 1,
       description: description.trim(),
-      quantity: quantity.trim(),
+      inStock,
       price: price.trim(),
       city: city.trim(),
       contact: normalizeIndianMobileNumber(contact),
@@ -307,6 +329,31 @@ function useSellForm(navigation) {
       author_profile_image: user.profile_image || '',
       createdBy: user.email,
     };
+    if (isEditing) {
+      const upd = await UserStore.updateEcomeListing(editListing.id, {
+        ecomSubId: ECOME_SUB_ID_BY_SECTOR[sector] || editListing.ecom_sub_id || 1,
+        sector,
+        title: listing.title,
+        inStock: listing.inStock,
+        price: listing.price,
+        description: listing.description,
+        city: listing.city,
+        contact: listing.contact,
+      });
+      setSaving(false);
+      if (!upd.ok) {
+        if (upd.isAuth) {
+          showToast('Your session has expired. Please login again.', 'error');
+          navigation.navigate('Login');
+          return;
+        }
+        showToast(upd.message || 'Unable to update your product. Please try again.', 'error');
+        return;
+      }
+      showToast('Your product has been updated successfully.', 'success');
+      navigation.navigate('CommerceAdsCenter');
+      return;
+    }
     const result = await UserStore.createEcomeListing(listing);
     setSaving(false);
     if (!result.ok) {
@@ -320,25 +367,54 @@ function useSellForm(navigation) {
     }
     setCredits(result.credits || 0);
     showToast('Your listing has been uploaded successfully and is visible on Buy page.', 'success');
-    setSector(''); setWhatSelling(''); setQuantity(''); setPrice('');
+    setSector(''); setWhatSelling(''); setInStock(true); setPrice('');
     setDescription(''); setCity(''); setContact('');
     setMediaItems([]); setMediaUri(''); setMediaType('');
-    navigation.navigate('Ecome');
+    // Web par purana Ecome landing page nahi dikhana — seedha Buy page (listing wahi dikhegi)
+    navigation.navigate(Platform.OS === 'web' ? 'FarmingBuy' : 'Ecome');
   };
 
   return {
     sectorOpen, setSectorOpen, sector, setSector,
-    whatSelling, setWhatSelling, quantity, setQuantity,
+    whatSelling, setWhatSelling, inStock, setInStock,
     price, setPrice, description, setDescription,
     city, setCity, cityOpen, setCityOpen, cityChoices,
     contact, setContact, mediaItems, mediaUri, mediaType,
-    saving, credits, plans, subscriptionExpired,
+    saving, credits, plans, subscriptionExpired, isEditing,
     showSubscriptionAlert, setShowSubscriptionAlert,
     confirmPlan, setConfirmPlan,
     whatSellingInputRef,
     openMediaPicker, removeMediaItem,
     handleBuyPlan, handleConfirmBuy, handleSubmit,
   };
+}
+
+// ─── Stock Toggle (shared) ────────────────────────────────────────────────────
+// ON = In Stock (buyers ko normal dikhega) · OFF = Out of Stock (buyers ko "Out of Stock" dikhega)
+function StockToggle({ inStock, onChange }) {
+  return (
+    <View style={{
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      borderWidth: 1, borderColor: inStock ? '#bbf7d0' : '#fecaca',
+      backgroundColor: inStock ? '#f0fdf4' : '#fef2f2',
+      borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, marginTop: 14, marginBottom: 4,
+    }}>
+      <View style={{ flex: 1, paddingRight: 10 }}>
+        <Text style={{ fontSize: 14, fontWeight: '700', color: inStock ? '#166534' : '#b91c1c' }}>
+          {inStock ? 'In Stock' : 'Out of Stock'}
+        </Text>
+        <Text style={{ fontSize: 11.5, color: '#64748b', marginTop: 2 }}>
+          {inStock ? 'Product available hai. Band karoge to buyers ko Out of Stock dikhega.' : 'Buyers ko "Out of Stock" dikh raha hai. Chalu karo jab stock aa jaye.'}
+        </Text>
+      </View>
+      <Switch
+        value={!!inStock}
+        onValueChange={onChange}
+        trackColor={{ false: '#fca5a5', true: '#86efac' }}
+        thumbColor={inStock ? '#16a34a' : '#dc2626'}
+      />
+    </View>
+  );
 }
 
 // ─── Confirm Plan Modal (shared) ──────────────────────────────────────────────
@@ -376,9 +452,9 @@ function ConfirmPlanModal({ plan, onConfirm, onCancel }) {
 
 // ─── Mobile Layout ────────────────────────────────────────────────────────────
 
-function EcomeSellMobile({ navigation }) {
+function EcomeSellMobile({ navigation, editListing }) {
   const insets = useSafeAreaInsets();
-  const form = useSellForm(navigation);
+  const form = useSellForm(navigation, editListing);
     const [kbHeight, setKbHeight] = useState(0);
   const scrollRef = useRef(null);
 
@@ -438,7 +514,7 @@ function EcomeSellMobile({ navigation }) {
           <Ionicons name="chevron-back" size={22} color="#ffffff" />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Sell</Text>
+          <Text style={styles.headerTitle}>{form.isEditing ? 'Edit Product' : 'Sell'}</Text>
           <Text style={styles.headerSub}>Ecome (buy / sell)</Text>
         </View>
       </ImageBackground>
@@ -481,8 +557,7 @@ function EcomeSellMobile({ navigation }) {
         <Text style={styles.fieldLabel}>2. What are you selling?<Text style={styles.required}> *</Text></Text>
         <TextInput ref={form.whatSellingInputRef} style={styles.inputBox} placeholder="e.g. Laptop, mobile, sofa, washing machine" placeholderTextColor={SHURU.placeholder} value={form.whatSelling} onChangeText={form.setWhatSelling} multiline />
 
-        <Text style={styles.fieldLabel}>Quantity Available</Text>
-        <TextInput style={styles.inputBox} placeholder="e.g. 100 kg, 1 machine, 2 cows" placeholderTextColor={SHURU.placeholder} value={form.quantity} onChangeText={form.setQuantity} />
+        <StockToggle inStock={form.inStock} onChange={form.setInStock} />
 
         <Text style={styles.fieldLabel}>Price (₹)</Text>
         <TextInput style={styles.inputBox} placeholder="Enter price amount" placeholderTextColor={SHURU.placeholder} value={form.price} onChangeText={form.setPrice} keyboardType="numeric" />
@@ -529,7 +604,7 @@ function EcomeSellMobile({ navigation }) {
         <TextInput style={styles.inputBox} placeholder="Enter your contact number" placeholderTextColor={SHURU.placeholder} value={form.contact} onChangeText={(v) => form.setContact(normalizeIndianMobileNumber(v))} keyboardType="phone-pad" maxLength={10} />
 
         <TouchableOpacity style={styles.submitBtnFull} onPress={form.handleSubmit} activeOpacity={0.85}>
-          <Text style={styles.submitBtnFullText}>Next</Text>
+          <Text style={styles.submitBtnFullText}>{form.isEditing ? 'Update Product' : 'Next'}</Text>
         </TouchableOpacity>
       </KeyboardAwareScroll>
 
@@ -544,30 +619,19 @@ function EcomeSellMobile({ navigation }) {
 
 // ─── Web Layout (pure RN — no HTML) ──────────────────────────────────────────
 
-function EcomeSellWeb({ navigation }) {
-  const form = useSellForm(navigation);
+function EcomeSellWeb({ navigation, editListing }) {
+  const form = useSellForm(navigation, editListing);
   const { width } = useWindowDimensions();
   const isNarrow = width <= 720;
 
   return (
     <View style={web.root}>
-      <ImageBackground
-        source={require('../assets/images/profile-red.png')}
-        resizeMode="cover"
-        imageStyle={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100%', resizeMode: 'cover' }}
-        style={web.topbar}
-      >
-        <Text style={web.logo}>
-          News<Text style={{ color: 'rgba(255,255,255,0.75)' }}>Hub</Text>
-        </Text>
-        <TouchableOpacity style={web.backBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
-          <Ionicons name="arrow-back" size={14} color="#ffffff" />
-          <Text style={web.backBtnText}>Back</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={web.topSubmitBtn} onPress={form.handleSubmit} activeOpacity={0.85}>
-          <Text style={web.topSubmitBtnText}>Submit</Text>
-        </TouchableOpacity>
-      </ImageBackground>
+      {/* Header — News Feed jaisa common ModuleWebHeader (design ek hi jagah components/Modulewebheader.js me) */}
+      <ModuleWebHeader
+        title={form.isEditing ? 'Edit Product' : 'Sell'}
+        navigation={navigation}
+        onBack={() => navigation.goBack()}
+      />
 
       <ScrollView
         style={web.scroll}
@@ -576,7 +640,7 @@ function EcomeSellWeb({ navigation }) {
         keyboardShouldPersistTaps="handled"
       >
         <View style={[web.formWrap, isNarrow && { maxWidth: '100%' }]}>
-          <Text style={web.pageTitle}>Sell</Text>
+          <Text style={web.pageTitle}>{form.isEditing ? 'Edit Product' : 'Sell'}</Text>
           <Text style={web.pageSub}>Ecome (buy / sell) — List your product for sale</Text>
 
           <Text style={web.label}>1. Category <Text style={web.required}>*</Text></Text>
@@ -607,8 +671,7 @@ function EcomeSellWeb({ navigation }) {
           <Text style={web.label}>2. What are you selling? <Text style={web.required}>*</Text></Text>
           <TextInput ref={form.whatSellingInputRef} style={web.input} placeholder="e.g. Laptop, mobile, sofa, washing machine" placeholderTextColor={SHURU.placeholder} value={form.whatSelling} onChangeText={form.setWhatSelling} />
 
-          <Text style={web.label}>Quantity Available</Text>
-          <TextInput style={web.input} placeholder="e.g. 100 kg, 1 machine, 2 cows" placeholderTextColor={SHURU.placeholder} value={form.quantity} onChangeText={form.setQuantity} />
+          <StockToggle inStock={form.inStock} onChange={form.setInStock} />
 
           <Text style={web.label}>Price (₹)</Text>
           <TextInput style={web.input} placeholder="Enter price amount" placeholderTextColor={SHURU.placeholder} value={form.price} onChangeText={form.setPrice} keyboardType="numeric" />
@@ -650,7 +713,7 @@ function EcomeSellWeb({ navigation }) {
           <TextInput style={web.input} placeholder="Enter your contact number" placeholderTextColor={SHURU.placeholder} value={form.contact} onChangeText={(v) => form.setContact(normalizeIndianMobileNumber(v))} keyboardType="phone-pad" maxLength={10} />
 
           <TouchableOpacity style={web.submitBtn} onPress={form.handleSubmit} activeOpacity={0.85}>
-            <Text style={web.submitBtnText}>Next</Text>
+            <Text style={web.submitBtnText}>{form.isEditing ? 'Update Product' : 'Next'}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -666,7 +729,10 @@ function EcomeSellWeb({ navigation }) {
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export default function EcomeSellScreen({ navigation }) {
+export default function EcomeSellScreen({ navigation, route }) {
+  const editListing = route?.params?.editListing;
+  // Desktop web par ye page kabhi bina sidebar ke na khule
+  const redirectingToSidebar = useQuickMenuRedirect(navigation, 'Sell', route?.params);
   // ✅ NEW: Sell page pe aane se pehle ecom subscription active hai ya nahi check karo.
   // Agar nahi hai, to EcomSubscription screen pe bhej do — plan lene ke baad wahi wapas
   // 'Sell' pe redirect kar dega (see screens/EcomSubscriptionScreen.js).
@@ -675,6 +741,9 @@ export default function EcomeSellScreen({ navigation }) {
 
   useEffect(() => {
     let active = true;
+    if (redirectingToSidebar) return undefined;
+    // Edit mode me subscription check nahi (sirf purana product update ho raha hai)
+    if (editListing && editListing.id) { setSubOk(true); setCheckingSub(false); return undefined; }
     (async () => {
         const user = await UserStore.getCurrentUserSynced();
       if (!active) return;
@@ -689,6 +758,8 @@ export default function EcomeSellScreen({ navigation }) {
     return () => { active = false; };
   }, [navigation]);
 
+  if (redirectingToSidebar) return null;
+
   if (checkingSub || !subOk) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' }}>
@@ -697,8 +768,8 @@ export default function EcomeSellScreen({ navigation }) {
     );
   }
 
-  if (Platform.OS === 'web') return <EcomeSellWeb navigation={navigation} />;
-  return <EcomeSellMobile navigation={navigation} />;
+  if (Platform.OS === 'web') return <EcomeSellWeb navigation={navigation} editListing={editListing} />;
+  return <EcomeSellMobile navigation={navigation} editListing={editListing} />;
 }
 
 // ─── Shared Modal Styles ──────────────────────────────────────────────────────

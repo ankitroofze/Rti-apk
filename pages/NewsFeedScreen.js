@@ -16,7 +16,7 @@ import VideoPreview from '../components/VideoPreview';
 import VerifiedBadge from '../components/VerifiedBadge';
 import { useToast } from '../components/ui/ToastProvider';
 import { UserStore } from '../store/UserStore';
-import { INDIAN_STATES } from './locationData';
+import { INDIAN_STATES, getDistricts, getTalukas } from './locationData';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getAdRedirectMeta, openAdRedirect } from '../utils/adRedirect';
@@ -196,16 +196,19 @@ const FilterChip = ({ label, active, onPress }) => (
   </TouchableOpacity>
 );
 // ─── FilterDropdown ────────────────────────────────────────────────
-const FilterDropdown = ({ label, value, options, onSelect }) => {
+const FilterDropdown = ({ label, value, options, onSelect, searchable = true, disabled = false, emptyText = 'No data found' }) => {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const isActive = value && value !== 'All';
+  const q = query.trim().toLowerCase();
+  const shown = q ? options.filter((o) => String(o).toLowerCase().includes(q)) : options;
   const content = (
     <>
       <Text
-        style={[styles.dropdownBtnText, isActive && styles.dropdownBtnTextActive]}
+        style={[styles.dropdownBtnText, isActive && styles.dropdownBtnTextActive, disabled && { color: C.neutral400 }]}
         numberOfLines={1}
       >
-        {value || label}
+        {disabled ? label : (value || label)}
       </Text>
       <Feather
         name={open ? 'chevron-up' : 'chevron-down'}
@@ -216,23 +219,48 @@ const FilterDropdown = ({ label, value, options, onSelect }) => {
   );
   return (
     <View style={styles.dropdownWrapper}>
-      <TouchableOpacity onPress={() => setOpen((p) => !p)} activeOpacity={0.8}>
-        {isActive ? (
+      <TouchableOpacity
+        onPress={() => { if (disabled) return; setOpen((p) => !p); setQuery(''); }}
+        activeOpacity={disabled ? 1 : 0.8}
+      >
+        {isActive && !disabled ? (
           <LinearGradient colors={['#450A0A', '#B91C1C', '#7F1D1D']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.dropdownBtn}>
             {content}
           </LinearGradient>
         ) : (
-          <View style={styles.dropdownBtn}>{content}</View>
+          <View style={[styles.dropdownBtn, disabled && { backgroundColor: '#F3F4F6' }]}>{content}</View>
         )}
       </TouchableOpacity>
-      {open ? (
+      {open && !disabled ? (
         <View style={styles.dropdownList}>
-          <ScrollView style={styles.dropdownScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled>
-            {options.map((opt) => (
+          {searchable ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, margin: 8, paddingHorizontal: 10, height: 38, borderWidth: 1, borderColor: C.border, borderRadius: 10, backgroundColor: '#FAFAFA' }}>
+              <Feather name="search" size={14} color={C.neutral400} />
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder={`Search ${String(label).replace(/^Select\s+/i, '').toLowerCase()}...`}
+                placeholderTextColor={C.neutral400}
+                style={[{ flex: 1, fontSize: 13, color: C.textBody, paddingVertical: 0 }, styles.noOutline]}
+              />
+              {query ? (
+                <TouchableOpacity onPress={() => setQuery('')}>
+                  <Feather name="x" size={14} color={C.neutral400} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ) : null}
+          <ScrollView style={styles.dropdownScroll} showsVerticalScrollIndicator={false} nestedScrollEnabled keyboardShouldPersistTaps="handled">
+            {shown.length === 0 ? (
+              <Text style={{ fontSize: 13, color: C.neutral400, paddingHorizontal: 14, paddingVertical: 12 }}>
+                {options.length === 0 ? emptyText : 'No results found'}
+              </Text>
+            ) : null}
+            {shown.map((opt) => (
               <TouchableOpacity
                 key={opt}
                 style={[styles.dropdownItem, value === opt && styles.dropdownItemActive]}
-                onPress={() => { onSelect(opt); setOpen(false); }}
+                onPress={() => { onSelect(opt); setOpen(false); setQuery(''); }}
               >
                 <Text style={[styles.dropdownItemText, value === opt && styles.dropdownItemTextActive]}>
                   {opt}
@@ -1256,11 +1284,6 @@ const handleLike = async (item) => {
           title={moduleName}
           navigation={navigation}
           onBack={handleGoBack}
-          rightExtra={
-            <TouchableOpacity onPress={handleAddNews} activeOpacity={0.8}>
-              <Feather name="plus-circle" size={20} color="#ffffff" />
-            </TouchableOpacity>
-          }
         />
       ) : (
         <ModuleMobileHeader
@@ -1414,45 +1437,35 @@ const handleLike = async (item) => {
                   <Feather name="map-pin" size={13} color={C.primary} />
                   <Text style={styles.filterLabel}>State</Text>
                 </View>
-                <FilterDropdown label="Select State" value={filterState} options={stateOptions} onSelect={setFilterState} />
+                <FilterDropdown label="Select State" value={filterState} options={stateOptions} onSelect={(v) => { setFilterState(v); setFilterDistrict(''); setFilterTaluka(''); }} />
               </View>
               <View style={styles.filterGroup}>
                 <View style={styles.filterLabelRow}>
                   <Feather name="home" size={13} color={C.primary} />
                   <Text style={styles.filterLabel}>District / City</Text>
                 </View>
-                <View style={[styles.textFilterBox, focusedField === 'district' && styles.inputBoxFocused]}>
-                  <Feather name="search" size={14} color={focusedField === 'district' ? C.primary : C.neutral400} />
-                  <TextInput
-                    style={[styles.textFilterInput, styles.noOutline]}
-                    placeholder="Type district or city..."
-                    placeholderTextColor={C.neutral400}
-                    value={filterDistrict}
-                    onChangeText={setFilterDistrict}
-                    onFocus={() => setFocusedField('district')}
-                    onBlur={() => setFocusedField('')}
-                  />
-                  {filterDistrict ? <TouchableOpacity onPress={() => setFilterDistrict('')}><Feather name="x" size={14} color={C.neutral400} /></TouchableOpacity> : null}
-                </View>
+                {/* Register ke time jo State → District → Taluka data aata hai wahi yahan (locationData) */}
+                <FilterDropdown
+                  label={filterState && filterState !== 'All' ? 'Select District' : 'Select State first'}
+                  value={filterDistrict || 'All'}
+                  options={filterState && filterState !== 'All' ? ['All', ...getDistricts(filterState)] : []}
+                  disabled={!filterState || filterState === 'All'}
+                  onSelect={(v) => { setFilterDistrict(v === 'All' ? '' : v); setFilterTaluka(''); }}
+                />
               </View>
               <View style={styles.filterGroup}>
                 <View style={styles.filterLabelRow}>
                   <Feather name="map" size={13} color={C.primary} />
                   <Text style={styles.filterLabel}>Taluka</Text>
                 </View>
-                <View style={[styles.textFilterBox, focusedField === 'taluka' && styles.inputBoxFocused]}>
-                  <Feather name="search" size={14} color={focusedField === 'taluka' ? C.primary : C.neutral400} />
-                  <TextInput
-                    style={[styles.textFilterInput, styles.noOutline]}
-                    placeholder="Type taluka..."
-                    placeholderTextColor={C.neutral400}
-                    value={filterTaluka}
-                    onChangeText={setFilterTaluka}
-                    onFocus={() => setFocusedField('taluka')}
-                    onBlur={() => setFocusedField('')}
-                  />
-                  {filterTaluka ? <TouchableOpacity onPress={() => setFilterTaluka('')}><Feather name="x" size={14} color={C.neutral400} /></TouchableOpacity> : null}
-                </View>
+                <FilterDropdown
+                  label={filterDistrict ? 'Select Taluka' : 'Select District first'}
+                  value={filterTaluka || 'All'}
+                  options={filterState && filterState !== 'All' && filterDistrict ? ['All', ...getTalukas(filterState, filterDistrict)] : []}
+                  disabled={!filterDistrict}
+                  emptyText="No taluka found"
+                  onSelect={(v) => setFilterTaluka(v === 'All' ? '' : v)}
+                />
               </View>
               <View style={styles.filterGroup}>
                 <View style={styles.filterLabelRow}>

@@ -41,11 +41,36 @@ import WithdrawScreen from '../pages/WithdrawScreen';
 import SubscriptionPlansScreen from '../pages/SubscriptionPlansScreen';
 import EPaperScreen from '../pages/EPaperScreen';
 import LiveStreamingScreen from '../pages/LiveStreamingScreen';
+import LiveBroadcastScreen from '../pages/LiveBroadcastScreen';
 import CertificationScreen from '../pages/CertificationScreen';
 import MySubscriptionsScreen from '../pages/MySubscriptionsScreen';
 import NotificationsScreen from '../pages/NotificationsScreen';
 import EcomeScreen from './EcomeScreen';
 import MyEnquiriesScreen from '../pages/MyEnquiriesScreen';
+import AdPlansScreen from '../pages/AdPlansScreen';
+import MyQuizSubscriptionScreen from '../pages/MyQuizSubscriptionScreen';
+import QuizSubscriptionScreen from './QuizSubscriptionScreen';
+import EcomSubscriptionScreen from './EcomSubscriptionScreen';
+import SellScreen from './SellScreen';
+import FarmingBuyScreen from './FarmingBuyScreen';
+import MyAttemptsScreen from '../pages/MyAttemptsScreen';
+import MyEcomSubscriptionScreen from '../pages/MyEcomSubscriptionScreen';
+import CommerceAdsCenterScreen from '../pages/CommerceAdsCenterScreen';
+import SbMyAdsPage from '../pages/MyAdsScreen';
+import SbPaymentHistoryPage from '../pages/Paymenthistoryscreen';
+import SbSettingsPage from '../pages/SettingsScreen';
+import SbMyListingsPage from '../pages/MyListingsScreen';
+import SbSellerEnquiryDashboardPage from '../pages/SellerEnquiryDashboardScreen';
+import SbSellerReportsPage from '../pages/SellerReportsScreen';
+import SbMyAdSubscriptionPage from '../pages/MyAdSubscriptionScreen';
+import SbSubscriptionPlanDetailsPage from '../pages/SubscriptionPlanDetailsScreen';
+import SbPaymentPage from '../pages/PaymentScreen';
+import SbAdvertisePage from './AdvertiseScreen';
+import SbBlockedUsersScreenPage from '../pages/BlockedUsersScreen';
+import SbReferPage from './ReferScreen';
+import SbChoosePlanPage from './ChoosePlanScreen';
+import SbPurchaseBlueTickPage from './PurchaseBlueTickScreen';
+import SbAdLeadResponsePage from './AdLeadResponseScreen';
 
 // Font Family
 const FONT_FAMILY = Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto';
@@ -128,7 +153,9 @@ const QM_CSS = `
     display: flex;
     flex-direction: column;
   }
+  .qm-sidebar > * { flex-shrink: 0; }
   .qm-brand {
+    flex: 0 0 60px;
     height: 60px;
     box-sizing: border-box;
     display: flex;
@@ -330,7 +357,9 @@ const MENU_SECTIONS = [
   {
     title: 'Marketplace',
     items: [
-    { label: 'Ecome (buy / sell)', icon: 'leaf-outline', screen: 'Ecome', iconStyle: 'farmGreen' },
+    { label: 'Buy Product', icon: 'cart-outline', screen: 'FarmingBuy', iconStyle: 'farmGreen' },
+      { label: 'Sell Product', icon: 'cloud-upload-outline', screen: 'Sell', iconStyle: 'farmGreen' },
+      { label: 'My Ecom Product', icon: 'storefront-outline', screen: 'CommerceAdsCenter', iconStyle: 'farmGreen' },
       { label: 'Ecom Enquiries', icon: 'chatbubbles-outline', screen: 'MyEnquiries', iconStyle: 'orange' },
     ],
   },
@@ -400,10 +429,47 @@ const CARD_DESCS = {
   'Live Streaming': 'Go live or watch broadcasts',
   'Certification': 'Earn & showcase credentials',
  'Notifications': '0 unread alerts waiting',
-  'Ecome (buy / sell)': 'Buy, sell or rent e-commerce resources',
+  'Buy Product': 'Browse products listed for sale',
+  'Sell Product': 'List your product for sale',
+  'My Ecom Product': 'Edit or delete your products',
   'Ecom Enquiries': 'Received & sent enquiries',
   'Logout': 'Sign out of your account',
 };
+
+// ✅ "Subscription Plans" par hover karte hi ye 4 options flyout me dikhte hain
+// (pehle ye "My Subscription" page ke andar 4 rows the, ab sidebar se direct).
+const SUBSCRIPTION_SUBMENU = [
+  { label: 'Role / Membership Plans', icon: 'ribbon-outline', screen: 'Subscription Plans' },
+  { label: 'Quiz Subscription Plans', icon: 'checkbox-outline', screen: 'My Quiz Subscription' },
+  { label: 'Ads Subscription Plans', icon: 'trending-up-outline', screen: 'AdPlans' },
+  { label: 'Ecom Subscription Plans', icon: 'bag-handle-outline', screen: 'My Ecom Subscription' },
+];
+
+// In screens par bhi sidebar rehna chahiye (purchase list pages) — Subscription Plans active dikhe
+const SUBSCRIPTION_GROUP_SCREENS = [
+  'Subscription Plans', 'My Quiz Subscription', 'AdPlans', 'My Subscriptions', 'QuizSubscription',
+];
+
+// ✅ "Ecommerce" par hover => Ecom Subscription Plans / Sell Product / Buy Product
+// (purana "Ecome (buy / sell)" landing page ab nahi dikhta)
+const ECOM_SUBMENU = [
+  { label: 'Ecom Subscription Plans', icon: 'bag-handle-outline', screen: 'My Ecom Subscription' },
+  { label: 'Sell Product', icon: 'cloud-upload-outline', screen: 'Sell' },
+  { label: 'Buy Product', icon: 'cart-outline', screen: 'FarmingBuy' },
+  { label: 'My Ecom Product', icon: 'storefront-outline', screen: 'CommerceAdsCenter' },
+];
+const ECOM_GROUP_SCREENS = ['My Ecom Subscription', 'EcomSubscription', 'Sell', 'FarmingBuy', 'CommerceAdsCenter'];
+// ✅ "Certification" par hover => Quiz Subscription Plans / Start Quiz / My Attempts
+const CERT_SUBMENU = [
+  { label: 'Quiz Subscription Plans', icon: 'card-outline', screen: 'My Quiz Subscription' },
+  { label: 'Start Quiz', icon: 'play-circle-outline', screen: 'Certification' },
+  { label: 'My Attempts', icon: 'list-outline', screen: 'MyAttempts' },
+];
+const CERT_GROUP_SCREENS = ['Certification', 'MyAttempts', 'My Quiz Subscription', 'QuizSubscription'];
+// Ye screens do dropdowns me aati hain (Subscription Plans + Certification) — jis group se khola wahi highlight ho
+const SHARED_GROUP_SCREENS = ['My Quiz Subscription', 'QuizSubscription'];
+// Jo screen web par kabhi nahi dikhni chahiye => uski jagah ye khule
+const SCREEN_ALIAS = { Ecome: 'FarmingBuy' };
 
 const WEB_MODULES = [
   { label: 'Home', icon: 'home-outline', screen: 'Home', iconStyle: 'orange', isNavigation: true },
@@ -413,14 +479,43 @@ const WEB_MODULES = [
   { label: 'My Network', icon: 'people-outline', screen: 'My Network', iconStyle: 'green', component: MyNetworkScreen },
   { label: 'Wallet', icon: 'wallet-outline', screen: 'Wallet', iconStyle: 'amber', component: WalletScreen },
   { label: 'Withdraw', icon: 'cash-outline', screen: 'Withdraw', iconStyle: 'orange', component: WithdrawScreen },
-  { label: 'Subscription Plans', icon: 'diamond-outline', screen: 'Subscription Plans', iconStyle: 'pink', component: SubscriptionPlansScreen },
-  { label: 'My Subscription', icon: 'layers-outline', screen: 'My Subscriptions', iconStyle: 'pink', component: MySubscriptionsScreen },
+  { label: 'Subscription Plans', icon: 'diamond-outline', screen: 'Subscription Plans', iconStyle: 'pink', component: SubscriptionPlansScreen, subMenu: SUBSCRIPTION_SUBMENU, groupScreens: SUBSCRIPTION_GROUP_SCREENS },
+  // sidebar me ab nahi dikhte (hideInSidebar) — sirf embedded screens ke taur par registered, taaki sidebar bana rahe
+  { label: 'My Subscription', icon: 'layers-outline', screen: 'My Subscriptions', iconStyle: 'pink', component: MySubscriptionsScreen, hideInSidebar: true },
+  { label: 'Quiz Subscription Plans', icon: 'checkbox-outline', screen: 'My Quiz Subscription', iconStyle: 'pink', component: MyQuizSubscriptionScreen, hideInSidebar: true },
+  { label: 'Ads Subscription Plans', icon: 'trending-up-outline', screen: 'AdPlans', iconStyle: 'pink', component: AdPlansScreen, hideInSidebar: true },
+  // ✅ FIX: Quiz / Ecom subscription ki "purchase" list screens bhi embedded — pehle standalone khulti thi (bina sidebar)
+  { label: 'Quiz Subscription', icon: 'checkbox-outline', screen: 'QuizSubscription', iconStyle: 'pink', component: QuizSubscriptionScreen, hideInSidebar: true },
+  { label: 'Ecom Subscription', icon: 'bag-handle-outline', screen: 'EcomSubscription', iconStyle: 'pink', component: EcomSubscriptionScreen, hideInSidebar: true },
+  { label: 'Ecom Subscription Plans', icon: 'bag-handle-outline', screen: 'My Ecom Subscription', iconStyle: 'pink', component: MyEcomSubscriptionScreen, hideInSidebar: true },
   { label: 'e-Paper', icon: 'document-text-outline', screen: 'e-Paper', iconStyle: 'indigo', component: EPaperScreen },
-  { label: 'Live Streaming', icon: 'radio-outline', screen: 'Live Streaming', iconStyle: 'red', component: LiveStreamingScreen },
-  { label: 'Certification', icon: 'ribbon-outline', screen: 'Certification', iconStyle: 'cyan', component: CertificationScreen },
+  { label: 'Live Streaming', icon: 'radio-outline', screen: 'Live Streaming', iconStyle: 'red', component: LiveStreamingScreen, relatedScreens: ['Start Live'] },
+  // Start Live bhi sidebar ke andar khulta hai (Live Streaming highlighted rehta hai)
+  { label: 'Start Live', icon: 'radio-outline', screen: 'Start Live', iconStyle: 'red', component: LiveBroadcastScreen, hideInSidebar: true },
+  { label: 'Certification', icon: 'ribbon-outline', screen: 'Certification', iconStyle: 'cyan', component: CertificationScreen, subMenu: CERT_SUBMENU, groupScreens: CERT_GROUP_SCREENS },
+  { label: 'My Attempts', icon: 'list-outline', screen: 'MyAttempts', iconStyle: 'cyan', component: MyAttemptsScreen, hideInSidebar: true },
   { label: 'Notifications', icon: 'notifications-outline', screen: 'Notifications', iconStyle: 'green', component: NotificationsScreen },
-{ label: 'Ecome (buy / sell)', icon: 'leaf-outline', screen: 'Ecome', iconStyle: 'farmGreen', component: EcomeScreen },
+{ label: 'Ecommerce', icon: 'leaf-outline', screen: '__ecom__', iconStyle: 'farmGreen', subMenu: ECOM_SUBMENU, groupScreens: ECOM_GROUP_SCREENS, toggleOnly: true },
+  { label: 'Sell Product', icon: 'cloud-upload-outline', screen: 'Sell', iconStyle: 'farmGreen', component: SellScreen, hideInSidebar: true },
+  { label: 'Buy Product', icon: 'cart-outline', screen: 'FarmingBuy', iconStyle: 'farmGreen', component: FarmingBuyScreen, hideInSidebar: true },
+  { label: 'My Ecom Product', icon: 'storefront-outline', screen: 'CommerceAdsCenter', iconStyle: 'farmGreen', component: CommerceAdsCenterScreen, hideInSidebar: true },
   { label: 'Ecom Enquiries', icon: 'chatbubbles-outline', screen: 'MyEnquiries', iconStyle: 'orange', component: MyEnquiriesScreen },
+  // Baaki saare pages bhi ab sidebar ke andar khulte hain
+  { label: 'My Ads', icon: 'document-outline', screen: 'MyAds', iconStyle: 'orange', component: SbMyAdsPage, hideInSidebar: true },
+  { label: 'Payment History', icon: 'document-outline', screen: 'PaymentHistory', iconStyle: 'orange', component: SbPaymentHistoryPage, hideInSidebar: true },
+  { label: 'Settings', icon: 'document-outline', screen: 'Settings', iconStyle: 'orange', component: SbSettingsPage, hideInSidebar: true },
+  { label: 'My Listings', icon: 'document-outline', screen: 'MyListings', iconStyle: 'orange', component: SbMyListingsPage, hideInSidebar: true },
+  { label: 'Received Enquiries', icon: 'document-outline', screen: 'SellerEnquiryDashboard', iconStyle: 'orange', component: SbSellerEnquiryDashboardPage, hideInSidebar: true },
+  { label: 'Seller Reports', icon: 'document-outline', screen: 'SellerReports', iconStyle: 'orange', component: SbSellerReportsPage, hideInSidebar: true },
+  { label: 'My Ad Subscription', icon: 'document-outline', screen: 'MyAdSubscription', iconStyle: 'orange', component: SbMyAdSubscriptionPage, hideInSidebar: true },
+  { label: 'Plan Details', icon: 'document-outline', screen: 'SubscriptionPlanDetails', iconStyle: 'orange', component: SbSubscriptionPlanDetailsPage, hideInSidebar: true },
+  { label: 'Payment', icon: 'document-outline', screen: 'Payment', iconStyle: 'orange', component: SbPaymentPage, hideInSidebar: true },
+  { label: 'Advertise', icon: 'document-outline', screen: 'Advertise', iconStyle: 'orange', component: SbAdvertisePage, hideInSidebar: true },
+  { label: 'Blocked Users', icon: 'document-outline', screen: 'BlockedUsersScreen', iconStyle: 'orange', component: SbBlockedUsersScreenPage, hideInSidebar: true },
+  { label: 'Refer', icon: 'document-outline', screen: 'Refer', iconStyle: 'orange', component: SbReferPage, hideInSidebar: true },
+  { label: 'Choose Plan', icon: 'document-outline', screen: 'ChoosePlan', iconStyle: 'orange', component: SbChoosePlanPage, hideInSidebar: true },
+  { label: 'Blue Tick', icon: 'document-outline', screen: 'PurchaseBlueTick', iconStyle: 'orange', component: SbPurchaseBlueTickPage, hideInSidebar: true },
+  { label: 'Ad Lead Response', icon: 'document-outline', screen: 'AdLeadResponse', iconStyle: 'orange', component: SbAdLeadResponsePage, hideInSidebar: true },
   { label: 'Logout', icon: 'log-out-outline', screen: '__logout__', iconStyle: 'rose', isDestructive: true },
 ];
 
@@ -442,8 +537,13 @@ const SLUG_TO_SCREEN = {
   'live-streaming': 'Live Streaming',
   certification: 'Certification',
   notifications: 'Notifications',
-  ecome: 'Ecome',
-  shop: 'Ecome',
+  ecome: 'FarmingBuy',
+  ecommerce: 'FarmingBuy',
+  shop: 'FarmingBuy',
+  sell: 'Sell',
+  buy: 'FarmingBuy',
+  'commerce-ads-center': 'CommerceAdsCenter',
+  'commerce-hub': 'CommerceAdsCenter',
   'ecom-enquiries': 'MyEnquiries',
   enquiries: 'MyEnquiries',
   settings: 'Settings',
@@ -465,10 +565,12 @@ const SCREEN_TO_SLUG = {
   Certification: 'certification',
   Notifications: 'notifications',
   Ecome: 'ecome',
+  Sell: 'sell',
   MyEnquiries: 'ecom-enquiries',
   Settings: 'settings',
   MyAds: 'my-ads',
   FarmingBuy: 'farming',
+  CommerceAdsCenter: 'commerce-ads-center',
 };
 
 function QuickMenuWeb({ navigation, route }) {
@@ -476,6 +578,7 @@ function QuickMenuWeb({ navigation, route }) {
   // Header / navbar se aaya ho to wahi screen (Profile / Notifications / ...) sidebar ke saath khulegi
   const resolveTargetScreen = (param) => {
     if (!param) return null;
+    if (SCREEN_ALIAS[param]) return SCREEN_ALIAS[param];
     const lower = String(param).toLowerCase();
     if (SLUG_TO_SCREEN[lower]) return SLUG_TO_SCREEN[lower];
     const match = WEB_MODULES.find(
@@ -489,7 +592,10 @@ function QuickMenuWeb({ navigation, route }) {
   const [activeScreen, setActiveScreen] = React.useState(initialScreen);
   // ✅ FIX (web): embedded screens ko navigate() ke params (jaise editItem) aur `route` pehle milte hi nahi the,
   // isliye News Feed se Edit dabane par Add News hamesha khaali form kholta tha.
-  const [screenParams, setScreenParams] = React.useState({});
+  // Standalone page se redirect hua ho (useQuickMenuRedirect) to uske params (quizItem, editListing, returnTo...) yahin se milte hain
+  const [screenParams, setScreenParams] = React.useState(() => (
+    route?.params?.screenParams && initialTarget ? { [initialScreen]: route.params.screenParams } : {}
+  ));
   const activeScreenRef = React.useRef(initialScreen);
   activeScreenRef.current = activeScreen;
   // QuickMenu pehle se khula ho aur navbar se dobara navigate ho (naya initialScreen) to switch karo
@@ -497,6 +603,7 @@ function QuickMenuWeb({ navigation, route }) {
     const target = resolveTargetScreen(route?.params?.screen) || resolveTargetScreen(route?.params?.initialScreen);
     if (target && WEB_MODULES.find((m) => m.screen === target && m.component)) {
       historyRef.current = [];
+      if (route?.params?.screenParams) setScreenParams((prev) => ({ ...prev, [target]: route.params.screenParams }));
       setActiveScreen(target);
     }
   }, [route?.params?.screen, route?.params?.initialScreen, route?.params?.ts]);
@@ -515,6 +622,11 @@ function QuickMenuWeb({ navigation, route }) {
   }, []);
   const historyRef = React.useRef([]);
   const [profileTier, setProfileTier] = React.useState(PROFILE_TIERS.common);
+  // Subscription Plans par hover => uske NICHE 4 options ki list khulti hai
+  // Dropdown (Subscription Plans / Certification / Ecommerce): click karne par khulta hai, dobara click karne par band.
+  // openMenus[label] = true/false (user ne jo kiya); set nahi hai to current screen ke group me hone par khula dikhta hai.
+  const [openMenus, setOpenMenus] = React.useState({});
+  const [lastGroup, setLastGroup] = React.useState(null);  // shared screens (Quiz Subscription) kis dropdown se khuli
 
   React.useEffect(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
@@ -575,6 +687,7 @@ function QuickMenuWeb({ navigation, route }) {
       setActiveScreen(screenName);
     };
     const openScreen = (screenName, ...args) => {
+      screenName = SCREEN_ALIAS[screenName] || screenName;
       const module = WEB_MODULES.find((item) => item.screen === screenName && item.component);
       if (module) {
         goToEmbedded(screenName, args[0]);
@@ -601,7 +714,7 @@ function QuickMenuWeb({ navigation, route }) {
       },
       dispatch: (action) => {
         const lastRoute = action?.payload?.routes?.[action.payload.routes.length - 1];
-        const nextRoute = lastRoute?.name;
+        const nextRoute = SCREEN_ALIAS[lastRoute?.name] || lastRoute?.name;
         const module = WEB_MODULES.find((item) => item.screen === nextRoute && item.component);
         if (module) {
           goToEmbedded(nextRoute, lastRoute?.params);
@@ -613,6 +726,7 @@ function QuickMenuWeb({ navigation, route }) {
   }, [navigation]);
 
   const handlePress = async (item) => {
+    if (item.toggleOnly) return; // dropdown toggle render me hota hai
     if (item.screen === '__logout__') {
       await logout?.();
       navigation.navigate('Home');
@@ -651,7 +765,7 @@ function QuickMenuWeb({ navigation, route }) {
     <div className="qm-root">
       {/* TOPBAR */}
       <div className="qm-topbar">
-        <div className="qm-logo">News<span>Hub</span></div>
+        <div className="qm-logo">RTI India <span>News</span></div>
         <div className="qm-search">
           <svg width="14" height="14" fill="none" stroke="#94a3b8" strokeWidth="2" viewBox="0 0 24 24">
             <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
@@ -673,25 +787,63 @@ function QuickMenuWeb({ navigation, route }) {
           {[{ title: 'Navigation', items: WEB_MODULES }].map((section) => (
             <div key={section.title}>
               <div className="qm-sec-title">{section.title}</div>
-              {section.items.map((item) => (
+              {section.items.filter((item) => !item.hideInSidebar).map((item) => {
+                const hasSub = Array.isArray(item.subMenu) && item.subMenu.length > 0;
+                const inGroup = hasSub && Array.isArray(item.groupScreens) && item.groupScreens.includes(activeScreen)
+                  && (!SHARED_GROUP_SCREENS.includes(activeScreen) || (lastGroup || 'Subscription Plans') === item.label);
+                const isItemActive = item.screen === activeScreen || inGroup || (Array.isArray(item.relatedScreens) && item.relatedScreens.includes(activeScreen));
+                const subVisible = hasSub && (openMenus[item.label] !== undefined ? openMenus[item.label] : inGroup);
+                const subTextColor = isYellowSidebar ? '#111111' : '#ffffff';
+                return (
+                <div key={item.label}>
                 <div
-                  key={item.label}
-                  className={`qm-nav-item qm-module-item${item.screen === activeScreen ? ' active' : ''}${item.isDestructive ? ' danger' : ''}`}
-                  onClick={() => handlePress(item)}
+                  className={`qm-nav-item qm-module-item${isItemActive ? ' active' : ''}${item.isDestructive ? ' danger' : ''}`}
+                  onClick={() => (hasSub ? setOpenMenus((m) => ({ ...m, [item.label]: !subVisible })) : handlePress(item))}
                 >
                   <div
                     className="qm-nav-icon"
                     style={{ width: 26, height: 26, borderRadius: 6, background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
                   >
-                                   <Ionicons
+                    <Ionicons
                       name={item.icon}
                       size={16}
-                                           color={item.isDestructive ? (isYellowSidebar ? '#b91c1c' : '#ffe4e6') : item.screen === activeScreen ? '#9d0410' : (isYellowSidebar ? '#111111' : '#ffffff')}
+                      color={item.isDestructive ? (isYellowSidebar ? '#b91c1c' : '#ffe4e6') : isItemActive ? '#9d0410' : (isYellowSidebar ? '#111111' : '#ffffff')}
                     />
                   </div>
-                  <span>{item.label}</span>
+                  <span style={{ flex: 1 }}>{item.label}</span>
+                  {hasSub ? (
+                    <Ionicons name={subVisible ? 'chevron-down' : 'chevron-forward'} size={14} color={isItemActive ? '#9d0410' : subTextColor} />
+                  ) : null}
                 </div>
-              ))}
+                {subVisible ? (
+                  <div style={{ margin: '2px 10px 4px 36px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {item.subMenu.map((sub) => {
+                      const subActive = sub.screen === activeScreen
+                        || (sub.screen === 'My Quiz Subscription' && activeScreen === 'QuizSubscription')
+                        || (sub.screen === 'My Ecom Subscription' && activeScreen === 'EcomSubscription');
+                      return (
+                        <div
+                          key={sub.screen}
+                          onClick={() => { setLastGroup(item.label); setOpenMenus((m) => ({ ...m, [item.label]: true })); handlePress(sub); }}
+                          onMouseEnter={(e) => { if (!subActive) e.currentTarget.style.background = 'rgba(255,255,255,0.18)'; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.background = subActive ? 'rgba(255,255,255,0.28)' : 'transparent'; }}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6,
+                            cursor: 'pointer', fontSize: 12.5, fontWeight: subActive ? 800 : 600, color: subTextColor,
+                            background: subActive ? 'rgba(255,255,255,0.28)' : 'transparent',
+                            fontFamily: "'Roboto', sans-serif",
+                          }}
+                        >
+                          <Ionicons name={sub.icon} size={14} color={subTextColor} />
+                          <span>{sub.label}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                </div>
+                );
+              })}
               <div className="qm-divider" />
             </div>
           ))}

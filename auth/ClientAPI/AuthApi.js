@@ -3039,7 +3039,7 @@ getEcomDetailsById: async (id) => {
 },
 
 createEcomDetails: async ({
-  ecomSubId, category, productName, quantity, price, description, city, contact,
+  ecomSubId, category, productName, inStock = true, price, description, city, contact,
   startDate = '', endDate = '', images = [],
 }) => {
   try {
@@ -3050,7 +3050,8 @@ createEcomDetails: async ({
     formData.append('ecom_sub_id', String(ecomSubId ?? ''));
     formData.append('category', category || '');
     formData.append('product_name', productName || '');
-    formData.append('quantity', String(quantity ?? ''));
+    // ✅ quantity field hata diya — ab sirf stock status (1 = In Stock, 0 = Out of Stock)
+    formData.append('in_stock', inStock === false ? '0' : '1');
     formData.append('price', String(price ?? ''));
     formData.append('description', description || '');
     formData.append('city', city || '');
@@ -3153,6 +3154,32 @@ updateEcomDetailsStatus: async (id, statusValue) => {
     return { ok: false, message: json?.message || `Server error (${res.status}).` };
   } catch (err) {
     console.error('[AuthAPI.updateEcomDetailsStatus] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+// ✅ NEW: seller ka In Stock / Out of Stock toggle  →  PATCH /ecom-details/{id}/stock
+updateEcomDetailsStock: async (id, inStock) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const res = await fetch(`${BASE_URL}/ecom-details/${id}/stock`, {
+      method: 'PATCH',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ in_stock: inStock ? 1 : 0 }),
+    });
+    const json = await res.json().catch(() => null);
+    if (res.status === 200 || res.status === 201) return { ok: true, detail: json?.data || json?.detail || json };
+    if (res.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    if (res.status === 403) return { ok: false, message: 'You can update only your own product.' };
+    if (res.status === 404) return { ok: false, message: 'Product not found.' };
+    return { ok: false, message: json?.message || `Server error (${res.status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.updateEcomDetailsStock] Error:', err);
     return { ok: false, isNetwork: true, message: 'Network error.' };
   }
 },

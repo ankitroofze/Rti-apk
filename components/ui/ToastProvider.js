@@ -99,7 +99,7 @@ export function ToastProvider({ children }) {
           >
             <View style={[styles.popupCard, styles[popup.type] || styles.info]}>
               <Text style={styles.popupTitle}>
-                {popup.title || (popup.type === 'success' ? 'Success' : popup.type === 'error' ? 'Error' : 'Notice')}
+                {popup.title || (popup.type === 'success' ? 'Success' : popup.type === 'error' ? 'Oops!' : 'Notice')}
               </Text>
               <Text style={styles.popupMessage}>{popup.message}</Text>
 
@@ -135,7 +135,7 @@ export function ToastProvider({ children }) {
           <View style={[styles.overlay, toast.type === 'success' ? styles.overlayBottom : styles.overlayTop]} pointerEvents="none">
             <View style={[styles.toast, styles[toast.type] || styles.info]}>
               <Text style={styles.title}>
-                {toast.title || (toast.type === 'success' ? 'Success' : toast.type === 'error' ? 'Error' : 'Notice')}
+                {toast.title || (toast.type === 'success' ? 'Success' : toast.type === 'error' ? 'Oops!' : 'Notice')}
               </Text>
               <Text style={styles.message}>{toast.message}</Text>
             </View>

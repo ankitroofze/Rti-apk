@@ -1,3 +1,4 @@
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator, Alert, StatusBar,
@@ -134,7 +135,7 @@ function SectionHeader({ title }) {
 }
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
-export default function SettingsScreen({ navigation }) {
+function SettingsScreen__Inner({ navigation }) {
   const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const { showToast } = useToast();
     const insets = useSafeAreaInsets();
@@ -371,7 +372,7 @@ export default function SettingsScreen({ navigation }) {
           <SettingsItem icon="newspaper-outline" label="My Ads" onPress={() => nav('MyAds')} />
           {/* Purchase blue tick — temporarily removed from all platforms */}
           <SettingsItem icon="card-outline" label="My subscriptions"                   onPress={() => nav('Subscription Plans')} />
-          <SettingsItem icon="cart-outline" label="Commerce & Ads Center"             onPress={() => nav('CommerceAdsCenter')} />
+          <SettingsItem icon="cart-outline" label="My Ecom Product"             onPress={() => nav('CommerceAdsCenter')} />
           <SettingsItem icon="refresh-outline" label="Refund & Cancellation Policy"        onPress={() => nav('LegalPolicy', { document: 'RefundCancellation' })} />
           <SettingsItem icon="logo-whatsapp" label="Join on Whatsapp"                   onPress={handleWhatsappJoin} />
           <SettingsItem icon="wallet-outline" label="Wallet"                             onPress={() => nav('Wallet', { returnTo: 'Settings' })} />
@@ -509,4 +510,12 @@ export default function SettingsScreen({ navigation }) {
     </View>
     </SafeAreaView>
   );
+}
+
+
+// Desktop web par ye page hamesha sidebar wale shell (QuickMenu) ke andar khulta hai
+export default function SettingsScreen(props) {
+  const redirecting = useQuickMenuRedirect(props.navigation, 'Settings');
+  if (redirecting) return null;
+  return <SettingsScreen__Inner {...props} />;
 }

@@ -1,3 +1,4 @@
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useCallback, useState } from 'react';
 import {
@@ -74,12 +75,12 @@ const ProductRow = ({ product }) => (
     </View>
     <View style={styles.productRowRight}>
       <Text style={styles.productRowPrice}>{money(product.price)}</Text>
-      <Text style={styles.productRowQty}>Qty: {product.quantity}</Text>
+      <Text style={styles.productRowQty}>{product.in_stock === false ? 'Out of Stock' : 'In Stock'}</Text>
     </View>
   </View>
 );
 
-export default function SellerReportsScreen({ navigation }) {
+function SellerReportsScreen__Inner({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalListings: 0,
@@ -607,3 +608,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
+
+// Desktop web par ye page hamesha sidebar wale shell (QuickMenu) ke andar khulta hai
+export default function SellerReportsScreen(props) {
+  const redirecting = useQuickMenuRedirect(props.navigation, 'SellerReports');
+  if (redirecting) return null;
+  return <SellerReportsScreen__Inner {...props} />;
+}

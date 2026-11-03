@@ -9,6 +9,7 @@
 // Razorpay verify ke baad wapas usi screen pe redirect kar deta
 // hai jahan se aaya tha (default: Sell).
 // ─────────────────────────────────────────────────────────────
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import React, { useState, useCallback, useEffect } from 'react';
 import { useToast } from '../components/ui/ToastProvider';
 import { UserStore } from '../store/UserStore';
@@ -44,6 +45,8 @@ const toUiPlan = (plan, tr = (x) => x) => ({
 });
 
 export default function EcomSubscriptionScreen({ navigation, route }) {
+  // Desktop web par ye page kabhi bina sidebar ke na khule
+  const redirectingToSidebar = useQuickMenuRedirect(navigation, 'EcomSubscription');
   const { showPopup } = useToast();
   const tr = useAutoT(); // popup / dynamic text ko language ke hisaab se badalne ke liye
 
@@ -149,6 +152,8 @@ const [plansLoading, setPlansLoading] = useState(true);
       }
     );
   }, [plans, doSubscribe, showPopup, tr]);
+
+  if (redirectingToSidebar) return null;
 
   return (
     <SubscriptionPlanPurchase

@@ -29,6 +29,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { getProfileTier, resolveRoleTitle, cleanRoleNames } from '../utils/profileHelpers';
 import { PROFILE_TIERS } from '../constants/profileConstants';
 import MediaGallery from './MediaGallery';
+import * as MediaDownloadButtonModule from './MediaDownloadButton';
+const MediaDownloadButton = MediaDownloadButtonModule.MediaDownloadButton || MediaDownloadButtonModule.default;
 import { MediaLogo } from './MediaBrandOverlay';
 import NewsFrameOverlay, { getFrameBoxAspect, getFrameWindow, getLowerBannerHeight } from './NewsFrameOverlay';
 import NewsVideoControls from './NewsVideoControls';
@@ -1785,9 +1787,9 @@ const handleLike = async () => {
                           {(() => {
                 if (!uploadTime) return null;
                 return (
-                  <View style={[styles.storyMetaPill, { flexShrink: 0 }]}>
+                  <View style={[styles.storyMetaPill, { flexShrink: 1 }]}>
                     <Ionicons name="time-outline" size={12} color="#94a3b8" />
-                    <Text style={styles.storyMetaSmall} numberOfLines={1} maxFontSizeMultiplier={1.1}>{uploadTime}</Text>
+                    <Text style={[styles.storyMetaSmall, { flexShrink: 1 }]} maxFontSizeMultiplier={1.1}>{uploadTime}</Text>
                   </View>
                 );
               })()}
@@ -1909,12 +1911,19 @@ const handleLike = async () => {
               width={framed ? Math.round(mediaWidth * frameWin.width) : mediaWidth}
               maxHeight={framed ? Math.round(frameBoxH * frameWin.height) : 240}
               fit="cover"
+              downloadable
               onPressImage={handleImagePress}
             />
           ) : (
             <Image source={{ uri: safeImage }} style={styles.storyHeroImage} resizeMode="cover" />
           )}
           </MediaBox>
+          {/* ⬇ Download: news ki video / image (gallery me MediaGallery ka apna button hai) */}
+          {!isFileAttachment && !(hasImageGallery && mediaWidth) && (canPlayVideo || isValidImageUrl(effectiveImageUri)) ? (
+            <View pointerEvents="box-none" style={{ position: 'absolute', top: canPlayVideo ? 52 : 10, right: 10, zIndex: 20, elevation: 20 }}>
+              <MediaDownloadButton uri={canPlayVideo ? effectiveVideoUri : effectiveImageUri} type={canPlayVideo ? 'video' : 'image'} size={32} />
+            </View>
+          ) : null}
           {/* ✅ Frame select hai => red frame + scrolling title/description; warna purana logo + ticker */}
           {framed ? (
             <NewsFrameOverlay
@@ -2036,8 +2045,15 @@ const handleLike = async () => {
             <Text style={styles.storyHeadlineText} numberOfLines={2} ellipsizeMode="tail">{story.title}</Text>
            
           </TouchableOpacity>
-          {story.excerpt ? <InlineReadMore text={story.excerpt} style={styles.storyExcerptText} onPress={() => { if (!handleAdPress()) onOpenDetails(story); }} /> : null}
-          {story.description && story.description !== story.excerpt ? <InlineReadMore text={story.description} style={styles.storyDescriptionText} onPress={() => { if (!handleAdPress()) onOpenDetails(story); }} /> : null}
+          {/* Excerpt aur description aksar same text hote hain -- sirf EK block (ek hi View More) dikhao */}
+          {(() => {
+            const ex = String(story.excerpt || '').trim();
+            const de = String(story.description || '').trim();
+            const useDesc = de.length >= ex.length;
+            const shown = useDesc ? de : ex;
+            if (!shown) return null;
+            return <InlineReadMore text={shown} style={useDesc ? styles.storyDescriptionText : styles.storyExcerptText} onPress={() => { if (!handleAdPress()) onOpenDetails(story); }} />;
+          })()}
         </View>
 
       

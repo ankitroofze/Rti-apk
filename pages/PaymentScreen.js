@@ -1,3 +1,4 @@
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import React, { useCallback, useState } from 'react';
 import {
   ScrollView,
@@ -671,7 +672,7 @@ function WebLayout({ subscriptionData, loading, handleBuyPlan, navigation, compa
 // ─────────────────────────────────────────────
 // Main Screen — Platform.OS check here only
 // ─────────────────────────────────────────────
-export default function SubscriptionPlansScreen({ navigation, route }) {
+function SubscriptionPlansScreen__Inner({ navigation, route }) {
   const { width: windowWidth } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
   const isCompactWeb = isWeb && windowWidth <= 1024;
@@ -866,4 +867,12 @@ export default function SubscriptionPlansScreen({ navigation, route }) {
     </View>
     </SafeAreaView>
   );
+}
+
+
+// Desktop web par ye page hamesha sidebar wale shell (QuickMenu) ke andar khulta hai
+export default function SubscriptionPlansScreen(props) {
+  const redirecting = useQuickMenuRedirect(props.navigation, 'Payment');
+  if (redirecting) return null;
+  return <SubscriptionPlansScreen__Inner {...props} />;
 }

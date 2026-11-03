@@ -1,3 +1,4 @@
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useCallback, useState } from 'react';
 import {
@@ -111,7 +112,7 @@ const EnquiryBuyerCard = ({ enquiry, product, onCall, onWhatsApp, index }) => {
 };
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
-export default function SellerEnquiryDashboardScreen({ navigation }) {
+function SellerEnquiryDashboardScreen__Inner({ navigation }) {
   // Roboto load (fonts load hone tak system font, phir Roboto apply hota hai)
   useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const insets = useSafeAreaInsets();
@@ -441,3 +442,11 @@ const styles = StyleSheet.create({
   emptyTitle:    { fontSize: 16, fontWeight: '700', color: '#0f172a', fontFamily: FONT.bold },
   emptySub:      { fontSize: 12, color: '#64748b', marginTop: 6, textAlign: 'center', paddingHorizontal: 32, lineHeight: 18, fontFamily: FONT.regular },
 });
+
+
+// Desktop web par ye page hamesha sidebar wale shell (QuickMenu) ke andar khulta hai
+export default function SellerEnquiryDashboardScreen(props) {
+  const redirecting = useQuickMenuRedirect(props.navigation, 'SellerEnquiryDashboard');
+  if (redirecting) return null;
+  return <SellerEnquiryDashboardScreen__Inner {...props} />;
+}

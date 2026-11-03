@@ -9,6 +9,7 @@ import { useToast } from '../components/ui/ToastProvider';
 import { UserStore } from '../store/UserStore';
 import { openRazorpayCheckout } from '../utils/razorpayCheckout';
 import SubscriptionPlanPurchase from '../components/SubscriptionPlanPurchase';
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 
 const FEATURES = [
   'All certification quizzes unlocked',
@@ -40,6 +41,8 @@ const toUiPlan = (plan) => ({
 });
 
 export default function QuizSubscriptionScreen({ navigation, route }) {
+  // Desktop web par ye page kabhi bina sidebar ke na khule (quizItem wagairah params bhi saath jaate hain)
+  const redirectingToSidebar = useQuickMenuRedirect(navigation, 'QuizSubscription', route?.params);
   const { showPopup } = useToast();
 
   const quizItem   = route?.params?.quizItem ?? null;
@@ -144,6 +147,8 @@ export default function QuizSubscriptionScreen({ navigation, route }) {
       }
     );
   }, [plans, doSubscribe, showPopup]);
+
+  if (redirectingToSidebar) return null;
 
   return (
     <SubscriptionPlanPurchase

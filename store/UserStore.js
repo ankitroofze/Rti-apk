@@ -822,7 +822,8 @@ const normalizeEcomDetail = (raw = {}) => {
     sector: raw.category || '',
     category: raw.category || '',
     description: raw.description || '',
-    quantity: String(raw.quantity ?? ''),
+    // ✅ quantity hata di — ab sirf stock status. Backend se in_stock nahi aaya (purana product) to In Stock maano
+    in_stock: !(raw.in_stock === false || raw.in_stock === 0 || raw.in_stock === '0' || raw.in_stock === 'false'),
     price: String(raw.price ?? ''),
     city: raw.city || '',
     contact: raw.conatct || raw.contact || '',
@@ -6685,7 +6686,12 @@ getActiveAdsFeed: async (options = {}) => {
         const extraValues = {};
         if (redirectType === 'website') extraValues.website_url = redirectionUrl;
         if (redirectType === 'shop') extraValues.shop_url = redirectionUrl;
-        if (redirectType === 'whatsapp') extraValues.whatsapp_number = String(ad.owner_mobile || ad.contact_number || '');
+        // ✅ FIX: ad post karte waqt number "redirection_url" (https://wa.me/91XXXXXXXXXX) me save hota hai —
+        // pehle yahan sirf owner_mobile/contact_number padha ja raha tha, isliye WhatsApp button click par kuch nahi hota tha.
+        if (redirectType === 'whatsapp') {
+          const waFromUrl = (String(redirectionUrl).match(/wa\.me\/\+?(\d+)/i) || [])[1] || '';
+          extraValues.whatsapp_number = String(waFromUrl || ad.whatsapp_number || ad.whatsapp || ad.owner_mobile || ad.contact_number || '');
+        }
 
         return {
           id: ad.id,
@@ -7321,7 +7327,7 @@ deleteAd: async (adId) => {
         ecomSubId: Number(listingData.ecomSubId) || 1,
         category: listingData.sector || listingData.category || '',
         productName: listingData.title || '',
-        quantity: listingData.quantity || '',
+        inStock: listingData.inStock !== false,
         price: listingData.price || '',
         description: listingData.description || '',
         city: listingData.city || '',
@@ -7372,7 +7378,7 @@ deleteAd: async (adId) => {
         ecom_sub_id: fields.ecomSubId,
         category: fields.sector || fields.category,
         product_name: fields.title,
-        quantity: fields.quantity,
+        in_stock: fields.inStock === undefined ? undefined : (fields.inStock ? 1 : 0),
         price: fields.price,
         description: fields.description,
         city: fields.city,
@@ -7397,6 +7403,19 @@ deleteAd: async (adId) => {
       return { ok: true, listing: normalizeEcomDetail(apiRes.detail || {}) };
     } catch {
       return { ok: false, message: 'Unable to update status.' };
+    }
+  },
+
+  // ✅ NEW: In Stock / Out of Stock toggle (seller)
+  updateEcomeListingStock: async (id, inStock) => {
+    try {
+      const user = await UserStore.getCurrentUser();
+      if (!user) return { ok: false, message: 'Please login again.' };
+      const apiRes = await AuthAPI.updateEcomDetailsStock(id, inStock);
+      if (!apiRes.ok) return { ok: false, isAuth: Boolean(apiRes.isAuth), message: apiRes.message || 'Unable to update stock.' };
+      return { ok: true, listing: normalizeEcomDetail(apiRes.detail || {}) };
+    } catch {
+      return { ok: false, message: 'Unable to update stock.' };
     }
   },
 

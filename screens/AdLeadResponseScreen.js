@@ -1,3 +1,4 @@
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import React, { useEffect, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet, SafeAreaView, Platform,
@@ -16,7 +17,7 @@ const C = {
 };
 
 // navigation route params expected: { submissionId }
-export default function AdLeadResponseScreen({ navigation, route }) {
+function AdLeadResponseScreen__Inner({ navigation, route }) {
   const submissionId = route?.params?.submissionId;
   const [submission, setSubmission] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -125,3 +126,11 @@ const styles = StyleSheet.create({
   qText: { fontSize: 13, fontWeight: '700', color: C.text, marginBottom: 6 },
   aText: { fontSize: 13, color: C.sub },
 });
+
+
+// Desktop web par ye page hamesha sidebar wale shell (QuickMenu) ke andar khulta hai
+export default function AdLeadResponseScreen(props) {
+  const redirecting = useQuickMenuRedirect(props.navigation, 'AdLeadResponse');
+  if (redirecting) return null;
+  return <AdLeadResponseScreen__Inner {...props} />;
+}

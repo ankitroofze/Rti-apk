@@ -21,6 +21,7 @@
 //   Role plans shape : { plan_id, plan_name, price, duration, original_price, features, role_id_raw }
 //   Generic shape    : { id, name, duration, price, originalPrice, features }
 // ─────────────────────────────────────────────────────────────────
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React from 'react';
 import { Platform, ScrollView, Text, View, TouchableOpacity, ImageBackground, StyleSheet } from 'react-native';
@@ -30,7 +31,7 @@ import S from '../styles/SubscriptionPlansStyles';
 import { getCardTheme, HEADER_BG_IMAGE, getPayBtnImage } from '../constants/subscriptionThemes';
 import { UserStore } from '../store/UserStore';
 
-export default function SubscriptionPlanDetailsScreen({ navigation, route }) {
+function SubscriptionPlanDetailsScreen__Inner({ navigation, route }) {
   const {
     headerTitle = 'Plan Details',
     plan,
@@ -206,3 +207,11 @@ const local = StyleSheet.create({
     elevation: 0,
   },
 });
+
+
+// Desktop web par ye page hamesha sidebar wale shell (QuickMenu) ke andar khulta hai
+export default function SubscriptionPlanDetailsScreen(props) {
+  const redirecting = useQuickMenuRedirect(props.navigation, 'SubscriptionPlanDetails');
+  if (redirecting) return null;
+  return <SubscriptionPlanDetailsScreen__Inner {...props} />;
+}

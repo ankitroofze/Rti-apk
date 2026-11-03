@@ -1,3 +1,4 @@
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useCallback, useState } from 'react';
 import {
@@ -26,6 +27,8 @@ const TYPE_LABEL = {
 };
 
 export default function MyAttemptsScreen({ navigation }) {
+  // Desktop web par ye page kabhi bina sidebar ke na khule
+  const redirectingToSidebar = useQuickMenuRedirect(navigation, 'MyAttempts');
   const { showToast } = useToast();
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
@@ -108,6 +111,8 @@ const handleDownload = (item) => {
   // Practice/Training pass hone par bhi Download button chalu ho jata tha.
   const isExamAttempt = (item) => String(item.quiz_type || '').trim().toLowerCase() === 'exam';
   const canDownload = (item) => isExamAttempt(item) && getQuizResultTier(item.percentage).passed;
+
+  if (redirectingToSidebar) return null;
 
   return (
     <View style={[CertificationStyles.root]}>

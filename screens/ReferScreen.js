@@ -1,3 +1,4 @@
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   View, TouchableOpacity, StyleSheet,
@@ -36,7 +37,7 @@ const PLATFORMS = [
   { id: 'more', label: 'More Options', icon: 'share-social-outline', color: '#64748b', bg: '#f1f5f9', isNativeShare: true },
 ];
 
-export default function ReferScreen({ navigation }) {
+function ReferScreen__Inner({ navigation }) {
   const insets = useSafeAreaInsets();
   const [copied, setCopied] = useState(false);
   const [summary, setSummary] = useState(null);
@@ -433,3 +434,11 @@ twoCol: {
   platformLabel: { flex: 1, fontSize: 15, color: '#1e293b', fontWeight: '500' },
   platformNote: { fontSize: 10, color: '#94a3b8', textAlign: 'center', marginTop: 2 },
 });
+
+
+// Desktop web par ye page hamesha sidebar wale shell (QuickMenu) ke andar khulta hai
+export default function ReferScreen(props) {
+  const redirecting = useQuickMenuRedirect(props.navigation, 'Refer');
+  if (redirecting) return null;
+  return <ReferScreen__Inner {...props} />;
+}

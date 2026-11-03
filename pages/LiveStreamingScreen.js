@@ -25,6 +25,7 @@ import { UserStore } from '../store/UserStore';
 import { requirePremium } from '../utils/profileHelpers';
 import { MODULE_HEADER_HEIGHT_WEB } from '../constants/subscriptionThemes';
 import ModuleWebHeader from '../components/Modulewebheader';
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 // ─── Header override — matches AdvertiseScreen's top bar exactly (font, back arrow, spacing) ───
 const HEADER_TOP = Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 2 : 32; // 👈 aur height kam ki
 const F_REG  = Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular';
@@ -53,6 +54,8 @@ const H = StyleSheet.create({
 const TABLET_CONTENT_WRAP = { maxWidth: 720, width: '100%', alignSelf: 'center' };
 
 export default function LiveStreamingScreen({ navigation }) {
+  // Desktop web par ye page kabhi bina sidebar ke na khule
+  const redirectingToSidebar = useQuickMenuRedirect(navigation, 'Live Streaming');
   const insets = useSafeAreaInsets();
   const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const { width: winWidth } = useWindowDimensions();
@@ -140,6 +143,8 @@ export default function LiveStreamingScreen({ navigation }) {
       default:         return LiveStreamingStyles.endedText;
     }
   };
+
+  if (redirectingToSidebar) return null;
 
   return (
     <View style={LiveStreamingStyles.root}>

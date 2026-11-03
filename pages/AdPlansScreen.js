@@ -5,6 +5,7 @@
 // implement karta hai components/SubscriptionPlanPurchase.js
 // (see that file's header comment for why).
 // ─────────────────────────────────────────────────────────────
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text } from 'react-native';
 import { openRazorpayCheckout } from '../utils/razorpayCheckout';
@@ -42,6 +43,8 @@ const normalizePlan = (raw, index) => {
 };
 
 export default function AdPlansScreen({ navigation, route }) {
+  // Desktop web par ye page kabhi bina sidebar ke na khule
+  const redirectingToSidebar = useQuickMenuRedirect(navigation, 'AdPlans', route?.params);
   const { showPopup } = useToast();
 
   const [plans, setPlans] = useState([]);
@@ -147,6 +150,8 @@ const doBuy = useCallback(async (plan) => {
       }
     );
   }, [plans, doBuy, showPopup]);
+
+  if (redirectingToSidebar) return null;
 
   return (
     <SubscriptionPlanPurchase

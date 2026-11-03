@@ -23,7 +23,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { openExternalUrl } from '../utils/adRedirect';
@@ -170,6 +170,9 @@ function PromoVideo({ uri, poster, onSize }) {
 
 // Seen-wise ordered list helper
 const SEEN_KEY = 'home_promo_ads_seen_v1';
+// ✅ FIX: user ne popup Skip / close kar diya to is app-session me dobara auto-open NA ho.
+// Pehle close() ke baad ads refresh hote hi (ya Home par wapas focus aate hi) popup phir khul jaata tha.
+let promoDismissedThisSession = false;
 const adKey = (a) => String(a?.id ?? a?.ad_id ?? '');
 const orderBySeen = (src = [], seen = {}) => {
   const pos = new Map(src.map((a, i) => [a, i]));
@@ -205,6 +208,11 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
   rawListRef.current = rawList;
   const visibleRef = useRef(false);
   const [list, setList] = useState([]);
+  // ✅ FIX: popup SIRF Home screen focus me ho tabhi khule. Home navigation stack me peeche mounted rehti hai,
+  // isliye pehle ads late load hone par popup Profile / dusre modules ke upar khul jaata tha.
+  const isFocused = useIsFocused();
+  const isFocusedRef = useRef(isFocused);
+  isFocusedRef.current = isFocused;
 
   const loadSeen = useCallback(async () => {
     try {
@@ -235,7 +243,7 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
   const openPopupIfReady = useCallback((sourceList) => {
     const items = Array.isArray(sourceList) && sourceList.length ? sourceList : rawListRef.current;
     if (!items.length) return;
-    if (visibleRef.current) return;
+    if (visibleRef.current || promoDismissedThisSession || !isFocusedRef.current) return;
     visibleRef.current = true;
     const sorted = orderBySeen(items, seenRef.current);
     setList(sorted);
@@ -261,10 +269,19 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
 
   // Agar ads network / cache se thoda late aayein to aate hi popup open ho
   useEffect(() => {
-    if (rawList.length > 0 && !visibleRef.current) {
+    if (isFocused && rawList.length > 0 && !visibleRef.current) {
       openPopupIfReady(rawList);
     }
-  }, [rawList, openPopupIfReady]);
+  }, [rawList, openPopupIfReady, isFocused]);
+
+  // User Home se kisi dusre page par chala gaya => popup wahan kabhi na dikhe.
+  // (Skip nahi hua to Home par wapas aate hi 5 sec wala popup dobara aayega.)
+  useEffect(() => {
+    if (!isFocused && visibleRef.current) {
+      visibleRef.current = false;
+      setVisible(false);
+    }
+  }, [isFocused]);
 
   const current = list.length ? list[Math.min(index, list.length - 1)] : null;
   const currentKey = current ? `${current.id ?? 'ad'}-${index}` : '';
@@ -315,6 +332,7 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
   }, [currentKey]);
 
   const close = () => {
+    promoDismissedThisSession = true;
     visibleRef.current = false;
     setVisible(false);
   };

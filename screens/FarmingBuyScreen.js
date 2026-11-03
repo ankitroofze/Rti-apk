@@ -1,3 +1,4 @@
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -310,7 +311,7 @@ const EnquiryFormModal = ({ product, onClose, onSaved }) => {
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [contact, setContact] = useState('');
-  const [quantity, setQuantity] = useState(product?.quantity || '');
+  const [quantity, setQuantity] = useState(''); // ✅ buyer khud quantity likhega (enquiry me quantity rehti hai)
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -345,7 +346,7 @@ const EnquiryFormModal = ({ product, onClose, onSaved }) => {
       lastName: lastName.trim(),
       email: email.trim(),
       contact: normalizedContact,
-      quantity: quantity || product.quantity,
+      quantity: quantity.trim(),
       message: message.trim(),
     });
     setSaving(false);
@@ -408,7 +409,7 @@ const EnquiryFormModal = ({ product, onClose, onSaved }) => {
             <Text style={styles.formLabel}>Quantity</Text>
             <View style={styles.inputWrap}>
               <Ionicons name="layers-outline" size={16} color="#94a3b8" />
-              <TextInput style={styles.input} value={quantity} onChangeText={setQuantity} placeholder={product.quantity || 'Enter quantity'} placeholderTextColor="#94a3b8" />
+              <TextInput style={styles.input} value={quantity} onChangeText={setQuantity} placeholder="Enter quantity (e.g. 10 kg, 2 pcs)" placeholderTextColor="#94a3b8" />
             </View>
             <Text style={styles.formLabel}>Message</Text>
             <TextInput style={[styles.input, styles.textArea]} value={message} onChangeText={setMessage} placeholder="e.g. What is the final price?" placeholderTextColor="#94a3b8" multiline />
@@ -429,6 +430,8 @@ const EnquiryFormModal = ({ product, onClose, onSaved }) => {
 };
 
 export default function FarmingBuyScreen({ navigation, route }) {
+  // Desktop web par ye page kabhi bina sidebar ke na khule
+  const redirectingToSidebar = useQuickMenuRedirect(navigation, 'FarmingBuy', route?.params);
   const insets = useSafeAreaInsets();
   // Android nav bar (back/home/recent) ke neeche buttons na jaayein — isliye extra bottom space
   const sheetBottomPad = (insets.bottom || (Platform.OS === 'android' ? 48 : 0)) + 12;
@@ -565,6 +568,8 @@ export default function FarmingBuyScreen({ navigation, route }) {
     const option = SORT_OPTIONS.find(opt => opt.id === sortBy);
     return option ? option.label : 'Sort By';
   };
+
+  if (redirectingToSidebar) return null;
 
   return (
     <View style={styles.root}>
@@ -783,6 +788,11 @@ export default function FarmingBuyScreen({ navigation, route }) {
                       <View style={[styles.verifiedRibbon, compactCards && styles.verifiedRibbonCompact]}>
                         <Text style={styles.verifiedRibbonText}>Verified Seller</Text>
                       </View>
+                      {item.in_stock === false ? (
+                        <View style={{ position: 'absolute', left: 10, bottom: 10, backgroundColor: '#dc2626', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 4 }}>
+                          <Text style={{ color: '#fff', fontSize: 10.5, fontWeight: '800' }}>Out of Stock</Text>
+                        </View>
+                      ) : null}
                       <TouchableOpacity
                         style={styles.wishlistBtn}
                         activeOpacity={0.8}
@@ -822,8 +832,8 @@ export default function FarmingBuyScreen({ navigation, route }) {
                           <Text style={[styles.callBtnText, compactCards && styles.btnTextCompact]}>Call</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={styles.enquireBtn}
-                          onPress={(e) => { e.stopPropagation?.(); openEnquiry(item); }}
+                          style={[styles.enquireBtn, item.in_stock === false && { opacity: 0.45 }]}
+                          onPress={(e) => { e.stopPropagation?.(); if (item.in_stock === false) { notify('Out of Stock', 'This product is currently out of stock.'); return; } openEnquiry(item); }}
                           activeOpacity={0.85}
                         >
                           {compactCards ? null : <Ionicons name="chatbubble-ellipses-outline" size={14} color="#fff" />}
@@ -897,12 +907,17 @@ export default function FarmingBuyScreen({ navigation, route }) {
                           <Text style={styles.metaChipText}>{selectedProduct.city}</Text>
                         </View>
                       ) : null}
-                      {selectedProduct.quantity ? (
-                        <View style={styles.metaChip}>
-                          <Ionicons name="layers-outline" size={12} color="#0369a1" />
-                          <Text style={styles.metaChipText}>Qty: {selectedProduct.quantity}</Text>
+                      {selectedProduct.in_stock === false ? (
+                        <View style={[styles.metaChip, { backgroundColor: '#fef2f2', borderColor: '#fecaca' }]}>
+                          <Ionicons name="close-circle-outline" size={12} color="#dc2626" />
+                          <Text style={[styles.metaChipText, { color: '#dc2626', fontWeight: '800' }]}>Out of Stock</Text>
                         </View>
-                      ) : null}
+                      ) : (
+                        <View style={[styles.metaChip, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }]}>
+                          <Ionicons name="checkmark-circle-outline" size={12} color="#16a34a" />
+                          <Text style={[styles.metaChipText, { color: '#166534', fontWeight: '800' }]}>In Stock</Text>
+                        </View>
+                      )}
                     </View>
                     {selectedProduct.description ? (
                       <View style={styles.modalDescSection}>
@@ -926,7 +941,7 @@ export default function FarmingBuyScreen({ navigation, route }) {
                         <Text style={styles.modalActionText}>WhatsApp</Text>
                       </TouchableOpacity>
                     </View>
-                    <TouchableOpacity style={styles.modalEnquiryBtn} onPress={() => openEnquiry(selectedProduct)} activeOpacity={0.85}>
+                    <TouchableOpacity style={[styles.modalEnquiryBtn, selectedProduct.in_stock === false && { opacity: 0.45 }]} onPress={() => (selectedProduct.in_stock === false ? notify('Out of Stock', 'This product is currently out of stock.') : openEnquiry(selectedProduct))} activeOpacity={0.85}>
                       <Ionicons name="send" size={18} color="#fff" />
                       <Text style={styles.modalActionText}>Send Enquiry</Text>
                     </TouchableOpacity>
@@ -963,12 +978,17 @@ export default function FarmingBuyScreen({ navigation, route }) {
                           <Text style={styles.metaChipText}>{selectedProduct.city}</Text>
                         </View>
                       ) : null}
-                      {selectedProduct.quantity ? (
-                        <View style={styles.metaChip}>
-                          <Ionicons name="layers-outline" size={12} color="#0369a1" />
-                          <Text style={styles.metaChipText}>Qty: {selectedProduct.quantity}</Text>
+                      {selectedProduct.in_stock === false ? (
+                        <View style={[styles.metaChip, { backgroundColor: '#fef2f2', borderColor: '#fecaca' }]}>
+                          <Ionicons name="close-circle-outline" size={12} color="#dc2626" />
+                          <Text style={[styles.metaChipText, { color: '#dc2626', fontWeight: '800' }]}>Out of Stock</Text>
                         </View>
-                      ) : null}
+                      ) : (
+                        <View style={[styles.metaChip, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }]}>
+                          <Ionicons name="checkmark-circle-outline" size={12} color="#16a34a" />
+                          <Text style={[styles.metaChipText, { color: '#166534', fontWeight: '800' }]}>In Stock</Text>
+                        </View>
+                      )}
                     </View>
                     {selectedProduct.description ? (
                       <View style={styles.modalDescSection}>
@@ -995,7 +1015,7 @@ export default function FarmingBuyScreen({ navigation, route }) {
                         <Text style={styles.modalActionText}>WhatsApp</Text>
                       </TouchableOpacity>
                     </View>
-                    <TouchableOpacity style={styles.modalEnquiryBtn} onPress={() => openEnquiry(selectedProduct)} activeOpacity={0.85}>
+                    <TouchableOpacity style={[styles.modalEnquiryBtn, selectedProduct.in_stock === false && { opacity: 0.45 }]} onPress={() => (selectedProduct.in_stock === false ? notify('Out of Stock', 'This product is currently out of stock.') : openEnquiry(selectedProduct))} activeOpacity={0.85}>
                       <Ionicons name="send" size={18} color="#fff" />
                       <Text style={styles.modalActionText}>Send Enquiry</Text>
                     </TouchableOpacity>

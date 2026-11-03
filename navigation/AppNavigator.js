@@ -5,6 +5,8 @@ import { navigationRef } from '../utils/navigationRef';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import PaymentHistoryScreen from '../pages/Paymenthistoryscreen';
 import HomeScreen from '../screens/HomeScreen';
+import AllAdsScreen from '../screens/AllAdsScreen';
+import AllNewsScreen from '../screens/AllNewsScreen';
 import AboutScreen from '../screens/AboutScreen';
 import ContactScreen from '../screens/ContactScreen';
 import WhatIsRTIScreen from '../screens/WhatIsRTIScreen';
@@ -163,6 +165,9 @@ export default function AppNavigator() {
 
   const stackScreens = [
     { name: 'Home', component: HomeScreen },
+    // ✅ Home ke "View More" (ads) / "See All" (news) par khulne wale alag pages — public, login zaroori nahi
+    { name: 'AllAds', component: AllAdsScreen },
+    { name: 'AllNews', component: AllNewsScreen },
     { name: 'About', component: AboutScreen },
     { name: 'Contact', component: ContactScreen },
     { name: 'WhatIsRTI', component: WhatIsRTIScreen },

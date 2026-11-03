@@ -1835,6 +1835,11 @@ return t || '';
     }
   }, [isActive, canPlayVideo, player]);
 
+  // ✅ Instagram jaisa: pichle reel ko pause kiya tha to naye reel par aate hi pause hat jaye, video seedha chale
+  useEffect(() => {
+    if (isActive) setPaused(false);
+  }, [isActive]);
+
   const handleVideoToggle = useCallback(() => {
     if (isAd) {
       onAdPress?.(safePost);
@@ -2301,10 +2306,35 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
         }, 140);
       };
 
+      // ✅ Touch (phone browser): browser ka native scroll-snap — ungli se swipe karne par Instagram jaisa
+      // ek reel pe sidha ruk jaata hai (beech me atakta nahi). Desktop par wheel/keyboard wala upar ka logic hi chalta hai.
+      let snapObserver = null;
+      const isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0));
+      if (isTouch) {
+        try {
+          node.style.scrollSnapType = 'y mandatory';
+          node.style.overscrollBehaviorY = 'contain';
+          const applySnap = () => {
+            const holder = node.firstElementChild;
+            if (!holder) return;
+            Array.from(holder.children).forEach((cell) => {
+              cell.style.scrollSnapAlign = 'start';
+              cell.style.scrollSnapStop = 'always';
+            });
+          };
+          applySnap();
+          if (typeof MutationObserver !== 'undefined' && node.firstElementChild) {
+            snapObserver = new MutationObserver(applySnap);
+            snapObserver.observe(node.firstElementChild, { childList: true });
+          }
+        } catch (_) { /* snap na lage to purana idle-snap chalega */ }
+      }
+
       node.addEventListener('wheel', onWheel, { passive: false });
       node.addEventListener('scroll', onScroll, { passive: true });
       window.addEventListener('keydown', onKey);
       return () => {
+        if (snapObserver) snapObserver.disconnect();
         node.removeEventListener('wheel', onWheel);
         node.removeEventListener('scroll', onScroll);
         window.removeEventListener('keydown', onKey);
@@ -2377,9 +2407,12 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
 
   // ✅ FIX: reel dikhte hi (silently) asli comments se count theek karo — har post ke liye ek baar
   const commentsVerifiedRef = useRef(new Set());
+  const commentsVerifyTriesRef = useRef({});
   const handleVerifyComments = useCallback(async (id) => {
     const key = String(id);
     if (commentsVerifiedRef.current.has(key)) return;
+    if ((commentsVerifyTriesRef.current[key] || 0) >= 3) return;
+    commentsVerifyTriesRef.current[key] = (commentsVerifyTriesRef.current[key] || 0) + 1;
     commentsVerifiedRef.current.add(key);
     try {
       const res = await AuthAPI.getCommentsDetailed(key);
@@ -2402,6 +2435,23 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       commentsVerifiedRef.current.delete(key);
     }
   }, []);
+
+  // ✅ FIX (0 comment par "1" dikhna): count sirf active reel par nahi, saare loaded reels par
+  // feed khulte hi asli comment list se verify hota hai — "1 → baad me 0" wali der nahi lagti.
+  useEffect(() => {
+    const pending = posts
+      .filter((p) => !p.isAd && Number(p.commentsCount || 0) > 0 && !commentsVerifiedRef.current.has(String(p.id)))
+      .slice(0, 30);
+    if (!pending.length) return undefined;
+    let cancelled = false;
+    (async () => {
+      for (const p of pending) {
+        if (cancelled) break;
+        await handleVerifyComments(p.id);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [posts, handleVerifyComments]);
 
   // ✅ Login required popup (like / comment / save bina login ke nahi)
   const { isLoggedIn } = useAuth();

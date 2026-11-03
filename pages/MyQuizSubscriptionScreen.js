@@ -1,6 +1,8 @@
 // pages/MyQuizSubscriptionScreen.js
 // Dikhata hai ki user ka Quiz/Certification subscription active hai ya nahi.
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
+import ModuleWebHeader from '../components/Modulewebheader';
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import React, { useState, useCallback } from 'react';
 import { Platform, View, Text, ScrollView, TouchableOpacity, StyleSheet, ActivityIndicator, StatusBar } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -10,6 +12,8 @@ import { UserStore } from '../store/UserStore';
 import SubscriptionStatusCard from '../components/SubscriptionStatusCard';
 import { getCardTheme, getNativeThemeImage } from '../constants/subscriptionThemes';
 export default function MyQuizSubscriptionScreen({ navigation }) {
+  // Desktop web par ye page kabhi bina sidebar ke na khule
+  const redirectingToSidebar = useQuickMenuRedirect(navigation, 'My Quiz Subscription');
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [sub, setSub] = useState(null);
@@ -32,19 +36,15 @@ export default function MyQuizSubscriptionScreen({ navigation }) {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  if (redirectingToSidebar) return null;
+
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor="#F3F4F6" />
       {Platform.OS !== 'web' ? (
 <ModuleAndroidHeader title="My Quiz Subscription" onBack={() => navigation.goBack()} />
 ) : (
-<>
-<View style={{ height: insets.top, backgroundColor: '#fff' }} />
-      <TouchableOpacity style={styles.backRow} onPress={() => navigation.goBack()} activeOpacity={0.75}>
-        <Feather name="arrow-left" size={20} color="#F97316" />
-        <Text style={styles.backText}>Back</Text>
-      </TouchableOpacity>
-</>
+<ModuleWebHeader title="My Quiz Subscription" navigation={navigation} onBack={() => navigation.goBack()} />
 )}
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>

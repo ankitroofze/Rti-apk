@@ -1,12 +1,16 @@
 ﻿import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
+  Image,
   ImageBackground,
+  Modal,
   Platform,
   SafeAreaView,
   ScrollView,
   StatusBar,
   StyleSheet,
+  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -19,6 +23,7 @@ import { useFonts, Roboto_400Regular, Roboto_700Bold } from '@expo-google-fonts/
 import { UserStore } from '../store/UserStore';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import ModuleWebHeader from '../components/Modulewebheader';
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 
 const notify = (title, message) => {
   if (typeof alert !== 'undefined') {
@@ -55,17 +60,79 @@ const ActionButton = ({ icon, label, onPress, color, cardWidth }) => (
   </TouchableOpacity>
 );
 
+const confirmDelete = (title, message, onYes) => {
+  if (Platform.OS === 'web') {
+    if (globalThis.confirm?.(message)) onYes();
+    return;
+  }
+  Alert.alert(title, message, [
+    { text: 'Cancel', style: 'cancel' },
+    { text: 'Delete', style: 'destructive', onPress: onYes },
+  ]);
+};
+
+const priceLabel = (value) => {
+  const raw = String(value || '').replace(/[^\d.]/g, '');
+  return raw ? `\u20B9${Number(raw).toLocaleString('en-IN')}` : 'Price N/A';
+};
+
+const ItemRow = ({ image, title, meta, extra, onEdit, onDelete, onPress, editLabel = 'Edit', stock, onToggleStock, stockBusy }) => (
+  <TouchableOpacity style={styles.itemRow} activeOpacity={onPress ? 0.85 : 1} disabled={!onPress} onPress={onPress}>
+    {image ? (
+      <Image source={{ uri: image }} style={styles.itemImage} resizeMode="cover" />
+    ) : (
+      <View style={[styles.itemImage, styles.itemImageEmpty]}>
+        <Ionicons name="image-outline" size={22} color="#94a3b8" />
+      </View>
+    )}
+    <View style={{ flex: 1 }}>
+      <Text style={styles.itemTitle} numberOfLines={1}>{title}</Text>
+      {!!meta && <Text style={styles.itemMeta} numberOfLines={1}>{meta}</Text>}
+      {!!extra && <Text style={styles.itemExtra} numberOfLines={1}>{extra}</Text>}
+      {stock ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
+          <Text style={{ fontSize: 12, fontWeight: '800', color: stock.inStock ? '#166534' : '#b91c1c' }}>
+            {stock.inStock ? '● In Stock' : '● Out of Stock'}
+          </Text>
+          {onToggleStock ? (
+            // Row ka onPress (popup) na chale, isliye alag touchable me — edit kiye bina (bina credit) seedha toggle
+            <TouchableOpacity activeOpacity={1} onPress={() => {}} style={{ marginLeft: 8 }}>
+              <Switch
+                value={stock.inStock}
+                onValueChange={onToggleStock}
+                disabled={Boolean(stockBusy)}
+                trackColor={{ false: '#fca5a5', true: '#86efac' }}
+                thumbColor={stock.inStock ? '#16a34a' : '#dc2626'}
+                style={{ transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] }}
+              />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+    <View style={styles.itemActions}>
+      <TouchableOpacity style={styles.editBtn} onPress={onEdit} activeOpacity={0.85}>
+        <Ionicons name="create-outline" size={16} color="#fff" />
+        <Text style={styles.editBtnText}>{editLabel}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.deleteBtn} onPress={onDelete} activeOpacity={0.85}>
+        <Ionicons name="trash-outline" size={16} color="#dc2626" />
+        <Text style={styles.deleteBtnText}>Delete</Text>
+      </TouchableOpacity>
+    </View>
+  </TouchableOpacity>
+);
+
 export default function CommerceAdsCenterScreen({ navigation }) {
+  // Desktop web par ye page bhi sidebar wale shell ke andar hi khule
+  const redirectingToSidebar = useQuickMenuRedirect(navigation, 'CommerceAdsCenter');
   const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_700Bold });
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
   const [user, setUser] = useState(null);
-  const [stats, setStats] = useState({
-    myListings: 0,
-    receivedEnquiries: 0,
-    sentEnquiries: 0,
-  });
+  const [stats, setStats] = useState({ myListings: 0 });
   const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState([]);
 
   // ── Responsive sizing ───────────────────────────────────────────────────
   // Use most of the available width, only cap it on very large screens (web/tablet)
@@ -98,31 +165,12 @@ export default function CommerceAdsCenterScreen({ navigation }) {
           String(item.createdBy || item.owner_email || '').trim().toLowerCase() === currentEmail
       ).length;
 
-      // 2) Sent Enquiries — maine jitne logo ko enquiry bheji (/ecom-enquiries)
-      let sentEnquiries = 0;
-      try {
-        const sentRes = await AuthAPI.getEcomEnquiries();
-        if (sentRes?.ok) sentEnquiries = Array.isArray(sentRes.enquiries) ? sentRes.enquiries.length : 0;
-      } catch (e) {
-        console.warn('Sent enquiries count failed:', e);
-      }
+      setProducts(listings.filter(
+        (item) =>
+          String(item.createdBy || item.owner_email || '').trim().toLowerCase() === currentEmail
+      ));
 
-      // 3) Received Enquiries — mujhe jitni enquiry aayi (/ecom-enquiries/received, paginated)
-      let receivedEnquiries = 0;
-      try {
-        let cursor = null;
-        for (let page = 0; page < 30; page += 1) {
-          const recvRes = await AuthAPI.getReceivedEcomEnquiries({ cursor, perPage: 100 });
-          if (!recvRes?.ok) break;
-          receivedEnquiries += Array.isArray(recvRes.enquiries) ? recvRes.enquiries.length : 0;
-          if (!recvRes.hasMore || !recvRes.nextCursor) break;
-          cursor = recvRes.nextCursor;
-        }
-      } catch (e) {
-        console.warn('Received enquiries count failed:', e);
-      }
-
-      setStats({ myListings, receivedEnquiries, sentEnquiries });
+      setStats({ myListings });
     } catch (error) {
       console.error('Commerce hub load error:', error);
       notify('Load failed', 'Unable to load commerce dashboard.');
@@ -137,6 +185,38 @@ export default function CommerceAdsCenterScreen({ navigation }) {
     }, [loadData])
   );
 
+  // ✅ In Stock / Out of Stock toggle — turant UI badlo, fail ho to wapas purani value
+  const [stockBusyId, setStockBusyId] = useState(null);
+  const [selectedProductId, setSelectedProductId] = useState(null); // row click => modal
+  const selectedProduct = products.find((p) => String(p.id) === String(selectedProductId)) || null;
+  const handleToggleStock = async (item, next) => {
+    if (stockBusyId) return;
+    setStockBusyId(item.id);
+    setProducts((prev) => prev.map((p) => (String(p.id) === String(item.id) ? { ...p, in_stock: next } : p)));
+    const result = await UserStore.updateEcomeListingStock(item.id, next);
+    if (!result?.ok) {
+      setProducts((prev) => prev.map((p) => (String(p.id) === String(item.id) ? { ...p, in_stock: !next } : p)));
+      notify('Update failed', result?.message || 'Unable to update stock.');
+    }
+    setStockBusyId(null);
+  };
+
+  const handleEditProduct = (item) => navigation.navigate('Sell', { editListing: item });
+
+  const handleDeleteProduct = (item) => {
+    confirmDelete('Delete Product', 'Are you sure you want to delete this product? This cannot be undone.', async () => {
+      const result = await UserStore.deleteEcomeListing(item.id);
+      if (result?.ok) {
+        setProducts((prev) => prev.filter((p) => String(p.id) !== String(item.id)));
+        setStats((prev) => ({ ...prev, myListings: Math.max(0, prev.myListings - 1) }));
+      } else {
+        notify('Delete failed', result?.message || 'Unable to delete this product.');
+      }
+    });
+  };
+
+  if (redirectingToSidebar) return null;
+
   if (loading) {
     return (
       <View style={[styles.root, { justifyContent: 'center', alignItems: 'center' }]}>
@@ -150,7 +230,7 @@ export default function CommerceAdsCenterScreen({ navigation }) {
          <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
 
       {/* Web header — same shared red header as Settings/Wallet */}
-      <ModuleWebHeader title="Commerce Hub" navigation={navigation} />
+      <ModuleWebHeader title="My Ecom Product" navigation={navigation} />
 
       {/* Native header — same red image design as Settings screen */}
       {Platform.OS !== 'web' && (
@@ -167,7 +247,7 @@ export default function CommerceAdsCenterScreen({ navigation }) {
             <Ionicons name="chevron-back" size={22} color="#ffffff" />
           </TouchableOpacity>
           <View style={{ flex: 1 }}>
-            <Text style={styles.headerTitle}>Commerce Hub</Text>
+            <Text style={styles.headerTitle}>My Ecom Product</Text>
             <Text style={styles.headerSub}>Manage listings and enquiries</Text>
           </View>
         </ImageBackground>
@@ -201,52 +281,84 @@ export default function CommerceAdsCenterScreen({ navigation }) {
               cardWidth={statCardWidth}
               onPress={() => navigation.navigate('MyListings')}
             />
-            <StatCard
-              icon="chatbubble-ellipses"
-              label="Received Enquiries"
-              value={stats.receivedEnquiries}
-              color="#f59e0b"
-              cardWidth={statCardWidth}
-              onPress={() => navigation.navigate('SellerEnquiryDashboard')}
-            />
-            <StatCard
-              icon="send"
-              label="Sent Enquiries"
-              value={stats.sentEnquiries}
-              color="#10b981"
-              cardWidth={statCardWidth}
-              onPress={() => navigation.navigate('MyEnquiries')}
-            />
           </View>
 
+          {/* ---- My Products (Edit / Delete) ---- */}
+          {products.length > 0 ? (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Quick Actions</Text>
-            <View style={[styles.actionsContainer, { gap }]}>
-              <ActionButton
-                icon="add-circle-outline"
-                label="Create Listing"
-                color="#16a34a"
-                cardWidth={actionCardWidth}
-                onPress={() => navigation.navigate('Sell')}
+            <Text style={styles.sectionTitle}>My Products ({products.length})</Text>
+            {products.map((item) => (
+              <ItemRow
+                key={`prod-${item.id}`}
+                image={item.image || item.mediaItems?.[0]?.uri || ''}
+                title={item.title || 'Untitled Product'}
+                meta={[item.sector, item.city].filter(Boolean).join('  \u2022  ')}
+                extra={priceLabel(item.price)}
+                stock={{ inStock: item.in_stock !== false }}
+                onToggleStock={(v) => handleToggleStock(item, v)}
+                stockBusy={String(stockBusyId) === String(item.id)}
+                onPress={() => setSelectedProductId(item.id)}
+                onEdit={() => handleEditProduct(item)}
+                onDelete={() => handleDeleteProduct(item)}
               />
-              <ActionButton
-                icon="list-outline"
-                label="Browse Products"
-                color="#3b82f6"
-                cardWidth={actionCardWidth}
-                onPress={() => navigation.navigate('FarmingBuy')}
-              />
-              <ActionButton
-                icon="chatbubble-outline"
-                label="My Enquiries"
-                color="#10b981"
-                cardWidth={actionCardWidth}
-                onPress={() => navigation.navigate('MyEnquiries')}
-              />
-            </View>
+            ))}
           </View>
+          ) : null}
         </View>
       </ScrollView>
+
+      {/* ---- Product modal: yahin se In Stock / Out of Stock toggle ---- */}
+      {selectedProduct ? (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setSelectedProductId(null)}>
+          <View style={styles.pmBackdrop}>
+            <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setSelectedProductId(null)} />
+            <View style={styles.pmCard}>
+              <View style={styles.pmHeader}>
+                <Text style={styles.pmTitle} numberOfLines={2}>{selectedProduct.title || 'Untitled Product'}</Text>
+                <TouchableOpacity onPress={() => setSelectedProductId(null)} style={styles.pmClose} activeOpacity={0.8}>
+                  <Ionicons name="close" size={18} color="#64748b" />
+                </TouchableOpacity>
+              </View>
+              {(selectedProduct.image || selectedProduct.mediaItems?.[0]?.uri) ? (
+                <Image source={{ uri: selectedProduct.image || selectedProduct.mediaItems?.[0]?.uri }} style={styles.pmImage} resizeMode="cover" />
+              ) : null}
+              <Text style={styles.pmMeta}>{[selectedProduct.sector, selectedProduct.city].filter(Boolean).join('  \u2022  ')}</Text>
+              <Text style={styles.pmPrice}>{priceLabel(selectedProduct.price)}</Text>
+
+              <View style={[styles.pmStockBox, selectedProduct.in_stock === false ? styles.pmStockOut : styles.pmStockIn]}>
+                <View style={{ flex: 1, paddingRight: 10 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '800', color: selectedProduct.in_stock === false ? '#b91c1c' : '#166534' }}>
+                    {selectedProduct.in_stock === false ? 'Out of Stock' : 'In Stock'}
+                  </Text>
+                  <Text style={{ fontSize: 11.5, color: '#64748b', marginTop: 2 }}>
+                    {selectedProduct.in_stock === false
+                      ? 'Buyers ko "Out of Stock" dikh raha hai. Stock aane par ON karo.'
+                      : 'Stock khatam ho jaye to toggle OFF karo.'}
+                  </Text>
+                </View>
+                <Switch
+                  value={selectedProduct.in_stock !== false}
+                  onValueChange={(v) => handleToggleStock(selectedProduct, v)}
+                  disabled={String(stockBusyId) === String(selectedProduct.id)}
+                  trackColor={{ false: '#fca5a5', true: '#86efac' }}
+                  thumbColor={selectedProduct.in_stock === false ? '#dc2626' : '#16a34a'}
+                />
+              </View>
+
+              <View style={styles.pmActions}>
+                <TouchableOpacity style={styles.editBtn} activeOpacity={0.85} onPress={() => { const p = selectedProduct; setSelectedProductId(null); handleEditProduct(p); }}>
+                  <Ionicons name="create-outline" size={16} color="#fff" />
+                  <Text style={styles.editBtnText}>Edit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.deleteBtn} activeOpacity={0.85} onPress={() => { const p = selectedProduct; setSelectedProductId(null); handleDeleteProduct(p); }}>
+                  <Ionicons name="trash-outline" size={16} color="#dc2626" />
+                  <Text style={styles.deleteBtnText}>Delete</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -384,4 +496,59 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0f172a',
   },
+  emptyText: {
+    fontSize: 13,
+    color: '#64748b',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 14,
+    padding: 16,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 12,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+  },
+  itemImage: { width: 64, height: 64, borderRadius: 10, backgroundColor: '#f1f5f9' },
+  itemImageEmpty: { alignItems: 'center', justifyContent: 'center' },
+  itemTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0f172a',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
+  },
+  itemMeta: { fontSize: 12, color: '#64748b', marginTop: 2 },
+  pmBackdrop: { flex: 1, backgroundColor: 'rgba(15,23,42,0.55)', alignItems: 'center', justifyContent: 'center', padding: 16 },
+  pmCard: { width: '100%', maxWidth: 420, backgroundColor: '#fff', borderRadius: 16, padding: 16 },
+  pmHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 10 },
+  pmTitle: { flex: 1, fontSize: 17, fontWeight: '800', color: '#0f172a' },
+  pmClose: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' },
+  pmImage: { width: '100%', height: 170, borderRadius: 12, backgroundColor: '#f1f5f9', marginBottom: 10 },
+  pmMeta: { fontSize: 12.5, color: '#64748b' },
+  pmPrice: { fontSize: 16, fontWeight: '800', color: '#b91c1c', marginTop: 4, marginBottom: 12 },
+  pmStockBox: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 14 },
+  pmStockIn: { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' },
+  pmStockOut: { backgroundColor: '#fef2f2', borderColor: '#fecaca' },
+  pmActions: { flexDirection: 'row', gap: 10, justifyContent: 'flex-end' },
+  itemExtra: { fontSize: 12.5, fontWeight: '700', color: '#b91c1c', marginTop: 3 },
+  itemActions: { flexDirection: 'row', gap: 8 },
+  editBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, height: 36, borderRadius: 10, backgroundColor: '#b91c1c',
+  },
+  editBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  deleteBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, height: 36, borderRadius: 10,
+    backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca',
+  },
+  deleteBtnText: { color: '#dc2626', fontSize: 13, fontWeight: '700' },
 });

@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ScrollView,
   Text,
+  TextInput,
   View,
   TouchableOpacity,
   Modal,
@@ -34,12 +35,15 @@ import { INDIAN_STATES, getDistricts, getTalukas, getVillages } from './location
 // ─────────────────────────────────────────────
 function LocationFilterDropdown({ label, value, options, onChange, placeholder = 'All', disabled = false, cellStyle }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
   const active = !!value;
+  const q = query.trim().toLowerCase();
+  const filteredOptions = q ? options.filter((o) => String(o).toLowerCase().includes(q)) : options;
   return (
     <View style={[{ position: 'relative', zIndex: open ? 30 : 1, elevation: open ? 30 : 1 }, cellStyle]}>
       <TouchableOpacity
         activeOpacity={disabled ? 1 : 0.7}
-        onPress={() => !disabled && setOpen((o) => !o)}
+        onPress={() => { if (!disabled) { setOpen((o) => !o); setQuery(''); } }}
         style={{
           flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
           height: 42, paddingHorizontal: 10,
@@ -66,13 +70,28 @@ function LocationFilterDropdown({ label, value, options, onChange, placeholder =
         <View
           style={{
             position: 'absolute', top: 46, left: 0, right: 0, zIndex: 40, elevation: 40,
-            maxHeight: 200,
+            maxHeight: 250,
             backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 10,
             paddingVertical: 4, overflow: 'hidden',
             shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 4 },
           }}
         >
-          <ScrollView style={{ maxHeight: 192 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: 8, marginTop: 4, marginBottom: 4, paddingHorizontal: 8, height: 34, borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, backgroundColor: '#F9FAFB' }}>
+            <Feather name="search" size={13} color="#9CA3AF" />
+            <TextInput
+              value={query}
+              onChangeText={setQuery}
+              placeholder={`Search ${String(label).toLowerCase()}...`}
+              placeholderTextColor="#9CA3AF"
+              style={[{ flex: 1, fontSize: 12.5, color: '#111827', paddingVertical: 0 }, Platform.OS === 'web' ? { outlineStyle: 'none' } : null]}
+            />
+            {query ? (
+              <TouchableOpacity onPress={() => setQuery('')}>
+                <Feather name="x" size={13} color="#9CA3AF" />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+          <ScrollView style={{ maxHeight: 196 }} nestedScrollEnabled keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             {value ? (
               <TouchableOpacity style={{ paddingVertical: 8, paddingHorizontal: 12 }} onPress={() => { onChange(''); setOpen(false); }}>
                 <Text style={{ fontSize: 12.5, color: '#EF4444', fontWeight: '700' }}>Clear ({placeholder})</Text>
@@ -83,7 +102,10 @@ function LocationFilterDropdown({ label, value, options, onChange, placeholder =
                 {label === 'Village' ? 'No villages found' : 'No data found'}
               </Text>
             ) : null}
-            {options.map((opt) => (
+            {options.length > 0 && filteredOptions.length === 0 ? (
+              <Text style={{ fontSize: 12.5, color: '#9CA3AF', paddingVertical: 8, paddingHorizontal: 12 }}>No results found</Text>
+            ) : null}
+            {filteredOptions.map((opt) => (
               <TouchableOpacity
                 key={opt}
                 style={{ paddingVertical: 8, paddingHorizontal: 12 }}

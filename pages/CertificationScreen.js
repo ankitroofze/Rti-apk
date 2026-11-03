@@ -1,5 +1,6 @@
 import { smartGoBack } from '../utils/smartBack';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
@@ -92,7 +93,23 @@ function DropdownField({ label, value, options, onChange, placeholder = 'Select'
   );
 }
 
+// Pagination: page numbers (1 … 4 5 6 … 10)
+const CERT_PAGE_SIZE = 5;
+const buildPageList = (total, current) => {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const pages = new Set([1, total, current - 1, current, current + 1]);
+  const sorted = [...pages].filter((p) => p >= 1 && p <= total).sort((a, b) => a - b);
+  const out = [];
+  sorted.forEach((p, i) => {
+    if (i > 0 && p - sorted[i - 1] > 1) out.push('…');
+    out.push(p);
+  });
+  return out;
+};
+
 export default function CertificationScreen({ navigation }) {
+  // Desktop web par ye page kabhi bina sidebar ke na khule
+  const redirectingToSidebar = useQuickMenuRedirect(navigation, 'Certification');
   const { showToast } = useToast();
   const insets = useSafeAreaInsets();
   const { width: winWidth } = useWindowDimensions();
@@ -124,6 +141,11 @@ const DIFFICULTIES = [
 const [subject, setSubject] = useState(null);
 const [testType, setTestType] = useState(null);
 const [difficulty, setDifficulty] = useState(null);
+  const [recordPage, setRecordPage] = useState(1);
+  const totalRecordPages = Math.max(1, Math.ceil(certData.items.length / CERT_PAGE_SIZE));
+  const currentRecordPage = Math.min(recordPage, totalRecordPages);
+  const pageStart = (currentRecordPage - 1) * CERT_PAGE_SIZE;
+  const pagedItems = certData.items.slice(pageStart, pageStart + CERT_PAGE_SIZE);
  const loadCertification = useCallback(async () => {
     // Subject/Test Type select na ho tab bhi fetch hoga — getCertificationSummary
     // subject/testType undefined hone par practice+training+exam teeno APIs ko
@@ -253,6 +275,8 @@ const handleAttemptQuiz = useCallback((item) => {
       ? CertificationStyles.passBadge
       : CertificationStyles.retryBadge;
 
+  if (redirectingToSidebar) return null;
+
    return (
     <View style={[CertificationStyles.root]}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
@@ -324,32 +348,6 @@ const handleAttemptQuiz = useCallback((item) => {
           {!isCompact && <Feather name="file-text" size={64} color="rgba(255,255,255,0.15)" style={{ marginLeft: 10 }} />}
         </View>
 
-                     {/* My Attempts + Quiz Subscription */}
-        <View style={{ width: '100%', maxWidth: 1100, alignSelf: 'center', flexDirection: 'row', gap: 8, marginBottom: 16 }}>
-          <TouchableOpacity
-            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FEF5F5', borderWidth: 1, borderColor: '#EDE8E1', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 14 }}
-            onPress={() => navigation.navigate('MyAttempts')}
-            activeOpacity={0.75}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 }}>
-              <Feather name="list" size={14} color="#dc2626" />
-              <Text style={{ fontSize: 12.5, fontWeight: '700', color: '#dc2626' }} numberOfLines={1}>My Attempts</Text>
-            </View>
-            <Feather name="chevron-right" size={14} color="#dc2626" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#FEF5F5', borderWidth: 1, borderColor: '#EDE8E1', borderRadius: 10, paddingHorizontal: 10, paddingVertical: 14 }}
-            onPress={() => navigation.navigate('My Quiz Subscription')}
-            activeOpacity={0.75}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexShrink: 1 }}>
-              <Feather name="external-link" size={14} color="#dc2626" />
-              <Text style={{ fontSize: 12.5, fontWeight: '700', color: '#dc2626' }} numberOfLines={1}>Quiz Subscription</Text>
-            </View>
-            <Feather name="chevron-right" size={14} color="#dc2626" />
-          </TouchableOpacity>
-        </View>
                     {/* Metrics */}
         <View style={{ width: '100%', maxWidth: 1100, alignSelf: 'center', flexDirection: 'row', gap: 10, marginBottom: 16 }}>
           <View style={{ flex: 1, flexDirection: isCompact ? 'column' : 'row', alignItems: 'center', gap: isCompact ? 6 : 8, backgroundColor: '#FDF3F3', borderWidth: 1, borderColor: '#EDE8E1', borderRadius: 12, paddingVertical: 14, paddingHorizontal: 8, overflow: 'hidden' }}>
@@ -457,17 +455,12 @@ const handleAttemptQuiz = useCallback((item) => {
               </View>
               <Text style={{ fontSize: 16, fontWeight: '800', color: '#111111' }}>Certification Records</Text>
             </View>
-            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }} onPress={() => navigation.navigate('MyAttempts')}>
-              <Feather name="external-link" size={13} color="#dc2626" />
-              <Text style={{ fontSize: 13, fontWeight: '700', color: '#dc2626' }}>View All</Text>
-              <Feather name="chevron-right" size={13} color="#dc2626" />
-            </TouchableOpacity>
           </View>
 
 {loading ? (
             <Text style={CertificationStyles.loadingText}>Loading certification records...</Text>
           ) : certData.items.length ? (
-            certData.items.map((item) => (
+            pagedItems.map((item) => (
               <View key={item.id} style={CertificationStyles.certCard}>
 
                 {/* Title + Badge */}
@@ -570,6 +563,48 @@ const handleAttemptQuiz = useCallback((item) => {
               <Text style={{ fontSize: 13, color: '#888888' }}>Complete a test to see your certification records here.</Text>
             </View>
           )}
+
+          {!loading && certData.items.length > CERT_PAGE_SIZE ? (
+            <View style={{ marginTop: 8, alignItems: 'center', gap: 10 }}>
+              <Text style={{ fontSize: 12, color: '#6B7280' }}>
+                Showing {pageStart + 1}–{Math.min(pageStart + CERT_PAGE_SIZE, certData.items.length)} of {certData.items.length}
+              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 6 }}>
+                <TouchableOpacity
+                  disabled={currentRecordPage <= 1}
+                  onPress={() => setRecordPage(currentRecordPage - 1)}
+                  activeOpacity={0.75}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 10, height: 34, borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#fff', opacity: currentRecordPage <= 1 ? 0.45 : 1 }}
+                >
+                  <Feather name="chevron-left" size={14} color="#dc2626" />
+                  <Text style={{ fontSize: 12.5, fontWeight: '700', color: '#dc2626' }}>Prev</Text>
+                </TouchableOpacity>
+                {buildPageList(totalRecordPages, currentRecordPage).map((p, i) => (
+                  p === '…' ? (
+                    <Text key={`gap-${i}`} style={{ paddingHorizontal: 4, color: '#9CA3AF', fontWeight: '700' }}>…</Text>
+                  ) : (
+                    <TouchableOpacity
+                      key={p}
+                      onPress={() => setRecordPage(p)}
+                      activeOpacity={0.75}
+                      style={{ minWidth: 34, height: 34, paddingHorizontal: 8, alignItems: 'center', justifyContent: 'center', borderRadius: 8, borderWidth: 1, borderColor: p === currentRecordPage ? '#dc2626' : '#E5E7EB', backgroundColor: p === currentRecordPage ? '#dc2626' : '#fff' }}
+                    >
+                      <Text style={{ fontSize: 12.5, fontWeight: '800', color: p === currentRecordPage ? '#fff' : '#374151' }}>{p}</Text>
+                    </TouchableOpacity>
+                  )
+                ))}
+                <TouchableOpacity
+                  disabled={currentRecordPage >= totalRecordPages}
+                  onPress={() => setRecordPage(currentRecordPage + 1)}
+                  activeOpacity={0.75}
+                  style={{ flexDirection: 'row', alignItems: 'center', gap: 2, paddingHorizontal: 10, height: 34, borderRadius: 8, borderWidth: 1, borderColor: '#E5E7EB', backgroundColor: '#fff', opacity: currentRecordPage >= totalRecordPages ? 0.45 : 1 }}
+                >
+                  <Text style={{ fontSize: 12.5, fontWeight: '700', color: '#dc2626' }}>Next</Text>
+                  <Feather name="chevron-right" size={14} color="#dc2626" />
+                </TouchableOpacity>
+              </View>
+            </View>
+          ) : null}
         </View>
       </ScrollView>
     </View>

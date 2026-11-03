@@ -5,7 +5,7 @@
 //
 //  Thumbs ko drag karo: left = minimum price, right = maximum price.
 import React, { useMemo, useRef, useState } from 'react';
-import { PanResponder, Platform, StyleSheet, View } from 'react-native';
+import { PanResponder, Platform, StyleSheet, TextInput, View } from 'react-native';
 import Text from './RobotoText';
 
 const THUMB = 22;      // thumb ka dikhne wala size
@@ -14,6 +14,37 @@ const TRACK_H = 5;
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 export const formatRupees = (n) => `₹${Math.round(Number(n) || 0).toLocaleString('en-IN')}`;
+
+// Typed price box: tap karke apni price likh sakte ho (sirf numbers).
+// Likhte waqt slider live move hota hai; blur / Enter par value min..max ke andar fix ho jaati hai.
+function PriceBox({ value, suffix = '', label, onLive, onCommit }) {
+  const [focused, setFocused] = useState(false);
+  const [text, setText] = useState('');
+  const shown = focused ? text : `${formatRupees(value)}${suffix}`;
+  return (
+    <View style={styles.pill}>
+      <TextInput
+        value={shown}
+        onFocus={() => { setText(String(Math.round(Number(value) || 0))); setFocused(true); }}
+        onChangeText={(t) => {
+          const digits = String(t).replace(/[^0-9]/g, '').slice(0, 9);
+          setText(digits);
+          onLive?.(digits === '' ? null : Number(digits));
+        }}
+        onBlur={() => { setFocused(false); onCommit?.(text === '' ? null : Number(text)); }}
+        onSubmitEditing={() => { setFocused(false); onCommit?.(text === '' ? null : Number(text)); }}
+        keyboardType="number-pad"
+        inputMode="numeric"
+        returnKeyType="done"
+        selectTextOnFocus
+        accessibilityLabel={label}
+        placeholder="0"
+        placeholderTextColor="#94a3b8"
+        style={styles.pillInput}
+      />
+    </View>
+  );
+}
 
 export default function PriceRangeSlider({
   min = 0,
@@ -78,9 +109,20 @@ export default function PriceRangeSlider({
     <View>
       {showLabels ? (
         <View style={styles.labelRow}>
-          <View style={styles.pill}><Text style={styles.pillText}>{formatRupees(lo)}</Text></View>
+          <PriceBox
+            value={lo}
+            label="Minimum price"
+            onLive={(n) => { if (n !== null && n <= hi && onChange) onChange(clamp(n, min, max), hi); }}
+            onCommit={(n) => { if (onChange) onChange(clamp(n === null ? min : n, min, hi), hi); }}
+          />
           <Text style={styles.dash}>–</Text>
-          <View style={styles.pill}><Text style={styles.pillText}>{formatRupees(hi)}{hi >= max ? '+' : ''}</Text></View>
+          <PriceBox
+            value={hi}
+            suffix={hi >= max ? '+' : ''}
+            label="Maximum price"
+            onLive={(n) => { if (n !== null && n >= lo && onChange) onChange(lo, clamp(n, min, max)); }}
+            onCommit={(n) => { if (onChange) onChange(lo, clamp(n === null ? max : n, lo, max)); }}
+          />
         </View>
       ) : null}
 
@@ -123,8 +165,13 @@ export default function PriceRangeSlider({
 const styles = StyleSheet.create({
   labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 },
   pill: {
-    flex: 1, alignItems: 'center', paddingVertical: 7, borderRadius: 8,
+    flex: 1, alignItems: 'center', borderRadius: 8,
     backgroundColor: '#f8fafc', borderWidth: 1, borderColor: '#e2e8f0',
+  },
+  pillInput: {
+    width: '100%', textAlign: 'center', paddingVertical: 7, paddingHorizontal: 6,
+    fontSize: 13, fontWeight: '500', color: '#0f172a',
+    ...(Platform.OS === 'web' ? { outlineStyle: 'none', outlineWidth: 0, backgroundColor: 'transparent' } : null),
   },
   pillText: { fontSize: 13, fontWeight: '500', color: '#0f172a' },
   dash: { color: '#94a3b8', fontSize: 14 },

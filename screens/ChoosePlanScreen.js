@@ -1,3 +1,4 @@
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import React, { useState, useMemo } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, Image,
@@ -213,7 +214,7 @@ const sh = StyleSheet.create({
 });
 
 // ── Main Screen ────────────────────────────────────────────────────────────────
-export default function ChoosePlanScreen({ navigation, route }) {
+function ChoosePlanScreen__Inner({ navigation, route }) {
   const adData = route?.params?.adData || {};
 const { width: winWidth } = useWindowDimensions();
 const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
@@ -1197,3 +1198,11 @@ const ws = StyleSheet.create({
   buyBtn:            { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:8, backgroundColor: C.primary, borderRadius: RADIUS.pill, paddingVertical:14 },
   buyBtnText:        { color:'#ffffff', fontSize:15, fontFamily: FONT.bold },
 });
+
+
+// Desktop web par ye page hamesha sidebar wale shell (QuickMenu) ke andar khulta hai
+export default function ChoosePlanScreen(props) {
+  const redirecting = useQuickMenuRedirect(props.navigation, 'ChoosePlan');
+  if (redirecting) return null;
+  return <ChoosePlanScreen__Inner {...props} />;
+}

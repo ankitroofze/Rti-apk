@@ -3,7 +3,7 @@
 // WhatsApp / Call Now). Side panel (RightUtilityPanel) jaisa hi look — ab feed ke
 // beech wale (center) ads me bhi yahi dikhta hai.
 import React from 'react';
-import { View, Text, TouchableOpacity, Linking, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, Linking, StyleSheet, Platform, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { openExternalUrl, buildWhatsappUrl } from '../utils/adRedirect';
 
@@ -17,7 +17,13 @@ export default function AdCtaButtons({ ad, onOpenLeadForm, style }) {
   const onLinkPress = () => {
     if (ad.redirect === 'whatsapp') {
       const waUrl = buildWhatsappUrl(ad);
-      if (waUrl) openExternalUrl(waUrl);
+      if (waUrl) {
+        openExternalUrl(waUrl);
+      } else if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.alert('This advertiser has not added a WhatsApp number yet.');
+      } else {
+        Alert.alert('WhatsApp', 'This advertiser has not added a WhatsApp number yet.');
+      }
       return;
     }
     openExternalUrl(ad.redirect === 'shop' ? ad.extraValues?.shop_url : ad.extraValues?.website_url);

@@ -8,12 +8,12 @@ import { Platform } from 'react-native';
 export const isDesktopWeb = () =>
   Platform.OS === 'web' && typeof window !== 'undefined' && window.innerWidth > 760;
 
-export function useQuickMenuRedirect(navigation, screenName) {
+export function useQuickMenuRedirect(navigation, screenName, params) {
   const shouldRedirect = isDesktopWeb() && !navigation?.isQuickMenuEmbedded;
   useEffect(() => {
     if (!shouldRedirect) return;
     try {
-      (navigation?.replace || navigation?.navigate)?.call(navigation, 'QuickMenu', { initialScreen: screenName, ts: Date.now() });
+      (navigation?.replace || navigation?.navigate)?.call(navigation, 'QuickMenu', { initialScreen: screenName, ts: Date.now(), ...(params ? { screenParams: params } : null) });
     } catch (_) { /* ignore */ }
   }, [shouldRedirect]); // eslint-disable-line react-hooks/exhaustive-deps
   return shouldRedirect;

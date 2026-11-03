@@ -16,6 +16,7 @@
 // ke through isko values deta hai.
 // ─────────────────────────────────────────────────────────────────
 import ModuleAndroidHeader from './ModuleAndroidHeader';
+import ModuleWebHeader from './Modulewebheader';
 import React from 'react';
 import {
   View,
@@ -96,21 +97,12 @@ export default function SubscriptionPlanPurchase({
     <View style={S.root}>
            <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
-      {/* Header — same image background used on every subscription screen */}
-      {!isDesktopWeb ? (
-<ModuleAndroidHeader title={headerTitle} onBack={() => navigation.goBack()} />
-) : (
-<>
-<ImageBackground source={HEADER_BG_IMAGE} style={S.headerImageWrap} resizeMode="cover">
-        <TouchableOpacity onPress={() => navigation.goBack()} style={S.headerBackBtn}>
-          <Feather name="arrow-left" size={20} color="#ffffff" />
-          <Text style={S.headerBackBtnText}>Back</Text>
-        </TouchableOpacity>
-        <Text style={S.headerTitle} numberOfLines={1}>{headerTitle}</Text>
-        <View style={{ width: 60 }} />
-      </ImageBackground>
-</>
-)}
+      {/* Header — web par News Feed jaisa common ModuleWebHeader, Android/iOS par ModuleAndroidHeader */}
+      {isWeb ? (
+        <ModuleWebHeader title={headerTitle} navigation={navigation} onBack={() => navigation.goBack()} />
+      ) : (
+        <ModuleAndroidHeader title={headerTitle} onBack={() => navigation.goBack()} />
+      )}
 
       <ScrollView
         contentContainerStyle={[S.scrollContent, isMobileWeb ? { width: '100%', maxWidth: '100%', marginHorizontal: 0 } : null, showPayBar ? { paddingBottom: 200 } : null]}

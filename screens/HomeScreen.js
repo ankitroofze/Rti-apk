@@ -34,6 +34,8 @@ import MarqueeMenuBar from '../components/MarqueeMenuBar';
 import AutoFitAdImage from '../components/AutoFitAdImage';
 import AdOverlayCta from '../components/AdOverlayCta';
 import MediaGallery from '../components/MediaGallery';
+import * as MediaDownloadButtonModule from '../components/MediaDownloadButton';
+const MediaDownloadButton = MediaDownloadButtonModule.MediaDownloadButton || MediaDownloadButtonModule.default;
 import { groupAdStories } from '../utils/adGrouping';
 const PINK = '#FF2D78';
 const PINK_LIGHT = '#fff5f9';
@@ -48,7 +50,7 @@ function storyMatchesLanguage(story, selectedLanguage) {
   return storyLanguage === activeLanguage;
 }
 
-function homeStoryFromAd(ad = {}) {
+export function homeStoryFromAd(ad = {}) {
   const photo = String(
     ad.photo || ad.image || ad.image_url || ad.images?.[0] || ad.photos?.[0] || ''
   ).trim();
@@ -121,7 +123,7 @@ function homeStoryFromEcome(item = {}) {
     image,
     images,
     price: item.price || '',
-    quantity: item.quantity || '',
+    inStock: !(item.in_stock === false || item.in_stock === 0 || item.in_stock === '0'),
     city: item.city || item.location || '',
     category: item.category || 'Ecome',
     menuTags: ['latest'],
@@ -189,6 +191,7 @@ const EcomeGridCard = React.memo(function EcomeGridCard({ item, navigation, styl
         </View>
         <Text style={ecomeRowStyles.title} numberOfLines={2}>{item.title}</Text>
         <Text style={ecomeRowStyles.price} numberOfLines={1}>{item.price ? `₹${item.price}` : 'Contact for price'}</Text>
+        {item.inStock === false ? <Text style={{ color: '#dc2626', fontSize: 11, fontWeight: '800', marginTop: 2 }}>Out of Stock</Text> : null}
         <View style={ecomeRowStyles.footer}>
           <Text style={ecomeRowStyles.seller} numberOfLines={1}>{item.city || item.sellerName}</Text>
           <Ionicons name="arrow-forward" size={13} color="#dc2626" />
@@ -292,7 +295,7 @@ function EcomeHomeCard({ item, navigation }) {
         {item.description ? <Text style={ecomeStyles.description} numberOfLines={2}>{item.description}</Text> : null}
         <View style={ecomeStyles.metaRow}>
           <Text style={ecomeStyles.price}>{item.price ? `₹${item.price}` : 'Contact for price'}</Text>
-          {item.quantity ? <Text style={ecomeStyles.quantity}>{item.quantity}</Text> : null}
+          {item.inStock === false ? <Text style={[ecomeStyles.quantity, { color: '#dc2626' }]}>Out of Stock</Text> : null}
         </View>
         <View style={ecomeStyles.footer}><Text style={ecomeStyles.seller} numberOfLines={1}>{item.city || item.sellerName}</Text><Text style={ecomeStyles.cta}>View listing <Ionicons name="arrow-forward" size={13} /></Text></View>
       </View>
@@ -412,9 +415,16 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
                   const imgs = Array.isArray(a?.images) ? a.images.filter(Boolean) : [];
                   const first = imageOf(a);
                   if (a?.video || imgs.length > 1) {
-                    return <MediaGallery images={imgs.length ? imgs : (first ? [first] : [])} video={a.video} width={slideW} maxHeight={420} onPressImage={() => onPress?.(a)} />;
+                    return <MediaGallery images={imgs.length ? imgs : (first ? [first] : [])} video={a.video} width={slideW} maxHeight={420} adAutoPlay downloadable onPressImage={() => onPress?.(a)} />;
                   }
-                  return first ? <AutoFitAdImage uri={first} maxWidth={slideW} maxHeight={420} radius={10} /> : null;
+                  return first ? (
+                    <View style={{ width: slideW, position: 'relative' }}>
+                      <AutoFitAdImage uri={first} maxWidth={slideW} maxHeight={420} radius={10} />
+                      <View pointerEvents="box-none" style={{ position: 'absolute', top: 10, right: 10, zIndex: 8, elevation: 8 }}>
+                        <MediaDownloadButton uri={first} type="image" size={32} />
+                      </View>
+                    </View>
+                  ) : null;
                 })()}
               </TouchableOpacity>
             ))}
@@ -459,6 +469,8 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
             video={ad.video}
             width={contentW}
             maxHeight={420}
+            adAutoPlay
+            downloadable
             onPressImage={() => onPress?.(ad)}
           />
           <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={hasVideo ? 46 : 12} />
@@ -473,6 +485,9 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
         <Text style={styles.adCaption}>ADVERTISEMENT</Text>
         <View style={{ width: contentW, position: 'relative', alignItems: 'center' }}>
           <AutoFitAdImage uri={image} maxWidth={contentW} maxHeight={420} radius={10} />
+          <View pointerEvents="box-none" style={{ position: 'absolute', top: 10, right: 10, zIndex: 8, elevation: 8 }}>
+            <MediaDownloadButton uri={image} type="image" size={32} />
+          </View>
           <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={12} />
         </View>
       </TouchableOpacity>
@@ -769,6 +784,8 @@ export default function HomeScreen({ navigation, route }) {
   const ecomeStoriesRef = useRef([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  // Pehla feed load ho jaye tab tak footer / khali UI nahi dikhana (footer beech me aa jata tha)
+  const [feedReady, setFeedReady] = useState(false);
   const scrollYRef = useRef(0);
   const handleRailWheel = IS_WEB
     ? (e) => {
@@ -818,6 +835,7 @@ export default function HomeScreen({ navigation, route }) {
     return () => { alive = false; };
   }, []);
   const [currentUser, setCurrentUser] = useState(null);
+  const [userChecked, setUserChecked] = useState(false); // popup ad se pehle user/plan load ho chuka hai ya nahi
   const [leftRailHeight, setLeftRailHeight] = useState(0);
   const [rightRailHeight, setRightRailHeight] = useState(0);
 
@@ -920,6 +938,7 @@ export default function HomeScreen({ navigation, route }) {
       if (reqId === newsReqIdRef.current) {
         newsLoadingRef.current = false;
         setLoadingMore(false);
+        setFeedReady(true);
       }
     }
   }, []);
@@ -942,6 +961,7 @@ export default function HomeScreen({ navigation, route }) {
       const user = await UserStore.getCurrentUser();
       setCurrentUser(user || null);
     } catch { setCurrentUser(null); }
+    setUserChecked(true);
   }, []);
 
     useFocusEffect(useCallback(() => {
@@ -1245,6 +1265,12 @@ const handleOpenLeadForm = useCallback(async (story) => {
     };
   }).filter(Boolean), [allAdsList]);
 
+  // Premium ya koi bhi active Role subscription => popup ad band
+  const hasPaidRoleSubscription = useMemo(() => {
+    if (!currentUser) return false;
+    try { return Boolean(UserStore.hasActiveRolePlan(currentUser) || UserStore.hasActiveSubscription(currentUser)); } catch { return false; }
+  }, [currentUser]);
+
   // Center feed ko upar scroll karo (desktop: center column, mobile/compact: page scroll)
   const scrollFeedToTop = useCallback(() => {
     const go = () => {
@@ -1254,22 +1280,20 @@ const handleOpenLeadForm = useCallback(async (story) => {
     go();
     setTimeout(go, 60); // naya content render hone ke baad bhi top par rahe
   }, []);
-  const handleViewMoreAds = useCallback(() => { setShowAllAds(true); scrollFeedToTop(); }, [scrollFeedToTop]);
+  // ✅ "View More" (ads) — ab bich me inline nahi, ALAG PAGE (sirf ads) khulta hai
+  const handleViewMoreAds = useCallback(() => { navigation?.navigate?.('AllAds'); }, [navigation]);
   // ✅ Trending News ke "See All" par: saari news ek page (center column) me, latest pehle
   const handleViewAllTrending = useCallback(() => {
-    setShowAllAds(false);
-    setShowAllTrending(true);
-    scrollFeedToTop();
-  }, [scrollFeedToTop]);
+    navigation?.navigate?.('AllNews'); // ✅ alag page (sirf news)
+  }, [navigation]);
   // Dusre page (e.g. News Details) ke Trending "See All" se aaye to seedha All News list center me khule
   const routeShowAllTrending = route?.params?.showAllTrending;
   const routeShowAllTrendingTs = route?.params?.showAllTrendingTs;
   useEffect(() => {
     if (routeShowAllTrending) {
-      setShowAllAds(false);
-      setViewMode?.((prev) => (prev === 'states' ? 'feed' : prev));
-      setShowAllTrending(true);
-      scrollFeedToTop();
+      // Dusre page (News Details) se aaye to bhi All News ALAG page me khule
+      navigation?.setParams?.({ showAllTrending: undefined, showAllTrendingTs: undefined });
+      navigation?.navigate?.('AllNews');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [routeShowAllTrending, routeShowAllTrendingTs]);
@@ -1475,6 +1499,11 @@ const handleOpenLeadForm = useCallback(async (story) => {
                         commonCopy={commonCopy}
                       />
                     ) : null}
+                    {!feedReady && visibleStories.length === 0 ? (
+                      <View style={{ minHeight: 360, alignItems: 'center', justifyContent: 'center' }}>
+                        <ActivityIndicator size="large" color="#f97316" />
+                      </View>
+                    ) : null}
                     {String(searchQuery || '').trim() && visibleStories.length === 0 ? (
                       <Text style={{ color: '#64748b', fontSize: 15, fontWeight: '600', paddingVertical: 32, textAlign: 'center' }}>User not found</Text>
                     ) : null}
@@ -1532,7 +1561,7 @@ const handleOpenLeadForm = useCallback(async (story) => {
       </View>
       {/* Mobile / compact: loader footer ke UPAR, taaki footer ke neeche khali space/loader na aaye */}
       {!isThreeColScroll && loadingMore ? <ActivityIndicator style={{ marginVertical: 16 }} color="#f97316" /> : null}
-      {IS_WEB && !isThreeColScroll ? <AppFooter navigation={navigation} /> : null}
+      {IS_WEB && !isThreeColScroll && (feedReady || liveStories.length > 0) ? <AppFooter navigation={navigation} /> : null}
     </>
   );
 
@@ -1548,9 +1577,11 @@ const handleOpenLeadForm = useCallback(async (story) => {
         >
           {/* Columns poori visible height lete hain; footer unke neeche full width me aata hai */}
           <View style={{ height: colsViewportHeight || Math.max(400, windowHeight - 70), width: '100%' }}>{pageContent}</View>
-          <View style={{ width: '100%', alignSelf: 'stretch' }}>
-            <AppFooter navigation={navigation} />
-          </View>
+          {feedReady || liveStories.length > 0 ? (
+            <View style={{ width: '100%', alignSelf: 'stretch' }}>
+              <AppFooter navigation={navigation} />
+            </View>
+          ) : null}
         </ScrollView>
       ) : (
       <ScrollView
@@ -1604,7 +1635,8 @@ const handleOpenLeadForm = useCallback(async (story) => {
 />
       {/* <RotatingSponsoredAd ads={allAdsList} onPress={handleSponsoredAdPress} /> */}
 
-            {(Platform.OS === 'android' || Platform.OS === 'ios' || IS_WEB) && viewMode !== 'states' ? (
+            {/* Popup ad: Premium / Role subscription wale user ko NAHI dikhega (baaki screens ke ads waise hi chalte hain) */}
+      {(Platform.OS === 'android' || Platform.OS === 'ios' || IS_WEB) && viewMode !== 'states' && userChecked && !hasPaidRoleSubscription ? (
         <HomePromoPopup ads={homePromoAds} onPress={handleSponsoredAdPress} />
       ) : null}
     </View>
