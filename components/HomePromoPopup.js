@@ -171,8 +171,9 @@ function PromoVideo({ uri, poster, onSize }) {
 
 // Seen-wise ordered list helper
 const SEEN_KEY = 'home_promo_ads_seen_v1';
-// ✅ FIX: user ne popup Skip / close kar diya to is app-session me dobara auto-open NA ho.
-// Pehle close() ke baad ads refresh hote hi (ya Home par wapas focus aate hi) popup phir khul jaata tha.
+// ✅ user ne popup Skip / close kar diya to usi Home visit me dobara auto-open NA ho (ads refresh hone par).
+// Lekin jaise hi user Home se kisi dusre page par jaye, ye flag reset ho jata hai —
+// isliye har baar jab user dusre page se Home par wapas aayega, popup phir se dikhega.
 let promoDismissedThisSession = false;
 const adKey = (a) => String(a?.id ?? a?.ad_id ?? '');
 const orderBySeen = (src = [], seen = {}) => {
@@ -281,11 +282,18 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
   // User Home se kisi dusre page par chala gaya => popup wahan kabhi na dikhe.
   // (Skip nahi hua to Home par wapas aate hi 5 sec wala popup dobara aayega.)
   useEffect(() => {
-    if (!isFocused && visibleRef.current) {
-      visibleRef.current = false;
-      setVisible(false);
+    if (!isFocused) {
+      // ✅ Home se bahar gaya => "dismissed" reset, taaki wapas aane par popup dobara khule
+      promoDismissedThisSession = false;
+      if (visibleRef.current) {
+        visibleRef.current = false;
+        setVisible(false);
+      }
     }
   }, [isFocused]);
+
+  // Component unmount (e.g. hide_ads toggle / Home remount) par bhi flag reset
+  useEffect(() => () => { promoDismissedThisSession = false; }, []);
 
   useEffect(() => {
     if (adsHidden) {
