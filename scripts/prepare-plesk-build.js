@@ -354,6 +354,20 @@ const htaccessContent = `<IfModule mod_rewrite.c>
   # Single Page Application (SPA) routing fallback to root /index.html
   RewriteRule ^ /index.html [L]
 </IfModule>
+
+# ✅ Speed: icon fonts / images browser me cache (dobara download nahi) + text files compress
+<IfModule mod_headers.c>
+  <FilesMatch "\\.(ttf|woff2?)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+    Header set Access-Control-Allow-Origin "*"
+  </FilesMatch>
+  <FilesMatch "\\.(png|jpe?g|webp|gif|svg|ico)$">
+    Header set Cache-Control "public, max-age=2592000"
+  </FilesMatch>
+</IfModule>
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/css application/javascript application/json image/svg+xml font/ttf application/x-font-ttf
+</IfModule>
 `;
 fs.writeFileSync(path.join(outDir, '.htaccess'), htaccessContent, 'utf8');
 

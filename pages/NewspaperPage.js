@@ -444,7 +444,7 @@ export default function NewspaperPage({ route, navigation }) {
       if (IS_WEB) { window.print(); }
       else { await exportToPdf(sections, templateId); }
     } catch (e) {
-      Alert.alert('Error', 'Export failed: ' + e.message);
+      Alert.alert('Notice', 'Export failed: ' + e.message);
     }
   };
 
@@ -453,13 +453,13 @@ export default function NewspaperPage({ route, navigation }) {
     setIsSaving(true);
     try {
       if (!UserStore) {
-        Alert.alert('Error', 'UserStore not available. Please restart the app.');
+        Alert.alert('Notice', 'UserStore not available. Please restart the app.');
         setIsSaving(false);
         return;
       }
       const user = await UserStore.getCurrentUser();
       if (!user) {
-        Alert.alert('Error', 'Please login again to save articles.');
+        Alert.alert('Notice', 'Please login again to save articles.');
         setIsSaving(false);
         return;
       }
@@ -496,7 +496,7 @@ export default function NewspaperPage({ route, navigation }) {
       }
 
       if (newItems.length === 0) {
-        Alert.alert('Error', 'No articles found. Please fill in article title and body first.');
+        Alert.alert('Notice', 'No articles found. Please fill in article title and body first.');
         setIsSaving(false);
         return;
       }
@@ -522,7 +522,7 @@ export default function NewspaperPage({ route, navigation }) {
         { text: 'OK', onPress: () => { setIsSaving(false); navigation.goBack(); } }
       ]);
     } catch (e) {
-      Alert.alert('Error', 'Save failed: ' + (e.message || 'Unknown error'));
+      Alert.alert('Notice', 'Save failed: ' + (e.message || 'Unknown error'));
       setIsSaving(false);
     }
   };

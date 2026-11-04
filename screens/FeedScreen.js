@@ -1,4 +1,5 @@
 import NameWithTick from '../components/NameWithTick';
+import { isAdsHidden } from '../utils/adsVisibility';
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
@@ -24,7 +25,6 @@ import { UserStore } from '../store/UserStore';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl, storeWebUriToIdbMedia } from '../utils/webMediaStore';
 import { safePause, safePlay, safeSetMuted } from '../utils/videoPlayerSafe';
-import { mergeAudioOnDevice, getLastMergeError } from '../utils/mergeAudioOnDevice';
 import { useGlobalMuted, getGlobalMuted, setGlobalMuted } from '../utils/Globalmutestore';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
 import { getAdRedirectMeta, openAdRedirect } from '../utils/adRedirect';
@@ -140,6 +140,20 @@ function countFeedComments(comments = []) {
 // ✅ FIX: server ka feed `comments` count kabhi stale/galat hota hai (list me 0 comment, count 1).
 // Asli comment list se verify hua count yaha rakhte hain: server wahi stale value dobara push kare to real count dikhao.
 const feedCommentVerify = new Map(); // postId -> { server, real }
+// ✅ FIX: jin posts ka comment count asli list se confirm ho chuka hai (ya confirm karna possible nahi tha).
+// Jab tak confirm nahi, server ka (stale ho sakta hai) count screen par DIKHAYA NAHI jaata — warna
+// "1" dikh kar comment kholte hi "0" ho jaata tha.
+const feedCommentsConfirmed = new Set();
+
+// Server refresh me wahi stale count wapas aaye to verified real count laga do
+function fixStaleCommentCount(post) {
+  if (!post || post.isAd) return post;
+  const v = feedCommentVerify.get(String(post.id));
+  if (v && Number(post.commentsCount) === v.server && v.server !== v.real) {
+    return { ...post, commentsCount: v.real };
+  }
+  return post;
+}
 
 function applyFeedEngagement(post, patch) {
   if (!post || !patch || post.isAd) return post;
@@ -168,7 +182,7 @@ function applyFeedEngagement(post, patch) {
 // Server se aayi fresh list par local (taza) engagement ka overlay — purane cached count se upar
 function overlayFeedEngagement(post) {
   const eng = getEngagement(post?.id);
-  return eng ? applyFeedEngagement(post, eng) : post;
+  return fixStaleCommentCount(eng ? applyFeedEngagement(post, eng) : post);
 }
 
 function getDisplayCommentAvatar(comment = {}, fallbackAvatar = '') {
@@ -705,6 +719,8 @@ function feedPostFromAdItem(ad = {}) {
 }
 
 function interleaveSponsoredPosts(posts = [], ads = []) {
+  // ✅ ads_hidden=true => reels ke beech me koi ad nahi
+  if (isAdsHidden()) return posts;
   if (!Array.isArray(ads) || ads.length === 0) return posts;
   if (!Array.isArray(posts) || posts.length === 0) return ads;
   const mixed = [];
@@ -1294,7 +1310,10 @@ function ActionColumn({ post, onLike, onComment, onShare, onBookmark, onDescript
   // usme already included hai), isliye yahan +1 add nahi karna.
   const likeCount    = formatCount(Number(post.likes));
   const shareCount   = formatCount(Number(post.shares));
-  const commentCount = post.commentsCount ?? (Array.isArray(post.comments) ? post.comments.length : 0);
+  // ✅ FIX: count confirm hone tak khaali (galat "1" / "0" flash na ho)
+  const commentCount = post.commentsPending
+    ? ''
+    : (post.commentsCount ?? (Array.isArray(post.comments) ? post.comments.length : 0));
 
   const iconSz = isMobileLayout ? 30 : 32;
 
@@ -1535,6 +1554,10 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription,
   const role        = String(safePost.role || safePost.author_role || '');
   const time        = String(safePost.time || '');
     const postId      = String(safePost.id || '');
+  // ✅ FIX: comment count tab hi dikhao jab asli list se confirm ho (ya list me comments dikh rahe ho)
+  const commentsConfirmed = Boolean(safePost.isAd) || comments.length > 0 || feedCommentsConfirmed.has(postId);
+  const commentsPending   = !commentsConfirmed && Number(safePost.commentsCount || 0) > 0;
+  const shownCommentsCount = commentsPending ? 0 : Number(safePost.commentsCount ?? comments.length ?? 0);
   // ✅ FIX: reel active hote hi asli comment list se count verify karo (bina comment ke "View all 1 comments" na dikhe)
   useEffect(() => {
     if (!isActive || !postId || safePost.isAd) return;
@@ -1580,7 +1603,7 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription,
   const openDoc = useCallback(() => {
     if (!docUrl) { Alert.alert('Unavailable', 'Link is not available.'); return; }
     if (Platform.OS === 'web') { window.open(docUrl, '_blank', 'noopener'); return; }
-    Linking.openURL(docUrl).catch(() => Alert.alert('Error', 'Could not open the link.'));
+    Linking.openURL(docUrl).catch(() => Alert.alert('Notice', 'Could not open the link.'));
   }, [docUrl]);
 
   useEffect(() => {
@@ -1624,7 +1647,7 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription,
     } catch (error) {
       console.error('Error updating follow status:', error);
       setIsFollowing(!next);
-      Alert.alert('Error', 'Unable to update follow status. Please try again.');
+      Alert.alert('Notice', 'Unable to update follow status. Please try again.');
     }
   };
 
@@ -2011,7 +2034,7 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
         ) : null}
 
         <ActionColumn
-          post={{ ...safePost, likes: Number(safePost.likes || 0), shares, comments, commentsCount: safePost.commentsCount ?? comments.length, views: Number(safePost.views || 0) + viewBump }}
+          post={{ ...safePost, likes: Number(safePost.likes || 0), shares, comments, commentsCount: shownCommentsCount, commentsPending, views: Number(safePost.views || 0) + viewBump }}
           onLike={handleLikePress} onComment={onComment} onShare={onShare}
           onBookmark={onBookmark} onDescription={onDescription}
           onMore={() => setInfoVisible(true)}
@@ -2114,9 +2137,9 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
             </TouchableOpacity>
           ) : null}
 
-          {(safePost.commentsCount > 0 || comments.length > 0) && (
+          {!commentsPending && (shownCommentsCount > 0 || comments.length > 0) && (
             <TouchableOpacity onPress={() => onComment(postId)} style={{ marginTop: 5 }}>
-              <Text style={styles.reelViewComments}>View all {safePost.commentsCount ?? comments.length} comments</Text>
+              <Text style={styles.reelViewComments}>View all {shownCommentsCount || comments.length} comments</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -2416,8 +2439,20 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     commentsVerifiedRef.current.add(key);
     try {
       const res = await AuthAPI.getCommentsDetailed(key);
-      if (!res?.ok || !Array.isArray(res.comments) || res.hasMore) {
-        commentsVerifiedRef.current.delete(key); // fail / bahut zyada comments — count ko haath mat lagao
+      if (!res?.ok || !Array.isArray(res.comments)) {
+        // fail — 3 try ke baad server ka count hi dikha do (hamesha khaali na rahe)
+        if ((commentsVerifyTriesRef.current[key] || 0) >= 3) {
+          feedCommentsConfirmed.add(key);
+          setPosts((prev) => prev.map((p) => (String(p.id) === key ? { ...p } : p)));
+        } else {
+          commentsVerifiedRef.current.delete(key);
+        }
+        return;
+      }
+      if (res.hasMore) {
+        // bahut zyada comments — server ka count hi sahi maano
+        feedCommentsConfirmed.add(key);
+        setPosts((prev) => prev.map((p) => (String(p.id) === key ? { ...p } : p)));
         return;
       }
       const real = res.comments.reduce(
@@ -2427,12 +2462,17 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       setPosts((prev) => prev.map((p) => {
         if (String(p.id) !== key) return p;
         const server = Number(p.commentsCount || 0);
-        if (server === real) return p;
-        feedCommentVerify.set(key, { server, real });
-        return { ...p, commentsCount: real };
+        feedCommentsConfirmed.add(key);
+        if (server !== real) feedCommentVerify.set(key, { server, real });
+        return { ...p, commentsCount: real };   // hamesha naya object → card dobara render ho
       }));
     } catch {
-      commentsVerifiedRef.current.delete(key);
+      if ((commentsVerifyTriesRef.current[key] || 0) >= 3) {
+        feedCommentsConfirmed.add(key);
+        setPosts((prev) => prev.map((p) => (String(p.id) === key ? { ...p } : p)));
+      } else {
+        commentsVerifiedRef.current.delete(key);
+      }
     }
   }, []);
 
@@ -2718,25 +2758,10 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
 
   // ✅ Free limit ab sirf backend enforce karta hai (403 NEWS_LIMIT_REACHED) — local pre-check hata diya.
 
-  // ── Voice / music ko video me phone par hi merge karo (original awaaz hat jaati hai) ──
-  // Merge ho gaya => merged video upload hoti hai aur server ko audioMix nahi bhejte (double-merge nahi).
-  // Merge nahi hua => purane tareeke se server ko audioMix bhejte hain (server ffmpeg merge kare).
-  let sendMediaUri = mediaUri;
-  let audioMixForServer = isVideoPost && audioMix ? audioMix : null;
-  if (audioMixForServer && Platform.OS !== 'web') {
-    const merged = await mergeAudioOnDevice({
-      videoUri: mediaUri,
-      voiceUri: audioMixForServer.voiceUri,
-      musicUrl: audioMixForServer.musicUrl,
-      musicVolume: audioMixForServer.musicVolume,
-    });
-    if (merged) {
-      sendMediaUri = merged;
-      audioMixForServer = null;
-    } else {
-      console.warn('[Feed] on-device merge fail — server merge par depend:', getLastMergeError());
-    }
-  }
+  // ── Music / voice-over / mute: phone par merge NAHI — raw video + fields backend ko jaate hain.
+  // Backend final processed video banata hai aur `news.media` me wahi URL deta hai.
+  const sendMediaUri = mediaUri;
+  const audioMixForServer = isVideoPost && audioMix ? audioMix : null;
 
   // ✅ FIX: pehle backend pe asli news banao, tabhi like/comment/view kaam karenge
   const apiResult = await AuthAPI.createNews({
@@ -2773,6 +2798,10 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
   }
 
   const postId = String(backendNewsId);
+  // ✅ Playback hamesha backend ke `news.media` se — local selected file ka URL nahi
+  const serverItem = UserStore.mapApiNewsItem(apiResult.news || apiResult.data?.news || apiResult.data);
+  const serverVideoUrl = isVideoPost ? (serverItem.video || serverItem.media || '') : '';
+  const serverImageUrl = !isVideoPost ? (serverItem.images?.[0] || sendMediaUri) : '';
   const nextPost = {
     id: postId,
     user: currentUser.name || 'User',
@@ -2780,24 +2809,19 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     verified: Boolean(currentUser.has_blue_tick), role: 'Citizen', location: 'India', time: 'Just now',
     author_has_blue_tick: Boolean(currentUser.has_blue_tick),
     type: isVideoPost ? 'video' : 'image',
-    media: sendMediaUri,
-    video: isVideoPost ? sendMediaUri : null,
-    thumbnail: isVideoPost ? '' : sendMediaUri,
-    image: isVideoPost ? '' : sendMediaUri,
+    media: isVideoPost ? serverVideoUrl : serverImageUrl,
+    video: isVideoPost ? serverVideoUrl : null,
+    thumbnail: isVideoPost ? '' : serverImageUrl,
+    image: isVideoPost ? '' : serverImageUrl,
+    useFrame: Boolean(serverItem.useFrame),
+    frameTemplate: serverItem.frameTemplate,
+    frameMerged: Boolean(serverItem.frameMerged),
     headline: headline || 'My RTI Story',
     caption, fullDescription: caption,
     likes: 0, shares: 0, comments: [],
     liked: false, bookmarked: false, tag, tagColor: '#16a34a',
     createdAt: new Date().toISOString(),
     createdBy: currentEmail,
-    // Voice-over wali reel: refresh se pehle bhi original awaaz nahi, sirf user ki voice sunayi de
-    // (Agar phone par merge ho gaya to awaaz video me hi baked hai — overlay ki zaroorat nahi)
-    ...(isVideoPost && audioMix && audioMixForServer ? {
-      localMuteOriginal: true,
-      localVoiceUri: audioMix.voiceUri || null,
-      localMusicUrl: audioMix.musicUrl || null,
-      localMusicVolume: audioMix.musicVolume ?? 0.6,
-    } : {}),
   };
   setPosts(prev => [nextPost, ...prev]);
 

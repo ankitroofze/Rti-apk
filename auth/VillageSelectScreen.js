@@ -411,7 +411,7 @@ export default function VillageSelectScreen({ navigation, route }) {
                   </Text>
                   <View style={styles.inputWrap}>
                     <Ionicons name="home-outline" size={16} color="#a09890" />
-                    <TextInput
+                    <TextInput onSubmitEditing={handleComplete}
                       style={styles.input}
                       placeholder="Enter your village"
                       placeholderTextColor="#b0a898"

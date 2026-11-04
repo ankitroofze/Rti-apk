@@ -477,7 +477,7 @@ export default function WithdrawScreen({ navigation }) {
               <Text style={FS.subtitle}>
                 Available balance: ₹{withdrawData.available_balance}
               </Text>
-              <TextInput
+              <TextInput onSubmitEditing={handleSubmit}
                 style={FS.input}
                 value={form.amount}
                 onChangeText={(v) => handleChange('amount', v)}
@@ -536,7 +536,7 @@ export default function WithdrawScreen({ navigation }) {
                 <Text style={FS.required}> *</Text>
               </View>
               <Text style={FS.subtitle}>Required — a withdrawal request cannot be submitted without a PAN</Text>
-              <TextInput
+              <TextInput onSubmitEditing={handleSubmit}
                 style={FS.input}
                 value={form.pan_number}
                 onChangeText={(v) => handleChange('pan_number', v.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
@@ -557,7 +557,7 @@ export default function WithdrawScreen({ navigation }) {
                 </View>
                 <Text style={FS.subtitle}>Add your bank name, account number and IFSC code</Text>
 
-                <TextInput
+                <TextInput onSubmitEditing={handleSubmit}
                   style={FS.input}
                   value={form.account_holder_name}
                   onChangeText={(v) => handleChange('account_holder_name', v)}
@@ -566,7 +566,7 @@ export default function WithdrawScreen({ navigation }) {
                 />
                 {errors.account_holder_name ? <Text style={FS.errorText}>{errors.account_holder_name}</Text> : null}
 
-                <TextInput
+                <TextInput onSubmitEditing={handleSubmit}
                   style={FS.input}
                   value={form.bank_name}
                   onChangeText={(v) => handleChange('bank_name', v)}
@@ -575,7 +575,7 @@ export default function WithdrawScreen({ navigation }) {
                 />
                 {errors.bank_name ? <Text style={FS.errorText}>{errors.bank_name}</Text> : null}
 
-                <TextInput
+                <TextInput onSubmitEditing={handleSubmit}
                   style={FS.input}
                   value={form.account_number}
                   onChangeText={(v) => handleChange('account_number', v.replace(/\D/g, ''))}
@@ -586,7 +586,7 @@ export default function WithdrawScreen({ navigation }) {
                 />
                 {errors.account_number ? <Text style={FS.errorText}>{errors.account_number}</Text> : null}
 
-                <TextInput
+                <TextInput onSubmitEditing={handleSubmit}
                   style={FS.input}
                   value={form.ifsc}
                   onChangeText={(v) => handleChange('ifsc', v.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
@@ -611,7 +611,7 @@ export default function WithdrawScreen({ navigation }) {
                   <Text style={FS.required}> *</Text>
                 </View>
                 <Text style={FS.subtitle}>Amount will be transferred to this UPI ID</Text>
-                <TextInput
+                <TextInput onSubmitEditing={handleSubmit}
                   style={FS.input}
                   value={form.upi_id}
                   onChangeText={(v) => handleChange('upi_id', v)}
@@ -904,7 +904,7 @@ export default function WithdrawScreen({ navigation }) {
             <Text style={FS.subtitle}>
               Available balance: ₹{withdrawData.available_balance}
             </Text>
-            <TextInput
+            <TextInput onSubmitEditing={handleSubmit}
               style={FS.input}
               value={form.amount}
               onChangeText={(v) => handleChange('amount', v)}
@@ -963,7 +963,7 @@ export default function WithdrawScreen({ navigation }) {
               <Text style={FS.required}> *</Text>
             </View>
             <Text style={FS.subtitle}>Required — a withdrawal request cannot be submitted without a PAN</Text>
-            <TextInput
+            <TextInput onSubmitEditing={handleSubmit}
               style={FS.input}
               value={form.pan_number}
               onChangeText={(v) => handleChange('pan_number', v.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
@@ -984,7 +984,7 @@ export default function WithdrawScreen({ navigation }) {
               </View>
               <Text style={FS.subtitle}>Add your bank name, account number and IFSC code</Text>
 
-              <TextInput
+              <TextInput onSubmitEditing={handleSubmit}
                 style={FS.input}
                 value={form.account_holder_name}
                 onChangeText={(v) => handleChange('account_holder_name', v)}
@@ -993,7 +993,7 @@ export default function WithdrawScreen({ navigation }) {
               />
               {errors.account_holder_name ? <Text style={FS.errorText}>{errors.account_holder_name}</Text> : null}
 
-              <TextInput
+              <TextInput onSubmitEditing={handleSubmit}
                 style={FS.input}
                 value={form.bank_name}
                 onChangeText={(v) => handleChange('bank_name', v)}
@@ -1002,7 +1002,7 @@ export default function WithdrawScreen({ navigation }) {
               />
               {errors.bank_name ? <Text style={FS.errorText}>{errors.bank_name}</Text> : null}
 
-              <TextInput
+              <TextInput onSubmitEditing={handleSubmit}
                 style={FS.input}
                 value={form.account_number}
                 onChangeText={(v) => handleChange('account_number', v.replace(/\D/g, ''))}
@@ -1013,7 +1013,7 @@ export default function WithdrawScreen({ navigation }) {
               />
               {errors.account_number ? <Text style={FS.errorText}>{errors.account_number}</Text> : null}
 
-              <TextInput
+              <TextInput onSubmitEditing={handleSubmit}
                 style={FS.input}
                 value={form.ifsc}
                 onChangeText={(v) => handleChange('ifsc', v.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
@@ -1038,7 +1038,7 @@ export default function WithdrawScreen({ navigation }) {
                 <Text style={FS.required}> *</Text>
               </View>
               <Text style={FS.subtitle}>Amount will be transferred to this UPI ID</Text>
-              <TextInput
+              <TextInput onSubmitEditing={handleSubmit}
                 style={FS.input}
                 value={form.upi_id}
                 onChangeText={(v) => handleChange('upi_id', v)}

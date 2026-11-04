@@ -819,7 +819,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
     setIsLiked(!wasLiked);
     setLikeCount(Math.max(0, prevCount + (wasLiked ? -1 : 1)));
     const result = await UserStore.updateNewsFeedItem(article.id, 'like', { liked: wasLiked });
-    if (!result?.ok) { setIsLiked(wasLiked); setLikeCount(prevCount); Alert.alert('Error', result?.message || 'Could not update like'); return; }
+    if (!result?.ok) { setIsLiked(wasLiked); setLikeCount(prevCount); Alert.alert('Notice', result?.message || 'Could not update like'); return; }
     const finalLiked = result.liked !== undefined ? Boolean(result.liked) : !wasLiked;
     const finalCount = Number.isFinite(result.likesCount)
       ? result.likesCount
@@ -849,14 +849,14 @@ export default function NewsDetailsScreen({ route, navigation }) {
           await loadArticleDetails();
         }
       }
-    } catch { Alert.alert('Error', 'Could not share this article'); }
+    } catch { Alert.alert('Notice', 'Could not share this article'); }
   }, [article, loadArticleDetails, shareCount, engId]);
 
   const handleAddComment = useCallback(async () => {
     const trimmed = commentText.trim();
-    if (!trimmed) { Alert.alert('Error', 'Please enter a comment'); return; }
+    if (!trimmed) { Alert.alert('Notice', 'Please enter a comment'); return; }
     const result = await UserStore.addNewsComment(article.id, trimmed);
-    if (!result?.ok) { Alert.alert('Error', result?.message || 'Could not add comment'); return; }
+    if (!result?.ok) { Alert.alert('Notice', result?.message || 'Could not add comment'); return; }
     const addedComment = normalizeComment(result.comment || {
       text: trimmed,
       author: currentUserName || 'User',
@@ -886,7 +886,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
     const trimmed = editingCommentText.trim();
     if (!editingCommentId || !trimmed) return;
     const result = await UserStore.editNewsComment(article.id, editingCommentId, trimmed);
-    if (!result?.ok) { Alert.alert('Error', result?.message || 'Could not edit comment'); return; }
+    if (!result?.ok) { Alert.alert('Notice', result?.message || 'Could not edit comment'); return; }
     setEditingCommentId(null);
     setEditingCommentText('');
     await loadArticleDetails();
@@ -913,7 +913,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
     const trimmed = replyText.trim();
     if (!replyingToCommentId || !trimmed) return;
     const result = await UserStore.replyNewsComment(article.id, replyingToCommentId, trimmed);
-    if (!result?.ok) { Alert.alert('Error', result?.message || 'Could not add reply'); return; }
+    if (!result?.ok) { Alert.alert('Notice', result?.message || 'Could not add reply'); return; }
     const addedReply = normalizeComment(result.comment || {
       text: trimmed,
       author: currentUserName || 'User',
@@ -937,7 +937,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
 
   const handleLikeComment = useCallback(async (commentId) => {
     const result = await UserStore.likeNewsComment(article.id, commentId);
-    if (!result?.ok) { Alert.alert('Error', result?.message || 'Could not update comment like'); return; }
+    if (!result?.ok) { Alert.alert('Notice', result?.message || 'Could not update comment like'); return; }
     await loadArticleDetails();
   }, [article.id, loadArticleDetails]);
 
@@ -974,7 +974,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
         });
     if (!confirmed) return;
     const result = await UserStore.deleteNewsComment(article.id, commentId);
-    if (!result?.ok) { Alert.alert('Error', result?.message || 'Could not delete comment'); return; }
+    if (!result?.ok) { Alert.alert('Notice', result?.message || 'Could not delete comment'); return; }
     if (editingCommentId === commentId) { setEditingCommentId(null); setEditingCommentText(''); }
     if (replyingToCommentId === commentId) { setReplyingToCommentId(null); setReplyText(''); }
     const nextComments = Math.max(0, Number(commentCount || 0) - 1);
@@ -1189,14 +1189,13 @@ export default function NewsDetailsScreen({ route, navigation }) {
                     <MediaGallery
                       images={resolvedGalleryImages}
                       width={Math.max(1, heroWrapWidth || Math.min(responsiveWidth - (isCompactLayout ? 32 : 64), 668))}
-                      fit="cover"
                       maxHeight={heroFrameHeight}
                       radius={5}
                       downloadable
                     />
                   ) : heroImageSource ? (
                     <>
-                      <Image source={heroImageSource} style={styles.storyHeroImage} resizeMode="cover" />
+                      <Image source={heroImageSource} style={styles.storyHeroImage} resizeMode="contain" />
                       {heroImageSource?.uri ? (
                         <View pointerEvents="box-none" style={{ position: 'absolute', top: 10, right: 10, zIndex: 8, elevation: 8 }}>
                           <MediaDownloadButton uri={heroImageSource.uri} type="image" size={32} />

@@ -10,6 +10,7 @@ import {
   YOUTUBE_STREAM_KEY_PLACEHOLDER,
 } from '../constants/liveStreamingConfig';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
+import { isAdsHidden, resetAdsVisibility, refreshAdsVisibility } from '../utils/adsVisibility';
 import { unregisterDeviceToken } from '../utils/Pushnotifications';
 import { getAwardeeFontSize } from '../utils/profileHelpers';
 import { makePasswordVerifier, verifyPasswordVerifier } from '../utils/localCredential';
@@ -1033,6 +1034,7 @@ const normalizeNewsFeed = (items = []) => {
     mediaType:   item.mediaType || 'None',
     useFrame:    Boolean(item.useFrame),
     frameTemplate: item.frameTemplate || '',
+    frameMerged: Boolean(item.frameMerged),
     state:       item.state || item.category || 'General',
     district:    item.district || '',
     taluka:      item.taluka || '',
@@ -1107,7 +1109,11 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
   // 1 = image, 2 = video, 3 = PDF, 4 = external URL
   const mediaTypeMap = { 0: 'None', 1: 'Image', 2: 'Video', 3: 'File', 4: 'Link' };
   const mediaType = mediaTypeMap[Number(mediaTypeRaw)] || 'None';
-   const mediaUrl = apiItem.media_url || apiItem.media || '';
+   // ✅ Video ke liye backend ka `media` hi final processed video hai (music/voice/frame apply ho chuka) —
+   // wahi URL player me use hota hai. Local selected video ka URL kabhi dobara nahi banate.
+   const mediaUrl = (mediaType === 'Video'
+     ? (apiItem.media || apiItem.media_url)
+     : (apiItem.media_url || apiItem.media)) || '';
 
   // ✅ FIX: multiple images — pehli image (media_url) + baaki sab images (backend kisi bhi
   // key me bheje: images / news_images / media_images ...), duplicate hata ke ek list banao.
@@ -1153,6 +1159,16 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
     }
   }
 
+  // 🔍 TEMP DEBUG — frame fields (upload ke baad console me dekho: use_frame / frame_template / frame_merged)
+  if (typeof __DEV__ !== 'undefined' && __DEV__ && (apiItem.use_frame || mediaType === 'Video')) {
+    globalThis.__frameRawLog = (globalThis.__frameRawLog || 0) + 1;
+    if (globalThis.__frameRawLog <= 8) {
+      console.log('[DEBUG frame]', 'id:', apiItem.id, '| media_type:', apiItem.media_type, '| use_frame:', JSON.stringify(apiItem.use_frame),
+        '| frame_template:', JSON.stringify(apiItem.frame_template), '| frame_merged:', JSON.stringify(apiItem.frame_merged),
+        '| media:', apiItem.media);
+    }
+  }
+
   return {
        id: apiItem.id ?? apiItem._id,
     type: Number(apiItem.type) === 2 ? 2 : 1, // 1 = News, 2 = Feed (Reel); purani posts = 1
@@ -1168,6 +1184,12 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
     useFrame: [1, '1', true, 'true'].includes(apiItem.use_frame ?? apiItem.useFrame),
     // backend `frame_template` (glossy2 / glossy1 / redbar / banner); na mile to default template
     frameTemplate: String(apiItem.frame_template ?? apiItem.frameTemplate ?? '') || 'glossy2',
+    // frame_merged (backend response): true => frame final MP4 me burn ho chuka, UI overlay NAHI lagayega.
+    // false / missing => UI selected frame_template ka overlay khud render karega (abhi backend false deta hai).
+    frameMerged: [1, '1', true, 'true'].includes(apiItem.use_frame ?? apiItem.useFrame)
+      && [1, '1', true, 'true'].includes(apiItem.frame_merged ?? apiItem.is_frame_merged ?? apiItem.frameMerged),
+    // uploaded voice-over ka URL (agar backend de)
+    voiceUrl: String(apiItem.voice_url ?? apiItem.voiceUrl ?? '') || null,
     mediaType,
     media: mediaType === 'Image' ? undefined : mediaUrl,
 images: mediaType === 'Image' ? collectedImages : [],
@@ -1346,6 +1368,7 @@ const normalizeUserNewsItems = (items = []) => {
       mediaType: item.mediaType || 'None',
       useFrame: Boolean(item.useFrame),
       frameTemplate: item.frameTemplate || '',
+      frameMerged: Boolean(item.frameMerged),
       state: item.state || item.category || 'General',
       district: item.district || '',
       taluka: item.taluka || '',
@@ -2362,6 +2385,7 @@ const clearAccountMemoryCaches = () => {
   try { clearIdCardVerification(); } catch {}
   try { clearReferralInfo(); } catch {}
   try { resetEngagement(); } catch {}  // pichle user ka liked/views state
+  try { resetAdsVisibility(); } catch {}  // pichle user ka ads_hidden status
 };
 
 export const UserStore = {
@@ -3198,6 +3222,9 @@ consumeQuizAttempt: async () => {
     catch { return false; }
   },
 
+  // Server ke news object ko feed item me badalta hai (video = backend `media`, useFrame, frameTemplate)
+  mapApiNewsItem: (apiItem) => mapApiNewsToFeedItem(apiItem || {}),
+
   deleteCurrentUser: async () => {
     try {
       const email = await AsyncStorage.getItem(CURRENT_USER_KEY);
@@ -3238,6 +3265,15 @@ consumeQuizAttempt: async () => {
         last_name: String(data.last_name || '').trim(),
         referral_code: String(data.referral_code || '').trim(),
         otp: String(data.otp || '').trim(),
+        // ✅ Location (names + available IDs) — register API ko saath me jaayega
+        state: String(data.state || '').trim(),
+        district: String(data.district || '').trim(),
+        taluka: String(data.taluka || '').trim(),
+        village: String(data.village || '').trim(),
+        state_id: data.state_id ? String(data.state_id) : '',
+        district_id: data.district_id ? String(data.district_id) : '',
+        taluka_id: data.taluka_id ? String(data.taluka_id) : '',
+        village_id: data.village_id ? String(data.village_id) : '',
         server_registered: Boolean(data.server_registered),
         created_at: new Date().toISOString(),
       };
@@ -3282,10 +3318,13 @@ consumeQuizAttempt: async () => {
       referralCode: pending.referral_code || pending.referral_code_used || '',
       profileImage: pending.profile_image || '',
       otp: pending.otp || '',
+      state: pending.state, district: pending.district, taluka: pending.taluka, village: pending.village,
+      stateId: pending.state_id, districtId: pending.district_id, talukaId: pending.taluka_id, villageId: pending.village_id,
     });
     if (!result.ok) {
       return {
         ok: false,
+        errors: result.errors || {},
         otpError: Boolean(result.otpError),
         isNetwork: Boolean(result.isNetwork),
         message: result.otpError
@@ -4298,6 +4337,7 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
       const verifyRes = await AuthAPI.verifyRoleSubscriptionPayment({
         razorpay_order_id, razorpay_payment_id, razorpay_signature,
       });
+      if (verifyRes?.ok) refreshAdsVisibility().catch(() => {});   // plan badla — ads_hidden dobara fetch
       if (!verifyRes?.ok) {
         // ✅ seatUnavailable aage pass karo (409) taaki screen us plan ko Sold mark kar sake.
         // isNetwork / status bhi pass karo taaki caller decide kare: retry (network/5xx) ya final fail (4xx).
@@ -6447,6 +6487,8 @@ followUser: async (targetUserEmail, targetUserId) => {
         transactionId: newPayment.payment_id,
         isRenewal: wasAlreadySubscribed,
       });
+      // ✅ subscription change hua — ads_hidden ka latest status API se dobara lao
+      refreshAdsVisibility().catch(() => {});
       return { ok: true, plan: activePlan, role: newRole };
     } catch (err) {
       console.error('saveSubscription error:', err);
@@ -6599,6 +6641,7 @@ getMyEcomPosts: async (target = {}) => {
           content: item.title,
           description: item.description,
           price: item.price,
+          in_stock: item.in_stock,
           image: img,
           images: (item.mediaItems || []).map((m) => m.uri),
           createdAt: item.createdAt,
@@ -6647,6 +6690,8 @@ getActiveAdsFeed: async (options = {}) => {
         : UserStore.getBlockedUsers().catch(() => ({ ok: true, list: [] })),
       UserStore.getCurrentUser().catch(() => null),
     ]);
+    // ✅ ads_hidden (API) = final source of truth. true => kisi bhi jagah ads nahi dikhane
+    if (res?.adsHidden || isAdsHidden()) return [];
     if (!res.ok || !Array.isArray(res.ads)) return [];
 
     const today = new Date().toISOString().slice(0, 10);
@@ -7166,7 +7211,9 @@ deleteAd: async (adId) => {
           };
           listings = detailsRes.details
             .map(normalizeEcomDetail)
-            .filter((item) => Number(item.status) === 1)
+            // ✅ Out of Stock product list se gayab nahi hona chahiye (seller ke pages me dikhta rahe).
+            // Buy page apne level par in_stock === false wale products hata deta hai.
+            .filter((item) => Number(item.status) === 1 || item.in_stock === false)
             .filter((item) => !isBlockedEcomOwner(item))
             .map((item) => ({
               ...item,
@@ -7374,11 +7421,25 @@ deleteAd: async (adId) => {
     try {
       const user = await UserStore.getCurrentUser();
       if (!user) return { ok: false, message: 'Please login again.' };
+
+      // ✅ Har product update par 1 credit minus (add karne par bhi 1 minus hota hai)
+      const creditState = getCreditExpiryState(user.ecome_credits, user.ecome_subscription);
+      if (creditState.expired) {
+        await UserStore.updateUser(user.email, {
+          ecome_credits: 0,
+          ecome_subscription: creditState.subscription,
+        });
+        return { ok: false, code: 'CREDITS_EXPIRED', message: 'Your E-Commerce credits have expired. Please buy a new monthly plan.' };
+      }
+      const currentCredits = Number(creditState.credits ?? 0);
+      if (currentCredits <= 0) return { ok: false, code: 'NO_CREDITS', message: 'No E-Commerce credits left. Please buy an E-Commerce credit plan.' };
+
       const apiRes = await AuthAPI.updateEcomDetails(id, {
         ecom_sub_id: fields.ecomSubId,
         category: fields.sector || fields.category,
         product_name: fields.title,
-        in_stock: fields.inStock === undefined ? undefined : (fields.inStock ? 1 : 0),
+        // 0 = Out of Stock, 1 = In Stock
+        in_stock: fields.inStock === undefined ? undefined : ([false, 0, '0', 'false'].includes(fields.inStock) ? 0 : 1),
         price: fields.price,
         description: fields.description,
         city: fields.city,
@@ -7386,8 +7447,15 @@ deleteAd: async (adId) => {
         start_date: fields.startDate,
         end_date: fields.endDate,
       });
-      if (!apiRes.ok) return { ok: false, message: apiRes.message || 'Unable to update listing.' };
-      return { ok: true, listing: normalizeEcomDetail(apiRes.detail || {}) };
+      if (!apiRes.ok) return { ok: false, isAuth: Boolean(apiRes.isAuth), message: apiRes.message || 'Unable to update listing.' };
+
+      // Listing backend pe update ho chuki hai — credit update fail ho to bhi success maano
+      try {
+        await UserStore.updateUser(user.email, { ecome_credits: currentCredits - 1 });
+      } catch (e) {
+        console.warn('[updateEcomeListing] credit update failed:', e);
+      }
+      return { ok: true, credits: currentCredits - 1, listing: normalizeEcomDetail(apiRes.detail || {}) };
     } catch {
       return { ok: false, message: 'Unable to update listing.' };
     }

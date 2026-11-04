@@ -112,7 +112,7 @@ export default function ResetPasswordScreen({ navigation, route }) {
               <Text style={[styles.inputLabel, webStyles.darkLabel]}>New password</Text>
               <View style={[styles.inputWrap, errors.password && styles.inputWrapError]}>
                 <Ionicons name="lock-closed-outline" size={18} color="#888" />
-                <TextInput
+                <TextInput onSubmitEditing={handleReset}
                   style={styles.input}
                   value={password}
                   onChangeText={(value) => { setPassword(value); setErrors((prev) => ({ ...prev, password: '', general: '' })); }}

@@ -292,7 +292,7 @@ export default function ContactScreen({ navigation }) {
                 <Text style={s.formSubtitle}>{contactCopy.formSubtitle}</Text>
 
                 <Text style={s.label}>{contactCopy.fullName} <Text style={s.required}>*</Text></Text>
-                <TextInput 
+                <TextInput onSubmitEditing={handleSubmit} 
                   style={s.input} 
                   placeholder={contactCopy.namePlaceholder}
                   placeholderTextColor="#9ca3af" 
@@ -301,7 +301,7 @@ export default function ContactScreen({ navigation }) {
                 />
 
                 <Text style={s.label}>{contactCopy.phone}</Text>
-                <TextInput 
+                <TextInput onSubmitEditing={handleSubmit} 
                   style={s.input} 
                   placeholder={contactCopy.phonePlaceholder}
                   placeholderTextColor="#9ca3af" 
@@ -311,7 +311,7 @@ export default function ContactScreen({ navigation }) {
                 />
 
                 <Text style={s.label}>{contactCopy.emailAddress} <Text style={s.required}>*</Text></Text>
-                <TextInput 
+                <TextInput onSubmitEditing={handleSubmit} 
                   style={s.input} 
                   placeholder={contactCopy.emailPlaceholder}
                   placeholderTextColor="#9ca3af" 

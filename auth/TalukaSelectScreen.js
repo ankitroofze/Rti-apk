@@ -392,7 +392,7 @@ export default function TalukaSelectScreen({ navigation, route }) {
                   </Text>
                   <View style={styles.inputWrap}>
                     <Ionicons name="map-outline" size={16} color="#a09890" />
-                    <TextInput
+                    <TextInput onSubmitEditing={handleComplete}
                       style={styles.input}
                       placeholder="Enter your taluka"
                       placeholderTextColor="#b0a898"

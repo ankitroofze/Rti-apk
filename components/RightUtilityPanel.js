@@ -5,6 +5,7 @@ import { openExternalUrl, buildWhatsappUrl } from '../utils/adRedirect';
 import AdOverlayCta from './AdOverlayCta';
 import VerifiedBadge from './VerifiedBadge';
 import { groupAdsByOwner } from '../utils/adGrouping';
+import { useAdsHidden } from '../utils/adsVisibility';
 import UserStore from '../store/UserStore';
 import ProfileAvatar from './ProfileAvatar';
 import MediaGallery from './MediaGallery';
@@ -184,10 +185,13 @@ function SponsoredHeader({ ad, navigation }) {
 }
 
 export default function RightUtilityPanel({
-  navigation, trendingStories = [], onOpenDetails, ads = [], onOpenLeadForm,
+  navigation, trendingStories = [], onOpenDetails, ads: adsProp = [], onOpenLeadForm,
   onViewMoreAds, onBackFromAds, showingAllAds = false, firstNewsStory = null,
   onViewAllTrending,
 }) {
+  // ✅ ads_hidden=true => right panel me koi ad nahi
+  const adsHidden = useAdsHidden();
+  const ads = adsHidden ? [] : adsProp;
   const [desk, setDesk] = useState(null);
   useEffect(() => {
     let alive = true;

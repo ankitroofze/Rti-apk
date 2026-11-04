@@ -139,7 +139,7 @@ export default function OtpScreen({ navigation, route }) {
 
           <View style={styles.otpRow}>
             {otp.map((digit, index) => (
-              <TextInput
+              <TextInput onSubmitEditing={handleVerify}
                 key={`${index + 1}`}
                 ref={(ref) => {
                   inputRefs.current[index] = ref;

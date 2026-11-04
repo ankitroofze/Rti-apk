@@ -2,6 +2,7 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import { Alert, Platform, Text, TextInput } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { INDIAN_LANGUAGES } from '../constants/indianLanguages';
 
 // सभी 22 भाषाओं के लिए translations
 const translations = {
@@ -638,6 +639,10 @@ export const useAutoT = () => { useVersion(); return translateText; };
 
 const LanguageContext = createContext();
 
+// ✅ translations object me jo languages nahi hain (bo, do, ks, kok, mai, mni, ne, sa, sat, sd) wo bhi chun sakte hain;
+// unke liye t() English par fallback karta hai aur header ke texts constants/headerCopy.js se aate hain.
+const isKnownLanguage = (code) => Boolean(translations[code]) || INDIAN_LANGUAGES.some((l) => l.code === code);
+
 export const useLanguage = () => {
   const context = useContext(LanguageContext);
   if (!context) {
@@ -664,7 +669,7 @@ export const LanguageProvider = ({ children }) => {
   const loadLanguage = async () => {
     try {
       const savedLanguage = await AsyncStorage.getItem('app_language');
-      if (savedLanguage && translations[savedLanguage]) {
+      if (savedLanguage && isKnownLanguage(savedLanguage)) {
         setLanguage(savedLanguage);
       }
     } catch (error) {
@@ -675,7 +680,7 @@ export const LanguageProvider = ({ children }) => {
   };
 
   const changeLanguage = async (langCode) => {
-    if (translations[langCode]) {
+    if (isKnownLanguage(langCode)) {
       setLanguage(langCode);
       try {
         await AsyncStorage.setItem('app_language', langCode);

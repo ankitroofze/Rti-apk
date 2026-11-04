@@ -195,7 +195,7 @@ export default function TalukaSelectScreen({ navigation, route }) {
                   <Text style={[styles.inputLabel, webStyles.darkLabel]}>Taluka <Text style={styles.required}>*</Text></Text>
                   <View style={styles.inputWrap}>
                     <Ionicons name="map-outline" size={16} color="#888" />
-                    <TextInput style={styles.input} placeholder="Enter your taluka" placeholderTextColor="#9ca3af" value={taluka} onChangeText={setTaluka} />
+                    <TextInput onSubmitEditing={handleComplete} style={styles.input} placeholder="Enter your taluka" placeholderTextColor="#9ca3af" value={taluka} onChangeText={setTaluka} />
                   </View>
                 </View>
 

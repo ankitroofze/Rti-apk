@@ -44,7 +44,6 @@ if (Platform.OS !== 'web') {
 import VideoPreview from '../components/VideoPreview';
 import NewsCameraModal from '../components/NewsCameraModal';
 import VideoAudioEditorModal from '../components/VideoAudioEditorModal';
-import { mergeAudioOnDevice, getLastMergeError } from '../utils/mergeAudioOnDevice';
 import NewsLimitModal from '../components/NewsLimitModal';
 import WebRichEditor from '../components/WebRichEditor';
 import { useToast, useBusy } from '../components/ui/ToastProvider';
@@ -972,9 +971,10 @@ const admin = user.role === 'admin';
       mediaNameToSend = 'image.jpg';
       mediaMimeToSend = 'image/jpeg';
     } else if (mediaType === 'Video' && video) {
-      mediaUriToSend = Platform.OS === 'web' && videoOriginalUriRef.current
-        ? videoOriginalUriRef.current
-        : video;
+      // Edit mode me purani video (https URL = backend ka final merged video) dobara upload nahi hoti
+      mediaUriToSend = /^https?:/i.test(String(video || ''))
+        ? null
+        : (Platform.OS === 'web' && videoOriginalUriRef.current ? videoOriginalUriRef.current : video);
       mediaNameToSend = 'video.mp4';
       mediaMimeToSend = 'video/mp4';
     } else if (mediaType === 'File' && attachment) {
@@ -983,27 +983,11 @@ const admin = user.role === 'admin';
       mediaMimeToSend = attachment.mimeType || '';
     }
 
-    // ── Voice / music ko video me phone par hi merge karo (original awaaz hat jaati hai) ──
-    // Merge ho gaya => merged video upload hoti hai aur server ko audioMix nahi bhejte (double-merge nahi).
-    let audioMixToSend = (mediaType === 'Video' && audioMix && !/^https?:/i.test(String(video || '')) && (audioMix.musicId || audioMix.voiceUri))
+    // ── Music / voice-over / mute: phone par merge NAHI — raw video + fields backend ko jaate hain,
+    // backend final processed video banata hai aur `news.media` me wahi URL return karta hai.
+    const audioMixToSend = (mediaType === 'Video' && audioMix && !/^https?:/i.test(String(video || '')))
       ? audioMix
       : null;
-    if (audioMixToSend && Platform.OS !== 'web') {
-      const merged = await mergeAudioOnDevice({
-        videoUri: mediaUriToSend,
-        voiceUri: audioMixToSend.voiceUri,
-        musicUrl: audioMixToSend.musicUrl,
-        musicVolume: audioMixToSend.musicVolume,
-      });
-      if (merged) {
-        mediaUriToSend = merged;
-        audioMixToSend = null;
-      } else {
-        // Silent fail nahi: reason log me aayega (Metro / adb logcat me "[mergeAudioOnDevice]" dhundo)
-        console.warn('[AddNews] on-device merge fail — server merge par depend:', getLastMergeError());
-        showToast('Could not merge audio on your phone — the server will merge it instead.', 'warning');
-      }
-    }
 
     console.log("video:", video);
 console.log("videoOriginalUriRef:", videoOriginalUriRef.current);
@@ -1126,8 +1110,12 @@ console.log("Platform:", Platform.OS);
         : 'No free posts left')
     : null;
 
+  // Edit me purani server video: frame already video me merge hai — picker dikhana/dobara bhejna galat hoga
+  const hasMergedServerVideo = isEditMode && mediaType === 'Video' && /^https?:/i.test(String(video || ''));
+
+  // Video par final processing response se pehle backend me hoti hai — tab tak loading dikhao
   const submitLabel = saving
-    ? (isEditMode ? 'Updating...' : 'Posting...')
+    ? (mediaType === 'Video' && !hasMergedServerVideo ? 'Processing video...' : isEditMode ? 'Updating...' : 'Posting...')
     : isEditMode ? 'Update' : isAdmin ? 'Publish News' : 'Post';
 
   // Pick the style-sheet (web vs mobile) — content/structure below is shared.
@@ -1249,8 +1237,8 @@ console.log("Platform:", Platform.OS);
       {video ? (
         <TouchableOpacity style={T.audioEditBtn} onPress={() => setAudioEditorVisible(true)} activeOpacity={0.85}>
           <Text style={T.audioEditText}>
-            {audioMix?.musicId || audioMix?.voiceUri
-              ? `🎵 ${audioMix.music?.title || 'Music'}${audioMix.voiceUri ? '  •  🎙️ Voice' : ''}  (Edit)`
+            {audioMix?.musicId || audioMix?.voiceUri || audioMix?.muteOriginal
+              ? `${audioMix.musicId ? `🎵 ${audioMix.music?.title || 'Music'}` : '🔇 Original muted'}${audioMix.voiceUri ? '  •  🎙️ Voice' : ''}  (Edit)`
               : '🎵 Add Music  /  🎙️ Record Voice'}
           </Text>
         </TouchableOpacity>
@@ -1364,7 +1352,7 @@ console.log("Platform:", Platform.OS);
               {imageUploadBlock}
               {videoUploadBlock}
               {fileUploadBlock}
-              {(mediaType === 'Image' || mediaType === 'Video') ? (
+              {(mediaType === 'Image' || (mediaType === 'Video' && !hasMergedServerVideo)) ? (
                 <FrameTemplatePicker
                   value={frameTemplate}
                   onChange={setFrameTemplate}
@@ -1410,7 +1398,7 @@ console.log("Platform:", Platform.OS);
           initial={audioMix}
           onClose={() => setAudioEditorVisible(false)}
           onDone={(mix) => {
-            setAudioMix(mix.musicId || mix.voiceUri ? mix : null);
+            setAudioMix(mix.musicId || mix.voiceUri || mix.muteOriginal ? mix : null);
             setAudioEditorVisible(false);
           }}
         />
@@ -1583,7 +1571,7 @@ console.log("Platform:", Platform.OS);
             {imageUploadBlock}
             {videoUploadBlock}
             {fileUploadBlock}
-            {(mediaType === 'Image' || mediaType === 'Video') ? (
+            {(mediaType === 'Image' || (mediaType === 'Video' && !hasMergedServerVideo)) ? (
               <FrameTemplatePicker
                 value={frameTemplate}
                 onChange={setFrameTemplate}
@@ -1615,7 +1603,7 @@ console.log("Platform:", Platform.OS);
         initial={audioMix}
         onClose={() => setAudioEditorVisible(false)}
         onDone={(mix) => {
-          setAudioMix(mix.musicId || mix.voiceUri ? mix : null);
+          setAudioMix(mix.musicId || mix.voiceUri || mix.muteOriginal ? mix : null);
           setAudioEditorVisible(false);
         }}
       />

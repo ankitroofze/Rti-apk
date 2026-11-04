@@ -22,6 +22,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { subscribeBadgeRefresh } from '../utils/Pushnotifications';
 import useLiveRefresh from '../utils/useLiveRefresh';
 import { getSiteCopy } from '../constants/siteCopy';
+import { getHeaderCopy, NAV_LABEL_TO_KEY } from '../constants/headerCopy';
+import { INDIAN_LANGUAGES } from '../constants/indianLanguages';
 import RefreshButton from './RefreshButton';
 import { UserStore } from '../store/UserStore';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -58,18 +60,8 @@ const GALLERY_SLIDER_ITEMS = [
   { labelKey: 'certification', screen: 'Certification',   label: 'Certificate', image: require('../assets/images/certifcate.png') },
 ];
 
-const LANGUAGE_OPTIONS = [
-  { code: 'en', label: 'English' },
-  { code: 'hi', label: 'हिंदी' },
-  { code: 'mr', label: 'मराठी' },
-  { code: 'bn', label: 'বাংলা' },
-  { code: 'gu', label: 'ગુજરાતી' },
-  { code: 'ta', label: 'தமிழ்' },
-  { code: 'te', label: 'తెలుగు' },
-  { code: 'kn', label: 'ಕನ್ನಡ' },
-  { code: 'ml', label: 'മലയാളം' },
-  { code: 'pa', label: 'ਪੰਜਾਬੀ' },
-];
+// ✅ Saari 22 Indian languages + English (native naam dropdown me)
+const LANGUAGE_OPTIONS = INDIAN_LANGUAGES.map((l) => ({ code: l.code, label: l.native }));
 
 // Simple looping pulse (opacity + scale) used to draw attention to "live" elements
 function useBlink() {
@@ -104,6 +96,7 @@ function useIsDesktop() {
 // ─── Language Selector ─────────────────────────────────────────────────────
 function NavbarLanguageSelector({ compact = false }) {
   const { language, changeLanguage } = useLanguage();
+  const hc = useMemo(() => getHeaderCopy(language), [language]);
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownPos, setDropdownPos] = useState({ top: 0, right: 0 });
   const triggerRef = useRef(null);
@@ -190,7 +183,7 @@ function NavbarLanguageSelector({ compact = false }) {
             <View style={styles.centerModalCard}>
               <View style={styles.centerModalHeader}>
                 <Ionicons name="globe-outline" size={18} color="#e8732a" />
-                <Text style={styles.centerModalTitle}>Select Language</Text>
+                <Text style={styles.centerModalTitle}>{hc.selectLanguage}</Text>
                 <TouchableOpacity
                   onPress={() => { blurActiveElement(); setIsOpen(false); }}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -296,6 +289,7 @@ function ProfileDropdown({ navigation, showNameLabel }) {
   const [isPremiumUser, setIsPremiumUser] = useState(false);
   const triggerRef = useRef(null);
   const copy = useMemo(() => getSiteCopy(language), [language]);
+  const hc = useMemo(() => getHeaderCopy(language), [language]);
 
   useFocusEffect(
     useCallback(() => {
@@ -360,7 +354,7 @@ function ProfileDropdown({ navigation, showNameLabel }) {
       >
         <LinearGradient colors={['#ef4444', '#b91c1c', '#7f1d1d']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.primaryActionButton}>
           <Ionicons name="person-add-outline" size={16} color="#ffffff" />
-          <Text style={styles.primaryActionButtonText}>{copy.common.signIn}</Text>
+          <Text style={styles.primaryActionButtonText}>{hc.signIn}</Text>
         </LinearGradient>
       </TouchableOpacity>
     );
@@ -374,7 +368,7 @@ function ProfileDropdown({ navigation, showNameLabel }) {
         activeOpacity={0.7}
       >
         <Ionicons name="person-outline" size={18} color="#ef4444" />
-        <Text style={styles.profileDropdownText}>{copy.common.profile}</Text>
+        <Text style={styles.profileDropdownText}>{hc.profile}</Text>
       </TouchableOpacity>
 
       <View style={styles.dropdownDivider} />
@@ -385,7 +379,7 @@ function ProfileDropdown({ navigation, showNameLabel }) {
         activeOpacity={0.7}
       >
         <Ionicons name="log-out-outline" size={18} color="#e8732a" />
-        <Text style={[styles.profileDropdownText, styles.logoutText]}>{copy.common.logout}</Text>
+        <Text style={[styles.profileDropdownText, styles.logoutText]}>{hc.logout}</Text>
       </TouchableOpacity>
     </>
   );
@@ -412,7 +406,7 @@ function ProfileDropdown({ navigation, showNameLabel }) {
         {showNameLabel ? (
           <View style={styles.profileNameLabelWrap}>
             <NameWithTick name={currentUserName} show={currentUserTick} style={styles.profileNameLabel} badgeSize={14} />
-            {isPremiumUser ? <Text style={styles.profilePremiumLabel}>Premium</Text> : null}
+            {isPremiumUser ? <Text style={styles.profilePremiumLabel}>{hc.premium}</Text> : null}
           </View>
         ) : null}
       </TouchableOpacity>
@@ -517,7 +511,11 @@ function LiveDot({ size = 9, style }) {
 // ─── Gallery / Stories style slider — sits next to the logo in the mobile
 // top header. First item opens Quick Menu (create/post), the rest are quick
 // jumps into Live Streaming, e-Paper, Ecome and Certification. ──────────────
+const GALLERY_LABEL_KEY = { create: 'post', liveStreaming: 'live', ePaper: 'ePaper', ecome: 'ecom', certification: 'certificate' };
+
 function GallerySlider({ handleNavigate, handleHomeShortcut }) {
+  const { language } = useLanguage();
+  const hc = useMemo(() => getHeaderCopy(language), [language]);
   return (
     <ScrollView
       horizontal
@@ -543,7 +541,7 @@ function GallerySlider({ handleNavigate, handleHomeShortcut }) {
             {item.isLive && <LiveDot style={styles.galleryLiveDot} />}
           </View>
           <Text style={styles.galleryItemLabel} numberOfLines={1}>
-            {item.label}
+            {hc[GALLERY_LABEL_KEY[item.labelKey]] || item.label}
           </Text>
         </TouchableOpacity>
       ))}
@@ -554,6 +552,8 @@ function GallerySlider({ handleNavigate, handleHomeShortcut }) {
 // ─── Mobile Top Header ────────────────────────────────────────────────────
 function MobileTopHeader({ navigation, handleNavigate, handleHomeShortcut }) {
   const insets = useSafeAreaInsets();
+  const { language } = useLanguage();
+  const hc = useMemo(() => getHeaderCopy(language), [language]);
 
   return (
     <View style={[styles.mobileTopHeaderShell, { paddingTop: IS_WEB ? 4 : insets.top + 8 }]}>
@@ -564,7 +564,7 @@ function MobileTopHeader({ navigation, handleNavigate, handleHomeShortcut }) {
             <Text style={styles.mobileBrandTitle} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
               RTI <Text style={{ color: '#1d3fae' }}>VOICE</Text>
             </Text>
-            <Text style={styles.mobileBrandSubtitle} numberOfLines={2}>ALL INDIA RTI NEWS NETWORK</Text>
+            <Text style={styles.mobileBrandSubtitle} numberOfLines={2}>{hc.brandSubtitle}</Text>
           </View>
         </View>
               <View style={styles.mobileTopHeaderActions}>
@@ -584,6 +584,7 @@ function MobileBottomBar({ activeScreen, handleNavigate }) {
   const insets = useSafeAreaInsets();
   const { language } = useLanguage();
   const copy = useMemo(() => getSiteCopy(language), [language]);
+  const hc = useMemo(() => getHeaderCopy(language), [language]);
   const bottomPad = IS_WEB ? Math.max(insets.bottom, 4) : Math.max(insets.bottom, 10);
   const [currentProfileTier, setCurrentProfileTier] = useState(null);
 
@@ -620,7 +621,7 @@ function MobileBottomBar({ activeScreen, handleNavigate }) {
               </LinearGradient>
 
               <Text style={styles.mobileTabLabel} numberOfLines={1}>
-                {copy.common.create || ''}
+                {hc.post}
               </Text>
             </TouchableOpacity>
           );
@@ -639,7 +640,7 @@ function MobileBottomBar({ activeScreen, handleNavigate }) {
                 <LiveDot size={10} style={styles.fabLiveDot} />
               </View>
               <Text style={[styles.mobileTabLabel, styles.mobileTabLabelLive]} numberOfLines={1}>
-                {copy.common.liveStreaming || 'Live'}
+                {hc.live}
               </Text>
             </TouchableOpacity>
           );
@@ -663,7 +664,7 @@ function MobileBottomBar({ activeScreen, handleNavigate }) {
               style={[styles.mobileTabLabel, isActive && styles.mobileTabLabelActive]}
               numberOfLines={1}
             >
-              {copy.common[item.labelKey] || item.labelKey}
+              {hc[NAV_LABEL_TO_KEY[item.labelKey]] || copy.common[item.labelKey] || item.labelKey}
             </Text>
           </TouchableOpacity>
         );
@@ -676,6 +677,7 @@ function MobileBottomBar({ activeScreen, handleNavigate }) {
 export default function AppNavbar({ activeScreen, navigation, hideTopHeader = false, hideBottomBar = false }) {
   const { language } = useLanguage();
   const copy = useMemo(() => getSiteCopy(language), [language]);
+  const hc = useMemo(() => getHeaderCopy(language), [language]);
   const isDesktop = useIsDesktop();
   const [isScrolled, setIsScrolled] = useState(false);
   useEffect(() => {
@@ -725,7 +727,7 @@ export default function AppNavbar({ activeScreen, navigation, hideTopHeader = fa
                 item={item}
                 isActive={isActive}
                 onPress={() => handleNavigate(item.screen)}
-                label={copy.common[item.labelKey] || item.labelKey}
+                label={hc[NAV_LABEL_TO_KEY[item.labelKey]] || copy.common[item.labelKey] || item.labelKey}
               />
             );
           })}
@@ -734,7 +736,7 @@ export default function AppNavbar({ activeScreen, navigation, hideTopHeader = fa
             item={{ icon: 'settings-outline', screen: 'Settings' }}
             isActive={activeScreen === 'Settings'}
             onPress={() => navigation?.navigate?.('Settings')}
-            label="Settings"
+            label={hc.settings}
           />
         </View>
 
@@ -762,7 +764,7 @@ export default function AppNavbar({ activeScreen, navigation, hideTopHeader = fa
           {/* Referral ke just right side me Ecom icon (Buy Product page) */}
           <TouchableOpacity
             style={[styles.notificationBellBtn, { marginHorizontal: 0 }]}
-            onPress={() => openWithSidebar(navigation, 'FarmingBuy')}
+            onPress={() => navigation.navigate('FarmingBuy')}
             activeOpacity={0.85}
             accessibilityLabel="Ecom"
           >

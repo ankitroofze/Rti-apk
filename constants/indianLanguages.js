@@ -30,5 +30,5 @@ export const languageDisplay = (l) => (l.label === l.native ? l.label : `${l.lab
 
 // contexts/LanguageContext.js ke `translations` me jo languages hain, sirf wahi changeLanguage() accept karta hai.
 // Nayi language add karni ho to pehle wahan translations add karo, phir yahan code daalo.
-export const SUPPORTED_LANGUAGE_CODES = ['hi', 'en', 'mr', 'bn', 'ta', 'te', 'ml', 'kn', 'gu', 'pa', 'or', 'as', 'ur'];
+export const SUPPORTED_LANGUAGE_CODES = INDIAN_LANGUAGES.map((l) => l.code); // ✅ saari 22 languages + English (header ab sab me translated hai)
 export const SUPPORTED_LANGUAGES = INDIAN_LANGUAGES.filter((l) => SUPPORTED_LANGUAGE_CODES.includes(l.code));

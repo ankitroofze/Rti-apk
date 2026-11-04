@@ -470,25 +470,25 @@ export default function AdLeadFormModal({ visible, ad, onClose }) {
       <Text style={styles.formLabel}>First Name</Text>
       <View style={styles.inputWrap}>
         <Ionicons name="person-outline" size={16} color="#94a3b8" />
-        <TextInput style={styles.input} value={firstName} onChangeText={setFirstName} placeholder="Enter first name" placeholderTextColor="#94a3b8" />
+        <TextInput onSubmitEditing={handleSubmit} style={styles.input} value={firstName} onChangeText={setFirstName} placeholder="Enter first name" placeholderTextColor="#94a3b8" />
       </View>
 
       <Text style={styles.formLabel}>Last Name</Text>
       <View style={styles.inputWrap}>
         <Ionicons name="person-outline" size={16} color="#94a3b8" />
-        <TextInput style={styles.input} value={lastName} onChangeText={setLastName} placeholder="Enter last name" placeholderTextColor="#94a3b8" />
+        <TextInput onSubmitEditing={handleSubmit} style={styles.input} value={lastName} onChangeText={setLastName} placeholder="Enter last name" placeholderTextColor="#94a3b8" />
       </View>
 
       <Text style={styles.formLabel}>Email</Text>
       <View style={styles.inputWrap}>
         <Ionicons name="mail-outline" size={16} color="#94a3b8" />
-        <TextInput style={styles.input} value={email} onChangeText={setEmail} placeholder="Enter email" placeholderTextColor="#94a3b8" keyboardType="email-address" autoCapitalize="none" />
+        <TextInput onSubmitEditing={handleSubmit} style={styles.input} value={email} onChangeText={setEmail} placeholder="Enter email" placeholderTextColor="#94a3b8" keyboardType="email-address" autoCapitalize="none" />
       </View>
 
       <Text style={styles.formLabel}>Contact Number</Text>
       <View style={styles.inputWrap}>
         <Ionicons name="call-outline" size={16} color="#94a3b8" />
-        <TextInput style={styles.input} value={contact} onChangeText={(v) => setContact(normalizeIndianMobileNumber(v))} placeholder="Enter contact number" placeholderTextColor="#94a3b8" keyboardType="phone-pad" maxLength={10} />
+        <TextInput onSubmitEditing={handleSubmit} style={styles.input} value={contact} onChangeText={(v) => setContact(normalizeIndianMobileNumber(v))} placeholder="Enter contact number" placeholderTextColor="#94a3b8" keyboardType="phone-pad" maxLength={10} />
       </View>
 
       <Text style={styles.formLabel}>Message</Text>

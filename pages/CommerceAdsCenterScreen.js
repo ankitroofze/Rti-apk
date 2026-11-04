@@ -37,13 +37,14 @@ const StatCard = ({ icon, label, value, color, onPress, cardWidth }) => (
     onPress={onPress}
     activeOpacity={0.85}
   >
-    <View style={[styles.statIcon, { backgroundColor: `${color}15` }]}>
+    <View style={[styles.statIcon, { backgroundColor: '#fee2e2' }]}>
       <Ionicons name={icon} size={26} color={color} />
     </View>
     <View style={{ flex: 1 }}>
       <Text style={styles.statLabel}>{label}</Text>
       <Text style={styles.statValue}>{value}</Text>
     </View>
+    <View style={styles.statAccent} />
   </TouchableOpacity>
 );
 
@@ -76,55 +77,67 @@ const priceLabel = (value) => {
   return raw ? `\u20B9${Number(raw).toLocaleString('en-IN')}` : 'Price N/A';
 };
 
-const ItemRow = ({ image, title, meta, extra, onEdit, onDelete, onPress, editLabel = 'Edit', stock, onToggleStock, stockBusy }) => (
-  <TouchableOpacity style={styles.itemRow} activeOpacity={onPress ? 0.85 : 1} disabled={!onPress} onPress={onPress}>
-    {image ? (
-      <Image source={{ uri: image }} style={styles.itemImage} resizeMode="cover" />
-    ) : (
-      <View style={[styles.itemImage, styles.itemImageEmpty]}>
-        <Ionicons name="image-outline" size={22} color="#94a3b8" />
-      </View>
-    )}
-    <View style={{ flex: 1 }}>
-      <Text style={styles.itemTitle} numberOfLines={1}>{title}</Text>
-      {!!meta && <Text style={styles.itemMeta} numberOfLines={1}>{meta}</Text>}
-      {!!extra && <Text style={styles.itemExtra} numberOfLines={1}>{extra}</Text>}
-      {stock ? (
-        <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4 }}>
-          <Text style={{ fontSize: 12, fontWeight: '800', color: stock.inStock ? '#166534' : '#b91c1c' }}>
-            {stock.inStock ? '● In Stock' : '● Out of Stock'}
-          </Text>
-          {onToggleStock ? (
-            // Row ka onPress (popup) na chale, isliye alag touchable me — edit kiye bina (bina credit) seedha toggle
-            <TouchableOpacity activeOpacity={1} onPress={() => {}} style={{ marginLeft: 8 }}>
-              <Switch
-                value={stock.inStock}
-                onValueChange={onToggleStock}
-                disabled={Boolean(stockBusy)}
-                trackColor={{ false: '#fca5a5', true: '#86efac' }}
-                thumbColor={stock.inStock ? '#16a34a' : '#dc2626'}
-                style={{ transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] }}
-              />
-            </TouchableOpacity>
-          ) : null}
+const ProductCard = ({ item, cardWidth, onOpen, onEdit, onDelete, onToggleStock, stockBusy }) => {
+  const image = item.image || item.mediaItems?.[0]?.uri || '';
+  const inStock = item.in_stock !== false;
+  const meta = [item.sector, item.city].filter(Boolean).join('  \u2022  ');
+  return (
+    <TouchableOpacity style={[styles.pCard, { width: cardWidth }]} activeOpacity={0.9} onPress={onOpen}>
+      <View>
+        {image ? (
+          <Image source={{ uri: image }} style={styles.pImage} resizeMode="cover" />
+        ) : (
+          <View style={[styles.pImage, styles.pImageEmpty]}>
+            <Ionicons name="image-outline" size={30} color="#cbd5e1" />
+          </View>
+        )}
+        <View style={styles.pMineBadge}>
+          <Ionicons name="checkmark-circle" size={12} color="#fff" />
+          <Text style={styles.pMineBadgeText}>My Product</Text>
         </View>
-      ) : null}
-    </View>
-    <View style={styles.itemActions}>
-      <TouchableOpacity style={styles.editBtn} onPress={onEdit} activeOpacity={0.85}>
-        <Ionicons name="create-outline" size={16} color="#fff" />
-        <Text style={styles.editBtnText}>{editLabel}</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.deleteBtn} onPress={onDelete} activeOpacity={0.85}>
-        <Ionicons name="trash-outline" size={16} color="#dc2626" />
-        <Text style={styles.deleteBtnText}>Delete</Text>
-      </TouchableOpacity>
-    </View>
-  </TouchableOpacity>
-);
+        {!inStock ? (
+          <View style={styles.pOutBadge}><Text style={styles.pOutBadgeText}>Out of Stock</Text></View>
+        ) : null}
+      </View>
+      <View style={styles.pBody}>
+        <Text style={styles.pTitle} numberOfLines={2}>{item.title || 'Untitled Product'}</Text>
+        {!!meta && <Text style={styles.pMeta} numberOfLines={1}>{meta}</Text>}
+        <Text style={styles.pPrice}>{priceLabel(item.price)}</Text>
+
+        <View style={styles.pStockRow}>
+          <Text style={[styles.pStockText, { color: inStock ? '#166534' : '#b91c1c' }]}>
+            {inStock ? '\u25CF In Stock' : '\u25CF Out of Stock'}
+          </Text>
+          {/* Card ka onPress (popup) na chale, isliye alag touchable me */}
+          <TouchableOpacity activeOpacity={1} onPress={() => {}}>
+            <Switch
+              value={inStock}
+              onValueChange={onToggleStock}
+              disabled={Boolean(stockBusy)}
+              trackColor={{ false: '#fca5a5', true: '#86efac' }}
+              thumbColor={inStock ? '#16a34a' : '#dc2626'}
+              style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }}
+            />
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.pActions}>
+          <TouchableOpacity style={[styles.editBtn, { flex: 1, justifyContent: 'center' }]} onPress={onEdit} activeOpacity={0.85}>
+            <Ionicons name="create-outline" size={15} color="#fff" />
+            <Text style={styles.editBtnText}>Edit</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.deleteBtn, { flex: 1, justifyContent: 'center' }]} onPress={onDelete} activeOpacity={0.85}>
+            <Ionicons name="trash-outline" size={15} color="#dc2626" />
+            <Text style={styles.deleteBtnText}>Delete</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+};
 
 export default function CommerceAdsCenterScreen({ navigation }) {
-  // Desktop web par ye page bhi sidebar wale shell ke andar hi khule
+  // Desktop web par ye page sidebar wale shell ke andar hi khule
   const redirectingToSidebar = useQuickMenuRedirect(navigation, 'CommerceAdsCenter');
   const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_700Bold });
   const insets = useSafeAreaInsets();
@@ -147,6 +160,9 @@ export default function CommerceAdsCenterScreen({ navigation }) {
   const actionColumns = usableWidth > 760 ? 3 : usableWidth > 460 ? 2 : 1;
 
   const statCardWidth = (usableWidth - gap * (statColumns - 1)) / statColumns;
+  // Product cards: mobile par 2 ek line me, bade screen par 3 / 4
+  const productColumns = usableWidth > 900 ? 4 : usableWidth > 640 ? 3 : 2;
+  const productCardWidth = Math.floor((usableWidth - gap * (productColumns - 1)) / productColumns);
   const actionCardWidth = (usableWidth - gap * (actionColumns - 1)) / actionColumns;
 
   const loadData = useCallback(async () => {
@@ -156,19 +172,20 @@ export default function CommerceAdsCenterScreen({ navigation }) {
       setUser(currentUser || null);
 
       const currentEmail = String(currentUser?.email || '').trim().toLowerCase();
+      const currentId = String(currentUser?.id ?? currentUser?.user_id ?? '').trim().toLowerCase();
+      // listing ka owner kabhi email, kabhi numeric user_id (createdBy) hota hai — dono match karo
+      const isMine = (item) =>
+        [item.owner_email, item.createdBy, item.user_id]
+          .map((v) => String(v ?? '').trim().toLowerCase())
+          .filter(Boolean)
+          .some((o) => (currentEmail && o === currentEmail) || (currentId && o === currentId));
 
       // 1) My Listings — jitne products maine add kiye (My Listings screen jaisa hi logic)
       const summary = await UserStore.getEcomeMarketplaceSummary();
       const listings = Array.isArray(summary?.listings) ? summary.listings : [];
-      const myListings = listings.filter(
-        (item) =>
-          String(item.createdBy || item.owner_email || '').trim().toLowerCase() === currentEmail
-      ).length;
-
-      setProducts(listings.filter(
-        (item) =>
-          String(item.createdBy || item.owner_email || '').trim().toLowerCase() === currentEmail
-      ));
+      const mine = listings.filter(isMine);
+      const myListings = mine.length;
+      setProducts(mine);
 
       setStats({ myListings });
     } catch (error) {
@@ -220,7 +237,7 @@ export default function CommerceAdsCenterScreen({ navigation }) {
   if (loading) {
     return (
       <View style={[styles.root, { justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color="#16a34a" />
+        <ActivityIndicator size="large" color="#b91c1c" />
       </View>
     );
   }
@@ -264,7 +281,7 @@ export default function CommerceAdsCenterScreen({ navigation }) {
         >
           <View style={styles.welcomeCard}>
             <View style={styles.welcomeIcon}>
-              <Ionicons name="storefront" size={32} color="#16a34a" />
+              <Ionicons name="storefront" size={32} color="#b91c1c" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.welcomeTitle}>Welcome, {user?.name || 'Seller'}</Text>
@@ -275,35 +292,46 @@ export default function CommerceAdsCenterScreen({ navigation }) {
           <View style={[styles.statsGrid, { gap }]}>
             <StatCard
               icon="layers"
-              label="My Listings"
+              label="My Product"
               value={stats.myListings}
-              color="#3b82f6"
+              color="#b91c1c"
               cardWidth={statCardWidth}
               onPress={() => navigation.navigate('MyListings')}
             />
           </View>
 
-          {/* ---- My Products (Edit / Delete) ---- */}
-          {products.length > 0 ? (
+          {/* ---- My Products (jitne add karoge sab yahin aate jayenge) ---- */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>My Products ({products.length})</Text>
-            {products.map((item) => (
-              <ItemRow
-                key={`prod-${item.id}`}
-                image={item.image || item.mediaItems?.[0]?.uri || ''}
-                title={item.title || 'Untitled Product'}
-                meta={[item.sector, item.city].filter(Boolean).join('  \u2022  ')}
-                extra={priceLabel(item.price)}
-                stock={{ inStock: item.in_stock !== false }}
-                onToggleStock={(v) => handleToggleStock(item, v)}
-                stockBusy={String(stockBusyId) === String(item.id)}
-                onPress={() => setSelectedProductId(item.id)}
-                onEdit={() => handleEditProduct(item)}
-                onDelete={() => handleDeleteProduct(item)}
-              />
-            ))}
+            <View style={styles.sectionHeadRow}>
+              <Text style={styles.sectionTitle}>My Products ({products.length})</Text>
+              <TouchableOpacity style={styles.addBtn} onPress={() => navigation.navigate('Sell')} activeOpacity={0.85}>
+                <Ionicons name="add" size={16} color="#fff" />
+                <Text style={styles.addBtnText}>Add Product</Text>
+              </TouchableOpacity>
+            </View>
+            {products.length > 0 ? (
+              <View style={[styles.productGrid, { gap }]}>
+                {products.map((item) => (
+                  <ProductCard
+                    key={`prod-${item.id}`}
+                    item={item}
+                    cardWidth={productCardWidth}
+                    onOpen={() => setSelectedProductId(item.id)}
+                    onEdit={() => handleEditProduct(item)}
+                    onDelete={() => handleDeleteProduct(item)}
+                    onToggleStock={(v) => handleToggleStock(item, v)}
+                    stockBusy={String(stockBusyId) === String(item.id)}
+                  />
+                ))}
+              </View>
+            ) : (
+              <View style={styles.emptyBox}>
+                <Ionicons name="cube-outline" size={34} color="#fca5a5" />
+                <Text style={styles.emptyTitle}>No products yet</Text>
+                <Text style={styles.emptyText2}>Jo product aap Sell page se add karoge, wo yahan dikhega.</Text>
+              </View>
+            )}
           </View>
-          ) : null}
         </View>
       </ScrollView>
 
@@ -402,11 +430,14 @@ const styles = StyleSheet.create({
   welcomeCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#dcfce7',
-    padding: 20,
-    borderRadius: 18,
+    backgroundColor: '#b91c1c',
+    padding: 22,
+    borderRadius: 20,
     marginBottom: 20,
-    gap: 14,
+    gap: 16,
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 6px 18px rgba(185,28,28,0.28)' }
+      : { elevation: 4, shadowColor: '#b91c1c', shadowOpacity: 0.28, shadowRadius: 10, shadowOffset: { width: 0, height: 4 } }),
   },
   welcomeIcon: {
     width: 56,
@@ -419,12 +450,12 @@ const styles = StyleSheet.create({
    welcomeTitle: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#0f172a',
+    color: '#ffffff',
     fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
   },
   welcomeSub: {
     fontSize: 13,
-    color: '#295e20',
+    color: 'rgba(255,255,255,0.85)',
     marginTop: 2,
     fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
   },
@@ -438,9 +469,11 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     padding: 18,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: '#fecaca',
     minHeight: 130,
+    overflow: 'hidden',
   },
+  statAccent: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, backgroundColor: '#b91c1c' },
   statIcon: {
     width: 48,
     height: 48,
@@ -455,19 +488,39 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   statValue: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: '800',
-    color: '#0f172a',
+    color: '#b91c1c',
   },
   section: {
     marginBottom: 20,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '800',
     color: '#0f172a',
-    marginBottom: 14,
   },
+  sectionHeadRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 10 },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#b91c1c', paddingHorizontal: 14, height: 36, borderRadius: 10 },
+  addBtnText: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  productGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  pCard: { backgroundColor: '#fff', borderRadius: 14, borderWidth: 1, borderColor: '#e2e8f0', overflow: 'hidden' },
+  pImage: { width: '100%', height: 130, backgroundColor: '#f1f5f9' },
+  pImageEmpty: { alignItems: 'center', justifyContent: 'center' },
+  pMineBadge: { position: 'absolute', left: 8, top: 8, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#b91c1c', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  pMineBadgeText: { color: '#fff', fontSize: 10.5, fontWeight: '800' },
+  pOutBadge: { position: 'absolute', left: 8, bottom: 8, backgroundColor: '#dc2626', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
+  pOutBadgeText: { color: '#fff', fontSize: 10.5, fontWeight: '800' },
+  pBody: { padding: 10 },
+  pTitle: { fontSize: 14, fontWeight: '800', color: '#0f172a', minHeight: 36 },
+  pMeta: { fontSize: 11.5, color: '#64748b', marginTop: 2 },
+  pPrice: { fontSize: 16, fontWeight: '800', color: '#b91c1c', marginTop: 4 },
+  pStockRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, marginBottom: 6 },
+  pStockText: { fontSize: 12, fontWeight: '800' },
+  pActions: { flexDirection: 'row', gap: 8 },
+  emptyBox: { alignItems: 'center', backgroundColor: '#fff', borderWidth: 1, borderColor: '#fecaca', borderStyle: 'dashed', borderRadius: 16, padding: 28, gap: 6 },
+  emptyTitle: { fontSize: 15, fontWeight: '800', color: '#0f172a' },
+  emptyText2: { fontSize: 13, color: '#64748b', textAlign: 'center' },
   actionsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',

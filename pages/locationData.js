@@ -129,3 +129,33 @@ const getLgdVillages = (stateName, districtName, talukaName) => {
 
 return (talukaMap[taluka] || []).filter((x) => !/[\u0900-\u097F]/.test(x));
 };
+
+// ✅ Registration API ko state_id / district_id / taluka_id / village_id bhi bhejni hoti hain.
+// Agar india-location.json me `ids` map ho to yahan se mil jaati hain, warna khali string
+// (tab register API sirf names bhejti hai aur IDs skip ho jaati hain).
+// Expected optional shape:
+//   LGD.ids = { states: {Name: id}, districts: {State: {Name: id}},
+//               talukas: {State: {District: {Name: id}}}, villages: {State: {District: {Taluka: {Name: id}}}} }
+export const getLocationIds = ({ state, district, taluka, village } = {}) => {
+  try {
+    const ids = LGD.ids || {};
+    const st = resolveStateName(state);
+    const pick = (map, ...path) => {
+      let cur = map;
+      for (const key of path) {
+        if (!cur) return '';
+        const found = Object.keys(cur).find((k) => normalizeKey(k) === normalizeKey(key));
+        cur = found ? cur[found] : null;
+      }
+      return cur !== null && cur !== undefined && typeof cur !== 'object' ? String(cur) : '';
+    };
+    return {
+      state_id: pick(ids.states, st),
+      district_id: pick(ids.districts?.[st] ? { [st]: ids.districts[st] } : null, st, district),
+      taluka_id: pick(ids.talukas?.[st] ? { [st]: ids.talukas[st] } : null, st, district, taluka),
+      village_id: pick(ids.villages?.[st] ? { [st]: ids.villages[st] } : null, st, district, taluka, village),
+    };
+  } catch {
+    return { state_id: '', district_id: '', taluka_id: '', village_id: '' };
+  }
+};

@@ -3,10 +3,10 @@
 // Android, iOS, Web aur Web ka mobile view — sab yahi use karte hain.
 
 export const CONTENT_TABS = [
-  { key: 'post', label: 'Posts', icon: 'view-grid-outline', emptyText: 'No posts yet.' },
-  { key: 'reel', label: 'Reels', icon: 'movie-play-outline', emptyText: 'No reels yet.' },
-  { key: 'ad', label: 'Ads', icon: 'bullhorn-outline', emptyText: 'No ads yet.' },
-  { key: 'ecom', label: 'Ecom', icon: 'shopping-outline', emptyText: 'No products yet.' },
+  { key: 'post', label: 'Posts', icon: 'view-grid-outline', ioIcon: 'grid-outline', emptyText: 'No posts yet.' },
+  { key: 'reel', label: 'Reels', icon: 'movie-play-outline', ioIcon: 'film-outline', emptyText: 'No reels yet.' },
+  { key: 'ad', label: 'Ads', icon: 'bullhorn-outline', ioIcon: 'megaphone-outline', emptyText: 'No ads yet.' },
+  { key: 'ecom', label: 'Ecom', icon: 'shopping-outline', ioIcon: 'bag-handle-outline', emptyText: 'No products yet.' },
 ];
 
 // Har item ko 'post' | 'reel' | 'ad' | 'ecom' me classify karta hai.

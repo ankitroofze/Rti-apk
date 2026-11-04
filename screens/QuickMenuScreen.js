@@ -52,10 +52,9 @@ import MyQuizSubscriptionScreen from '../pages/MyQuizSubscriptionScreen';
 import QuizSubscriptionScreen from './QuizSubscriptionScreen';
 import EcomSubscriptionScreen from './EcomSubscriptionScreen';
 import SellScreen from './SellScreen';
-import FarmingBuyScreen from './FarmingBuyScreen';
+import CommerceAdsCenterScreen from '../pages/CommerceAdsCenterScreen';
 import MyAttemptsScreen from '../pages/MyAttemptsScreen';
 import MyEcomSubscriptionScreen from '../pages/MyEcomSubscriptionScreen';
-import CommerceAdsCenterScreen from '../pages/CommerceAdsCenterScreen';
 import SbMyAdsPage from '../pages/MyAdsScreen';
 import SbPaymentHistoryPage from '../pages/Paymenthistoryscreen';
 import SbSettingsPage from '../pages/SettingsScreen';
@@ -360,7 +359,9 @@ const MENU_SECTIONS = [
     { label: 'Buy Product', icon: 'cart-outline', screen: 'FarmingBuy', iconStyle: 'farmGreen' },
       { label: 'Sell Product', icon: 'cloud-upload-outline', screen: 'Sell', iconStyle: 'farmGreen' },
       { label: 'My Ecom Product', icon: 'storefront-outline', screen: 'CommerceAdsCenter', iconStyle: 'farmGreen' },
-      { label: 'Ecom Enquiries', icon: 'chatbubbles-outline', screen: 'MyEnquiries', iconStyle: 'orange' },
+      { label: 'Ecom Enquiries', icon: 'chatbubbles-outline', screen: 'MyEnquiries', mobileParams: { type: 'ecom' }, iconStyle: 'orange' },
+      // web par 'AdsEnquiries' (sidebar ke andar), mobile par real route 'MyEnquiries' + type=ads
+      { label: 'Ads Enquiries', icon: 'megaphone-outline', screen: 'AdsEnquiries', mobileScreen: 'MyEnquiries', mobileParams: { type: 'ads' }, iconStyle: 'orange' },
     ],
   },
   {
@@ -433,6 +434,7 @@ const CARD_DESCS = {
   'Sell Product': 'List your product for sale',
   'My Ecom Product': 'Edit or delete your products',
   'Ecom Enquiries': 'Received & sent enquiries',
+  'Ads Enquiries': 'Enquiries on your ads',
   'Logout': 'Sign out of your account',
 };
 
@@ -455,10 +457,16 @@ const SUBSCRIPTION_GROUP_SCREENS = [
 const ECOM_SUBMENU = [
   { label: 'Ecom Subscription Plans', icon: 'bag-handle-outline', screen: 'My Ecom Subscription' },
   { label: 'Sell Product', icon: 'cloud-upload-outline', screen: 'Sell' },
-  { label: 'Buy Product', icon: 'cart-outline', screen: 'FarmingBuy' },
+  // 'Buy Product' sidebar se hata diya
   { label: 'My Ecom Product', icon: 'storefront-outline', screen: 'CommerceAdsCenter' },
 ];
 const ECOM_GROUP_SCREENS = ['My Ecom Subscription', 'EcomSubscription', 'Sell', 'FarmingBuy', 'CommerceAdsCenter'];
+// ✅ "Enquiry" par click => Ecom Enquiry / Ads Enquiry (Certification jaisa dropdown) (dono ek hi MyEnquiriesScreen, alag type ke saath)
+const ENQUIRY_SUBMENU = [
+  { label: 'Ecom Enquiry', icon: 'storefront-outline', screen: 'MyEnquiries' },
+  { label: 'Ads Enquiry', icon: 'megaphone-outline', screen: 'AdsEnquiries' },
+];
+const ENQUIRY_GROUP_SCREENS = ['MyEnquiries', 'AdsEnquiries'];
 // ✅ "Certification" par hover => Quiz Subscription Plans / Start Quiz / My Attempts
 const CERT_SUBMENU = [
   { label: 'Quiz Subscription Plans', icon: 'card-outline', screen: 'My Quiz Subscription' },
@@ -470,6 +478,13 @@ const CERT_GROUP_SCREENS = ['Certification', 'MyAttempts', 'My Quiz Subscription
 const SHARED_GROUP_SCREENS = ['My Quiz Subscription', 'QuizSubscription'];
 // Jo screen web par kabhi nahi dikhni chahiye => uski jagah ye khule
 const SCREEN_ALIAS = { Ecome: 'FarmingBuy' };
+// Ek hi screen (MyEnquiriesScreen), `type` param se Ecom ya Ads ki enquiries dikhati hai
+const EcomEnquiriesPage = (props) => (
+  <MyEnquiriesScreen {...props} route={{ ...(props.route || {}), params: { ...(props.route?.params || {}), type: 'ecom' } }} />
+);
+const AdsEnquiriesPage = (props) => (
+  <MyEnquiriesScreen {...props} route={{ ...(props.route || {}), params: { ...(props.route?.params || {}), type: 'ads' } }} />
+);
 
 const WEB_MODULES = [
   { label: 'Home', icon: 'home-outline', screen: 'Home', iconStyle: 'orange', isNavigation: true },
@@ -497,9 +512,11 @@ const WEB_MODULES = [
   { label: 'Notifications', icon: 'notifications-outline', screen: 'Notifications', iconStyle: 'green', component: NotificationsScreen },
 { label: 'Ecommerce', icon: 'leaf-outline', screen: '__ecom__', iconStyle: 'farmGreen', subMenu: ECOM_SUBMENU, groupScreens: ECOM_GROUP_SCREENS, toggleOnly: true },
   { label: 'Sell Product', icon: 'cloud-upload-outline', screen: 'Sell', iconStyle: 'farmGreen', component: SellScreen, hideInSidebar: true },
-  { label: 'Buy Product', icon: 'cart-outline', screen: 'FarmingBuy', iconStyle: 'farmGreen', component: FarmingBuyScreen, hideInSidebar: true },
   { label: 'My Ecom Product', icon: 'storefront-outline', screen: 'CommerceAdsCenter', iconStyle: 'farmGreen', component: CommerceAdsCenterScreen, hideInSidebar: true },
-  { label: 'Ecom Enquiries', icon: 'chatbubbles-outline', screen: 'MyEnquiries', iconStyle: 'orange', component: MyEnquiriesScreen },
+  // Sidebar me ab sirf "Enquiry" dikhta hai — click karne par Ecom Enquiry / Ads Enquiry khulte hain
+  { label: 'Enquiry', icon: 'chatbubbles-outline', screen: '__enquiry__', iconStyle: 'orange', subMenu: ENQUIRY_SUBMENU, groupScreens: ENQUIRY_GROUP_SCREENS, toggleOnly: true },
+  { label: 'Ecom Enquiries', icon: 'chatbubbles-outline', screen: 'MyEnquiries', iconStyle: 'orange', component: EcomEnquiriesPage, hideInSidebar: true },
+  { label: 'Ads Enquiries', icon: 'megaphone-outline', screen: 'AdsEnquiries', iconStyle: 'orange', component: AdsEnquiriesPage, hideInSidebar: true },
   // Baaki saare pages bhi ab sidebar ke andar khulte hain
   { label: 'My Ads', icon: 'document-outline', screen: 'MyAds', iconStyle: 'orange', component: SbMyAdsPage, hideInSidebar: true },
   { label: 'Payment History', icon: 'document-outline', screen: 'PaymentHistory', iconStyle: 'orange', component: SbPaymentHistoryPage, hideInSidebar: true },
@@ -546,6 +563,8 @@ const SLUG_TO_SCREEN = {
   'commerce-hub': 'CommerceAdsCenter',
   'ecom-enquiries': 'MyEnquiries',
   enquiries: 'MyEnquiries',
+  'ads-enquiries': 'AdsEnquiries',
+  'ads-enquiry': 'AdsEnquiries',
   settings: 'Settings',
   'my-ads': 'MyAds',
   farming: 'FarmingBuy',
@@ -567,6 +586,7 @@ const SCREEN_TO_SLUG = {
   Ecome: 'ecome',
   Sell: 'sell',
   MyEnquiries: 'ecom-enquiries',
+  AdsEnquiries: 'ads-enquiries',
   Settings: 'settings',
   MyAds: 'my-ads',
   FarmingBuy: 'farming',
@@ -952,7 +972,7 @@ function QuickMenuMobile({ navigation }) {
       return;
     }
     // Wallet se back karne par wapas Quick Menu par aaye
-    navigation.navigate(item.screen, item.screen === 'Wallet' ? { returnTo: 'QuickMenu' } : undefined);
+    navigation.navigate(item.mobileScreen || item.screen, item.screen === 'Wallet' ? { returnTo: 'QuickMenu' } : item.mobileParams);
   };
 
   return (

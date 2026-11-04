@@ -13,6 +13,7 @@ import { Ionicons, Feather } from '@expo/vector-icons';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useIsFocused, useFocusEffect } from '@react-navigation/native';
 import { CATEGORY_COLOR_MAP } from '../constants/homeData';
+import { useAdsHidden } from '../utils/adsVisibility';
 import { isValidImageUrl, buildPlaceholderImage, getLocalizedCategoryLabel, getLocalizedSeatLabel } from '../utils/storyHelpers';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 import { safePause, safePlay, safeSetMuted } from '../utils/videoPlayerSafe';
@@ -23,12 +24,15 @@ import PostGridThumb from './PostGridThumb';
 import { UserStore } from '../store/UserStore';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { useAuth } from '../contexts/AuthContext';
+import { useToast } from './ui/ToastProvider';
+import { loginMessage } from '../utils/loginMessages';
 import { getAdRedirectMeta, openAdRedirect } from '../utils/adRedirect';
 import styles from './NewsFeedCardStyles';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getProfileTier, resolveRoleTitle, cleanRoleNames } from '../utils/profileHelpers';
 import { PROFILE_TIERS } from '../constants/profileConstants';
 import MediaGallery from './MediaGallery';
+import AutoFitAdImage from './AutoFitAdImage';
 import * as MediaDownloadButtonModule from './MediaDownloadButton';
 const MediaDownloadButton = MediaDownloadButtonModule.MediaDownloadButton || MediaDownloadButtonModule.default;
 import { MediaLogo } from './MediaBrandOverlay';
@@ -591,7 +595,14 @@ const formatUploadTime = (value) => {
 // Is session me jin news ka view record ho chuka hai (dobara API hit nahi hoga)
 const viewedNewsIds = new Set();
 
-export default function NewsFeedCard({
+// ✅ ads_hidden=true hone par news-feed me aane wale ad cards kahin render nahi hote
+export default function NewsFeedCard(props) {
+  const adsHidden = useAdsHidden();
+  if (adsHidden && props?.story?.isAd) return null;
+  return <NewsFeedCardInner {...props} />;
+}
+
+function NewsFeedCardInner({
   story,
   isCompactLayout,
   navigation,
@@ -607,6 +618,7 @@ export default function NewsFeedCard({
 }) {
   const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const { isLoggedIn } = useAuth();
+  const { showToast: showLoginToast } = useToast();
   const isScreenFocused = useIsFocused();
   const cardRef = useRef(null);
   const likeInFlightRef = useRef(false);
@@ -959,7 +971,8 @@ const safeImage = isValidImageUrl(effectiveImageUri)
   // (image tap MediaGallery ke andar onPressImage se handle hota hai).
   const hasImageGallery = Array.isArray(story.images) && story.images.filter(Boolean).length > 1;
   // ✅ Breaking-news red frame: sirf tab jab user ne news add karte time frame select kiya ho
-  const framed = Boolean(story.useFrame) && !isAdStory && !isFileAttachment;
+  // Video par frame backend ne final MP4 me merge kar diya hai (`frameMerged`) — dobara overlay karne se double frame dikhta hai.
+  const framed = Boolean(story.useFrame) && !story.frameMerged && !isAdStory && !isFileAttachment;
   // Kaunsa template (glossy / bar / banner) — backend `frame_template`; purani news => default template
   const frameTpl = getFrameTemplate(story.frameTemplate);
   const frameWin = getFrameWindow(frameTpl);
@@ -995,6 +1008,8 @@ const safeImage = isValidImageUrl(effectiveImageUri)
   }, [story.id, story.title, story.url]);
 
   const canPlayVideo = Boolean(effectiveVideoUri) && isPlayableVideoSource(effectiveVideoUri);
+  // ✅ Single image (news + ads): poori image apne asli ratio me dikhe — crop / zoom nahi
+  const singleFitImage = !framed && !canPlayVideo && !isFileAttachment && !hasImageGallery && Boolean(safeImage);
   const { thumbnail: videoThumbnail, capturing: thumbnailCapturing } = useVideoThumbnail(
     canPlayVideo ? effectiveVideoUri : null
   );
@@ -1192,14 +1207,15 @@ const safeImage = isValidImageUrl(effectiveImageUri)
     showLoginRequired();
   }, [navigation, showLoginRequired]);
 
-  const requireLogin = useCallback(() => {
+  // ✅ Bina login ke like / comment / follow par login page ke bajaye toast: "Please login to ..."
+  const requireLogin = useCallback((action = 'continue') => {
     if (isLoggedIn && currentEmail) return true;
-    goToLogin();
+    showLoginToast(loginMessage(action), 'info');
     return false;
-  }, [currentEmail, isLoggedIn, goToLogin]);
+  }, [currentEmail, isLoggedIn, showLoginToast]);
 
 const handleLike = async () => {
-  if (!requireLogin()) return;
+  if (!requireLogin('like')) return;
   if (likeInFlightRef.current) return;      // is news ka request pending hai — dobara nahi
   likeInFlightRef.current = true;
 
@@ -1298,7 +1314,7 @@ const handleLike = async () => {
     }
   };
   const handleSubmitComment = async () => {
-    if (!requireLogin()) return;
+    if (!requireLogin('comment')) return;
     const trimmed = commentText.trim().slice(0, 1000);
     if (!trimmed) return;
     try {
@@ -1394,7 +1410,7 @@ const handleLike = async () => {
     } catch {}
   };
   const handleReplyComment = useCallback((commentId) => {
-    if (!requireLogin()) return;
+    if (!requireLogin('comment')) return;
     const parentCommentId = findParentCommentId(localComments, commentId) || commentId;
     if (replyingToCommentId === commentId) {
       setReplyingToCommentId(null);
@@ -1411,7 +1427,7 @@ const handleLike = async () => {
   }, [findParentCommentId, localComments, replyingToCommentId, requireLogin, loadReplies]);
 
   const handleSubmitReply = async () => {
-    if (!requireLogin()) return;
+    if (!requireLogin('comment')) return;
     const trimmed = replyText.trim().slice(0, 1000);
     if (!trimmed || !replyingToCommentId) return;
     try {
@@ -1441,7 +1457,7 @@ const handleLike = async () => {
   const handleCancelReply = () => { setReplyingToCommentId(null); setReplyText(''); };
 
   const handleLikeComment = async (commentId) => {
-    if (!requireLogin()) return;
+    if (!requireLogin('like')) return;
     if (likeBusyRef.current.has(commentId)) return;   // double-tap guard
     likeBusyRef.current.add(commentId);
 
@@ -1563,7 +1579,7 @@ const handleLike = async () => {
   };
   const handleBlockAuthor = async () => {
     closeActionMenu();
-    if (!currentEmail) { showActionResult('Login required', 'Please login to block this user.'); return; }
+    if (!currentEmail) { showLoginToast(loginMessage('block'), 'info'); return; }
     if (!hasFollowTarget || isOwnStory) return;
     try {
       const result = await UserStore.blockUser(storyAuthorEmail, storyAuthorId);
@@ -1594,7 +1610,7 @@ const handleLike = async () => {
 
   const handleToggleFollowAuthor = async (event) => {
     event?.stopPropagation?.();
-    if (!currentEmail) { showActionResult('Login required', 'Please login to follow this user.'); return; }
+    if (!currentEmail) { showLoginToast(loginMessage('follow'), 'info'); return; }
     if (!hasFollowTarget || isOwnStory) return;
 
     // ✅ FAST: button turant badal jaata hai (optimistic). API peeche chalti hai,
@@ -1836,6 +1852,7 @@ const handleLike = async () => {
          hasImageGallery
            ? { height: undefined, backgroundColor: '#ffffff' }
            : null,
+         singleFitImage ? { height: undefined, backgroundColor: '#0f172a' } : null,
          framed ? { height: frameBoxH || 200, backgroundColor: '#000', borderRadius: 8 } : null,
          // video poora dikhe (crop nahi): 16:9 frame + contain
          canPlayVideo && !framed && mediaWidth ? { height: Math.round(mediaWidth * 9 / 16), backgroundColor: '#000' } : null,
@@ -1909,13 +1926,15 @@ const handleLike = async () => {
             <MediaGallery
               images={story.images}
               width={framed ? Math.round(mediaWidth * frameWin.width) : mediaWidth}
-              maxHeight={framed ? Math.round(frameBoxH * frameWin.height) : 240}
-              fit="cover"
+              maxHeight={framed ? Math.round(frameBoxH * frameWin.height) : 480}
               downloadable
               onPressImage={handleImagePress}
             />
+          ) : singleFitImage && mediaWidth ? (
+            <AutoFitAdImage uri={safeImage} maxWidth={mediaWidth} maxHeight={520} />
           ) : (
-            <Image source={{ uri: safeImage }} style={styles.storyHeroImage} resizeMode="cover" />
+            // image hamesha poori dikhe (contain) — crop / zoom nahi; khali jagah dark background se bharti hai
+            <Image source={{ uri: safeImage }} style={[styles.storyHeroImage, { backgroundColor: '#0f172a' }]} resizeMode="contain" />
           )}
           </MediaBox>
           {/* ⬇ Download: news ki video / image (gallery me MediaGallery ka apna button hai) */}
@@ -1933,7 +1952,7 @@ const handleLike = async () => {
               description={story.description || story.excerpt || story.subtitle || ''}
               templateId={frameTpl.id}
             />
-          ) : (
+          ) : story.frameMerged ? null : (
             <>
               <MediaLogo />
             </>
@@ -2185,7 +2204,7 @@ const handleLike = async () => {
                 returnKeyType="send"
                 blurOnSubmit={true}
               onSubmitEditing={handleSubmitComment}
-                onFocus={() => { if (!isLoggedIn) { inputRef.current?.blur?.(); goToLogin(); } }}
+                onFocus={() => { if (!isLoggedIn) { inputRef.current?.blur?.(); showLoginToast(loginMessage('comment'), 'info'); } }}
               />
               <TouchableOpacity
                 style={[styles.commentSendBtn, !commentText.trim() && styles.commentSendBtnDisabled]}

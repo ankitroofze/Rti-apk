@@ -286,7 +286,7 @@ export default function DistrictSelectScreen({ navigation, route }) {
                   ]}
                 >
                   <Ionicons name="business-outline" size={16} color="#a09890" />
-                  <TextInput
+                  <TextInput onSubmitEditing={handleNext}
                     style={styles.input}
                     placeholder="Enter your district"
                     placeholderTextColor="#b0a898"

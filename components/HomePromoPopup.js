@@ -27,6 +27,7 @@ import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { openExternalUrl } from '../utils/adRedirect';
+import { useAdsHidden } from '../utils/adsVisibility';
 import { useGlobalMuted, getGlobalMuted } from '../utils/Globalmutestore';
 import { safePause, safePlay, safeSetMuted } from '../utils/videoPlayerSafe';
 
@@ -198,10 +199,13 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
   const [mediaNatural, setMediaNatural] = useState(null);
 
   // `ads` (array) ho to wahi, warna purana single `ad`
+  // ✅ ads_hidden=true => popup ad kabhi nahi khulega (aur khula ho to band ho jayega)
+  const adsHidden = useAdsHidden();
   const rawList = useMemo(() => {
+    if (adsHidden) return [];
     const src = Array.isArray(ads) && ads.length ? ads : (ad ? [ad] : []);
     return src.filter((a) => a && (a.video || a.image || a.brandLogo));
-  }, [ads, ad]);
+  }, [ads, ad, adsHidden]);
 
   const seenRef = useRef({});
   const rawListRef = useRef(rawList);
@@ -282,6 +286,14 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
       setVisible(false);
     }
   }, [isFocused]);
+
+  useEffect(() => {
+    if (adsHidden) {
+      visibleRef.current = false;
+      setVisible(false);
+      setList([]);
+    }
+  }, [adsHidden]);
 
   const current = list.length ? list[Math.min(index, list.length - 1)] : null;
   const currentKey = current ? `${current.id ?? 'ad'}-${index}` : '';

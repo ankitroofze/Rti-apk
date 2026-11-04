@@ -42,6 +42,7 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
   const [musicVolume, setMusicVolume] = useState(initial?.musicVolume ?? 0.6);
   const [voiceUri, setVoiceUri] = useState(initial?.voiceUri || null);
   const [voiceMime, setVoiceMime] = useState(initial?.voiceMime || null);
+  const [muteOriginal, setMuteOriginal] = useState(initial?.muteOriginal ?? true); // mute_original: 1 = video ki original awaaz band
   const [recording, setRecording] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const progressAnim = useRef(new Animated.Value(0)).current;   // 0..1 (no re-render while playing)
@@ -139,6 +140,7 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
     setMusicVolume(initial?.musicVolume ?? 0.6);
     setVoiceUri(initial?.voiceUri || null);
     setVoiceMime(initial?.voiceMime || null);
+    setMuteOriginal(initial?.muteOriginal ?? true);
     progressAnim.setValue(0);
     try { videoPlayer.muted = true; videoPlayer.currentTime = 0; } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -324,7 +326,7 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
       musicVolume,
       voiceUri: voiceUri || null,
       voiceMime: voiceUri ? (voiceMime || null) : null,
-      muteOriginal: true,
+      muteOriginal,
     });
   };
 
@@ -423,6 +425,11 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
               </TouchableOpacity>
             </View>
 
+            <TouchableOpacity onPress={() => setMuteOriginal((v) => !v)} activeOpacity={0.8} style={s.muteRow}>
+              <Ionicons name={muteOriginal ? 'checkbox' : 'square-outline'} size={20} color={muteOriginal ? '#22c55e' : '#fff'} />
+              <Text style={s.muteText}>Mute original video audio</Text>
+            </TouchableOpacity>
+
             {tab === 'music' ? (
               <>
                 <FlatList
@@ -515,6 +522,8 @@ const s = StyleSheet.create({
   songArtist: { color: '#9ca3af', fontSize: 12, marginTop: 1 },
 
   // volume
+  muteRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingBottom: 8 },
+  muteText: { color: '#fff', fontSize: 13, fontWeight: '600' },
   volRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingTop: 12 },
   volLabel: { color: '#d1d5db', fontSize: 12, flex: 1 },
   volChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: 'rgba(255,255,255,0.1)' },

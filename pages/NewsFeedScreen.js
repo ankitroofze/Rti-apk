@@ -167,7 +167,7 @@ function SponsoredAdCard({ ad, navigation }) {
       {ad.image ? (
         // ✅ FIX: backend field "image" hai, "photo" nahi
         <View style={styles.mediaPreviewWrap}>
-          <ResolvedImage uri={ad.image} style={{ width: '100%', height: 220, borderRadius: 12 }} resizeMode="cover" />
+          <ResolvedImage uri={ad.image} style={{ width: '100%', height: 220, borderRadius: 12, backgroundColor: '#f1f5f9' }} resizeMode="contain" />
         </View>
       ) : null}
 
@@ -486,7 +486,7 @@ const EditNewsModal = ({ visible, newsItem, onClose, onUpdate, showToast }) => {
             </TouchableOpacity>
           </View>
           <KeyboardAwareScroll style={styles.editModalScroll} showsVerticalScrollIndicator={false}>
-            <TextInput
+            <TextInput onSubmitEditing={handleUpdate}
               style={styles.editInput}
               placeholder="Title *"
               placeholderTextColor={C.neutral400}
@@ -502,28 +502,28 @@ const EditNewsModal = ({ visible, newsItem, onClose, onUpdate, showToast }) => {
               onChangeText={(text) => setFormData({ ...formData, description: text })}
               multiline
             />
-            <TextInput
+            <TextInput onSubmitEditing={handleUpdate}
               style={styles.editInput}
               placeholder="Category"
               placeholderTextColor={C.neutral400}
               value={formData.category}
               onChangeText={(text) => setFormData({ ...formData, category: text })}
             />
-            <TextInput
+            <TextInput onSubmitEditing={handleUpdate}
               style={styles.editInput}
               placeholder="State"
               placeholderTextColor={C.neutral400}
               value={formData.state}
               onChangeText={(text) => setFormData({ ...formData, state: text })}
             />
-            <TextInput
+            <TextInput onSubmitEditing={handleUpdate}
               style={styles.editInput}
               placeholder="District"
               placeholderTextColor={C.neutral400}
               value={formData.district}
               onChangeText={(text) => setFormData({ ...formData, district: text })}
             />
-            <TextInput
+            <TextInput onSubmitEditing={handleUpdate}
               style={styles.editInput}
               placeholder="Taluka"
               placeholderTextColor={C.neutral400}
@@ -1663,13 +1663,12 @@ const handleLike = async (item) => {
                     }}
                   >
                     {item.images.length === 1 ? (
-                      <ResolvedImage uri={item.images[0]} style={styles.mediaSingleImage} resizeMode="cover" />
+                      <ResolvedImage uri={item.images[0]} style={styles.mediaSingleImage} resizeMode="contain" />
                     ) : (
                       <MediaGallery
                         images={item.images}
                         width={feedMediaWidth || Math.max(220, Math.min(windowWidth - 42, 720))}
-                        maxHeight={260}
-                        fit="cover"
+                        maxHeight={420}
                       />
                     )}
                   </View>

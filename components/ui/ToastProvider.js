@@ -8,6 +8,17 @@ const ToastContext = createContext({
   showLoader: () => {}, hideLoader: () => {},
 });
 
+// ✅ Toast kabhi "error" jaisa nahi dikhega: na laal color, na "Oops!/Error" heading.
+// App ke 200+ jagah se showToast(msg, 'error') aata hai (validation, permission, normal flow ke messages bhi) —
+// un sab ko yahin ek jagah se neutral "Notice" bana diya, taaki kisi file me kuch badalna na pade.
+const GENERIC_ERROR_TITLES = /^\s*(error|errors|oops!?|failed|failure|something went wrong)\s*$/i;
+const normalizeToastType = (type) => (type === 'success' ? 'success' : 'info');
+const cleanToastMessage = (message) => {
+  const text = typeof message === 'string' ? message : (message?.message ? String(message.message) : String(message ?? ''));
+  // "Error: xyz" / "Error - xyz" jaise prefix hata do, sirf kaam ki baat dikhao
+  return text.replace(/^\s*(error|failed)\s*[:\-–]\s*/i, '').trim();
+};
+
 export function ToastProvider({ children }) {
   const [toast, setToast] = useState(null);
   const [popup, setPopup] = useState(null);
@@ -46,7 +57,12 @@ export function ToastProvider({ children }) {
       clearTimeout(timeoutRef.current);
     }
 
-    setToast({ message, type, title: options?.title || '' });
+    const rawTitle = options?.title || '';
+    setToast({
+      message: cleanToastMessage(message),
+      type: normalizeToastType(type),
+      title: GENERIC_ERROR_TITLES.test(rawTitle) ? '' : rawTitle,
+    });
     timeoutRef.current = setTimeout(() => {
       setToast(null);
       timeoutRef.current = null;
@@ -135,7 +151,7 @@ export function ToastProvider({ children }) {
           <View style={[styles.overlay, toast.type === 'success' ? styles.overlayBottom : styles.overlayTop]} pointerEvents="none">
             <View style={[styles.toast, styles[toast.type] || styles.info]}>
               <Text style={styles.title}>
-                {toast.title || (toast.type === 'success' ? 'Success' : toast.type === 'error' ? 'Oops!' : 'Notice')}
+                {toast.title || (toast.type === 'success' ? 'Success' : 'Notice')}
               </Text>
               <Text style={styles.message}>{toast.message}</Text>
             </View>

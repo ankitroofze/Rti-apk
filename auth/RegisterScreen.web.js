@@ -20,6 +20,8 @@ import OtpModal from '../components/Otpmodal';
 import { UserStore } from '../store/UserStore';
 import { compressImageToBase64 } from '../utils/imageHandling';
 import { MAX_IMAGE_SIZE } from '../constants/profileConstants';
+import { useAuth } from '../contexts/AuthContext';
+import { INDIAN_STATES, getDistricts, getTalukas, getVillages, getLocationIds } from '../pages/locationData';
 import styles, { toastStyles, localStyles } from '../styles/RegisterStyles';
 import webStyles from '../styles/RegisterWebStyles';
 import BackTitleRow from '../components/BackTitleRow';
@@ -106,6 +108,7 @@ function StepIndicator({ currentStep, totalSteps }) {
 // Main Register Screen (web)
 // ─────────────────────────────────────────────────────────────
 export default function RegisterScreen({ navigation, route }) {
+  const { login } = useAuth();
   useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold });
   const { width } = useWindowDimensions();
   const showImagePanel = width >= 900;
@@ -144,6 +147,22 @@ export default function RegisterScreen({ navigation, route }) {
     }, [route?.params?.otpExpired]) // eslint-disable-line react-hooks/exhaustive-deps
   );
   const [otpSending, setOtpSending] = useState(false);
+
+  // ✅ Location (cascading): State -> District -> Taluka -> Village
+  const [locState, setLocState] = useState('');
+  const [locDistrict, setLocDistrict] = useState('');
+  const [locTaluka, setLocTaluka] = useState('');
+  const [locVillage, setLocVillage] = useState('');
+  // Backend validation errors: { field: 'message' } — response.errors[field] se aate hain
+  const [fieldErrors, setFieldErrors] = useState({});
+  const clearFieldError = (...fields) => setFieldErrors((prev) => {
+    if (!fields.some((f) => prev[f])) return prev;
+    const next = { ...prev }; fields.forEach((f) => { delete next[f]; }); return next;
+  });
+  const districtOptions = useMemo(() => (locState ? getDistricts(locState) : []), [locState]);
+  const talukaOptions = useMemo(() => (locState && locDistrict ? getTalukas(locState, locDistrict) : []), [locState, locDistrict]);
+  const villageOptions = useMemo(() => (locState && locDistrict && locTaluka ? getVillages(locState, locDistrict, locTaluka) : []), [locState, locDistrict, locTaluka]);
+  const locationComplete = Boolean(locState && locDistrict && locTaluka && locVillage);
   const [submitting, setSubmitting] = useState(false);
 
   const [profileImage, setProfileImage] = useState('');
@@ -177,15 +196,36 @@ export default function RegisterScreen({ navigation, route }) {
 
   const isStep2Valid = useMemo(() => {
     return mobileOk && emailVerified && emailOk && passwordStrong &&
-      password && confirm && password === confirm && termsAccepted;
-  }, [mobileOk, emailVerified, emailOk, passwordStrong, password, confirm, termsAccepted]);
+      password && confirm && password === confirm && termsAccepted && locationComplete;
+  }, [mobileOk, emailVerified, emailOk, passwordStrong, password, confirm, termsAccepted, locationComplete]);
 
   // Email badalte hi purani verification khatam (verified OTP sirf usi email ke liye tha)
   const handleEmailChange = (text) => {
     setEmail(text);
+    clearFieldError('email', 'otp');
     if (emailVerified && text.trim().toLowerCase() !== verifiedEmail) {
       setEmailVerified(false); setVerifiedEmail(''); setVerifiedOtp('');
     }
+  };
+
+  // Parent badalne par neeche ke saare levels reset (cascade)
+  const handleSelectLocation = (level, value) => {
+    if (level === 'state') { setLocState(value); setLocDistrict(''); setLocTaluka(''); setLocVillage(''); clearFieldError('state', 'district', 'taluka', 'village'); }
+    if (level === 'district') { setLocDistrict(value); setLocTaluka(''); setLocVillage(''); clearFieldError('district', 'taluka', 'village'); }
+    if (level === 'taluka') { setLocTaluka(value); setLocVillage(''); clearFieldError('taluka', 'village'); }
+    if (level === 'village') { setLocVillage(value); clearFieldError('village'); }
+  };
+
+  // Backend ke errors ko form fields par map karo
+  const applyBackendErrors = (errors = {}, otpError = false) => {
+    const mapped = {};
+    Object.keys(errors || {}).forEach((key) => {
+      const val = errors[key];
+      mapped[key] = Array.isArray(val) ? String(val[0] || '') : String(val || '');
+    });
+    if (otpError && !mapped.otp) mapped.otp = 'OTP expired or invalid. Please verify your email again.';
+    setFieldErrors(mapped);
+    return mapped;
   };
 
   const handleNextStep = () => {
@@ -282,9 +322,22 @@ export default function RegisterScreen({ navigation, route }) {
     if (password !== confirm) { showToast('Passwords do not match', 'error'); return; }
     if (!termsAccepted) { setTermsTouched(true); showToast('Please accept the Terms & Conditions', 'error'); return; }
 
-    setSubmitting(true);
-    try {
+    if (!locationComplete) {
+      setFieldErrors((prev) => ({
+        ...prev,
+        ...(!locState ? { state: 'State is required.' } : {}),
+        ...(!locDistrict ? { district: 'District is required.' } : {}),
+        ...(!locTaluka ? { taluka: 'Taluka is required.' } : {}),
+        ...(!locVillage ? { village: 'Village is required.' } : {}),
+      }));
+      showToast('Please select State, District, Taluka and Village', 'error');
+      return;
+    }
 
+    setSubmitting(true);
+    setFieldErrors({});
+    try {
+      const ids = getLocationIds({ state: locState, district: locDistrict, taluka: locTaluka, village: locVillage });
       const ok = await UserStore.setPendingRegistration({
         name: fullName,
         mobile: mobile.trim(),
@@ -297,13 +350,54 @@ export default function RegisterScreen({ navigation, route }) {
         last_name: lastName.trim(),
         referral_code: referralCode.trim(),
         otp: verifiedOtp,
+        state: locState, district: locDistrict, taluka: locTaluka, village: locVillage,
+        ...ids,
       });
-
       if (!ok) {
         showToast('Unable to continue registration. Please try again.', 'error');
         return;
       }
-      navigation.navigate('StateSelect', { fromPremium: false, needsCreateUser: true });
+
+      // ✅ Ab register API yahin chalegi (names + available IDs ke saath)
+      const commit = await UserStore.commitPendingRegistration();
+      if (!commit.ok) {
+        const mapped = applyBackendErrors(commit.errors, commit.otpError);
+        if (commit.otpError) { setEmailVerified(false); setVerifiedEmail(''); setVerifiedOtp(''); }
+        if (!Object.keys(mapped).length) showToast(commit.message || 'Registration failed. Please try again.', 'error');
+        else if (mapped.firstname || mapped.lastname || mapped.phone) setFormStep(1);
+        return;
+      }
+      const pending = commit.pending;
+
+      const created = await UserStore.saveUser({
+        name: pending.name, mobile: pending.mobile, email: pending.email,
+        referral_code_used: pending.referral_code_used || null,
+        password: pending.password, state: locState,
+        district: locDistrict, taluka: locTaluka, village: locVillage,
+        profile_image: pending.profile_image || '',
+        bio: pending.bio || '',
+      });
+      if (created && !created.ok) {
+        // Account server par ban chuka hai — sirf local copy save nahi hui. Login par profile sync ho jaati hai.
+        await UserStore.clearPendingRegistration();
+        showToast('Your account has been created. Please sign in to continue.', 'success');
+        navigation.replace('Login');
+        return;
+      }
+
+      await UserStore.setCurrentUser(pending.email);
+      try {
+        await UserStore.completeLocationSetup(pending.email, locState, locDistrict, locTaluka, locVillage);
+        await UserStore.clearPendingRegistration();
+      } catch (e) { console.warn('[register] local setup failed:', e?.message || e); }
+
+      // Register complete -> Home (stack reset), login() sabse last me
+      try {
+        navigation.reset({ index: 0, routes: [{ name: 'Home', params: { fromRegistration: true, registrationJustCompleted: true, userName: pending.name || 'User' } }] });
+      } catch (_) {
+        try { navigation.replace('Home', { fromRegistration: true, registrationJustCompleted: true, userName: pending.name || 'User' }); } catch (__) { /* ignore */ }
+      }
+      setTimeout(() => { try { login(); } catch (_) { /* ignore */ } }, 350);
     } catch {
       showToast('Registration failed. Please try again.', 'error');
     } finally {
@@ -352,7 +446,7 @@ export default function RegisterScreen({ navigation, route }) {
                   <Text style={[styles.inputLabel, webStyles.darkLabel]}>First Name <Text style={styles.required}>*</Text></Text>
                   <View style={[styles.inputWrap, !firstName.trim() && firstName.length > 0 && styles.inputWrapError]}>
                     <Ionicons name="person-outline" size={16} color="#AAAAAA" />
-                    <TextInput
+                    <TextInput onSubmitEditing={handleNextStep}
                       style={styles.input}
                       placeholder="Enter your first name"
                       placeholderTextColor="#CCCCCC"
@@ -360,13 +454,14 @@ export default function RegisterScreen({ navigation, route }) {
                       onChangeText={setFirstName}
                     />
                   </View>
+                  {!!fieldErrors.firstname && <Text style={styles.errorText}>{fieldErrors.firstname}</Text>}
                 </View>
 
                 <View style={styles.inputGroup}>
                   <Text style={[styles.inputLabel, webStyles.darkLabel]}>Middle Name <Text style={styles.optional}>(optional)</Text></Text>
                   <View style={styles.inputWrap}>
                     <Ionicons name="person-outline" size={16} color="#AAAAAA" />
-                    <TextInput
+                    <TextInput onSubmitEditing={handleNextStep}
                       style={styles.input}
                       placeholder="Enter middle name"
                       placeholderTextColor="#CCCCCC"
@@ -380,7 +475,7 @@ export default function RegisterScreen({ navigation, route }) {
                   <Text style={[styles.inputLabel, webStyles.darkLabel]}>Last Name <Text style={styles.required}>*</Text></Text>
                   <View style={[styles.inputWrap, !lastName.trim() && lastName.length > 0 && styles.inputWrapError]}>
                     <Ionicons name="person-outline" size={16} color="#AAAAAA" />
-                    <TextInput
+                    <TextInput onSubmitEditing={handleNextStep}
                       style={styles.input}
                       placeholder="Enter your surname"
                       placeholderTextColor="#CCCCCC"
@@ -388,6 +483,7 @@ export default function RegisterScreen({ navigation, route }) {
                       onChangeText={setLastName}
                     />
                   </View>
+                  {!!fieldErrors.lastname && <Text style={styles.errorText}>{fieldErrors.lastname}</Text>}
                 </View>
 
                 <TouchableOpacity
@@ -408,7 +504,7 @@ export default function RegisterScreen({ navigation, route }) {
                   <Text style={[styles.inputLabel, webStyles.darkLabel]}>Mobile Number <Text style={styles.required}>*</Text></Text>
                   <View style={[styles.inputWrap, mobileShowError && styles.inputWrapError]}>
                     <Ionicons name="call-outline" size={16} color={mobileShowError ? '#ff4444' : '#AAAAAA'} />
-                    <TextInput
+                    <TextInput onSubmitEditing={handleRegister}
                       style={styles.input}
                       placeholder="10-digit mobile number"
                       placeholderTextColor="#CCCCCC"
@@ -421,6 +517,7 @@ export default function RegisterScreen({ navigation, route }) {
                     {mobileShowError ? <Ionicons name="close-circle" size={16} color="#ff4444" /> : null}
                   </View>
                   {mobileShowError && <Text style={styles.errorText}>Enter a valid 10-digit Indian mobile number (starting with 6-9)</Text>}
+                  {!!fieldErrors.phone && <Text style={styles.errorText}>{fieldErrors.phone}</Text>}
                 </View>
 
                 <View style={styles.inputGroup}>
@@ -430,7 +527,7 @@ export default function RegisterScreen({ navigation, route }) {
                   </Text>
                   <View style={[styles.inputWrap, emailTouched && !emailOk && styles.inputWrapError, emailVerified && localStyles.inputWrapVerified]}>
                     <Ionicons name="mail-outline" size={16} color={emailVerified ? '#2e8b57' : '#AAAAAA'} />
-                    <TextInput
+                    <TextInput onSubmitEditing={handleRegister}
                       style={styles.input}
                       placeholder="you@example.com"
                       placeholderTextColor="#CCCCCC"
@@ -452,13 +549,15 @@ export default function RegisterScreen({ navigation, route }) {
                   {emailTouched && !emailOk && normalizedEmail.length > 0 &&
                     <Text style={styles.errorText}>Enter a valid email, e.g. you@example.com</Text>}
                   {emailOk && !emailVerified && <Text style={localStyles.otpHint}>{'👆 Press "Send OTP" to verify your email'}</Text>}
+                  {!!fieldErrors.email && <Text style={styles.errorText}>{fieldErrors.email}</Text>}
+                  {!!fieldErrors.otp && <Text style={styles.errorText}>{fieldErrors.otp}</Text>}
                 </View>
 
                 <View style={styles.inputGroup}>
                   <Text style={[styles.inputLabel, webStyles.darkLabel]}>Referral Code <Text style={styles.optional}>(optional)</Text></Text>
                   <View style={styles.inputWrap}>
                     <Ionicons name="gift-outline" size={16} color="#AAAAAA" />
-                    <TextInput
+                    <TextInput onSubmitEditing={handleRegister}
                       style={styles.input}
                       placeholder="Enter referral code e.g. RTI-AB12CD"
                       placeholderTextColor="#CCCCCC"
@@ -478,7 +577,7 @@ export default function RegisterScreen({ navigation, route }) {
                   <Text style={[styles.inputLabel, webStyles.darkLabel]}>Password <Text style={styles.required}>*</Text></Text>
                   <View style={[styles.inputWrap, passwordTouched && !passwordStrong && styles.inputWrapError]}>
                     <Ionicons name="lock-closed-outline" size={16} color="#AAAAAA" />
-                    <TextInput
+                    <TextInput onSubmitEditing={handleRegister}
                       style={styles.input}
                       placeholder="Use a strong password"
                       placeholderTextColor="#CCCCCC"
@@ -510,13 +609,14 @@ export default function RegisterScreen({ navigation, route }) {
                       ))}
                     </View>
                   )}
+                  {!!fieldErrors.password && <Text style={styles.errorText}>{fieldErrors.password}</Text>}
                 </View>
 
                 <View style={styles.inputGroup}>
                   <Text style={[styles.inputLabel, webStyles.darkLabel]}>Confirm Password <Text style={styles.required}>*</Text></Text>
                   <View style={[styles.inputWrap, confirm.length > 0 && password !== confirm && styles.inputWrapError]}>
                     <Ionicons name="shield-checkmark-outline" size={16} color="#AAAAAA" />
-                    <TextInput
+                    <TextInput onSubmitEditing={handleRegister}
                       style={styles.input}
                       placeholder="Confirm your password"
                       placeholderTextColor="#CCCCCC"
@@ -531,6 +631,62 @@ export default function RegisterScreen({ navigation, route }) {
                   </View>
                   {confirm.length > 0 && password !== confirm &&
                     <Text style={styles.errorText}>Passwords do not match</Text>}
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.inputLabel, webStyles.darkLabel]}>State <Text style={styles.required}>*</Text></Text>
+                  <select
+                    value={locState}
+                    disabled={false}
+                    onChange={(e) => handleSelectLocation('state', e.target.value)}
+                    style={{ width: '100%', height: 46, padding: '0 12px', borderRadius: 10, fontSize: 15, backgroundColor: '#fff', color: locState ? '#222' : '#888', border: fieldErrors.state ? '1px solid #ff4444' : '1px solid #E5E7EB', opacity: false ? 0.5 : 1, outline: 'none' }}
+                  >
+                    <option value="">Select state</option>
+                    {INDIAN_STATES.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                  {!!fieldErrors.state && <Text style={styles.errorText}>{fieldErrors.state}</Text>}
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.inputLabel, webStyles.darkLabel]}>District <Text style={styles.required}>*</Text></Text>
+                  <select
+                    value={locDistrict}
+                    disabled={!locState}
+                    onChange={(e) => handleSelectLocation('district', e.target.value)}
+                    style={{ width: '100%', height: 46, padding: '0 12px', borderRadius: 10, fontSize: 15, backgroundColor: '#fff', color: locDistrict ? '#222' : '#888', border: fieldErrors.district ? '1px solid #ff4444' : '1px solid #E5E7EB', opacity: !locState ? 0.5 : 1, outline: 'none' }}
+                  >
+                    <option value="">Select district</option>
+                    {districtOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                  {!!fieldErrors.district && <Text style={styles.errorText}>{fieldErrors.district}</Text>}
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.inputLabel, webStyles.darkLabel]}>Taluka <Text style={styles.required}>*</Text></Text>
+                  <select
+                    value={locTaluka}
+                    disabled={!locDistrict}
+                    onChange={(e) => handleSelectLocation('taluka', e.target.value)}
+                    style={{ width: '100%', height: 46, padding: '0 12px', borderRadius: 10, fontSize: 15, backgroundColor: '#fff', color: locTaluka ? '#222' : '#888', border: fieldErrors.taluka ? '1px solid #ff4444' : '1px solid #E5E7EB', opacity: !locDistrict ? 0.5 : 1, outline: 'none' }}
+                  >
+                    <option value="">Select taluka</option>
+                    {talukaOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                  {!!fieldErrors.taluka && <Text style={styles.errorText}>{fieldErrors.taluka}</Text>}
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={[styles.inputLabel, webStyles.darkLabel]}>Village <Text style={styles.required}>*</Text></Text>
+                  <select
+                    value={locVillage}
+                    disabled={!locTaluka}
+                    onChange={(e) => handleSelectLocation('village', e.target.value)}
+                    style={{ width: '100%', height: 46, padding: '0 12px', borderRadius: 10, fontSize: 15, backgroundColor: '#fff', color: locVillage ? '#222' : '#888', border: fieldErrors.village ? '1px solid #ff4444' : '1px solid #E5E7EB', opacity: !locTaluka ? 0.5 : 1, outline: 'none' }}
+                  >
+                    <option value="">Select village</option>
+                    {villageOptions.map((o) => <option key={o} value={o}>{o}</option>)}
+                  </select>
+                  {!!fieldErrors.village && <Text style={styles.errorText}>{fieldErrors.village}</Text>}
                 </View>
 
                 <TouchableOpacity

@@ -37,6 +37,7 @@ import MediaGallery from '../components/MediaGallery';
 import * as MediaDownloadButtonModule from '../components/MediaDownloadButton';
 const MediaDownloadButton = MediaDownloadButtonModule.MediaDownloadButton || MediaDownloadButtonModule.default;
 import { groupAdStories } from '../utils/adGrouping';
+import { useAdsHidden, isAdsHidden } from '../utils/adsVisibility';
 const PINK = '#FF2D78';
 const PINK_LIGHT = '#fff5f9';
 const PINK_BORDER = '#ffe0ed';
@@ -93,7 +94,7 @@ export function homeStoryFromAd(ad = {}) {
 }
 
 function interleaveAdStories(stories = [], ads = []) {
-  if (!ads.length) return stories;
+  if (isAdsHidden() || !ads.length) return stories;
   if (!stories.length) return ads;
   const mixed = [];
   let adIndex = 0;
@@ -814,12 +815,16 @@ export default function HomeScreen({ navigation, route }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [liveStories, setLiveStories] = useState([]);
   const [activeAds, setActiveAds] = useState([]);
+  // ✅ ads_hidden (GET /ads-details) = final source of truth. true => Home banners, popup, feed ads, right panel — sab hide.
+  const adsHidden = useAdsHidden();
   const feedFreshRef = useRef(false); // fresh API data aa chuka ho to cache usko overwrite na kare
   useEffect(() => {
     let alive = true;
     // Priority 1: Instant ads load on page mount so sponsored popup appears immediately
     UserStore.getActiveAdsFeed().then((ads) => {
-      if (!alive || !Array.isArray(ads) || !ads.length) return;
+      if (!alive) return;
+      if (isAdsHidden()) { adStoriesRef.current = []; setActiveAds([]); return; }
+      if (!Array.isArray(ads) || !ads.length) return;
       const adStories = ads.map(homeStoryFromAd);
       adStoriesRef.current = adStories;
       setActiveAds(adStories);
@@ -829,8 +834,8 @@ export default function HomeScreen({ navigation, route }) {
       if (!alive || feedFreshRef.current || !raw) return;
       const cached = JSON.parse(raw);
       if (!Array.isArray(cached?.stories) || !cached.stories.length) return;
-      setLiveStories(cached.stories);
-      if (Array.isArray(cached.ads) && cached.ads.length) setActiveAds(cached.ads);
+      // ✅ Cache me purane ads ho sakte hain (user ne plan liya ho / expire hua ho) — ads sirf fresh API se aayenge
+      setLiveStories(cached.stories.filter((st) => !st?.isAd));
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
@@ -901,7 +906,10 @@ export default function HomeScreen({ navigation, route }) {
         newsStoriesRef.current = [...newsStoriesRef.current, ...pageStories.filter((s) => !seen.has(String(s.id)))];
       } else {
         newsStoriesRef.current = pageStories;
-        if (Array.isArray(rawAds) && rawAds.length) {
+        if (isAdsHidden()) {
+          adStoriesRef.current = [];
+          setActiveAds([]);
+        } else if (Array.isArray(rawAds) && rawAds.length) {
           adStoriesRef.current = rawAds.map(homeStoryFromAd);
           setActiveAds(adStoriesRef.current);
         }
@@ -1011,7 +1019,10 @@ export default function HomeScreen({ navigation, route }) {
     const added = fresh.filter((s) => !seen.has(String(s.id)));
 
     let adsChanged = false;
-    if (Array.isArray(rawAds) && rawAds.length) {
+    if (isAdsHidden()) {
+      // plan expire / subscription change ke baad API ne ads_hidden=true diya — ads turant hata do
+      if (adStoriesRef.current.length) { adStoriesRef.current = []; setActiveAds([]); adsChanged = true; }
+    } else if (Array.isArray(rawAds) && rawAds.length) {
       const nextAds = rawAds.map(homeStoryFromAd);
       const sig = (list) => list.map((a) => String(a.id)).join('|');
       if (sig(nextAds) !== sig(adStoriesRef.current)) {
@@ -1096,15 +1107,16 @@ export default function HomeScreen({ navigation, route }) {
     }
   };
 const allStories = useMemo(() => {
-  return dedupeStories([...liveStories]);
-}, [liveStories]);
+  const deduped = dedupeStories([...liveStories]);
+  return adsHidden ? deduped.filter((story) => !story?.isAd) : deduped;
+}, [liveStories, adsHidden]);
 
   const firstNewsStory = useMemo(
     () => allStories.find((s) => !s.isAd && !s.isEcome) || null,
     [allStories]
   );
 
-  const allAdsList = useMemo(() => activeAds, [activeAds]);
+  const allAdsList = useMemo(() => (adsHidden ? [] : activeAds), [activeAds, adsHidden]);
 
   const visibleStories = useMemo(() => {
     if (viewMode === 'states') return [];
@@ -1635,9 +1647,9 @@ const handleOpenLeadForm = useCallback(async (story) => {
 />
       {/* <RotatingSponsoredAd ads={allAdsList} onPress={handleSponsoredAdPress} /> */}
 
-            {/* Popup ad: Premium / Role subscription wale user ko NAHI dikhega (baaki screens ke ads waise hi chalte hain) */}
-      {(Platform.OS === 'android' || Platform.OS === 'ios' || IS_WEB) && viewMode !== 'states' && userChecked && !hasPaidRoleSubscription ? (
-        <HomePromoPopup ads={homePromoAds} onPress={handleSponsoredAdPress} />
+            {/* Popup ad: dikhega ya nahi — sirf API ka `ads_hidden` decide karta hai (local subscription plan se nahi) */}
+      {(Platform.OS === 'android' || Platform.OS === 'ios' || IS_WEB) && viewMode !== 'states' && userChecked && !adsHidden ? (
+        <HomePromoPopup ads={adsHidden ? [] : homePromoAds} onPress={handleSponsoredAdPress} />
       ) : null}
     </View>
   );

@@ -37,7 +37,7 @@ export default function EditMemberScreen({ route, navigation }) {
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (err) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      Alert.alert('Notice', 'Something went wrong. Please try again.');
     } finally {
       setSaving(false);
     }
@@ -53,7 +53,7 @@ export default function EditMemberScreen({ route, navigation }) {
         <View style={EditMemberStyles.inputIconWrap}>
           <Feather name={icon} size={15} color={editable ? '#2563eb' : '#94a3b8'} />
         </View>
-        <TextInput
+        <TextInput onSubmitEditing={handleSave}
           style={EditMemberStyles.textInput}
           value={value}
           onChangeText={onChangeText}

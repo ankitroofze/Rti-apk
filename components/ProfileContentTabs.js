@@ -1,6 +1,6 @@
 import React from 'react';
 import { Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons'; // Ionicons pehle se load hota hai (MaterialCommunityIcons 1.3 MB tha)
 import { CONTENT_TABS } from './profileContent';
 
 /**
@@ -26,7 +26,7 @@ export default function ProfileContentTabs({ active = 'post', onChange, accent =
             accessibilityLabel={tab.label}
             accessibilityState={{ selected: isActive }}
           >
-            <MaterialCommunityIcons name={tab.icon} size={26} color={isActive ? accent : '#94a3b8'} />
+            <Ionicons name={tab.ioIcon} size={26} color={isActive ? accent : '#94a3b8'} />
           </TouchableOpacity>
         );
       })}

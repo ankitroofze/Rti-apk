@@ -80,7 +80,7 @@ const otpFromRoute = route?.params?.otp || '';
             <Text style={styles.inputLabel}>New password</Text>
             <View style={styles.inputWrap}>
               <Ionicons name="lock-closed-outline" size={18} color="#38bdf8" />
-              <TextInput
+              <TextInput onSubmitEditing={handleReset}
                 style={styles.input}
                 placeholder="Enter new password"
                 placeholderTextColor="#64748b"
@@ -95,7 +95,7 @@ const otpFromRoute = route?.params?.otp || '';
             <Text style={styles.inputLabel}>Confirm password</Text>
             <View style={styles.inputWrap}>
               <Ionicons name="shield-checkmark-outline" size={18} color="#38bdf8" />
-              <TextInput
+              <TextInput onSubmitEditing={handleReset}
                 style={styles.input}
                 placeholder="Confirm new password"
                 placeholderTextColor="#64748b"

@@ -3,7 +3,7 @@
 import { smartGoBack } from '../utils/smartBack';
 import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import NameWithTick from '../components/NameWithTick';
-import { Feather, MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Feather, MaterialIcons, MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { LinearGradient } from 'expo-linear-gradient';
 import ModuleWebHeader from '../components/Modulewebheader';
@@ -434,7 +434,11 @@ function ProfileScreenInner({ navigation, route }) {
   const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
   const webWidth = getResponsiveWindowWidth(windowWidth);
-  const isWebNarrow = Platform.OS === 'web' && webWidth < 860;
+  // Desktop par sidebar (~260px) ke andar jo asli content width bachti hai, uske hisaab se layout chuno —
+  // window width se nahi, warna 860-1100px par card pehle dabta (squeeze) hai aur load ke baad badalta hai.
+  const [contentW, setContentW] = useState(0);
+  const layoutW = contentW || (webWidth >= 1024 ? webWidth - 260 : webWidth);
+  const isWebNarrow = Platform.OS === 'web' && layoutW < 860;
 
   const [loading, setLoading] = useState(true);
    const [initializing, setInitializing] = useState(true); 
@@ -513,14 +517,17 @@ function ProfileScreenInner({ navigation, route }) {
     let feedSummary = null;
     let followSummary = null;
     let adPosts = [];
+    let ecomPosts = [];
     try {
-      [profileRes, syncedSubscriptionUser, feedSummary, followSummary, adPosts] = await Promise.all([
+      [profileRes, syncedSubscriptionUser, feedSummary, followSummary, adPosts, ecomPosts] = await Promise.all([
         AuthAPI.getProfile().catch(() => null),
         UserStore.syncSubscriptionFromBackend(user).catch(() => null),
         UserStore.getNewsFeedSummary?.().catch?.(() => null) ?? Promise.resolve(null),
         UserStore.getFollowSummary(user.email).catch(() => null),
         // ✅ Advertisement Posts bhi My Posts me dikhane ke liye
         UserStore.getMyAdPosts().catch(() => []),
+        // ✅ Ecom tab: apne add kiye hue products (pehle yahan load hi nahi hote the)
+        UserStore.getMyEcomPosts({ email: user.email, id: user.id }).catch(() => []),
       ]);
     } catch {
       // best-effort — fail ho to bhi cached data already dikh chuka hai, crash nahi
@@ -573,6 +580,7 @@ function ProfileScreenInner({ navigation, route }) {
       ...(Array.isArray(user.news_feed) ? user.news_feed : []),
     ];
     const ownAdPosts = Array.isArray(adPosts) ? adPosts : [];
+    const ownEcomPosts = Array.isArray(ecomPosts) ? ecomPosts : [];
     const allPosts = [...ownFeedPosts, ...ownLocalPosts, ...ownAdPosts];
     const mergedPostKeys = new Set(allPosts.map((item, index) =>
       String(item?.id || `fallback-${index}`)
@@ -580,7 +588,7 @@ function ProfileScreenInner({ navigation, route }) {
 
     const seenIds = new Set();
     const postTs = (item) => Date.parse(item?.createdAt || item?.created_at || item?.date || '') || 0;
-    const userPostsData = [...ownFeedPosts, ...ownLocalPosts, ...ownAdPosts].filter(item => {
+    const userPostsData = [...ownFeedPosts, ...ownLocalPosts, ...ownAdPosts, ...ownEcomPosts].filter(item => {
       const key = item?.id ? String(item.id) : null;
       if (!key) return true;
       if (seenIds.has(key)) return false;
@@ -588,7 +596,7 @@ function ProfileScreenInner({ navigation, route }) {
       return true;
     }).sort((a, b) => postTs(b) - postTs(a)) // newest first (news + ads ek saath)
       // ✅ card / details / feed par abhi badla hua like-comment count yahan bhi dikhe (server ke purane count se upar)
-      .map((item) => { const eng = getEngagement(item?.id); return eng ? defaultApplyEngagement(item, eng, user.email) : item; });
+      .map((item) => { const eng = item?.is_ecom ? null : getEngagement(item?.id); return eng ? defaultApplyEngagement(item, eng, user.email) : item; });
     setUserPosts(userPostsData);
 
     if (revisionAtStart === followRevisionRef.current) {
@@ -979,6 +987,7 @@ const handlePickImage = async () => {
     // NEW: image change ho to sabse pehle image hi upload karo — asli POST /profile
     // (ya /profile/image agar pehle se image hai) yahi Save button click par hit hota hai.
       let imageUpdatePayload = {};
+    let imageUploaded = false;
     if (pendingImageUri) {
       const imgResult = await AuthAPI.updateProfileImage(pendingImageUri);
 
@@ -997,14 +1006,17 @@ const handlePickImage = async () => {
       }
       pendingImageUriRef.current = null; // image upload ho gayi — bio fail ho to retry par dobara upload na ho
 
-             if (savedProfile.profile_image && imgResult.pendingImageUrl) {
+      // profile_image_url = approved/current, pending_profile_image_url = approval pending.
+      // Pending image kabhi approved image ko overwrite nahi karti.
+      if (imgResult.pendingImageUrl) {
         imageUpdatePayload = {
           pending_profile_image_url: imgResult.pendingImageUrl,
           profile_update_status: imgResult.profileUpdateStatus ?? 1,
         };
-        } else if (!hasExistingImage && imgResult.imageUrl) {
+      } else if (!hasExistingImage && imgResult.imageUrl) {
         imageUpdatePayload = { profile_image: imgResult.imageUrl };
       }
+      imageUploaded = true;
       // Har successful upload par count +1 (backend value mile to wahi, warna local +1)
       imageUpdatePayload = {
         ...imageUpdatePayload,
@@ -1061,8 +1073,11 @@ const handlePickImage = async () => {
 
     pendingImageUriRef.current = null; // NEW: save ke baad clear
     setSavedProfile(updated); setForm(updated); setIsEditing(false);
-    showToast('Request successfully sent.', 'success');
-    setSuccessMessage('Request successfully sent.');
+    const doneMessage = imageUploaded
+      ? 'Your profile image is pending admin approval.'
+      : 'Request successfully sent.';
+    showToast(doneMessage, 'success');
+    setSuccessMessage(doneMessage);
     setTimeout(() => setSuccessMessage(''), 3000);
   };
     
@@ -1119,7 +1134,12 @@ const handlePickImage = async () => {
             <Text style={{ fontSize: 12, color: '#334155', fontFamily: 'Roboto, sans-serif' }} numberOfLines={2}>Bio: <Text style={{ fontWeight: '700' }}>{pendingBio}</Text></Text>
           ) : null}
           {pendingImage ? (
-            <Text style={{ fontSize: 12, color: '#334155', fontFamily: 'Roboto, sans-serif' }}>Photo: <Text style={{ fontWeight: '700' }}>New photo submitted</Text></Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              {savedProfile.pending_profile_image_url ? (
+                <Image source={{ uri: savedProfile.pending_profile_image_url }} style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: '#e2e8f0' }} />
+              ) : null}
+              <Text style={{ fontSize: 12, color: '#334155', fontFamily: 'Roboto, sans-serif' }}>Photo: <Text style={{ fontWeight: '700' }}>Pending admin approval</Text></Text>
+            </View>
           ) : null}
         </View>
       </View>
@@ -1238,7 +1258,7 @@ const handlePickImage = async () => {
             <Text style={ProfileStyles.inputLabel}>Mobile Number</Text>
             <View style={ProfileStyles.inputWrap}>
               <Feather name="smartphone" size={16} color="#8a94a6" />
-              <TextInput style={ProfileStyles.input} value={form.contact_number} onChangeText={(v) => handleChange('contact_number', v)} placeholder="10-digit mobile" placeholderTextColor="#94a3b8" keyboardType="phone-pad" maxLength={14} />
+              <TextInput onSubmitEditing={handleSave} style={ProfileStyles.input} value={form.contact_number} onChangeText={(v) => handleChange('contact_number', v)} placeholder="10-digit mobile" placeholderTextColor="#94a3b8" keyboardType="phone-pad" maxLength={14} />
             </View>
           </View>
           <View style={ProfileStyles.fullWidthGroup}>
@@ -1358,6 +1378,8 @@ const handlePickImage = async () => {
     if (!post) return;
     // ✅ Ad post: NewsDetails (news-only) nahi, My Ads screen kholo (wahin edit/delete hai)
     if (post.is_ad) { navigation.navigate('MyAds'); return; }
+    // ✅ Ecom product: news detail nahi, My Ecom Product (list + edit/stock) kholo
+    if (post.is_ecom) { navigation.navigate('CommerceAdsCenter'); return; }
     try { if (post.id) await UserStore.updateNewsFeedItem(post.id, 'view'); } catch {}
     navigation.navigate('NewsDetails', { article: post });
   };
@@ -1544,7 +1566,7 @@ const handlePickImage = async () => {
 
         {shownPosts.length === 0 ? (
           <View style={{ alignItems: 'center', paddingVertical: 32 }}>
-            <MaterialCommunityIcons name={(CONTENT_TABS.find((t) => t.key === contentTab) || CONTENT_TABS[0]).icon} size={34} color="#cbd5e1" />
+            <Ionicons name={(CONTENT_TABS.find((t) => t.key === contentTab) || CONTENT_TABS[0]).ioIcon} size={34} color="#cbd5e1" />
             <Text style={{ marginTop: 8, color: '#64748b', fontSize: 14 }}>{tabEmptyText}</Text>
           </View>
         ) : isGrid ? (
@@ -1596,6 +1618,11 @@ const handlePickImage = async () => {
                   {Array.isArray(post.images) && post.images.length > 1 && !postVideo ? (
                     <View pointerEvents="none" style={{ position: 'absolute', top: 6, right: 6, width: 24, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' }}>
                       <Feather name="copy" size={12} color="#ffffff" />
+                    </View>
+                  ) : null}
+                  {post.is_ecom && post.in_stock === false ? (
+                    <View pointerEvents="none" style={{ position: 'absolute', left: 6, bottom: 6, backgroundColor: '#dc2626', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 2 }}>
+                      <Text style={{ fontSize: 9, fontWeight: '800', color: '#ffffff' }}>Out of Stock</Text>
                     </View>
                   ) : null}
                   {post.is_ad ? (
@@ -1776,6 +1803,18 @@ const handlePickImage = async () => {
       );
     }
 
+    // Profile data aane tak adha-bana card nahi — sirf header + loader (layout break / jump nahi hoga)
+    if (initializing) {
+      return (
+        <View style={w.page}>
+          {renderWebTopHeader(accent, gradient)}
+          <View style={{ flex: 1, minHeight: 360, alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator size="large" color={accent} />
+          </View>
+        </View>
+      );
+    }
+
     if (isEditing) {
       return (
         <View style={w.page}>
@@ -1798,7 +1837,10 @@ const handlePickImage = async () => {
       <View style={[w.page, { overflow: 'auto' }]}>
         {renderWebTopHeader(accent, gradient)}
        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ flexGrow: 1 }}>
-          <View style={{ maxWidth: 1240, width: '100%', marginHorizontal: 'auto' }}>
+          <View
+            style={{ maxWidth: 1240, width: '100%', marginHorizontal: 'auto' }}
+            onLayout={(e) => { const nw = Math.round(e.nativeEvent.layout.width); if (nw && Math.abs(nw - contentW) > 1) setContentW(nw); }}
+          >
            <View style={[w.tabBarRow, { display: 'none' }]}>
               {NAV_ITEMS.map((item) => (
                 <TouchableOpacity

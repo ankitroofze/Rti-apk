@@ -1,4 +1,3 @@
-import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -262,30 +261,28 @@ const ProductGallery = ({ item, selectedIndex = 0, onSelectIndex, compact = fals
             <Text style={styles.imageCounterText}>{activeIndex + 1}/{mediaItems.length}</Text>
           </View>
         )}
+        {/* ✅ Niche thumbnail list ki jagah left / right arrow buttons */}
+        {mediaItems.length > 1 && (
+          <>
+            <TouchableOpacity
+              style={[styles.galleryArrow, styles.galleryArrowLeft]}
+              onPress={() => onSelectIndex?.((activeIndex - 1 + mediaItems.length) % mediaItems.length)}
+              activeOpacity={0.8}
+              accessibilityLabel="Previous image"
+            >
+              <Ionicons name="chevron-back" size={22} color="#0f172a" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.galleryArrow, styles.galleryArrowRight]}
+              onPress={() => onSelectIndex?.((activeIndex + 1) % mediaItems.length)}
+              activeOpacity={0.8}
+              accessibilityLabel="Next image"
+            >
+              <Ionicons name="chevron-forward" size={22} color="#0f172a" />
+            </TouchableOpacity>
+          </>
+        )}
       </View>
-      {mediaItems.length > 1 && (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.modalThumbRow}>
-          {mediaItems.map((media, index) => {
-            const isImg = String(media.type || '').toLowerCase() !== 'video';
-            return (
-              <TouchableOpacity
-                key={`${media.uri}-${index}`}
-                style={[styles.modalThumbWrap, index === activeIndex && styles.modalThumbWrapActive]}
-                onPress={() => onSelectIndex?.(index)}
-                activeOpacity={0.85}
-              >
-                {isImg ? (
-                  <ResolvedMediaImage uri={media.uri} style={styles.modalThumbImage} resizeMode="cover" />
-                ) : (
-                  <View style={styles.modalThumbFallback}>
-                    <Ionicons name="videocam-outline" size={20} color="#16a34a" />
-                  </View>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      )}
     </View>
   );
 };
@@ -389,27 +386,27 @@ const EnquiryFormModal = ({ product, onClose, onSaved }) => {
             <Text style={styles.formLabel}>First Name</Text>
             <View style={styles.inputWrap}>
               <Ionicons name="person-outline" size={16} color="#94a3b8" />
-              <TextInput style={styles.input} value={firstName} onChangeText={setFirstName} placeholder="Enter first name" placeholderTextColor="#94a3b8" />
+              <TextInput onSubmitEditing={handleSubmit} style={styles.input} value={firstName} onChangeText={setFirstName} placeholder="Enter first name" placeholderTextColor="#94a3b8" />
             </View>
             <Text style={styles.formLabel}>Last Name</Text>
             <View style={styles.inputWrap}>
               <Ionicons name="person-outline" size={16} color="#94a3b8" />
-              <TextInput style={styles.input} value={lastName} onChangeText={setLastName} placeholder="Enter last name" placeholderTextColor="#94a3b8" />
+              <TextInput onSubmitEditing={handleSubmit} style={styles.input} value={lastName} onChangeText={setLastName} placeholder="Enter last name" placeholderTextColor="#94a3b8" />
             </View>
             <Text style={styles.formLabel}>Email</Text>
             <View style={styles.inputWrap}>
               <Ionicons name="mail-outline" size={16} color="#94a3b8" />
-              <TextInput style={styles.input} value={email} onChangeText={setEmail} placeholder="Enter email" placeholderTextColor="#94a3b8" keyboardType="email-address" autoCapitalize="none" />
+              <TextInput onSubmitEditing={handleSubmit} style={styles.input} value={email} onChangeText={setEmail} placeholder="Enter email" placeholderTextColor="#94a3b8" keyboardType="email-address" autoCapitalize="none" />
             </View>
             <Text style={styles.formLabel}>Contact Number</Text>
             <View style={styles.inputWrap}>
               <Ionicons name="call-outline" size={16} color="#94a3b8" />
-              <TextInput style={styles.input} value={contact} onChangeText={(v) => setContact(normalizeIndianMobileNumber(v))} placeholder="Enter contact number" placeholderTextColor="#94a3b8" keyboardType="phone-pad" maxLength={10} />
+              <TextInput onSubmitEditing={handleSubmit} style={styles.input} value={contact} onChangeText={(v) => setContact(normalizeIndianMobileNumber(v))} placeholder="Enter contact number" placeholderTextColor="#94a3b8" keyboardType="phone-pad" maxLength={10} />
             </View>
             <Text style={styles.formLabel}>Quantity</Text>
             <View style={styles.inputWrap}>
               <Ionicons name="layers-outline" size={16} color="#94a3b8" />
-              <TextInput style={styles.input} value={quantity} onChangeText={setQuantity} placeholder="Enter quantity (e.g. 10 kg, 2 pcs)" placeholderTextColor="#94a3b8" />
+              <TextInput onSubmitEditing={handleSubmit} style={styles.input} value={quantity} onChangeText={setQuantity} placeholder="Enter quantity (e.g. 10 kg, 2 pcs)" placeholderTextColor="#94a3b8" />
             </View>
             <Text style={styles.formLabel}>Message</Text>
             <TextInput style={[styles.input, styles.textArea]} value={message} onChangeText={setMessage} placeholder="e.g. What is the final price?" placeholderTextColor="#94a3b8" multiline />
@@ -431,7 +428,8 @@ const EnquiryFormModal = ({ product, onClose, onSaved }) => {
 
 export default function FarmingBuyScreen({ navigation, route }) {
   // Desktop web par ye page kabhi bina sidebar ke na khule
-  const redirectingToSidebar = useQuickMenuRedirect(navigation, 'FarmingBuy', route?.params);
+  // ✅ Buy page sidebar ke bina, alag (standalone) page ki tarah khulta hai
+  const redirectingToSidebar = false;
   const insets = useSafeAreaInsets();
   // Android nav bar (back/home/recent) ke neeche buttons na jaayein — isliye extra bottom space
   const sheetBottomPad = (insets.bottom || (Platform.OS === 'android' ? 48 : 0)) + 12;
@@ -453,6 +451,31 @@ export default function FarmingBuyScreen({ navigation, route }) {
   const [enquiryProduct, setEnquiryProduct] = useState(null);
   const [showSortDropdown, setShowSortDropdown] = useState(false);
 
+  // ✅ Apna khud ka product pehchanne ke liye logged-in user ki email
+  const [myEmail, setMyEmail] = useState('');
+  const [myId, setMyId] = useState('');
+  useFocusEffect(useCallback(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const u = await UserStore.getCurrentUser();
+        if (alive) {
+          setMyEmail(String(u?.email || '').trim().toLowerCase());
+          setMyId(String(u?.id ?? u?.user_id ?? '').trim().toLowerCase());
+        }
+      } catch { if (alive) { setMyEmail(''); setMyId(''); } }
+    })();
+    return () => { alive = false; };
+  }, []));
+  const isMyProduct = useCallback((item) => {
+    if (!item || (!myEmail && !myId)) return false;
+    // listing ka owner kabhi email aur kabhi numeric user_id (createdBy) hota hai — dono check karo
+    const owners = [item.owner_email, item.createdBy, item.user_id]
+      .map((v) => String(v ?? '').trim().toLowerCase())
+      .filter(Boolean);
+    return owners.some((o) => (myEmail && o === myEmail) || (myId && o === myId));
+  }, [myEmail, myId]);
+
   // ── Marketplace UI state (search / category / price / sort) ──
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState('All');
@@ -463,7 +486,9 @@ export default function FarmingBuyScreen({ navigation, route }) {
   const loadListings = useCallback(async () => {
     setLoading(true);
     const summary = await UserStore.getEcomeMarketplaceSummary({ skipBlockedUsers: false });
-    setListings(Array.isArray(summary?.listings) ? summary.listings : []);
+    // ✅ Buy page par Out of Stock product nahi dikhega (seller ke apne pages par dikhta rahega)
+    const all = Array.isArray(summary?.listings) ? summary.listings : [];
+    setListings(all.filter((l) => l.in_stock !== false));
     setLoading(false);
   }, []);
 
@@ -551,6 +576,11 @@ export default function FarmingBuyScreen({ navigation, route }) {
   };
 
   const openEnquiry = async (product) => {
+    // ❌ Apne khud ke product par enquiry nahi
+    if (isMyProduct(product)) {
+      notify('Your product', 'You cannot send an enquiry on your own product.');
+      return;
+    }
     // ✅ Login ke bina enquiry form nahi khulega — Login screen par bhejo
     let user = null;
     try { user = await UserStore.getCurrentUser(); } catch {}
@@ -822,6 +852,7 @@ export default function FarmingBuyScreen({ navigation, route }) {
                         </View>
                       ) : null}
                       <Text style={[styles.cardPrice, compactCards && styles.cardPriceCompact]}>{money(item.price)}</Text>
+                      {!isMyProduct(item) ? (
                       <View style={[styles.cardBottomRow, compactCards && styles.cardBottomRowCompact]}>
                         <TouchableOpacity
                           style={styles.callBtn}
@@ -831,15 +862,16 @@ export default function FarmingBuyScreen({ navigation, route }) {
                           {compactCards ? null : <Ionicons name="call-outline" size={14} color={BRAND.primaryDark} />}
                           <Text style={[styles.callBtnText, compactCards && styles.btnTextCompact]}>Call</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity
-                          style={[styles.enquireBtn, item.in_stock === false && { opacity: 0.45 }]}
-                          onPress={(e) => { e.stopPropagation?.(); if (item.in_stock === false) { notify('Out of Stock', 'This product is currently out of stock.'); return; } openEnquiry(item); }}
-                          activeOpacity={0.85}
-                        >
-                          {compactCards ? null : <Ionicons name="chatbubble-ellipses-outline" size={14} color="#fff" />}
-                          <Text style={[styles.actionBtnText, compactCards && styles.btnTextCompact]}>Enquire</Text>
-                        </TouchableOpacity>
+<TouchableOpacity
+                            style={[styles.enquireBtn, item.in_stock === false && { opacity: 0.45 }]}
+                            onPress={(e) => { e.stopPropagation?.(); if (item.in_stock === false) { notify('Out of Stock', 'This product is currently out of stock.'); return; } openEnquiry(item); }}
+                            activeOpacity={0.85}
+                          >
+                            {compactCards ? null : <Ionicons name="chatbubble-ellipses-outline" size={14} color="#fff" />}
+                            <Text style={[styles.actionBtnText, compactCards && styles.btnTextCompact]}>Enquire</Text>
+                          </TouchableOpacity>
                       </View>
+                      ) : null}
                     </View>
                   </TouchableOpacity>
                 ))}
@@ -931,6 +963,8 @@ export default function FarmingBuyScreen({ navigation, route }) {
                       <InfoRow icon="call-outline" label="Contact" value={selectedProduct.contact} />
                       <InfoRow icon="time-outline" label="Listed" value={selectedProduct.createdAt ? getRelativeTime(selectedProduct.createdAt) : null} />
                     </View>
+                    {!isMyProduct(selectedProduct) ? (
+                    <>
                     <View style={styles.modalActions}>
                       <TouchableOpacity style={styles.modalCallBtn} onPress={() => handleCall(selectedProduct.contact)} activeOpacity={0.85}>
                         <Ionicons name="call" size={18} color="#dc2626" />
@@ -945,6 +979,8 @@ export default function FarmingBuyScreen({ navigation, route }) {
                       <Ionicons name="send" size={18} color="#fff" />
                       <Text style={styles.modalActionText}>Send Enquiry</Text>
                     </TouchableOpacity>
+                    </>
+                    ) : null}
                   </View>
                     </View>
                   </View>
@@ -1005,6 +1041,8 @@ export default function FarmingBuyScreen({ navigation, route }) {
                   </View>
                   </ScrollView>
                   <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: sheetBottomPad, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#e2e8f0' }}>
+                    {!isMyProduct(selectedProduct) ? (
+                    <>
                     <View style={styles.modalActions}>
                       <TouchableOpacity style={styles.modalCallBtn} onPress={() => handleCall(selectedProduct.contact)} activeOpacity={0.85}>
                         <Ionicons name="call" size={18} color="#dc2626" />
@@ -1019,6 +1057,8 @@ export default function FarmingBuyScreen({ navigation, route }) {
                       <Ionicons name="send" size={18} color="#fff" />
                       <Text style={styles.modalActionText}>Send Enquiry</Text>
                     </TouchableOpacity>
+                    </>
+                    ) : null}
                   </View>
                   </>
                 )}
@@ -1609,6 +1649,12 @@ heroBannerImage: {
     fontSize: 12,
     fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : Platform.OS === 'android' ? 'Roboto' : 'Roboto_700Bold',
   },
+  myProductPill: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+    paddingVertical: 8, borderRadius: 5, backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca',
+  },
+  myProductPillText: { color: '#b91c1c', fontSize: 12.5, fontWeight: '800' },
+  modalMineBtn: { backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca' },
   enquireBtn: {
     flex: 1,
     flexDirection: 'row',
@@ -1688,6 +1734,14 @@ heroBannerImage: {
   modalProductInfoWide: { backgroundColor: '#fff', padding: 18, paddingTop: 38 },
   galleryItemCompact: { width: '100%', aspectRatio: 1, backgroundColor: '#f0fdf4', overflow: 'hidden' },
   gallery: { width: '100%', backgroundColor: '#f0fdf4' },
+  galleryArrow: {
+    position: 'absolute', top: '50%', marginTop: -19, width: 38, height: 38, borderRadius: 19,
+    backgroundColor: 'rgba(255,255,255,0.92)', alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(15,23,42,0.08)', zIndex: 5,
+    ...(Platform.OS === 'web' ? { cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.18)' } : { elevation: 3 }),
+  },
+  galleryArrowLeft: { left: 10 },
+  galleryArrowRight: { right: 10 },
   galleryItem: { width: '100%', aspectRatio: 4 / 3 },
   modalProductImage: { width: '100%', height: '100%', backgroundColor: '#dcfce7' },
   modalProductImageFallback: {

@@ -404,7 +404,7 @@ function StockToggle({ inStock, onChange }) {
           {inStock ? 'In Stock' : 'Out of Stock'}
         </Text>
         <Text style={{ fontSize: 11.5, color: '#64748b', marginTop: 2 }}>
-          {inStock ? 'Product available hai. Band karoge to buyers ko Out of Stock dikhega.' : 'Buyers ko "Out of Stock" dikh raha hai. Chalu karo jab stock aa jaye.'}
+          {inStock ? 'Product is available. If you turn this off, buyers will see Out of Stock.' : 'Buyers currently see "Out of Stock". Turn this on when stock is available again.'}
         </Text>
       </View>
       <Switch
@@ -501,7 +501,7 @@ function EcomeSellMobile({ navigation, editListing }) {
       )}
 
            {Platform.OS === 'android' ? (
-<ModuleAndroidHeader title="Sell" subtitle="Ecome (buy / sell)" onBack={() => navigation.goBack()} />
+<ModuleAndroidHeader title="Sell Product" subtitle="Ecome (buy / sell)" onBack={() => navigation.goBack()} />
 ) : (
 <>
 <ImageBackground
@@ -514,7 +514,7 @@ function EcomeSellMobile({ navigation, editListing }) {
           <Ionicons name="chevron-back" size={22} color="#ffffff" />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>{form.isEditing ? 'Edit Product' : 'Sell'}</Text>
+          <Text style={styles.headerTitle}>{form.isEditing ? 'Edit Product' : 'Sell Product'}</Text>
           <Text style={styles.headerSub}>Ecome (buy / sell)</Text>
         </View>
       </ImageBackground>
@@ -560,10 +560,10 @@ function EcomeSellMobile({ navigation, editListing }) {
         <StockToggle inStock={form.inStock} onChange={form.setInStock} />
 
         <Text style={styles.fieldLabel}>Price (₹)</Text>
-        <TextInput style={styles.inputBox} placeholder="Enter price amount" placeholderTextColor={SHURU.placeholder} value={form.price} onChangeText={form.setPrice} keyboardType="numeric" />
+        <TextInput onSubmitEditing={form.handleSubmit} style={styles.inputBox} placeholder="Enter price amount" placeholderTextColor={SHURU.placeholder} value={form.price} onChangeText={form.setPrice} keyboardType="numeric" />
 
         <Text style={styles.fieldLabel}>City</Text>
-        <TextInput style={styles.inputBox} placeholder="Enter your city / town" placeholderTextColor={SHURU.placeholder} value={form.city} onChangeText={form.setCity} maxLength={60} autoCapitalize="words" />
+        <TextInput onSubmitEditing={form.handleSubmit} style={styles.inputBox} placeholder="Enter your city / town" placeholderTextColor={SHURU.placeholder} value={form.city} onChangeText={form.setCity} maxLength={60} autoCapitalize="words" />
 
         {/* 3. Media */}
         <Text style={styles.fieldLabel}>3. Select Photo or Video<Text style={styles.required}> *</Text></Text>
@@ -601,7 +601,7 @@ function EcomeSellMobile({ navigation, editListing }) {
         <TextInput style={[styles.inputBox, styles.textArea]} placeholder="Add more detail" placeholderTextColor={SHURU.placeholder} value={form.description} onChangeText={form.setDescription} multiline numberOfLines={4} textAlignVertical="top" />
 
         <Text style={styles.fieldLabel}>Contact</Text>
-        <TextInput style={styles.inputBox} placeholder="Enter your contact number" placeholderTextColor={SHURU.placeholder} value={form.contact} onChangeText={(v) => form.setContact(normalizeIndianMobileNumber(v))} keyboardType="phone-pad" maxLength={10} />
+        <TextInput onSubmitEditing={form.handleSubmit} style={styles.inputBox} placeholder="Enter your contact number" placeholderTextColor={SHURU.placeholder} value={form.contact} onChangeText={(v) => form.setContact(normalizeIndianMobileNumber(v))} keyboardType="phone-pad" maxLength={10} />
 
         <TouchableOpacity style={styles.submitBtnFull} onPress={form.handleSubmit} activeOpacity={0.85}>
           <Text style={styles.submitBtnFullText}>{form.isEditing ? 'Update Product' : 'Next'}</Text>
@@ -628,7 +628,7 @@ function EcomeSellWeb({ navigation, editListing }) {
     <View style={web.root}>
       {/* Header — News Feed jaisa common ModuleWebHeader (design ek hi jagah components/Modulewebheader.js me) */}
       <ModuleWebHeader
-        title={form.isEditing ? 'Edit Product' : 'Sell'}
+        title={form.isEditing ? 'Edit Product' : 'Sell Product'}
         navigation={navigation}
         onBack={() => navigation.goBack()}
       />
@@ -640,7 +640,7 @@ function EcomeSellWeb({ navigation, editListing }) {
         keyboardShouldPersistTaps="handled"
       >
         <View style={[web.formWrap, isNarrow && { maxWidth: '100%' }]}>
-          <Text style={web.pageTitle}>{form.isEditing ? 'Edit Product' : 'Sell'}</Text>
+          <Text style={web.pageTitle}>{form.isEditing ? 'Edit Product' : 'Sell Product'}</Text>
           <Text style={web.pageSub}>Ecome (buy / sell) — List your product for sale</Text>
 
           <Text style={web.label}>1. Category <Text style={web.required}>*</Text></Text>
@@ -669,48 +669,47 @@ function EcomeSellWeb({ navigation, editListing }) {
           )}
 
           <Text style={web.label}>2. What are you selling? <Text style={web.required}>*</Text></Text>
-          <TextInput ref={form.whatSellingInputRef} style={web.input} placeholder="e.g. Laptop, mobile, sofa, washing machine" placeholderTextColor={SHURU.placeholder} value={form.whatSelling} onChangeText={form.setWhatSelling} />
+          <TextInput onSubmitEditing={form.handleSubmit} ref={form.whatSellingInputRef} style={web.input} placeholder="e.g. Laptop, mobile, sofa, washing machine" placeholderTextColor={SHURU.placeholder} value={form.whatSelling} onChangeText={form.setWhatSelling} />
 
           <StockToggle inStock={form.inStock} onChange={form.setInStock} />
 
           <Text style={web.label}>Price (₹)</Text>
-          <TextInput style={web.input} placeholder="Enter price amount" placeholderTextColor={SHURU.placeholder} value={form.price} onChangeText={form.setPrice} keyboardType="numeric" />
+          <TextInput onSubmitEditing={form.handleSubmit} style={web.input} placeholder="Enter price amount" placeholderTextColor={SHURU.placeholder} value={form.price} onChangeText={form.setPrice} keyboardType="numeric" />
 
           <Text style={web.label}>City</Text>
-          <TextInput style={web.input} placeholder="Enter your city / town" placeholderTextColor={SHURU.placeholder} value={form.city} onChangeText={form.setCity} maxLength={60} autoCapitalize="words" />
+          <TextInput onSubmitEditing={form.handleSubmit} style={web.input} placeholder="Enter your city / town" placeholderTextColor={SHURU.placeholder} value={form.city} onChangeText={form.setCity} maxLength={60} autoCapitalize="words" />
 
           <Text style={web.label}>3. Media <Text style={web.required}>*</Text></Text>
-          <TouchableOpacity style={web.mediaBtn} onPress={form.openMediaPicker} activeOpacity={0.8}>
-            <Ionicons name="camera-outline" size={28} color={SHURU.primary} />
-            <Text style={web.mediaBtnText}>Add Photo or Video</Text>
-          </TouchableOpacity>
-          {form.mediaItems.length > 0 && (
-            <View style={{ marginTop: 10 }}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {form.mediaItems.map((item, index) => (
-                  <View key={`${item.uri}-${index}`} style={web.mediaThumbWrap}>
-                    {item.type === 'video' ? (
-                      <View style={web.mediaVideoThumb}>
-                        <Ionicons name="videocam-outline" size={22} color="#64748b" />
-                      </View>
-                    ) : (
-                      <Image source={{ uri: item.previewUri || item.uri }} style={web.mediaThumb} resizeMode="cover" />
-                    )}
-                    <TouchableOpacity style={web.removeMediaBtn} onPress={() => form.removeMediaItem(index)} activeOpacity={0.7}>
-                      <Ionicons name="close" size={13} color="#fff" />
-                    </TouchableOpacity>
+          {/* Add button + selected thumbnails sit side by side (wrap to next line when the row is full) */}
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+            <TouchableOpacity style={[web.mediaBtn, { marginRight: 10, marginBottom: 10 }]} onPress={form.openMediaPicker} activeOpacity={0.8}>
+              <Ionicons name="camera-outline" size={28} color={SHURU.primary} />
+              <Text style={web.mediaBtnText}>Add Photo or Video</Text>
+            </TouchableOpacity>
+            {form.mediaItems.map((item, index) => (
+              <View key={`${item.uri}-${index}`} style={[web.mediaThumbWrap, { marginBottom: 10 }]}>
+                {item.type === 'video' ? (
+                  <View style={web.mediaVideoThumb}>
+                    <Ionicons name="videocam-outline" size={22} color="#64748b" />
                   </View>
-                ))}
-              </ScrollView>
-              <Text style={web.mediaCountText}>{form.mediaItems.length} media item{form.mediaItems.length !== 1 ? 's' : ''} selected</Text>
-            </View>
+                ) : (
+                  <Image source={{ uri: item.previewUri || item.uri }} style={web.mediaThumb} resizeMode="cover" />
+                )}
+                <TouchableOpacity style={web.removeMediaBtn} onPress={() => form.removeMediaItem(index)} activeOpacity={0.7}>
+                  <Ionicons name="close" size={13} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+          {form.mediaItems.length > 0 && (
+            <Text style={web.mediaCountText}>{form.mediaItems.length} media item{form.mediaItems.length !== 1 ? 's' : ''} selected</Text>
           )}
 
           <Text style={web.label}>Description <Text style={web.required}>*</Text></Text>
           <TextInput style={[web.input, web.textarea]} placeholder="Add more detail" placeholderTextColor={SHURU.placeholder} value={form.description} onChangeText={form.setDescription} multiline numberOfLines={4} textAlignVertical="top" />
 
           <Text style={web.label}>Contact</Text>
-          <TextInput style={web.input} placeholder="Enter your contact number" placeholderTextColor={SHURU.placeholder} value={form.contact} onChangeText={(v) => form.setContact(normalizeIndianMobileNumber(v))} keyboardType="phone-pad" maxLength={10} />
+          <TextInput onSubmitEditing={form.handleSubmit} style={web.input} placeholder="Enter your contact number" placeholderTextColor={SHURU.placeholder} value={form.contact} onChangeText={(v) => form.setContact(normalizeIndianMobileNumber(v))} keyboardType="phone-pad" maxLength={10} />
 
           <TouchableOpacity style={web.submitBtn} onPress={form.handleSubmit} activeOpacity={0.85}>
             <Text style={web.submitBtnText}>{form.isEditing ? 'Update Product' : 'Next'}</Text>

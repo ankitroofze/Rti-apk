@@ -9,6 +9,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { getIdbMediaBlob, isIdbMediaUri } from '../../utils/webMediaStore';
+import { setAdsHidden, registerAdsRefresher } from '../../utils/adsVisibility';
 
 // BASE_URL environment config se aata hai (EXPO_PUBLIC_API_URL). Env set na ho to purana default.
 const NATIVE_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://rtiapi.roofze.in/api';
@@ -290,6 +291,22 @@ const postJSON = async (endpoint, body = {}, token = null) => {
   return { status: response.status, data: response.data };
 };
 
+const putJSON = async (endpoint, body = {}, token = null) => {
+  const headers = {
+    Accept: 'application/json',
+    'Content-Type': 'application/json',
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const response = await fetchWithDebug(endpoint, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify(body),
+  }, body);
+
+  return { status: response.status, data: response.data };
+};
+
 const getJSON = async (endpoint, token = null, timeoutMs = null) => {
   const headers = {
     Accept: 'application/json',
@@ -328,6 +345,9 @@ const authedJSON = async (method, endpoint, body = null) => {
 // AUTH API
 // ─────────────────────────────────────────────────────────
 // ── News upload helpers (video size / timeout) ──────────────────────────
+// true / 1 / '1' / 'true' => '1', baaki sab (false, 0, '0', null, undefined) => '0'
+const toBinaryFlag = (value) => ([true, 1, '1', 'true'].includes(value) ? '1' : '0');
+
 const NEWS_VIDEO_MAX_MB = 10;
 const NEWS_UPLOAD_TIMEOUT_MS = 120000; // 2 min
 const NEWS_VIDEO_TOO_LARGE_MSG = `Video size is too large. Please post a video of ${NEWS_VIDEO_MAX_MB}MB or less.`;
@@ -361,32 +381,138 @@ const newsUploadErrorResult = (err, mediaType) => {
   };
 };
 
-// Video ke saath music / voice-over ke fields (backend ffmpeg se merge karta hai).
+// Video ke saath music / voice-over ke fields (backend final video process karta hai).
+//   music_id / music_url : selected music     music_volume : 0..2
+//   voice                : recorded audio     mute_original: 0 = original audio on, 1 = mute
+const clampMusicVolume = (v) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0.6;
+  return Math.min(2, Math.max(0, n));
+};
+
+// Voice file: backend supports mp3, wav, m4a, aac, mp4, webm, ogg
+const VOICE_MIME_BY_EXT = {
+  mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', aac: 'audio/aac',
+  mp4: 'audio/mp4', webm: 'audio/webm', ogg: 'audio/ogg',
+};
+const guessVoiceMeta = (uri = '', mime = '') => {
+  const clean = String(uri || '').split('?')[0].split('#')[0];
+  const m = clean.match(/\.([a-z0-9]{2,4})$/i);
+  let ext = m ? m[1].toLowerCase() : '';
+  if (!VOICE_MIME_BY_EXT[ext]) {
+    const t = String(mime || '').toLowerCase();
+    ext = t.includes('webm') ? 'webm'
+      : t.includes('ogg') ? 'ogg'
+      : t.includes('wav') ? 'wav'
+      : (t.includes('mpeg') || t.includes('mp3')) ? 'mp3'
+      : t.includes('aac') ? 'aac'
+      : 'm4a';
+  }
+  return { ext, type: VOICE_MIME_BY_EXT[ext] };
+};
+
+// // Video (media_type = 2) ke saath audio fields:
+// //   music_id      : local-01 .. local-07 (bundled music)  — local ke saath music_url NAHI bhejna
+// //   music_url     : sirf externally hosted https music ke liye
+// //   music_volume  : 0..2 (default 0.6)
+// //   voice         : audio file (mp3, wav, m4a, aac, mp4, webm, ogg)
+// //   mute_original : 0 = original sound rakho, 1 = original sound hatao
+// const appendAudioMix = async (formData, audioMix) => {
+//   if (!audioMix) return;
+//   const musicId = String(audioMix.musicId || '').trim();
+//   const isLocalSong = /^local-/i.test(musicId);
+//   if (musicId) formData.append('music_id', musicId);
+//   // Local song => sirf music_id. External song => music_url (https).
+//   let remoteMusicUrl = null;
+//   if (!isLocalSong) {
+//     remoteMusicUrl = audioMix.music?.remoteUrl
+//       || (/^https?:/i.test(String(audioMix.musicUrl || '')) ? audioMix.musicUrl : null);
+//     if (remoteMusicUrl) formData.append('music_url', String(remoteMusicUrl));
+//   }
+//   if (musicId || remoteMusicUrl) {
+//     formData.append('music_volume', String(clampMusicVolume(audioMix.musicVolume)));
+//   }
+//   formData.append('mute_original', audioMix.muteOriginal ? '1' : '0');
+//   if (audioMix.voiceUri) {
+//     if (Platform.OS === 'web') {
+//       const blob = await fetch(audioMix.voiceUri).then((r) => r.blob());
+//       const { ext } = guessVoiceMeta(audioMix.voiceUri, blob.type || audioMix.voiceMime);
+//       formData.append('voice', blob, `voice.${ext}`);
+//     } else {
+//       const { ext, type } = guessVoiceMeta(audioMix.voiceUri, audioMix.voiceMime);
+//       formData.append('voice', { uri: audioMix.voiceUri, type, name: `voice.${ext}` });
+//     }
+//   }
+// };
+
 const appendAudioMix = async (formData, audioMix) => {
   if (!audioMix) return;
-  // Bundled (local) songs ka id server ko nahi pata — unke liye sirf https music_url bhejte hain.
-  const isLocalSong = String(audioMix.musicId || '').startsWith('local-');
-  if (audioMix.musicId && !isLocalSong) formData.append('music_id', String(audioMix.musicId));
-  const remoteMusicUrl = audioMix.music?.remoteUrl
-    || (/^https?:/i.test(String(audioMix.musicUrl || '')) ? audioMix.musicUrl : null);
-  if (remoteMusicUrl) formData.append('music_url', String(remoteMusicUrl));
-  if (audioMix.musicId || audioMix.musicUrl) {
-    formData.append('music_volume', String(audioMix.musicVolume ?? 0.6));
+
+  const musicId = String(audioMix.musicId || '').trim();
+
+  // local-01 => 1, local-02 => 2, etc.
+  const isLocalSong = /^local-/i.test(musicId);
+
+  if (musicId) {
+    const finalMusicId = isLocalSong
+      ? musicId.replace(/^local-/i, '').replace(/^0+/, '')
+      : musicId;
+
+    formData.append('music_id', finalMusicId);
   }
-  formData.append('mute_original', audioMix.muteOriginal === false ? '0' : '1');
+
+  // Local song => music_url nahi bhejna.
+  // External song => sirf valid HTTP/HTTPS URL bhejna.
+  let remoteMusicUrl = null;
+
+  if (!isLocalSong) {
+    remoteMusicUrl =
+      audioMix.music?.remoteUrl ||
+      (/^https?:/i.test(String(audioMix.musicUrl || ''))
+        ? audioMix.musicUrl
+        : null);
+
+    if (remoteMusicUrl) {
+      formData.append('music_url', String(remoteMusicUrl));
+    }
+  }
+
+  if (musicId || remoteMusicUrl) {
+    formData.append(
+      'music_volume',
+      String(clampMusicVolume(audioMix.musicVolume))
+    );
+  }
+
+  formData.append(
+    'mute_original',
+    audioMix.muteOriginal ? '1' : '0'
+  );
+
   if (audioMix.voiceUri) {
     if (Platform.OS === 'web') {
       const blob = await fetch(audioMix.voiceUri).then((r) => r.blob());
-      // Browser recordings are usually audio/webm (Chrome/Firefox) or audio/mp4 (Safari) — use the right extension
-      const vType = String(blob.type || audioMix.voiceMime || '').toLowerCase();
-      const vExt = vType.includes('webm') ? 'webm' : vType.includes('ogg') ? 'ogg' : vType.includes('wav') ? 'wav' : 'm4a';
-      formData.append('voice', blob, `voice.${vExt}`);
+
+      const { ext } = guessVoiceMeta(
+        audioMix.voiceUri,
+        blob.type || audioMix.voiceMime
+      );
+
+      formData.append('voice', blob, `voice.${ext}`);
     } else {
-      formData.append('voice', { uri: audioMix.voiceUri, type: 'audio/mp4', name: 'voice.m4a' });
+      const { ext, type } = guessVoiceMeta(
+        audioMix.voiceUri,
+        audioMix.voiceMime
+      );
+
+      formData.append('voice', {
+        uri: audioMix.voiceUri,
+        type,
+        name: `voice.${ext}`,
+      });
     }
   }
 };
-
 export const AuthAPI = {
 
   /**
@@ -394,7 +520,11 @@ export const AuthAPI = {
    * POST /register
    * Body: firstname, middlename, lastname, phone, email, password, confirmed, referral_code
    */
-   register: async ({ firstName, middleName = '', lastName, mobile, email, password, referralCode = '', profileImage = '', bio = '', otp = '' }) => {
+   register: async ({
+      firstName, middleName = '', lastName, mobile, email, password, referralCode = '', profileImage = '', bio = '', otp = '',
+      state = '', district = '', taluka = '', village = '',
+      stateId = '', districtId = '', talukaId = '', villageId = '',
+    }) => {
     try {
       const { status, data } = await postJSON('/register', {
         firstname:     firstName.trim(),
@@ -409,6 +539,15 @@ export const AuthAPI = {
         bio:           bio.trim(),
         // Server /register par otp field required rakhta hai, isliye hamesha bhejo.
             otp:           String(otp || '').trim(),
+        // ✅ Location: names hamesha, IDs sirf jab available hon
+        state:         String(state || '').trim(),
+        district:      String(district || '').trim(),
+        taluka:        String(taluka || '').trim(),
+        village:       String(village || '').trim(),
+        ...(stateId    ? { state_id:    stateId }    : {}),
+        ...(districtId ? { district_id: districtId } : {}),
+        ...(talukaId   ? { taluka_id:   talukaId }   : {}),
+        ...(villageId  ? { village_id:  villageId }  : {}),
       });
 
       if (status === 200 || status === 201) {
@@ -516,9 +655,9 @@ export const AuthAPI = {
   },
 
   /**
-   * ✅ NEW: Account Delete (login zaroori)
-   * DELETE /account   Body: { password }
-   * 405 aaye (hosting DELETE block kare) to same URL par POST.
+   * ✅ Account Delete (login zaroori)
+   * POST /account   Body: { password }
+   * (DELETE method shared hosting/WAF par 403 deta tha, isliye backend ne POST diya hai.)
    * Success par local token + user data clear hota hai. Logout API call NAHI karni (server token band kar deta hai).
    * Return: { ok } | { ok:false, isAuth } | { ok:false, forbidden } | { ok:false, errors, passwordError } | { ok:false, isNetwork }
    */
@@ -527,8 +666,8 @@ export const AuthAPI = {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
 
-      const buildOptions = (method) => ({
-        method,
+      const { status, data } = await fetchWithDebug('/account', {
+        method: 'POST',
         headers: {
           Accept: 'application/json',
           'Content-Type': 'application/json',
@@ -536,12 +675,6 @@ export const AuthAPI = {
         },
         body: JSON.stringify({ password }),
       });
-
-      let res = await fetchWithDebug('/account', buildOptions('DELETE'));
-      if (res.status === 405) {
-        res = await fetchWithDebug('/account', buildOptions('POST'));
-      }
-      const { status, data } = res;
 
       if (status === 200 || status === 204) {
         await clearLocalSession();
@@ -929,7 +1062,7 @@ export const AuthAPI = {
         body: formData,
       });
 
-     const json = await res.json();
+      const json = await res.json().catch(() => null);
       if (res.status === 200 || res.status === 201) {
         // ✅ Image turant overwrite nahi hoti — admin approve na kare tab tak
         // pending_profile_image_url me hi save rehti hai.
@@ -940,13 +1073,15 @@ export const AuthAPI = {
           pendingImageUrl: profile?.pending_profile_image_url || '',
           imageUrl: profile?.profile_image_url || profile?.profile_image || '',
           profileUpdateStatus: profile?.profile_update_status ?? null,
+          message: 'Your profile image is pending admin approval.',
           // Har successful upload par backend profile_image_change_count badhata hai
           imageChangeCount: (profile?.profile_image_change_count ?? json?.profile_image_change_count ?? null),
         };
       }
       if (res.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
       // ✅ Free photo change use ho chuka ho to backend 403 + code 'photo_change_limit' bhejta hai
-      if (res.status === 402 || res.status === 403 || json?.code === 'photo_change_limit') {
+      // Sirf `photo_change_limit` code (ya 402) par subscription UI; baaki 403 (WAF/permission) normal error.
+      if (res.status === 402 || json?.code === 'photo_change_limit') {
         return {
           ok: false,
           needsSubscription: true,
@@ -954,7 +1089,7 @@ export const AuthAPI = {
           message: json?.message || 'Free photo change already used. Take a Role or Premium subscription.',
         };
       }
-      return { ok: false, message: json?.message || 'Update failed.' };
+      return { ok: false, status: res.status, message: json?.errors?.profile_image?.[0] || json?.message || `Update failed (${res.status}).` };
     } catch (_err) {
       return { ok: false, isNetwork: true, message: 'Network error.' };
     }
@@ -1765,6 +1900,7 @@ if (status === 200 || status === 201) {
     audioMix = null,
     useFrame = false,
     frameTemplate = '',
+    frameMerged, // 1/0 (ya true/false) — na do to useFrame jaisa hi jaayega
   }) => {
     try {
       console.log("Received mediaUri:", mediaUri);
@@ -1778,8 +1914,10 @@ if (status === 200 || status === 201) {
       formData.append('description', description || '');
       formData.append('report_type', reportType || '');
       formData.append('media_type', String(mediaType));
+      // use_frame: 0/1. frame_template (glossy2 | glossy1 | redbar | banner) sirf frame ON hone par.
+      // frame_merged request field NAHI hai — wo sirf response me aata hai (backend decide karta hai).
       formData.append('use_frame', useFrame ? '1' : '0');
-      formData.append('frame_template', useFrame ? String(frameTemplate || 'glossy2') : '');
+      if (useFrame) formData.append('frame_template', String(frameTemplate || 'glossy2'));
 
       if (mediaUri) {
         if (Platform.OS === 'web') {
@@ -1795,7 +1933,8 @@ if (status === 200 || status === 201) {
         }
       }
 
-      await appendAudioMix(formData, audioMix);
+      // music / voice / mute_original sirf video (media_type = 2) ke saath bhejte hain
+      if (Number(mediaType) === 2) await appendAudioMix(formData, audioMix);
 
       for (let i = 0; i < (extraImages || []).length; i += 1) {
         const uri = extraImages[i];
@@ -2396,21 +2535,27 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
     audioMix = null,
     useFrame = false,
     frameTemplate = '',
+    frameMerged, // 1/0 (ya true/false) — na do to useFrame jaisa hi jaayega
   }) => {
     try {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
 
       const formData = new FormData();
-      formData.append('_method', 'PUT'); // Laravel form-data + PUT trick
+      // POST /news/{id} seedha supported hai — _method=PUT ki zarurat nahi.
       if (type === 1 || type === 2 || type === '1' || type === '2') formData.append('type', String(type));
       formData.append('tittle', title || '');
       formData.append('sub_tittle', subTitle || '');
       formData.append('description', description || '');
       formData.append('report_type', reportType || '');
-      formData.append('media_type', String(mediaType));
-      formData.append('use_frame', useFrame ? '1' : '0');
-      formData.append('frame_template', useFrame ? String(frameTemplate || 'glossy2') : '');
+      // Edit rule: nayi media file nahi chuni => media / media_type / audio / frame fields NAHI bhejne.
+      // Backend current processed video + settings as-is rakhta hai.
+      const hasNewMedia = Boolean(mediaUri) || (extraImages || []).some(Boolean);
+      if (hasNewMedia) {
+        formData.append('media_type', String(mediaType));
+        formData.append('use_frame', useFrame ? '1' : '0');
+        if (useFrame) formData.append('frame_template', String(frameTemplate || 'glossy2'));
+      }
 
       if (mediaUri) {
         if (Platform.OS === 'web') {
@@ -2428,7 +2573,9 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
 
       // Keep edit uploads consistent with create: send every additional image,
       // not only the first cover image.
-      await appendAudioMix(formData, audioMix);
+      // music / voice / mute_original sirf nayi video (media_type = 2 + naya media file) ke saath
+      // Nayi video chuni hai => music_id/music_url/music_volume/voice/mute_original dobara bhejo
+      if (Number(mediaType) === 2 && mediaUri) await appendAudioMix(formData, audioMix);
 
       for (let i = 0; i < (extraImages || []).length; i += 1) {
         const uri = extraImages[i];
@@ -2537,27 +2684,65 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
 
  getAdsDetails: async () => {
   try {
-    // Some deployments expose this route publicly while others protect it.
-    // Sending a token when one exists works in both cases and prevents a
-    // valid signed-in advertiser from receiving an empty ads response.
+    // ✅ Logged-in user ka Bearer token compulsory bhejna hai — backend isi token se
+    // decide karta hai ki `ads_hidden` true hoga ya false.
     const token = await getAuthToken();
     const { status, data } = await getJSON('/ads-details', token, 45000);
-    // ✅ FIX: backend ka actual wrapper key "ads_details" hai (pehle "data"/"ads"
-    // dhoondh raha tha jo kabhi match hi nahi hota tha — isi wajah se Home screen
-    // pe ads kabhi dikhte hi nahi the, hamesha khaali array milta tha)
     if (status === 200 || status === 201) {
+      // ✅ `ads_hidden` hi FINAL source of truth hai (local subscription data nahi dekhna)
+      const hiddenRaw = data?.ads_hidden ?? data?.data?.ads_hidden;
+      const adsHidden = hiddenRaw === true || hiddenRaw === 1 || hiddenRaw === '1' || hiddenRaw === 'true';
+      setAdsHidden(adsHidden);   // sab screens ko turant batao (Home, popup, feed, panels...)
+      if (adsHidden) return { ok: true, adsHidden: true, ads: [] };
       const ads = data?.ads_details
         || data?.data?.ads_details
         || data?.data?.ads
         || data?.data
         || data?.ads
         || data;
-      return { ok: true, ads: Array.isArray(ads) ? ads : [] };
+      return { ok: true, adsHidden: false, ads: Array.isArray(ads) ? ads : [] };
     }
     if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
     return { ok: false, message: data?.message || `Server error (${status}).` };
   } catch (err) {
     console.error('[AuthAPI.getAdsDetails] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+// ── NEWSPAPERS (User side) ───────────────────────────────────
+// GET /newspapers            -> list (backend khud last 1 month + active + published hi deta hai)
+// GET /newspapers?date=YYYY-MM-DD -> date-wise
+// ⚠️ Frontend par koi extra filtering (30 days / status / active) NAHI lagani.
+getNewspapers: async ({ date = null } = {}) => {
+  try {
+    const token = await getAuthToken();
+    const qs = date ? `?date=${encodeURIComponent(date)}` : '';
+    const { status, data } = await getJSON(`/newspapers${qs}`, token);
+    if (status === 200 || status === 201) {
+      const list = data?.newspapers || data?.data?.newspapers || data?.data || data;
+      return { ok: true, newspapers: Array.isArray(list) ? list : (Array.isArray(list?.data) ? list.data : []) };
+    }
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getNewspapers] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+getNewspaperById: async (id) => {
+  try {
+    const token = await getAuthToken();
+    const { status, data } = await getJSON(`/newspapers/${id}`, token);
+    if (status === 200 || status === 201) {
+      return { ok: true, newspaper: data?.newspaper || data?.data?.newspaper || data?.data || data };
+    }
+    if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+    if (status === 404) return { ok: false, message: data?.message || 'Newspaper not found.' };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getNewspaperById] Error:', err);
     return { ok: false, isNetwork: true, message: 'Network error.' };
   }
 },
@@ -2860,11 +3045,11 @@ getAdViewsList: async () => {
 },
 
 // ── ECOM ENQUIRIES API ──────────────────────────────────────
-getEcomEnquiries: async () => {
+getEcomEnquiries: async ({ type = null } = {}) => {
   try {
     const token = await getAuthToken();
     if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
-    const { status, data } = await getJSON('/ecom-enquiries', token);
+    const { status, data } = await getJSON(`/ecom-enquiries${type ? `?type=${encodeURIComponent(type)}` : ''}`, token);
    if (status === 200 || status === 201) return { ok: true, enquiries: data?.ecom_enquiries || data?.data || data?.enquiries || [] };
     if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
     return { ok: false, message: data?.message || `Server error (${status}).` };
@@ -2874,13 +3059,14 @@ getEcomEnquiries: async () => {
   }
 },
 
-getReceivedEcomEnquiries: async ({ cursor = null, ecomId = null, status = null, perPage = 20 } = {}) => {
+getReceivedEcomEnquiries: async ({ cursor = null, ecomId = null, status = null, perPage = 20, type = null } = {}) => {
   try {
     const token = await getAuthToken();
     if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
     const q = [`per_page=${perPage}`];
     if (cursor) q.push(`cursor=${encodeURIComponent(cursor)}`);
     if (ecomId) q.push(`ecom_id=${encodeURIComponent(ecomId)}`);
+    if (type) q.push(`type=${encodeURIComponent(type)}`); // 'ecom' | 'ads' (backend filter)
     if (status) q.push(`status=${encodeURIComponent(status)}`);
     const { status: code, data } = await getJSON(`/ecom-enquiries/received?${q.join('&')}`, token);
     if (code === 200 || code === 201) {
@@ -2953,6 +3139,93 @@ updateEcomEnquiry: async (id, fields = {}) => {
   }
 },
 
+
+// ── ADMIN: Ads + Ecom enquiries ek hi list me (type = ads / ecom) ──────────────
+// GET /admin-rti/ecom-enquiries            (optional ?enq_status=1|2|3)
+getAdminEcomEnquiries: async ({ enqStatus = null } = {}) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const q = enqStatus ? `?enq_status=${encodeURIComponent(enqStatus)}` : '';
+    const { status, data } = await getJSON(`/admin-rti/ecom-enquiries${q}`, token);
+    if (status === 200 || status === 201) {
+      return { ok: true, enquiries: data?.ecom_enquiries || data?.data || data?.enquiries || [] };
+    }
+    if (status === 401) return { ok: false, isAuth: true, message: data?.message || 'Session expired.' };
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.getAdminEcomEnquiries] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+// PATCH /admin-rti/ecom-enquiries/{id}/status   { enq_status: 1 | 2 | 3 }
+updateAdminEcomEnquiryStatus: async (id, enqStatus) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const res = await fetch(`${BASE_URL}/admin-rti/ecom-enquiries/${id}/status`, {
+      method: 'PATCH',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ enq_status: Number(enqStatus) }),
+    });
+    let json = await res.json().catch(() => null);
+    let code = res.status;
+    // PATCH block ho (403/405) to POST + `_method=PATCH` se retry
+    if (code === 403 || code === 405) {
+      const retry = await postFormData(`/admin-rti/ecom-enquiries/${id}/status`, { enq_status: Number(enqStatus), _method: 'PATCH' }, token);
+      code = retry.status;
+      json = retry.data;
+    }
+    if (code === 200 || code === 201) {
+      return { ok: true, enquiry: json?.ecom_enquiry || json?.data?.ecom_enquiry || json?.data || null, message: json?.message || '' };
+    }
+    if (code === 401) return { ok: false, isAuth: true, message: json?.message || 'Session expired.' };
+    if (code === 422) {
+      const errors = json?.errors || {};
+      const firstError = Object.values(errors).flat()[0] || json?.message || 'Validation failed.';
+      return { ok: false, message: firstError, errors };
+    }
+    return { ok: false, message: json?.message || `Server error (${code}).` };
+  } catch (err) {
+    console.error('[AuthAPI.updateAdminEcomEnquiryStatus] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
+
+// PUT /ecom-enquiries/{id}  (JSON)  payload: { enq_status: 1 | 2 | 3 }   1 = New, 2 = Review, 3 = Closed
+// Success par backend `ecom_enquiry` (aur `enq_status_label`) return karta hai.
+updateEcomEnquiryStatus: async (id, enqStatus) => {
+  try {
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    let { status, data } = await putJSON(`/ecom-enquiries/${id}`, { enq_status: Number(enqStatus) }, token);
+    // ✅ Server (ModSecurity) kabhi PUT ko 403/405 de deta hai — tab POST + `_method=PUT` se dobara try
+    if (status === 403 || status === 405) {
+      const retry = await postFormData(`/ecom-enquiries/${id}`, { enq_status: Number(enqStatus), _method: 'PUT' }, token);
+      status = retry.status;
+      data = retry.data;
+    }
+    if (status === 200 || status === 201) {
+      return {
+        ok: true,
+        enquiry: data?.ecom_enquiry || data?.data?.ecom_enquiry || data?.data || null,
+        message: data?.message || '',
+      };
+    }
+    if (status === 401) return { ok: false, isAuth: true, message: data?.message || 'Session expired.' };
+    if (status === 422) {
+      const errors = data?.errors || {};
+      const firstError = Object.values(errors).flat()[0] || data?.message || 'Validation failed.';
+      return { ok: false, message: firstError, errors };
+    }
+    // ✅ backend ka actual error message hi dikhana hai
+    return { ok: false, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI.updateEcomEnquiryStatus] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error.' };
+  }
+},
 
 deleteEcomEnquiry: async (id) => {
   try {
@@ -3051,7 +3324,7 @@ createEcomDetails: async ({
     formData.append('category', category || '');
     formData.append('product_name', productName || '');
     // ✅ quantity field hata diya — ab sirf stock status (1 = In Stock, 0 = Out of Stock)
-    formData.append('in_stock', inStock === false ? '0' : '1');
+    formData.append('in_stock', [false, 0, '0', 'false'].includes(inStock) ? '0' : '1');
     formData.append('price', String(price ?? ''));
     formData.append('description', description || '');
     formData.append('city', city || '');
@@ -3107,14 +3380,17 @@ updateEcomDetails: async (id, fields = {}) => {
     const token = await getAuthToken();
     if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
 
-    // ✅ curl example seedha PUT + form-data bhej raha hai, isliye direct fetch se PUT
+    // ✅ Server (ModSecurity) real PUT ko 403 de raha tha — isliye POST bhejte hain,
+    // aur Laravel ko `_method=PUT` se batate hain ki ye update hai (news / ads jaisa hi trick)
     const formData = new FormData();
     Object.entries(fields).forEach(([key, value]) => {
+      if (key === '_method') return;
       if (value !== undefined && value !== null) formData.append(key, String(value));
     });
+    formData.append('_method', 'POST');
 
     const res = await fetch(`${BASE_URL}/ecom-details/${id}`, {
-      method: 'PUT',
+      method: 'POST',
       headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
       body: formData,
     });
@@ -3138,14 +3414,13 @@ updateEcomDetailsStatus: async (id, statusValue) => {
   try {
     const token = await getAuthToken();
     if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    const formData = new FormData();
+    formData.append('status', String(statusValue));
+    formData.append('_method', 'PATCH');
     const res = await fetch(`${BASE_URL}/ecom-details/${id}/status`, {
-      method: 'PATCH',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ status: statusValue }),
+      method: 'POST',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      body: formData,
     });
     const json = await res.json().catch(() => null);
     if (res.status === 200 || res.status === 201) return { ok: true, detail: json?.data || json?.detail || json };
@@ -3163,14 +3438,14 @@ updateEcomDetailsStock: async (id, inStock) => {
   try {
     const token = await getAuthToken();
     if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+    // ✅ Server real PATCH ko 403 de raha tha — POST + `_method=PATCH` (form-data) bhejte hain
+    const formData = new FormData();
+    formData.append('in_stock', toBinaryFlag(inStock));
+    formData.append('_method', 'PATCH');
     const res = await fetch(`${BASE_URL}/ecom-details/${id}/stock`, {
-      method: 'PATCH',
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ in_stock: inStock ? 1 : 0 }),
+      method: 'POST',
+      headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+      body: formData,
     });
     const json = await res.json().catch(() => null);
     if (res.status === 200 || res.status === 201) return { ok: true, detail: json?.data || json?.detail || json };
@@ -3189,7 +3464,7 @@ deleteEcomDetails: async (id) => {
     const token = await getAuthToken();
     if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
     const response = await fetch(`${BASE_URL}/ecom-details/${id}`, {
-      method: 'DELETE',
+      method: 'POST',
       headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
     });
     const json = await response.json().catch(() => null);
@@ -3560,4 +3835,7 @@ cancelWithdrawalApi: async (id) => {
 },
 };
 
-export { postFormData, postJSON, getJSON };
+// ads_hidden refresh (plan expire / subscription change / login) isi se chalta hai
+registerAdsRefresher(() => AuthAPI.getAdsDetails());
+
+export { postFormData, postJSON, putJSON, getJSON };

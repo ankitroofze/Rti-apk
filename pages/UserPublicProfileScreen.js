@@ -19,6 +19,7 @@ import * as Sharing from 'expo-sharing';
 import { buildIdCardFrontAndBackHtml, buildAppointmentLetterHtml } from '../utils/documentGenerator';
 import { cardFromProfile } from '../utils/idCardService';
 import { useToast } from '../components/ui/ToastProvider';
+import { loginMessage } from '../utils/loginMessages';
 import VerifiedBadge from '../components/VerifiedBadge';
 import VideoPreview from '../components/VideoPreview';
 import { UserStore } from '../store/UserStore';
@@ -1001,6 +1002,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
   const likeBusyRef = useRef(new Set());
   const handleLikePost = async (post) => {
+    if (!viewerEmailRef.current) { showToast(loginMessage('like'), 'info'); return; }
     const pid = String(post?.id || '').trim();
     if (!pid || likeBusyRef.current.has(pid)) return;   // double-tap par ulta (auto unlike) na ho
     likeBusyRef.current.add(pid);
@@ -1200,6 +1202,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     }
   };
     const handleFollow = async () => {
+    // ✅ Bina login ke follow par toast
+    if (!viewerEmailRef.current) { showToast(loginMessage('follow'), 'info'); return; }
     if (followLoading || followActionInFlightRef.current) return;
     followActionInFlightRef.current = true;
     if (resolvedEmail && resolvedEmail === viewerEmail) {

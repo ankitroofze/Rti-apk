@@ -160,7 +160,7 @@ function AdCard({ ad, onEdit, onDelete, isWeb, isWide }) {
       {/* Cover image */}
       <View style={ac.cover}>
         {coverImage ? (
-          <Image source={{ uri: coverImage }} style={ac.coverImg} resizeMode="cover" />
+          <Image source={{ uri: coverImage }} style={ac.coverImg} resizeMode="contain" />
         ) : ad.video ? (
           <View style={[ac.coverPlaceholder, { backgroundColor: '#000' }]}>
             <Ionicons name="play-circle" size={44} color="#fff" />
@@ -366,7 +366,7 @@ function MyAdsScreen__Inner({ navigation }) {
         if (Platform.OS === 'web') {
           showToast(result.message, 'error');
         } else {
-          Alert.alert('Error', result.message);
+          Alert.alert('Notice', result.message);
         }
       }
     };

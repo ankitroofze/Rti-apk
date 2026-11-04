@@ -207,7 +207,7 @@ export default function VillageSelectScreen({ navigation, route }) {
                   <Text style={[styles.inputLabel, webStyles.darkLabel]}>Village <Text style={styles.required}>*</Text></Text>
                   <View style={styles.inputWrap}>
                     <Ionicons name="home-outline" size={16} color="#888" />
-                    <TextInput style={styles.input} placeholder="Enter your village" placeholderTextColor="#9ca3af" value={village} onChangeText={setVillage} />
+                    <TextInput onSubmitEditing={handleComplete} style={styles.input} placeholder="Enter your village" placeholderTextColor="#9ca3af" value={village} onChangeText={setVillage} />
                   </View>
                 </View>
 

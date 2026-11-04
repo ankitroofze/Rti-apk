@@ -169,7 +169,7 @@ export default function LoginScreen({ navigation, route }) {
               <Text style={[styles.inputLabel, webStyles.darkLabel]}>Email / Mobile</Text>
               <View style={[styles.inputWrap, errors.email && styles.inputWrapError]}>
                 <Ionicons name="mail-outline" size={18} color="#888" />
-                <TextInput
+                <TextInput onSubmitEditing={handleLogin}
                   style={styles.input}
                   value={identifier}
                   onChangeText={(value) => { setIdentifier(value); setErrors((prev) => ({ ...prev, email: '', general: '' })); }}
@@ -186,7 +186,7 @@ export default function LoginScreen({ navigation, route }) {
               <Text style={[styles.inputLabel, webStyles.darkLabel]}>Password</Text>
               <View style={[styles.inputWrap, errors.password && styles.inputWrapError]}>
                 <Ionicons name="lock-closed-outline" size={18} color="#888" />
-                <TextInput
+                <TextInput onSubmitEditing={handleLogin}
                   style={styles.input}
                   value={password}
                   onChangeText={(value) => { setPassword(value); setErrors((prev) => ({ ...prev, password: '', general: '' })); }}

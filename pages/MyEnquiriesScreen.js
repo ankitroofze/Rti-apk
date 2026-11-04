@@ -3,7 +3,8 @@
 //  Ecom Enquiries — 2 tabs
 //    • Received : mere ecom/products par aayi enquiries   (GET /ecom-enquiries/received, cursor pagination)
 //    • Sent     : maine jo enquiries bheji                (GET /ecom-enquiries)
-//  Route params (optional): { tab: 'received' | 'sent', ecomId: 3 }
+//  Route params (optional): { tab: 'received' | 'sent', ecomId: 3, type: 'ecom' | 'ads' }
+//  type = 'ads'  => sirf Ads ki enquiries (Ads Enquiry), warna sirf Ecom ki (Ecom Enquiry)
 // ═══════════════════════════════════════════════════════════════════════════
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import ModuleWebHeader from '../components/Modulewebheader';
@@ -59,9 +60,11 @@ const toPhone = (raw) => {
   return digits.length === 10 ? `91${digits}` : digits;
 };
 
-const ecomOf = (e = {}) => e.ecom || {};
-const ecomName = (e = {}) => ecomOf(e).product_name || e.product_name || 'Ecom';
-const ecomImage = (e = {}) => ecomOf(e).image || ecomOf(e).images?.[0] || e.product_images?.[0] || null;
+// Ads wali enquiry me item `ad` / `advertisement` key me bhi aa sakta hai — dono handle
+const isAdsEnquiry = (e = {}) => String(e.type || '').toLowerCase() === 'ads';
+const ecomOf = (e = {}) => e.ecom || e.ad || e.advertisement || {};
+const ecomName = (e = {}) => ecomOf(e).product_name || ecomOf(e).title || e.product_name || e.ad_title || (isAdsEnquiry(e) ? 'Advertisement' : 'Ecom');
+const ecomImage = (e = {}) => ecomOf(e).image || ecomOf(e).image_url || ecomOf(e).images?.[0] || e.product_images?.[0] || null;
 const ecomImages = (e = {}) => {
   const list = [ecomOf(e).image, ...(ecomOf(e).images || []), ...(e.product_images || [])].filter(Boolean);
   return Array.from(new Set(list));
@@ -74,18 +77,26 @@ const enquirerName = (e = {}) =>
 const initialsOf = (name) =>
   String(name || '?').split(' ').filter(Boolean).map((w) => w[0]).join('').slice(0, 2).toUpperCase() || '?';
 
-// Enquiry flow:  1 = New  →  (Call / WhatsApp dabate hi)  3 = Review  →  (Close dabate hi)  2 = Closed
+// API enq_status mapping:  New = 1,  Review = 2,  Closed = 3
 const ST_NEW = 1;
-const ST_REVIEW = 3;
-const ST_CLOSED = 2;
+const ST_REVIEW = 2;
+const ST_CLOSED = 3;
 const STATUS_MAP = {
-  [ST_NEW]:    { bg: '#FEF2F2', text: '#b91c1c', icon: 'information-circle', label: 'New' },
+  [ST_NEW]:    { bg: '#FEF2F2', text: '#b91c1c', icon: 'information-circle', label: 'New Enquiry' },
   [ST_REVIEW]: { bg: '#FFF7ED', text: '#c2410c', icon: 'time', label: 'Review' },
   [ST_CLOSED]: { bg: '#f1f5f9', text: '#475569', icon: 'checkmark-done-circle', label: 'Closed' },
 };
 const normStatus = (v) => (Number(v) === ST_CLOSED ? ST_CLOSED : Number(v) === ST_REVIEW ? ST_REVIEW : ST_NEW);
 const getStatus = (v) => STATUS_MAP[normStatus(v)];
-const STATUS_STORE_KEY = 'ecom_enquiry_status_overrides';
+const STATUS_OPTIONS = [ST_NEW, ST_REVIEW, ST_CLOSED].map((v) => ({ value: v, label: STATUS_MAP[v].label }));
+// Backend `enq_status` hi source of truth hai (purani `status` key fallback). `enq_status_label` ho to wahi dikhao.
+const withEnqStatus = (e = {}) => ({ ...e, status: e.enq_status ?? e.status });
+// API label "New" aaye to bhi "New Enquiry" dikhao (Review / Closed jaisa hai waisa hi)
+const statusLabelOf = (e = {}) => {
+  const apiLabel = String(e.enq_status_label || '').trim();
+  if (apiLabel && apiLabel.toLowerCase() !== 'new') return apiLabel;
+  return getStatus(e.enq_status ?? e.status).label;
+};
 
 // ─── small UI pieces ──────────────────────────────────────────────────────────
 const Thumb = ({ uri, size = 64, radius = 12 }) =>
@@ -123,6 +134,48 @@ const Row = ({ label, value, highlight, multiline }) => (
   </View>
 );
 
+// Har enquiry ke saath status dropdown. `disabled` (API in-flight) me dropdown khulta hi nahi.
+const StatusDropdown = ({ item, updating, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const current = normStatus(item.enq_status ?? item.status);
+  const st = getStatus(current);
+  return (
+    <>
+      <TouchableOpacity
+        style={[s.ddBtn, updating && { opacity: 0.55 }]}
+        disabled={updating}
+        onPress={() => setOpen(true)}
+        activeOpacity={0.85}
+      >
+        {updating ? <ActivityIndicator size="small" color={st.text} /> : <Ionicons name={st.icon} size={13} color={st.text} />}
+        <Text style={[s.ddBtnText, { color: st.text }]}>{statusLabelOf(item)}</Text>
+        <Ionicons name="chevron-down" size={13} color={st.text} />
+      </TouchableOpacity>
+      <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
+        <Pressable style={s.ddBackdrop} onPress={() => setOpen(false)}>
+          <Pressable style={s.ddSheet} onPress={() => {}}>
+            <Text style={s.ddTitle}>Enquiry #{item.id} — Change status</Text>
+            {STATUS_OPTIONS.map((opt) => {
+              const active = opt.value === current;
+              return (
+                <TouchableOpacity
+                  key={opt.value}
+                  style={[s.ddOption, active && { backgroundColor: '#FEF2F2' }]}
+                  onPress={() => { setOpen(false); if (!active) onChange(item, opt.value); }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[s.ddOptionText, active && { color: ORANGE, fontFamily: FONT.bold }]}>{opt.label}</Text>
+                  {active ? <Ionicons name="checkmark" size={16} color={ORANGE} /> : null}
+                </TouchableOpacity>
+              );
+            })}
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </>
+  );
+};
+
 const Segment = ({ tab, setTab, receivedCount, sentCount }) => (
   <View style={s.segmentWrap}>
     {[
@@ -144,7 +197,7 @@ const Segment = ({ tab, setTab, receivedCount, sentCount }) => (
 );
 
 const STAGES = [
-  { key: ST_NEW, label: 'New', icon: 'sparkles-outline' },
+  { key: ST_NEW, label: 'New Enquiry', icon: 'sparkles-outline' },
   { key: ST_REVIEW, label: 'Review', icon: 'time-outline' },
   { key: ST_CLOSED, label: 'Closed', icon: 'checkmark-done-outline' },
 ];
@@ -166,7 +219,7 @@ const StageTabs = ({ stage, setStage, counts }) => (
 );
 
 // ─── Enquiry card ─────────────────────────────────────────────────────────────
-const EnquiryCard = ({ item, mode, onOpen, onCall, onWhatsApp, onClose }) => {
+const EnquiryCard = ({ item, mode, onOpen, onCall, onWhatsApp, onClose, onStatusChange, updating }) => {
   const st = getStatus(item.status);
   const isReceived = mode === 'received';
   const ecom = ecomOf(item);
@@ -183,7 +236,7 @@ const EnquiryCard = ({ item, mode, onOpen, onCall, onWhatsApp, onClose }) => {
             <View style={s.titleRow}>
               <Text style={s.cardTitle} numberOfLines={1}>{ecomName(item)}</Text>
               <View style={[s.pill, { backgroundColor: st.bg }]}>
-                <Text style={[s.pillText, { color: st.text }]}>{st.label}</Text>
+                <Text style={[s.pillText, { color: st.text }]}>{statusLabelOf(item)}</Text>
               </View>
             </View>
             <View style={s.metaRow}>
@@ -192,15 +245,20 @@ const EnquiryCard = ({ item, mode, onOpen, onCall, onWhatsApp, onClose }) => {
               {ecom.category ? <Text style={s.metaText}>  •  {ecom.category}</Text> : null}
             </View>
             <View style={s.badgeRow}>
-              <Text style={s.price}>{money(ecom.price)}</Text>
+              {isAdsEnquiry(item) ? null : <Text style={s.price}>{money(ecom.price)}</Text>}
               {isRemoved(item) && (
                 <View style={[s.miniBadge, { backgroundColor: '#fef2f2', borderColor: '#fecaca' }]}>
                   <Text style={[s.miniBadgeText, { color: '#dc2626' }]}>Ecom removed</Text>
                 </View>
               )}
-              {item.type === 'ads' && (
+              {/* type field se pehchano: ads => ADS, ecom => ECOM */}
+              {isAdsEnquiry(item) ? (
                 <View style={[s.miniBadge, { backgroundColor: '#eff6ff', borderColor: '#bfdbfe' }]}>
-                  <Text style={[s.miniBadgeText, { color: '#2563eb' }]}>Ad</Text>
+                  <Text style={[s.miniBadgeText, { color: '#2563eb' }]}>ADS</Text>
+                </View>
+              ) : (
+                <View style={[s.miniBadge, { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' }]}>
+                  <Text style={[s.miniBadgeText, { color: '#16a34a' }]}>ECOM</Text>
                 </View>
               )}
             </View>
@@ -230,6 +288,12 @@ const EnquiryCard = ({ item, mode, onOpen, onCall, onWhatsApp, onClose }) => {
         <View style={s.chipsRow}>
           <Chip icon="layers-outline" text={`Qty: ${item.qty || '—'}`} tint={ORANGE} bg="#FEF2F2" border="#FECACA" />
           <Chip icon="calendar-outline" text={fmtDate(item.created_at)} />
+        </View>
+
+        {/* status dropdown — API request chalte waqt disabled */}
+        <View style={s.statusRow}>
+          <Text style={s.statusRowLabel}>Status</Text>
+          <StatusDropdown item={item} updating={updating} onChange={onStatusChange} />
         </View>
 
         {/* actions */}
@@ -289,7 +353,7 @@ const DetailModal = ({ visible, item, mode, onClose, onCall, onWhatsApp, onEmail
             const statusEl = (
               <View style={[m.statusBanner, { backgroundColor: st.bg }]}>
                 <Ionicons name={st.icon} size={18} color={st.text} />
-                <Text style={[m.statusText, { color: st.text }]}>Status: {st.label}</Text>
+                <Text style={[m.statusText, { color: st.text }]}>Status: {statusLabelOf(item)}</Text>
                 {isRemoved(item) && <Text style={[m.statusText, { color: '#dc2626', marginLeft: 'auto' }]}>Ecom removed</Text>}
               </View>
             );
@@ -310,10 +374,10 @@ const DetailModal = ({ visible, item, mode, onClose, onCall, onWhatsApp, onEmail
             ) : null;
             const ecomCard = (
               <View style={m.card}>
-                <Text style={m.cardTitle}>Ecom / Product</Text>
+                <Text style={m.cardTitle}>{isAdsEnquiry(item) ? 'Advertisement' : 'Ecom / Product'}</Text>
                 <Row label="Name" value={ecomName(item)} />
                 <Row label="Category" value={ecom.category} />
-                <Row label="Price" value={money(ecom.price)} highlight />
+                {isAdsEnquiry(item) ? null : <Row label="Price" value={money(ecom.price)} highlight />}
                 <Row label="Stock" value={ecom.in_stock === false || ecom.in_stock === 0 || ecom.in_stock === '0' ? 'Out of Stock' : 'In Stock'} />
                 <Row label="City" value={ecom.city} />
                 {ecom.description ? <Row label="About" value={ecom.description} multiline /> : null}
@@ -389,6 +453,12 @@ export default function MyEnquiriesScreen({ navigation, route }) {
   const insets = useSafeAreaInsets();
 
   const ecomId = route?.params?.ecomId || null;
+  // 'ads' => Ads Enquiry, baaki sab => Ecom Enquiry
+  const enquiryType = route?.params?.type === 'ads' ? 'ads' : 'ecom';
+  const isAdsPage = enquiryType === 'ads';
+  const pageTitleText = isAdsPage ? 'Ads Enquiries' : 'Ecom Enquiries';
+  // Backend type filter na lagaye to bhi yahan se sahi type ki hi enquiries dikhengi
+  const byType = (list) => (Array.isArray(list) ? list : []).filter((e) => isAdsEnquiry(e) === isAdsPage);
   const [tab, setTab] = useState(route?.params?.tab === 'sent' ? 'sent' : 'received');
 
   // Received (cursor pagination)
@@ -408,7 +478,8 @@ export default function MyEnquiriesScreen({ navigation, route }) {
   const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState(null);
   const [stage, setStage] = useState(ST_NEW);          // Received tab: New / Review / Closed
-  const [overrides, setOverrides] = useState({});      // { [enquiryId]: status } — turant UI + device par yaad rakhne ke liye
+  const [updatingIds, setUpdatingIds] = useState({});   // { [enquiryId]: true } — status API in-flight
+  const updatingRef = useRef({});                    // double-tap / baar-baar update rokne ke liye
 
   const loadReceived = useCallback(async (reset = false) => {
     if (recvBusy.current) return;
@@ -416,7 +487,7 @@ export default function MyEnquiriesScreen({ navigation, route }) {
     recvBusy.current = true;
     reset ? setRecvLoading(true) : setRecvMore(true);
     try {
-      const res = await AuthAPI.getReceivedEcomEnquiries({ cursor: reset ? null : recvCursor.current, ecomId });
+      const res = await AuthAPI.getReceivedEcomEnquiries({ cursor: reset ? null : recvCursor.current, ecomId, type: enquiryType });
       if (!res.ok) {
         setRecvError(res.message || 'Failed to load enquiries.');
         if (res.isAuth) notify('Session expired', 'Please login again.');
@@ -424,7 +495,8 @@ export default function MyEnquiriesScreen({ navigation, route }) {
         setRecvError('');
         recvCursor.current = res.nextCursor || null;
         recvHasMore.current = Boolean(res.hasMore && res.nextCursor);
-        setReceived((prev) => (reset ? res.enquiries : [...prev, ...res.enquiries]));
+        const fresh = byType(res.enquiries).map(withEnqStatus);
+        setReceived((prev) => (reset ? fresh : [...prev, ...fresh]));
       }
     } catch (e) {
       setRecvError('Something went wrong.');
@@ -432,18 +504,19 @@ export default function MyEnquiriesScreen({ navigation, route }) {
     recvBusy.current = false;
     setRecvLoading(false);
     setRecvMore(false);
-  }, [ecomId]);
+  }, [ecomId, enquiryType]);
 
   const loadSent = useCallback(async () => {
     setSentLoading(true);
     try {
+      // ✅ User ki Ads + Ecom DONO enquiries (GET /ecom-enquiries) — type field se ADS / ECOM pehchana jaata hai
       const res = await AuthAPI.getEcomEnquiries();
       if (!res.ok) {
         setSentError(res.message || 'Failed to load enquiries.');
         if (res.isAuth) notify('Session expired', 'Please login again.');
       } else {
         setSentError('');
-        setSent(Array.isArray(res.enquiries) ? res.enquiries : []);
+        setSent((Array.isArray(res.enquiries) ? res.enquiries : []).map(withEnqStatus));
       }
     } catch (e) {
       setSentError('Something went wrong.');
@@ -454,35 +527,40 @@ export default function MyEnquiriesScreen({ navigation, route }) {
   useFocusEffect(useCallback(() => {
     loadReceived(true);
     loadSent();
-    (async () => {
-      try {
-        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-        const raw = await AsyncStorage.getItem(STATUS_STORE_KEY);
-        if (raw) setOverrides(JSON.parse(raw) || {});
-      } catch (_) { /* ignore */ }
-    })();
   }, [loadReceived, loadSent]));
 
-  // Status badlo: pehle screen par turant, phir device par save, phir backend (best-effort)
+  // Status badlo: PUT /ecom-enquiries/{id}  { enq_status: 1|2|3 }
+  //  • request complete hone tak is enquiry ka dropdown disable (dobara update nahi)
+  //  • success => API ke returned `ecom_enquiry` se local state update (enq_status_label bhi wahi se)
+  //  • fail    => backend ka actual error message dikhao
   const changeStatus = useCallback(async (item, status) => {
     if (!item?.id) return;
-    setOverrides((prev) => {
-      const next = { ...prev, [item.id]: status };
-      (async () => {
-        try {
-          const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
-          await AsyncStorage.setItem(STATUS_STORE_KEY, JSON.stringify(next));
-        } catch (_) { /* ignore */ }
-      })();
-      return next;
-    });
-    try { await AuthAPI.updateEcomEnquiry(item.id, { status }); } catch (_) { /* local status already saved */ }
+    if (updatingRef.current[item.id]) return;       // already in-flight
+    updatingRef.current[item.id] = true;
+    setUpdatingIds((prev) => ({ ...prev, [item.id]: true }));
+    try {
+      const res = await AuthAPI.updateEcomEnquiryStatus(item.id, status);
+      if (!res.ok) {
+        notify(res.isAuth ? 'Session expired' : 'Could not update status', res.message || 'Something went wrong.');
+      } else {
+        const returned = res.enquiry;
+        const merge = (e) => (String(e.id) === String(item.id)
+          ? withEnqStatus({ ...e, ...(returned || { enq_status: status, enq_status_label: undefined }) })
+          : e);
+        setReceived((prev) => prev.map(merge));
+        setSent((prev) => prev.map(merge));
+        setSelected((prev) => (prev && String(prev.id) === String(item.id) ? merge(prev) : prev));
+      }
+    } catch (e) {
+      notify('Could not update status', 'Network error. Please try again.');
+    }
+    delete updatingRef.current[item.id];
+    setUpdatingIds((prev) => { const next = { ...prev }; delete next[item.id]; return next; });
   }, []);
 
   const handleCloseEnquiry = useCallback((item) => {
     changeStatus(item, ST_CLOSED);
     setSelected(null);
-    setStage(ST_CLOSED);
   }, [changeStatus]);
 
   const onRefresh = async () => {
@@ -521,12 +599,11 @@ export default function MyEnquiriesScreen({ navigation, route }) {
   };
 
   const isReceived = tab === 'received';
-  const withStatus = (list) => list.map((e) => ({ ...e, status: overrides[e.id] ?? e.status }));
-  const receivedAll = withStatus(received);
-  const sentAll = withStatus(sent);
+  const receivedAll = received;
+  const sentAll = sent;
   const stageCounts = receivedAll.reduce((acc, e) => { const k = normStatus(e.status); acc[k] = (acc[k] || 0) + 1; return acc; }, {});
   const data = isReceived ? receivedAll.filter((e) => normStatus(e.status) === stage) : sentAll;
-  const selectedView = selected ? { ...selected, status: overrides[selected.id] ?? selected.status } : null;
+  const selectedView = selected || null;
   const loading = isReceived ? recvLoading : sentLoading;
   const error = isReceived ? recvError : sentError;
 
@@ -539,14 +616,14 @@ export default function MyEnquiriesScreen({ navigation, route }) {
 
   const header = IS_WEB ? (
     <ModuleWebHeader
-      title="Enquiries"
+      title={pageTitleText}
       navigation={navigation}
       onBack={() => navigation?.goBack?.()}
       rightExtra={refreshButton}
     />
   ) : (
     <ModuleMobileHeader
-      title="Enquiries"
+      title={pageTitleText}
       navigation={navigation}
       onBack={() => navigation?.goBack?.()}
       rightExtra={refreshButton}
@@ -557,8 +634,8 @@ export default function MyEnquiriesScreen({ navigation, route }) {
     <View>
       {IS_WEB && (
         <View style={s.pageHeader}>
-          <Text style={[s.pageTitle, fontsLoaded && { fontFamily: FONT.bold }]}>Enquiries</Text>
-          <Text style={s.pageSub}>Received and Sent — all in one place</Text>
+          <Text style={[s.pageTitle, fontsLoaded && { fontFamily: FONT.bold }]}>{pageTitleText}</Text>
+          <Text style={s.pageSub}>{isAdsPage ? 'Enquiries on your ads — Received and Sent' : 'Enquiries on your products — Received and Sent'}</Text>
         </View>
       )}
       <Segment tab={tab} setTab={setTab} receivedCount={received.length} sentCount={sent.length} />
@@ -566,7 +643,7 @@ export default function MyEnquiriesScreen({ navigation, route }) {
       {ecomId && isReceived ? (
         <View style={s.filterBanner}>
           <Ionicons name="funnel-outline" size={13} color={ORANGE} />
-          <Text style={s.filterText}>Showing enquiries for one product only</Text>
+          <Text style={s.filterText}>{isAdsPage ? 'Showing enquiries for one ad only' : 'Showing enquiries for one product only'}</Text>
         </View>
       ) : null}
     </View>
@@ -593,7 +670,7 @@ export default function MyEnquiriesScreen({ navigation, route }) {
       <View style={s.emptyIconWrap}>
         <Ionicons name={isReceived ? 'mail-open-outline' : 'paper-plane-outline'} size={30} color="#FCA5A5" />
       </View>
-      <Text style={s.emptyTitle}>{isReceived ? (receivedAll.length ? `No ${getStatus(stage).label.toLowerCase()} enquiries` : 'No enquiries received yet') : 'You have not sent any enquiries yet'}</Text>
+      <Text style={s.emptyTitle}>{isReceived ? (receivedAll.length ? (stage === ST_NEW ? 'No new enquiries' : `No ${getStatus(stage).label.toLowerCase()} enquiries`) : 'No enquiries received yet') : 'You have not sent any ads / ecom enquiries yet'}</Text>
       <Text style={s.emptySub}>
         {isReceived ? (stage === ST_NEW ? 'New enquiries appear here. Call or WhatsApp moves them to Review.' : stage === ST_REVIEW ? 'Enquiries you contacted appear here. Tap Close when done.' : 'Closed enquiries appear here.') : 'Enquiries you send on a product will appear here.'}
       </Text>
@@ -607,7 +684,7 @@ export default function MyEnquiriesScreen({ navigation, route }) {
         data={data}
         keyExtractor={(it) => `${tab}-${it.id}`}
         renderItem={({ item }) => (
-          <EnquiryCard item={item} mode={tab} onOpen={setSelected} onCall={handleCall} onWhatsApp={handleWhatsApp} onClose={handleCloseEnquiry} />
+          <EnquiryCard item={item} mode={tab} onOpen={setSelected} onCall={handleCall} onWhatsApp={handleWhatsApp} onClose={handleCloseEnquiry} onStatusChange={changeStatus} updating={Boolean(updatingIds[item.id])} />
         )}
         ListHeaderComponent={listHeader}
         ListEmptyComponent={emptyView}
@@ -692,6 +769,15 @@ const s = StyleSheet.create({
   chip: { flexDirection: 'row', alignItems: 'center', gap: 4, borderRadius: 20, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1 },
   chipText: { fontSize: 11, fontWeight: '600' , fontFamily: FONT.medium },
 
+  statusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 12 },
+  statusRowLabel: { fontSize: 12, color: '#94a3b8', fontFamily: FONT.medium },
+  ddBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7, minWidth: 110, justifyContent: 'space-between' },
+  ddBtnText: { fontSize: 12.5, fontFamily: FONT.bold, fontWeight: '700' },
+  ddBackdrop: { flex: 1, backgroundColor: 'rgba(15,23,42,0.45)', alignItems: 'center', justifyContent: 'center', padding: 24 },
+  ddSheet: { width: '100%', maxWidth: 320, backgroundColor: '#fff', borderRadius: 16, padding: 12 },
+  ddTitle: { fontSize: 13, color: '#475569', fontFamily: FONT.bold, fontWeight: '700', paddingHorizontal: 8, paddingVertical: 8 },
+  ddOption: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, paddingVertical: 12, borderRadius: 10 },
+  ddOptionText: { fontSize: 14, color: '#0f172a', fontFamily: FONT.medium },
   actionsRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f1f5f9' },
   actBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10 },
   actText: { color: '#fff', fontSize: 12, fontWeight: '700' , fontFamily: FONT.bold },
