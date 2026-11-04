@@ -1159,16 +1159,6 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
     }
   }
 
-  // 🔍 TEMP DEBUG — frame fields (upload ke baad console me dekho: use_frame / frame_template / frame_merged)
-  if (typeof __DEV__ !== 'undefined' && __DEV__ && (apiItem.use_frame || mediaType === 'Video')) {
-    globalThis.__frameRawLog = (globalThis.__frameRawLog || 0) + 1;
-    if (globalThis.__frameRawLog <= 8) {
-      console.log('[DEBUG frame]', 'id:', apiItem.id, '| media_type:', apiItem.media_type, '| use_frame:', JSON.stringify(apiItem.use_frame),
-        '| frame_template:', JSON.stringify(apiItem.frame_template), '| frame_merged:', JSON.stringify(apiItem.frame_merged),
-        '| media:', apiItem.media);
-    }
-  }
-
   return {
        id: apiItem.id ?? apiItem._id,
     type: Number(apiItem.type) === 2 ? 2 : 1, // 1 = News, 2 = Feed (Reel); purani posts = 1
@@ -1184,12 +1174,9 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
     useFrame: [1, '1', true, 'true'].includes(apiItem.use_frame ?? apiItem.useFrame),
     // backend `frame_template` (glossy2 / glossy1 / redbar / banner); na mile to default template
     frameTemplate: String(apiItem.frame_template ?? apiItem.frameTemplate ?? '') || 'glossy2',
-    // frame_merged (backend response): true => frame final MP4 me burn ho chuka, UI overlay NAHI lagayega.
-    // false / missing => UI selected frame_template ka overlay khud render karega (abhi backend false deta hai).
-    frameMerged: [1, '1', true, 'true'].includes(apiItem.use_frame ?? apiItem.useFrame)
-      && [1, '1', true, 'true'].includes(apiItem.frame_merged ?? apiItem.is_frame_merged ?? apiItem.frameMerged),
-    // uploaded voice-over ka URL (agar backend de)
-    voiceUrl: String(apiItem.voice_url ?? apiItem.voiceUrl ?? '') || null,
+    // Video par frame backend ne permanently merge kar diya hota hai (final `media`). frameMerged = true => UI par frame dobara overlay NAHI karna.
+    // Backend `frame_merged` bheje to wahi maana jaata hai; na bheje to video + use_frame => merged.
+    frameMerged: mediaType === 'Video' && [1, '1', true, 'true'].includes(apiItem.use_frame ?? apiItem.useFrame) && ([null, undefined, ''].includes(apiItem.frame_merged ?? apiItem.is_frame_merged) ? true : [1, '1', true, 'true'].includes(apiItem.frame_merged ?? apiItem.is_frame_merged)),
     mediaType,
     media: mediaType === 'Image' ? undefined : mediaUrl,
 images: mediaType === 'Image' ? collectedImages : [],
@@ -2767,6 +2754,7 @@ verifyQuizPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_sig
     if (!verifyRes?.ok) {
       return { ok: false, message: verifyRes?.message || 'Payment verification failed.' };
     }
+    refreshAdsVisibility().catch(() => {});   // plan badla — hide_ads dobara check
 
        const validityDays = Number(plan?.days) || (Number(plan?.duration || 1) * 30);
     const expiryDate = new Date();
@@ -4337,7 +4325,7 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
       const verifyRes = await AuthAPI.verifyRoleSubscriptionPayment({
         razorpay_order_id, razorpay_payment_id, razorpay_signature,
       });
-      if (verifyRes?.ok) refreshAdsVisibility().catch(() => {});   // plan badla — ads_hidden dobara fetch
+      if (verifyRes?.ok) refreshAdsVisibility().catch(() => {});   // plan badla — hide_ads dobara check
       if (!verifyRes?.ok) {
         // ✅ seatUnavailable aage pass karo (409) taaki screen us plan ko Sold mark kar sake.
         // isNetwork / status bhi pass karo taaki caller decide kare: retry (network/5xx) ya final fail (4xx).
@@ -6690,7 +6678,7 @@ getActiveAdsFeed: async (options = {}) => {
         : UserStore.getBlockedUsers().catch(() => ({ ok: true, list: [] })),
       UserStore.getCurrentUser().catch(() => null),
     ]);
-    // ✅ ads_hidden (API) = final source of truth. true => kisi bhi jagah ads nahi dikhane
+    // ✅ hide_ads (active subscription) => adsHidden true => kisi bhi jagah ads nahi dikhane
     if (res?.adsHidden || isAdsHidden()) return [];
     if (!res.ok || !Array.isArray(res.ads)) return [];
 
@@ -6829,6 +6817,7 @@ createAdOrder: async ({ planId }) => {
       razorpay_order_id, razorpay_payment_id, razorpay_signature,
     });
     if (!verifyRes?.ok) return { ok: false, message: verifyRes?.message || 'Payment verification failed.' };
+    refreshAdsVisibility().catch(() => {});   // plan badla — hide_ads dobara check
 
     // ✅ FIX: verify safal hone ke baad local user record me credits actually add karo
     const today = new Date().toISOString().slice(0, 10);
@@ -6896,6 +6885,7 @@ createAdOrder: async ({ planId }) => {
         razorpay_order_id, razorpay_payment_id, razorpay_signature,
       });
       if (!verifyRes?.ok) return { ok: false, message: verifyRes?.message || 'Payment verification failed.' };
+      refreshAdsVisibility().catch(() => {});   // plan badla — hide_ads dobara check
 
       const today = new Date().toISOString().slice(0, 10);
       const currentState = getCreditExpiryState(user.ecome_credits, user.ecome_subscription);

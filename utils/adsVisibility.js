@@ -1,11 +1,14 @@
 // utils/adsVisibility.js
 // ─────────────────────────────────────────────────────────
-// Ads hide/show ka SINGLE source of truth = backend GET /api/ads-details ka `ads_hidden`.
-// Local subscription/plan data dekh kar yahan kuch decide NAHI hota.
+// Ads hide/show ka SINGLE rule:
+//   User ke paas koi ACTIVE subscription ho jiske plan me backend ne `hide_ads: true` bheja ho
+//   (admin panel se banaya hua special subscription) => ads (popup/feed/panels) kahin nahi dikhenge.
+//   Premium / Role / Ads / Ecom / Quiz — sirf type se ads hide NAHI hote. Sirf `hide_ads: true` se.
 //
 // Flow:
-//   AuthAPI.getAdsDetails()  ->  setAdsHidden(data.ads_hidden)  ->  sab subscribers (Home, popup, feed, panels) update
-//   Plan expire / subscription change / login / logout par  refreshAdsVisibility()  se latest status dobara aata hai.
+//   AuthAPI.getAdsDetails()  ->  /my-subscriptions + /my-role-subscriptions me `hide_ads` check
+//                            ->  setAdsHidden(...)  ->  sab subscribers (Home, popup, feed, panels) update
+//   Subscription purchase / login / logout par  refreshAdsVisibility()  se latest status dobara aata hai.
 // ─────────────────────────────────────────────────────────
 import { useEffect, useState } from 'react';
 
@@ -13,6 +16,48 @@ let _hidden = false;           // latest ads_hidden (API se)
 let _loaded = false;           // kam se kam ek baar API se aa chuka?
 const _listeners = new Set();
 let _refresher = null;         // AuthAPI.getAdsDetails wrapper (circular import se bachne ke liye register hota hai)
+
+const _truthy = (v) => v === true || v === 1 || v === '1' || v === 'true';
+
+// Subscription record active hai ya nahi (pending / failed / expired ko chhod kar baaki active)
+const _isActiveSubscriptionRecord = (s = {}) => {
+  const status = String(s.status ?? '').toLowerCase();
+  if (['expired', 'inactive', 'cancelled', 'canceled', 'failed', 'refunded', 'pending', 'created'].includes(status)) return false;
+  const ps = s.payment_status;
+  if (ps !== undefined && ps !== null && ps !== '') {
+    if (!['1', 'true', 'paid', 'success', 'captured', 'completed', 'active'].includes(String(ps).toLowerCase())) return false;
+  }
+  const exp = s.expires_at || s.expiry || s.end_date || s.expiry_date;
+  if (exp) {
+    const t = new Date(`${String(exp).slice(0, 10)}T23:59:59`).getTime();
+    if (Number.isFinite(t) && Date.now() > t) return false;
+  }
+  return true;
+};
+
+// `hide_ads` subscription record par ho ya uske nested plan object me
+const _recordHasHideAds = (s = {}) => (
+  _truthy(s.hide_ads)
+  || _truthy(s.plan?.hide_ads)
+  || _truthy(s.subscription_plan?.hide_ads)
+  || _truthy(s.role_subscription_plan?.hide_ads)
+);
+
+// Backend response (kisi bhi shape me: array / {data:[...]} / {role:[...], ads:[...]}) me
+// koi bhi ACTIVE subscription jiska `hide_ads: true` ho => true
+export const subscriptionsHideAds = (raw) => {
+  const RECORD_KEYS = ['id', 'plan_id', 'plan_name', 'expires_at', 'status', 'payment_status', 'purchased_at'];
+  const walk = (node, depth = 0) => {
+    if (!node || depth > 6) return false;
+    if (Array.isArray(node)) return node.some((x) => walk(x, depth + 1));
+    if (typeof node !== 'object') return false;
+    if (RECORD_KEYS.some((k) => node[k] !== undefined)) {
+      return _recordHasHideAds(node) && _isActiveSubscriptionRecord(node);
+    }
+    return Object.values(node).some((x) => x && typeof x === 'object' && walk(x, depth + 1));
+  };
+  return walk(raw);
+};
 
 export const isAdsHidden = () => _hidden;
 export const isAdsVisibilityLoaded = () => _loaded;
@@ -41,7 +86,7 @@ export const subscribeAdsHidden = (fn) => {
 
 export const registerAdsRefresher = (fn) => { _refresher = fn; };
 
-// Latest status API se dobara lao (plan expire / subscription change / login ke baad call karo)
+// Latest status API se dobara lao (subscription purchase / plan expire / login ke baad call karo)
 export const refreshAdsVisibility = async () => {
   try { if (_refresher) await _refresher(); } catch (_) { /* purana status rahe */ }
   return _hidden;

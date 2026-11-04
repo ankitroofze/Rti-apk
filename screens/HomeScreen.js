@@ -1277,12 +1277,6 @@ const handleOpenLeadForm = useCallback(async (story) => {
     };
   }).filter(Boolean), [allAdsList]);
 
-  // Premium ya koi bhi active Role subscription => popup ad band
-  const hasPaidRoleSubscription = useMemo(() => {
-    if (!currentUser) return false;
-    try { return Boolean(UserStore.hasActiveRolePlan(currentUser) || UserStore.hasActiveSubscription(currentUser)); } catch { return false; }
-  }, [currentUser]);
-
   // Center feed ko upar scroll karo (desktop: center column, mobile/compact: page scroll)
   const scrollFeedToTop = useCallback(() => {
     const go = () => {
@@ -1647,7 +1641,7 @@ const handleOpenLeadForm = useCallback(async (story) => {
 />
       {/* <RotatingSponsoredAd ads={allAdsList} onPress={handleSponsoredAdPress} /> */}
 
-            {/* Popup ad: dikhega ya nahi — sirf API ka `ads_hidden` decide karta hai (local subscription plan se nahi) */}
+            {/* Popup ad: Premium / Role se band NAHI hota — sirf tab band jab user ki active subscription me `hide_ads: true` ho */}
       {(Platform.OS === 'android' || Platform.OS === 'ios' || IS_WEB) && viewMode !== 'states' && userChecked && !adsHidden ? (
         <HomePromoPopup ads={adsHidden ? [] : homePromoAds} onPress={handleSponsoredAdPress} />
       ) : null}

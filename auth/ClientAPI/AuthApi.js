@@ -9,7 +9,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { getIdbMediaBlob, isIdbMediaUri } from '../../utils/webMediaStore';
-import { setAdsHidden, registerAdsRefresher } from '../../utils/adsVisibility';
+import { setAdsHidden, isAdsHidden, registerAdsRefresher, subscriptionsHideAds } from '../../utils/adsVisibility';
 
 // BASE_URL environment config se aata hai (EXPO_PUBLIC_API_URL). Env set na ho to purana default.
 const NATIVE_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://rtiapi.roofze.in/api';
@@ -307,6 +307,10 @@ const putJSON = async (endpoint, body = {}, token = null) => {
   return { status: response.status, data: response.data };
 };
 
+// hide_ads check ka chhota cache (har ads load par 2 extra API na lage). Purchase ke baad force:true se skip hota hai.
+const HIDE_ADS_CACHE_MS = 60 * 1000;
+let _hideAdsCache = { token: null, at: 0, hidden: false };
+
 const getJSON = async (endpoint, token = null, timeoutMs = null) => {
   const headers = {
     Accept: 'application/json',
@@ -390,129 +394,32 @@ const clampMusicVolume = (v) => {
   return Math.min(2, Math.max(0, n));
 };
 
-// Voice file: backend supports mp3, wav, m4a, aac, mp4, webm, ogg
-const VOICE_MIME_BY_EXT = {
-  mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', aac: 'audio/aac',
-  mp4: 'audio/mp4', webm: 'audio/webm', ogg: 'audio/ogg',
-};
-const guessVoiceMeta = (uri = '', mime = '') => {
-  const clean = String(uri || '').split('?')[0].split('#')[0];
-  const m = clean.match(/\.([a-z0-9]{2,4})$/i);
-  let ext = m ? m[1].toLowerCase() : '';
-  if (!VOICE_MIME_BY_EXT[ext]) {
-    const t = String(mime || '').toLowerCase();
-    ext = t.includes('webm') ? 'webm'
-      : t.includes('ogg') ? 'ogg'
-      : t.includes('wav') ? 'wav'
-      : (t.includes('mpeg') || t.includes('mp3')) ? 'mp3'
-      : t.includes('aac') ? 'aac'
-      : 'm4a';
-  }
-  return { ext, type: VOICE_MIME_BY_EXT[ext] };
-};
-
-// // Video (media_type = 2) ke saath audio fields:
-// //   music_id      : local-01 .. local-07 (bundled music)  — local ke saath music_url NAHI bhejna
-// //   music_url     : sirf externally hosted https music ke liye
-// //   music_volume  : 0..2 (default 0.6)
-// //   voice         : audio file (mp3, wav, m4a, aac, mp4, webm, ogg)
-// //   mute_original : 0 = original sound rakho, 1 = original sound hatao
-// const appendAudioMix = async (formData, audioMix) => {
-//   if (!audioMix) return;
-//   const musicId = String(audioMix.musicId || '').trim();
-//   const isLocalSong = /^local-/i.test(musicId);
-//   if (musicId) formData.append('music_id', musicId);
-//   // Local song => sirf music_id. External song => music_url (https).
-//   let remoteMusicUrl = null;
-//   if (!isLocalSong) {
-//     remoteMusicUrl = audioMix.music?.remoteUrl
-//       || (/^https?:/i.test(String(audioMix.musicUrl || '')) ? audioMix.musicUrl : null);
-//     if (remoteMusicUrl) formData.append('music_url', String(remoteMusicUrl));
-//   }
-//   if (musicId || remoteMusicUrl) {
-//     formData.append('music_volume', String(clampMusicVolume(audioMix.musicVolume)));
-//   }
-//   formData.append('mute_original', audioMix.muteOriginal ? '1' : '0');
-//   if (audioMix.voiceUri) {
-//     if (Platform.OS === 'web') {
-//       const blob = await fetch(audioMix.voiceUri).then((r) => r.blob());
-//       const { ext } = guessVoiceMeta(audioMix.voiceUri, blob.type || audioMix.voiceMime);
-//       formData.append('voice', blob, `voice.${ext}`);
-//     } else {
-//       const { ext, type } = guessVoiceMeta(audioMix.voiceUri, audioMix.voiceMime);
-//       formData.append('voice', { uri: audioMix.voiceUri, type, name: `voice.${ext}` });
-//     }
-//   }
-// };
-
 const appendAudioMix = async (formData, audioMix) => {
   if (!audioMix) return;
-
-  const musicId = String(audioMix.musicId || '').trim();
-
-  // local-01 => 1, local-02 => 2, etc.
-  const isLocalSong = /^local-/i.test(musicId);
-
-  if (musicId) {
-    const finalMusicId = isLocalSong
-      ? musicId.replace(/^local-/i, '').replace(/^0+/, '')
-      : musicId;
-
-    formData.append('music_id', finalMusicId);
+  // Bundled (local) songs ka id server ko nahi pata — unke liye sirf https music_url bhejte hain.
+  const isLocalSong = String(audioMix.musicId || '').startsWith('local-');
+  if (audioMix.musicId && !isLocalSong) formData.append('music_id', String(audioMix.musicId));
+  const remoteMusicUrl = audioMix.music?.remoteUrl
+    || (/^https?:/i.test(String(audioMix.musicUrl || '')) ? audioMix.musicUrl : null);
+  if (remoteMusicUrl) formData.append('music_url', String(remoteMusicUrl));
+  if (audioMix.musicId || audioMix.musicUrl) {
+    formData.append('music_volume', String(clampMusicVolume(audioMix.musicVolume)));
   }
-
-  // Local song => music_url nahi bhejna.
-  // External song => sirf valid HTTP/HTTPS URL bhejna.
-  let remoteMusicUrl = null;
-
-  if (!isLocalSong) {
-    remoteMusicUrl =
-      audioMix.music?.remoteUrl ||
-      (/^https?:/i.test(String(audioMix.musicUrl || ''))
-        ? audioMix.musicUrl
-        : null);
-
-    if (remoteMusicUrl) {
-      formData.append('music_url', String(remoteMusicUrl));
-    }
-  }
-
-  if (musicId || remoteMusicUrl) {
-    formData.append(
-      'music_volume',
-      String(clampMusicVolume(audioMix.musicVolume))
-    );
-  }
-
-  formData.append(
-    'mute_original',
-    audioMix.muteOriginal ? '1' : '0'
-  );
-
+  // User ne original awaaz band ki ho (ya voice-over lagaya ho) tabhi 1; warna 0
+  formData.append('mute_original', audioMix.muteOriginal ? '1' : '0');
   if (audioMix.voiceUri) {
     if (Platform.OS === 'web') {
       const blob = await fetch(audioMix.voiceUri).then((r) => r.blob());
-
-      const { ext } = guessVoiceMeta(
-        audioMix.voiceUri,
-        blob.type || audioMix.voiceMime
-      );
-
-      formData.append('voice', blob, `voice.${ext}`);
+      // Browser recordings are usually audio/webm (Chrome/Firefox) or audio/mp4 (Safari) — use the right extension
+      const vType = String(blob.type || audioMix.voiceMime || '').toLowerCase();
+      const vExt = vType.includes('webm') ? 'webm' : vType.includes('ogg') ? 'ogg' : vType.includes('wav') ? 'wav' : 'm4a';
+      formData.append('voice', blob, `voice.${vExt}`);
     } else {
-      const { ext, type } = guessVoiceMeta(
-        audioMix.voiceUri,
-        audioMix.voiceMime
-      );
-
-      formData.append('voice', {
-        uri: audioMix.voiceUri,
-        type,
-        name: `voice.${ext}`,
-      });
+      formData.append('voice', { uri: audioMix.voiceUri, type: 'audio/mp4', name: 'voice.m4a' });
     }
   }
 };
+
 export const AuthAPI = {
 
   /**
@@ -1914,10 +1821,10 @@ if (status === 200 || status === 201) {
       formData.append('description', description || '');
       formData.append('report_type', reportType || '');
       formData.append('media_type', String(mediaType));
-      // use_frame: 0/1. frame_template (glossy2 | glossy1 | redbar | banner) sirf frame ON hone par.
-      // frame_merged request field NAHI hai — wo sirf response me aata hai (backend decide karta hai).
       formData.append('use_frame', useFrame ? '1' : '0');
-      if (useFrame) formData.append('frame_template', String(frameTemplate || 'glossy2'));
+      formData.append('frame_template', useFrame ? String(frameTemplate || 'glossy2') : '');
+      // ✅ frame_merged: 1 = frame lag gaya (true), 0 = frame nahi (false) — hamesha 0/1 hi bhejna hai
+      formData.append('frame_merged', toBinaryFlag(frameMerged === undefined ? useFrame : frameMerged));
 
       if (mediaUri) {
         if (Platform.OS === 'web') {
@@ -2542,19 +2449,21 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
 
       const formData = new FormData();
-      // POST /news/{id} seedha supported hai — _method=PUT ki zarurat nahi.
+      formData.append('_method', 'PUT'); // Laravel form-data + PUT trick
       if (type === 1 || type === 2 || type === '1' || type === '2') formData.append('type', String(type));
       formData.append('tittle', title || '');
       formData.append('sub_tittle', subTitle || '');
       formData.append('description', description || '');
       formData.append('report_type', reportType || '');
-      // Edit rule: nayi media file nahi chuni => media / media_type / audio / frame fields NAHI bhejne.
-      // Backend current processed video + settings as-is rakhta hai.
-      const hasNewMedia = Boolean(mediaUri) || (extraImages || []).some(Boolean);
-      if (hasNewMedia) {
-        formData.append('media_type', String(mediaType));
+      formData.append('media_type', String(mediaType));
+      // Purani (already processed) video par nayi file nahi => frame fields mat bhejo,
+      // warna backend merged video par frame dobara chadha sakta hai.
+      const keepsExistingVideo = Number(mediaType) === 2 && !mediaUri;
+      if (!keepsExistingVideo) {
         formData.append('use_frame', useFrame ? '1' : '0');
-        if (useFrame) formData.append('frame_template', String(frameTemplate || 'glossy2'));
+        formData.append('frame_template', useFrame ? String(frameTemplate || 'glossy2') : '');
+        // ✅ frame_merged: 1 = frame lag gaya (true), 0 = frame nahi (false)
+        formData.append('frame_merged', toBinaryFlag(frameMerged === undefined ? useFrame : frameMerged));
       }
 
       if (mediaUri) {
@@ -2574,7 +2483,6 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
       // Keep edit uploads consistent with create: send every additional image,
       // not only the first cover image.
       // music / voice / mute_original sirf nayi video (media_type = 2 + naya media file) ke saath
-      // Nayi video chuni hai => music_id/music_url/music_volume/voice/mute_original dobara bhejo
       if (Number(mediaType) === 2 && mediaUri) await appendAudioMix(formData, audioMix);
 
       for (let i = 0; i < (extraImages || []).length; i += 1) {
@@ -2682,16 +2590,36 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
     }
   },
 
- getAdsDetails: async () => {
+ getAdsDetails: async ({ force = false } = {}) => {
   try {
-    // ✅ Logged-in user ka Bearer token compulsory bhejna hai — backend isi token se
-    // decide karta hai ki `ads_hidden` true hoga ya false.
     const token = await getAuthToken();
-    const { status, data } = await getJSON('/ads-details', token, 45000);
+
+    // ✅ Ads hide hone ka rule: user ki ACTIVE subscription me `hide_ads: true` ho (admin plan se).
+    //    Premium / Role / koi bhi purchase sirf type ki wajah se ads hide NAHI karta.
+    //    ads-details aur subscriptions dono ek saath mangwate hain (extra wait nahi).
+    const checkHideAds = async () => {
+      if (!token) return false;                       // logout / guest => ads dikhao
+      const now = Date.now();
+      if (!force && _hideAdsCache.token === token && now - _hideAdsCache.at < HIDE_ADS_CACHE_MS) {
+        return _hideAdsCache.hidden;
+      }
+      const [allRes, roleRes] = await Promise.all([
+        AuthAPI.getMySubscriptions().catch(() => ({ ok: false })),
+        AuthAPI.getMyRoleSubscriptions().catch(() => ({ ok: false })),
+      ]);
+      if (!allRes?.ok && !roleRes?.ok) return isAdsHidden();   // network fail => purana status rahe
+      const hidden = subscriptionsHideAds(allRes?.ok ? allRes.subscriptions : null)
+        || subscriptionsHideAds(roleRes?.ok ? roleRes.subscriptions : null);
+      _hideAdsCache = { token, at: now, hidden };
+      return hidden;
+    };
+
+    const [{ status, data }, adsHidden] = await Promise.all([
+      getJSON('/ads-details', token, 45000),
+      checkHideAds(),
+    ]);
+
     if (status === 200 || status === 201) {
-      // ✅ `ads_hidden` hi FINAL source of truth hai (local subscription data nahi dekhna)
-      const hiddenRaw = data?.ads_hidden ?? data?.data?.ads_hidden;
-      const adsHidden = hiddenRaw === true || hiddenRaw === 1 || hiddenRaw === '1' || hiddenRaw === 'true';
       setAdsHidden(adsHidden);   // sab screens ko turant batao (Home, popup, feed, panels...)
       if (adsHidden) return { ok: true, adsHidden: true, ads: [] };
       const ads = data?.ads_details
@@ -3835,7 +3763,7 @@ cancelWithdrawalApi: async (id) => {
 },
 };
 
-// ads_hidden refresh (plan expire / subscription change / login) isi se chalta hai
-registerAdsRefresher(() => AuthAPI.getAdsDetails());
+// hide_ads refresh (subscription purchase / plan expire / login) isi se chalta hai — hamesha fresh check (cache skip)
+registerAdsRefresher(() => AuthAPI.getAdsDetails({ force: true }));
 
 export { postFormData, postJSON, putJSON, getJSON };
