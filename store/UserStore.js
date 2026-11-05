@@ -15,6 +15,7 @@ import { unregisterDeviceToken } from '../utils/Pushnotifications';
 import { getAwardeeFontSize } from '../utils/profileHelpers';
 import { makePasswordVerifier, verifyPasswordVerifier } from '../utils/localCredential';
 import { getPostKind } from '../components/profileContent';
+import { normalizeFrameTemplateId } from '../constants/frameTemplates';
 import { publishEngagement, reconcileServerCounts, resetEngagement } from '../utils/newsEngagementStore';
 import { clearIdCardVerification } from '../utils/idCardService';
 import { clearReferralInfo } from '../utils/Referralservice';
@@ -816,8 +817,12 @@ const fetchBackendCommentsForPost = async (postId) => {
 const normalizeEcomDetail = (raw = {}) => {
   const owner = raw.user || raw.owner || {};
   const rawImages = Array.isArray(raw.images) ? raw.images : (raw.image ? [raw.image] : []);
+  const userId = String(raw.user_id ?? owner.id ?? '').trim();
+  const ownerEmail = String(owner.email || raw.owner_email || '').trim().toLowerCase();
   return {
     id: raw.id,
+    user_id: userId,
+    owner_id: userId,
     ecom_sub_id: raw.ecom_sub_id || raw.category_id || '',
     title: raw.product_name || raw.title || 'E-Commerce Product',
     sector: raw.category || '',
@@ -830,13 +835,13 @@ const normalizeEcomDetail = (raw = {}) => {
     contact: raw.conatct || raw.contact || '',
     start_date: raw.start_date || '',
     end_date: raw.end_date || '',
-    status: Number(raw.status ?? 1),
- mediaItems: rawImages.map((img) => ({
+    status: raw.status !== undefined && raw.status !== null ? Number(raw.status) : 1,
+    mediaItems: rawImages.map((img) => ({
       uri: typeof img === 'string' ? img : (img?.url || img?.path || ''),
       type: 'image',
     })).filter((m) => m.uri),
-    createdBy: String(raw.user_id || owner.email || '').trim().toLowerCase(),
-    owner_email: String(owner.email || '').trim().toLowerCase(),
+    createdBy: ownerEmail || userId,
+    owner_email: ownerEmail,
     owner_name: owner.name || raw.author_name || 'Seller',
     owner_profile_image: owner.profile_image || '',
     owner_has_blue_tick: Boolean(owner.has_blue_tick || raw.owner_has_blue_tick || hasBlueTick(owner)),
@@ -1035,6 +1040,9 @@ const normalizeNewsFeed = (items = []) => {
     useFrame:    Boolean(item.useFrame),
     frameTemplate: item.frameTemplate || '',
     frameMerged: Boolean(item.frameMerged),
+    musicUrl:    item.musicUrl || '',
+    musicVolume: item.musicVolume ?? 0.6,
+    muteOriginal: Boolean(item.muteOriginal),
     state:       item.state || item.category || 'General',
     district:    item.district || '',
     taluka:      item.taluka || '',
@@ -1172,11 +1180,15 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
     report_type: apiItem.report_type || apiItem.category || '',
     // backend `use_frame` (1/0) — red breaking frame lagana hai ya nahi
     useFrame: [1, '1', true, 'true'].includes(apiItem.use_frame ?? apiItem.useFrame),
-    // backend `frame_template` (glossy2 / glossy1 / redbar / banner); na mile to default template
-    frameTemplate: String(apiItem.frame_template ?? apiItem.frameTemplate ?? '') || 'glossy2',
-    // Video par frame backend ne permanently merge kar diya hota hai (final `media`). frameMerged = true => UI par frame dobara overlay NAHI karna.
-    // Backend `frame_merged` bheje to wahi maana jaata hai; na bheje to video + use_frame => merged.
-    frameMerged: mediaType === 'Video' && [1, '1', true, 'true'].includes(apiItem.use_frame ?? apiItem.useFrame) && ([null, undefined, ''].includes(apiItem.frame_merged ?? apiItem.is_frame_merged) ? true : [1, '1', true, 'true'].includes(apiItem.frame_merged ?? apiItem.is_frame_merged)),
+    // backend `frame_template` ab file name save karta hai ('frame-glossy2.png' ...) — purani posts me id ('glossy2') hoti hai.
+    // Dono ko app ke andar id me badal dete hain; na mile to default template.
+    frameTemplate: normalizeFrameTemplateId(apiItem.frame_template ?? apiItem.frameTemplate ?? '') || 'glossy2',
+    // backend `music_url` = assets/music wala file name (e.g. 'krasnoshchok-...-529078.mp3') — wahi gaana video ke saath chalta hai
+    musicUrl: String(apiItem.music_url ?? apiItem.musicUrl ?? '').trim(),
+    musicVolume: Number.isFinite(Number(apiItem.music_volume ?? apiItem.musicVolume)) ? Number(apiItem.music_volume ?? apiItem.musicVolume) : 0.6,
+    muteOriginal: [1, '1', true, 'true'].includes(apiItem.mute_original ?? apiItem.muteOriginal),
+    // Video par frame tabhi merged maana jayega jab backend explicitly `frame_merged: 1` bheje; backend raw video rakhta hai isliye default false hai.
+    frameMerged: [1, '1', true, 'true'].includes(apiItem.frame_merged ?? apiItem.is_frame_merged),
     mediaType,
     media: mediaType === 'Image' ? undefined : mediaUrl,
 images: mediaType === 'Image' ? collectedImages : [],
@@ -1356,6 +1368,9 @@ const normalizeUserNewsItems = (items = []) => {
       useFrame: Boolean(item.useFrame),
       frameTemplate: item.frameTemplate || '',
       frameMerged: Boolean(item.frameMerged),
+      musicUrl: item.musicUrl || '',
+      musicVolume: item.musicVolume ?? 0.6,
+      muteOriginal: Boolean(item.muteOriginal),
       state: item.state || item.category || 'General',
       district: item.district || '',
       taluka: item.taluka || '',
@@ -1520,6 +1535,9 @@ const normalizeEPapers = (items = []) => {
       mediaType:    item.mediaType    || 'None',
       useFrame:     Boolean(item.useFrame),
       frameTemplate: item.frameTemplate || '',
+      musicUrl:     item.musicUrl || '',
+      musicVolume:  item.musicVolume ?? 0.6,
+      muteOriginal: Boolean(item.muteOriginal),
       images:       Array.isArray(item.images) ? item.images : [],
       video:        item.video || null,
       views:        Number(item.views     || 0),
@@ -1692,22 +1710,33 @@ const hasBlueTick = (user = {}) => {
   const plan = getRoleSubscriptionPlan(user);
   const expiresAt = plan?.expires_at || plan?.expiry || plan?.end_date;
   if (expiresAt && isExpiredValue(expiresAt)) return false;
-  // A new role plan replaces the old Premium entitlement. A stale true flag
-  // must never keep the tick after the user buys a non-Premium role plan.
-  const hasCurrentPlan = Boolean(plan && (plan.plan_id || plan.id || plan.plan_name || plan.name || plan.title));
-  if (hasCurrentPlan) return Boolean(isPremiumPlan(plan) && hasActiveSubscription(user));
-  // Backend ka seedha flag (server plan + expiry khud check karke bhejta hai) — sabse pehle
-  // BACKEND = SINGLE SOURCE OF TRUTH: agar server ne flag bheja hai (true YA false),
-  // wahi final hai. Purana plan/cache usko override nahi karega.
+
+  // 1. Explicit server flag (if true)
   const serverFlag = user.has_blue_tick ?? user.is_blue_tick ?? user.blue_tick;
-  if (serverFlag !== undefined && serverFlag !== null && serverFlag !== '') {
-    return serverFlag === true || serverFlag === 1 || serverFlag === '1' || serverFlag === 'true';
+  if (serverFlag === true || serverFlag === 1 || serverFlag === '1' || serverFlag === 'true') {
+    return true;
   }
-  // Sirf asli Premium plan (backend is_premium) + active subscription = blue tick.
-  return Boolean(
-    (isPremiumPlan(getRoleSubscriptionPlan(user)) || hasPremiumAccess(user)) &&
-    hasActiveSubscription(user)
+
+  // 2. User has an active Premium plan
+  const hasCurrentPlan = Boolean(plan && (plan.plan_id || plan.id || plan.plan_name || plan.name || plan.title));
+  if (hasCurrentPlan && isPremiumPlan(plan) && hasActiveSubscription(user)) {
+    return true;
+  }
+
+  // 3. User object has premium flags / role_label from backend
+  const isPremiumUser = Boolean(
+    user.is_premium ||
+    user.author_is_premium ||
+    (plan && isPremiumPlan(plan)) ||
+    hasPremiumAccess(user) ||
+    String(user.role_label || user.author_role_label || '').toLowerCase().includes('premium') ||
+    String(plan?.plan_name || plan?.name || '').toLowerCase().includes('premium')
   );
+  if (isPremiumUser && user.is_subscriber !== false && user.is_subscribed !== false) {
+    return true;
+  }
+
+  return false;
 };
 
 // ✅ NEW: Seat/Designation walo ko badge nahi, lekin Blue-Tick-jaise features
@@ -1771,6 +1800,10 @@ const hasActiveRolePlan = (user = {}) => {
     const planStatus = String(plan?.status || plan?.subscription_status || '').trim().toLowerCase();
     if (['cancelled', 'canceled', 'expired', 'inactive', 'failed', 'refunded'].includes(planStatus)) return false;
     return hasActiveSubscription(user);
+  }
+  // User ke paas premium / subscriber flags hain to plan active maano
+  if (user.is_premium || user.author_is_premium || user.is_subscriber || user.author_is_subscriber || user.is_subscribed) {
+    return true;
   }
   // Plan object nahi mila: seat holder tabhi active jab server ne is_subscribed true bheja ho
   return Boolean(user.state_seat?.seat_id) && (user.is_subscribed === true || user.is_subscribed === 1 || user.is_subscribed === '1');
@@ -7203,7 +7236,7 @@ deleteAd: async (adId) => {
             .map(normalizeEcomDetail)
             // ✅ Out of Stock product list se gayab nahi hona chahiye (seller ke pages me dikhta rahe).
             // Buy page apne level par in_stock === false wale products hata deta hai.
-            .filter((item) => Number(item.status) === 1 || item.in_stock === false)
+            .filter((item) => item.status === undefined || item.status === null || Number(item.status) === 1 || item.in_stock === false || (currentUser && [item.owner_email, item.createdBy, item.user_id].some((v) => v && (v === String(currentUser.email || '').toLowerCase() || v === String(currentUser.id || '')))))
             .filter((item) => !isBlockedEcomOwner(item))
             .map((item) => ({
               ...item,
@@ -7436,6 +7469,7 @@ deleteAd: async (adId) => {
         conatct: fields.contact,
         start_date: fields.startDate,
         end_date: fields.endDate,
+        status: fields.status !== undefined ? fields.status : 1,
       });
       if (!apiRes.ok) return { ok: false, isAuth: Boolean(apiRes.isAuth), message: apiRes.message || 'Unable to update listing.' };
 

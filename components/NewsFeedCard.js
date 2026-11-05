@@ -39,10 +39,14 @@ import { MediaLogo } from './MediaBrandOverlay';
 import NewsFrameOverlay, { getFrameBoxAspect, getFrameWindow, getLowerBannerHeight } from './NewsFrameOverlay';
 import NewsVideoControls from './NewsVideoControls';
 import { getFrameTemplate } from '../constants/frameTemplates';
+import NewsMusicSync from './NewsMusicSync';
 import { captureRef } from 'react-native-view-shot';
 import ShareBrandFrame from './ShareBrandFrame';
+import FramedExportView from './FramedExportView';
+import SocialShareModal from './SocialShareModal';
 import { useLanguage } from '../contexts/LanguageContext';
-import { shareNewsLink, shareImageFile, shareVideoFile, getMyReferralCode } from '../utils/shareNews';
+import { shareNewsLink, shareNewsPackage, getMyReferralCode } from '../utils/shareNews';
+import { exportOptsFromStory } from '../utils/videoWithMusic';
 
 // ─────────────────────────────────────────────
 // Like persistence helpers
@@ -618,7 +622,7 @@ function NewsFeedCardInner({
 }) {
   const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const { isLoggedIn } = useAuth();
-  const { showToast: showLoginToast } = useToast();
+  const { showToast: showLoginToast, showPopup } = useToast();
   const isScreenFocused = useIsFocused();
   const cardRef = useRef(null);
   const likeInFlightRef = useRef(false);
@@ -665,13 +669,16 @@ function NewsFeedCardInner({
   const [isFollowingAuthor, setIsFollowingAuthor] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   const [isBlockedNow, setIsBlockedNow] = useState(false);
+  const [isDeletedLocally, setIsDeletedLocally] = useState(false);
   const followActionInFlightRef = useRef(false);  
   const inputRef = useRef(null);
   const storyAuthorEmail = String(story.author_email || story.createdBy || story.created_by || '').trim().toLowerCase();
   const storyAuthorId = story.author_id ?? story.authorId ?? null;
-  const isOwnStory = storyAuthorId != null && currentUserId != null
-    ? String(storyAuthorId) === String(currentUserId)
-    : Boolean(storyAuthorEmail && storyAuthorEmail === currentEmail);
+  const effectiveUserId = currentUser?.id ?? currentUser?.user_id ?? currentUserId ?? null;
+  const effectiveUserEmail = String(currentUser?.email || currentEmail || '').trim().toLowerCase();
+  const isOwnStory = (storyAuthorId != null && effectiveUserId != null && String(storyAuthorId) === String(effectiveUserId)) ||
+    Boolean(storyAuthorEmail && effectiveUserEmail && storyAuthorEmail === effectiveUserEmail);
+  const isCurrentUserAdmin = String(currentUser?.role || '').trim().toLowerCase() === 'admin';
   const hasFollowTarget = Boolean(storyAuthorEmail) || storyAuthorId != null;
   const isAdStory = Boolean(story.isAd);
   const adRedirectMeta = isAdStory ? getAdRedirectMeta(story) : null;
@@ -1494,8 +1501,10 @@ const handleLike = async () => {
   };
 
   const { language: appLanguage } = useLanguage();
+  const [showSocialShareModal, setShowSocialShareModal] = useState(false);
   const shareFrameRef = useRef(null);
-  const [shareJob, setShareJob] = useState(null); // { uri, refCode } => offscreen branded frame
+  const shareResolveRef = useRef(null);
+  const [shareJob, setShareJob] = useState(null); // { uri, refCode, frame } => offscreen branded / framed image
   const hasShareVideo = Boolean(effectiveVideoUri) && !isAdStory;
   const hasShareImage = !hasShareVideo && isValidImageUrl(effectiveImageUri) && !isAdStory;
 
@@ -1511,40 +1520,80 @@ const handleLike = async () => {
     }
   };
 
-  // Share button: News link + referral link, "title + app download line + link" pattern.
-  // WhatsApp me link ka preview (image / video thumbnail + RTI Voice frame) backend OG tags se aata hai.
-  const handleShare = async () => {
+  const handleShare = () => {
+    setShowSocialShareModal(true);
+  };
+
+  // ── Share popup ka "Video/Image + Link" button: media (frame + music ke saath) + title + news link ek saath ──
+  const shareMediaKind = hasShareVideo ? 'video' : hasShareImage ? 'image' : '';
+
+  const prepareShareImageNative = () => new Promise((resolve) => {
+    shareResolveRef.current = resolve;
+    setTimeout(() => {                                   // image load na ho to atke nahi
+      if (shareResolveRef.current === resolve) { shareResolveRef.current = null; setShareJob(null); resolve(null); }
+    }, 15000);
+    getMyReferralCode()
+      .then((refCode) => setShareJob({ uri: effectiveImageUri, refCode, frame: exportOptsFromStory(story).frame }))
+      .catch(() => { shareResolveRef.current = null; resolve(null); });
+  });
+
+  const handleShareMediaPackage = async () => {
+    try {
+      const brandedVideo = story.branded_video || story.brandedVideo;
+      const kind = hasShareVideo ? 'video' : hasShareImage ? 'image' : 'none';
+      const mediaUrl = hasShareVideo ? (brandedVideo || effectiveVideoUri) : hasShareImage ? effectiveImageUri : '';
+      const exportOpts = exportOptsFromStory(story);
+      if (Platform.OS === 'web' && kind === 'video' && !brandedVideo && (exportOpts.frame || exportOpts.musicUrl)) {
+        showLoginToast('Preparing video with frame & music…', 'info');
+      }
+      const r = await shareNewsPackage({
+        story,
+        postLink,
+        language: appLanguage,
+        kind,
+        mediaUrl,
+        opts: brandedVideo ? {} : exportOpts,
+        frame: exportOpts.frame,
+        getNativeImageFile: hasShareImage ? prepareShareImageNative : undefined,
+        // WEB: browser share ko taaza tap chahiye — file ready hone ke baad popup ke "Share" button se
+        confirm: () => new Promise((resolve) => {
+          const t = setTimeout(() => resolve(false), 60000);
+          showPopup('Your post is ready with frame & music. Tap Share to send it with the news link.', 'success', {
+            title: 'Share',
+            primaryLabel: 'Share',
+            onPrimaryPress: () => { clearTimeout(t); resolve(true); },
+            secondaryLabel: 'Cancel',
+            onSecondaryPress: () => { clearTimeout(t); resolve(false); },
+          });
+        }),
+      });
+      if (r.shared) await countShare();
+      if (r.shared && r.needsPaste) showPopup('News link copy ho gaya hai — caption me paste kar do.', 'info', { title: 'Share' });
+    } catch {}
+  };
+
+  // Sirf link share (title + app download line + link)
+  const handleShareLink = async () => {
     try {
       const { result } = await shareNewsLink({ story, postLink, language: appLanguage });
       if (result.action === Share.sharedAction) await countShare();
     } catch {}
   };
 
-  // Image news => branded IMAGE share, Video news => VIDEO share.
-  const handleShareMedia = async () => {
-    try {
-      if (hasShareVideo) {
-        await shareVideoFile(story.branded_video || story.brandedVideo || effectiveVideoUri);
-        await countShare();
-      } else if (hasShareImage) {
-        const refCode = await getMyReferralCode();
-        setShareJob({ uri: effectiveImageUri, refCode });   // frame render -> onImageLoad me capture
-      } else {
-        await handleShare();
-      }
-    } catch {
-      Alert.alert('Share', 'Unable to share media. Please try again.');
-    }
-  };
+  // purana naam — ab media + link dono ek saath
+  const handleShareMedia = handleShare;
 
   const onShareFrameLoaded = async () => {
+    const resolve = shareResolveRef.current;
+    if (!resolve) return;
+    shareResolveRef.current = null;
     try {
-      await new Promise((r) => setTimeout(r, 150));          // layout settle
-      const out = await captureRef(shareFrameRef, { format: 'jpg', quality: 0.92, result: 'tmpfile', width: 1080, height: 1080 });
-      await shareImageFile(out);
-      await countShare();
+      await new Promise((r) => setTimeout(r, 200));          // layout settle
+      const dims = shareJob?.frame ? { width: 1280, height: 720 } : { width: 1080, height: 1080 };
+      const out = await captureRef(shareFrameRef, { format: 'jpg', quality: 0.92, result: 'tmpfile', ...dims });
+      resolve(out);
     } catch {
-      Alert.alert('Share', 'Unable to prepare branded image.');
+      resolve(null);
     } finally {
       setShareJob(null);
     }
@@ -1576,6 +1625,37 @@ const handleLike = async () => {
     closeActionMenu();
     await UserStore.recordNewsFeedMenuAction(story.id, 'report', { title: story.title || '', reason: 'Reported from news feed menu' });
     showActionResult('Report submitted', 'Thanks. This post has been reported for review.');
+  };
+
+  const handleDeleteStory = async () => {
+    closeActionMenu();
+    const confirmed = Platform.OS === 'web'
+      ? (typeof window !== 'undefined' && typeof window.confirm === 'function'
+          ? window.confirm('Are you sure you want to delete this post? This cannot be undone.')
+          : true)
+      : await new Promise((resolve) => {
+          Alert.alert(
+            'Delete Post',
+            'Are you sure you want to delete this post? This cannot be undone.',
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Delete', style: 'destructive', onPress: () => resolve(true) },
+            ]
+          );
+        });
+    if (!confirmed) return;
+    try {
+      const res = await UserStore.deleteMyPost(story);
+      if (res?.ok) {
+        setIsDeletedLocally(true);
+        showActionResult('Post Deleted', 'Your post has been deleted successfully.');
+        if (typeof props?.onDeleteStory === 'function') props.onDeleteStory(story.id);
+      } else {
+        showActionResult('Delete Failed', res?.message || 'Unable to delete post.');
+      }
+    } catch {
+      showActionResult('Delete Failed', 'Unable to delete post.');
+    }
   };
   const handleBlockAuthor = async () => {
     closeActionMenu();
@@ -1653,20 +1733,19 @@ const handleLike = async () => {
 
   // Refresh the profile entitlement so a web purchase appears on Android and
   // an old post cannot retain a tick after the Premium Plan expires.
-  // Backend (live profile) jo bole wahi final. Post me save purana flag sirf tab
-  // use hoga jab live profile abhi load na hui ho.
-  const isOwnStoryForTick = Boolean(storyAuthorEmail && currentUserEmail === storyAuthorEmail);
-  const authorHasBlueTick = liveAuthorProfile
-    ? Boolean(UserStore.hasBlueTick(liveAuthorProfile))
-    : (isOwnStoryForTick
-      ? currentUserHasBlueTick
-      : Boolean(story.author_has_blue_tick));
+  const isOwnStoryForTick = isOwnStory;
+  const authorHasBlueTick = isOwnStoryForTick
+    ? Boolean(currentUser && UserStore.hasBlueTick(currentUser))
+    : (liveAuthorProfile
+      ? Boolean(UserStore.hasBlueTick(liveAuthorProfile))
+      : Boolean(story.author_has_blue_tick || (story.author_is_premium && story.author_is_subscriber !== false)));
 
   // Seat name (jaise "Car Nicobar") ab nahi dikhana. Uski jagah author ke
   // subscription plan ka role name dikhega.
-  const authorPlanForRole = liveAuthorProfile?.subscription_plan || story.author_subscription_plan || null;
-  // role_names backend se array YA string ("A, B") dono aa sakta hai -> hamesha array banao,
-  // warna string par .filter() fatal render error deta tha.
+  const authorPlanForRole = isOwnStoryForTick
+    ? (currentUser?.subscription_plan || liveAuthorProfile?.subscription_plan || story.author_subscription_plan || null)
+    : (liveAuthorProfile?.subscription_plan || story.author_subscription_plan || null);
+
   const _rawRoleNames = authorPlanForRole?.role_names;
   const _roleNamesList = Array.isArray(_rawRoleNames)
     ? _rawRoleNames
@@ -1676,34 +1755,47 @@ const handleLike = async () => {
     : String(UserStore.getSeatRoleNameForPlanRoleId(authorPlanForRole?.role_id_raw || authorPlanForRole?.role_id || '') || '')
         .split(', ')
   ).map((n) => String(n || '').trim()).filter(Boolean);
-  // Seat id ("district_head") se role ka naam banao -> "District Head".
-  // Seat NAME ("Car Nicobar") use nahi karna, sirf seat ID se role ka naam.
+
   const authorSeatId = String(
+    (isOwnStoryForTick ? currentUser?.state_seat?.seat_id : null) ||
     liveAuthorProfile?.state_seat?.seat_id || story.author_seat_id || story.author_state_seat?.seat_id || ''
   ).trim();
-  // Backend kabhi role ki numeric id ("6") bhejta hai -> usse role naam banao, number kabhi mat dikhao.
+
   const _mapRoleId = (id) => { try { return UserStore.getSeatRoleNameForPlanRoleId?.(id) || ''; } catch { return ''; } };
-  // ✅ Plan expire ho gaya (ya active nahi) => koi bhi plan / role / premium pill nahi dikhana.
-  const authorPlanActive = liveAuthorProfile
-    ? UserStore.hasActiveRolePlan(liveAuthorProfile)
-    : UserStore.hasActiveRolePlan({
-        subscription_plan: story.author_subscription_plan || null,
-        state_seat: story.author_state_seat || (story.author_seat_id ? { seat_id: story.author_seat_id } : null),
-        is_subscribed: (story.author_is_subscribed ?? story.author_is_subscriber ?? story.author_is_premium),
-      });
-  const seatLabel = !authorPlanActive ? '' :
+
+  const authorPlanActive = isOwnStoryForTick
+    ? UserStore.hasActiveRolePlan(currentUser)
+    : (liveAuthorProfile
+      ? UserStore.hasActiveRolePlan(liveAuthorProfile)
+      : UserStore.hasActiveRolePlan({
+          subscription_plan: story.author_subscription_plan || null,
+          state_seat: story.author_state_seat || (story.author_seat_id ? { seat_id: story.author_seat_id } : null),
+          is_subscribed: (story.author_is_subscribed ?? story.author_is_subscriber ?? story.author_is_premium),
+          is_premium: story.author_is_premium,
+          is_subscriber: story.author_is_subscriber,
+        }));
+
+  const roleOrPlanName = isOwnStoryForTick
+    ? (currentUser?.subscription_plan?.plan_name || currentUser?.subscription_plan?.name || currentUser?.role_label || story.author_role_label)
+    : (authorPlanForRole?.plan_name || authorPlanForRole?.name || liveAuthorProfile?.role_label || story.author_role_label);
+
+  const seatLabel = !authorPlanActive ? '' : (
     resolveRoleTitle({ state_seat: { seat_id: authorSeatId }, subscription_plan: authorPlanForRole }, planRoleNames.join(', '), _mapRoleId) ||
+    cleanRoleNames(String(roleOrPlanName || '').trim(), _mapRoleId) ||
     cleanRoleNames(String(authorPlanForRole?.plan_name || authorPlanForRole?.name || '').trim(), _mapRoleId) ||
-    cleanRoleNames(String(liveAuthorProfile?.role_label || story.author_role_label || '').trim(), _mapRoleId);
+    cleanRoleNames(String(liveAuthorProfile?.role_label || story.author_role_label || '').trim(), _mapRoleId)
+  );
   const authorTier = !authorPlanActive ? PROFILE_TIERS.common : getProfileTier({
-    seat_id: liveAuthorProfile?.state_seat?.seat_id || story.author_seat_id || story.author_state_seat?.seat_id,
-    role: liveAuthorProfile?.role || story.author_role,
-    subscription_type: liveAuthorProfile?.subscription_type || story.author_subscription_type,
-    subscription_plan: liveAuthorProfile?.subscription_plan,
+    seat_id: (isOwnStoryForTick ? currentUser?.state_seat?.seat_id : null) || liveAuthorProfile?.state_seat?.seat_id || story.author_seat_id || story.author_state_seat?.seat_id,
+    role: (isOwnStoryForTick ? currentUser?.role : null) || liveAuthorProfile?.role || story.author_role,
+    subscription_type: (isOwnStoryForTick ? currentUser?.subscription_type : null) || liveAuthorProfile?.subscription_type || story.author_subscription_type,
+    subscription_plan: authorPlanForRole,
     has_blue_tick: authorHasBlueTick,
-    is_subscribed: liveAuthorProfile
-      ? Boolean(liveAuthorProfile.is_subscribed)
-      : Boolean(story.author_is_subscribed || story.author_is_subscriber || story.author_is_premium),
+    is_subscribed: isOwnStoryForTick
+      ? Boolean(currentUser?.is_subscribed)
+      : (liveAuthorProfile
+        ? Boolean(liveAuthorProfile.is_subscribed)
+        : Boolean(story.author_is_subscribed || story.author_is_subscriber || story.author_is_premium)),
   });
   const useGalleryWrap = hasImageGallery && !canPlayVideo && !isFileAttachment;
   const HeroWrap = useGalleryWrap ? View : TouchableOpacity;
@@ -1738,20 +1830,30 @@ const handleLike = async () => {
     [_place(story.taluka), _place(story.district), _place(story.state)].filter(Boolean).join(', ')
   ).trim();
 
-  if (isBlockedNow) return null;
+  if (isBlockedNow || isDeletedLocally) return null;
 
   return (
     <View>
       {shareJob && Platform.OS !== 'web' ? (
         <View pointerEvents="none" style={{ position: 'absolute', left: -5000, top: 0 }}>
-          <ShareBrandFrame
-            ref={shareFrameRef}
-            imageUri={shareJob.uri}
-            title={story.title}
-            refCode={shareJob.refCode}
-            onImageLoad={onShareFrameLoaded}
-            onImageError={() => { setShareJob(null); Alert.alert('Share', 'Image load failed.'); }}
-          />
+          {shareJob.frame ? (
+            <FramedExportView
+              ref={shareFrameRef}
+              imageUri={shareJob.uri}
+              frame={shareJob.frame}
+              onImageLoad={onShareFrameLoaded}
+              onImageError={() => { const r = shareResolveRef.current; shareResolveRef.current = null; setShareJob(null); if (r) r(null); }}
+            />
+          ) : (
+            <ShareBrandFrame
+              ref={shareFrameRef}
+              imageUri={shareJob.uri}
+              title={story.title}
+              refCode={shareJob.refCode}
+              onImageLoad={onShareFrameLoaded}
+              onImageError={() => { const r = shareResolveRef.current; shareResolveRef.current = null; setShareJob(null); if (r) r(null); }}
+            />
+          )}
         </View>
       ) : null}
            <View ref={cardRef} collapsable={false} style={[styles.storyCardShell, Platform.OS !== 'web' && styles.androidStoryCardShell, altShade && styles.storyCardShellAlt]}>
@@ -1867,6 +1969,9 @@ const handleLike = async () => {
           <MediaBox {...mediaBoxProps}>
           {canPlayVideo ? (
             <>
+              {player && story.musicUrl ? (
+                <NewsMusicSync player={player} musicUrl={story.musicUrl} volume={story.musicVolume} muted={globalMuted} muteOriginal={story.muteOriginal} />
+              ) : null}
               {player ? (
                 <VideoView player={player} style={[StyleSheet.absoluteFill, { width: '100%', height: '100%', backgroundColor: '#000' }, Platform.OS === 'web' ? { objectFit: 'contain' } : null]} contentFit="contain" nativeControls={false} fullscreenOptions={{ enabled: false }} playsInline onFirstFrameRender={() => { setShowVideoPoster(false); setVideoBuffering(false); }} />
               ) : null}
@@ -1928,6 +2033,7 @@ const handleLike = async () => {
               width={framed ? Math.round(mediaWidth * frameWin.width) : mediaWidth}
               maxHeight={framed ? Math.round(frameBoxH * frameWin.height) : 480}
               downloadable
+              frame={framed ? exportOptsFromStory(story).frame : null}
               onPressImage={handleImagePress}
             />
           ) : singleFitImage && mediaWidth ? (
@@ -1940,7 +2046,7 @@ const handleLike = async () => {
           {/* ⬇ Download: news ki video / image (gallery me MediaGallery ka apna button hai) */}
           {!isFileAttachment && !(hasImageGallery && mediaWidth) && (canPlayVideo || isValidImageUrl(effectiveImageUri)) ? (
             <View pointerEvents="box-none" style={{ position: 'absolute', top: canPlayVideo ? 52 : 10, right: 10, zIndex: 20, elevation: 20 }}>
-              <MediaDownloadButton uri={canPlayVideo ? effectiveVideoUri : effectiveImageUri} type={canPlayVideo ? 'video' : 'image'} size={32} />
+              <MediaDownloadButton uri={canPlayVideo ? effectiveVideoUri : effectiveImageUri} type={canPlayVideo ? 'video' : 'image'} size={32} musicUrl={canPlayVideo ? story.musicUrl : ''} musicVolume={story.musicVolume} muteOriginal={story.muteOriginal} frame={exportOptsFromStory(story).frame} />
             </View>
           ) : null}
           {/* ✅ Frame select hai => red frame + scrolling title/description; warna purana logo + ticker */}
@@ -2158,16 +2264,24 @@ const handleLike = async () => {
                   {!menuAnchor ? <View style={styles.storyMoreMenuHandle} /> : null}
                   <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleMenuShare} activeOpacity={0.82}>
                     <Ionicons name="share-social-outline" size={18} color="#0ea5e9" />
+                    <Text style={styles.storyMoreMenuText}>Share</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.storyMoreMenuItem}
+                    onPress={async () => { closeActionMenu(); await handleShareLink(); }}
+                    activeOpacity={0.82}
+                  >
+                    <Ionicons name="link-outline" size={18} color="#0ea5e9" />
                     <Text style={styles.storyMoreMenuText}>Share link</Text>
                   </TouchableOpacity>
-                  {hasShareVideo || hasShareImage ? (
-                    <TouchableOpacity
-                      style={styles.storyMoreMenuItem}
-                      onPress={async () => { closeActionMenu(); await handleShareMedia(); }}
-                      activeOpacity={0.82}
-                    >
-                      <Ionicons name={hasShareVideo ? 'videocam-outline' : 'image-outline'} size={18} color="#0ea5e9" />
-                      <Text style={styles.storyMoreMenuText}>{hasShareVideo ? 'Share video' : 'Share image'}</Text>
+                  <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleReport} activeOpacity={0.82}>
+                    <Ionicons name="flag-outline" size={18} color="#f59e0b" />
+                    <Text style={styles.storyMoreMenuText}>Report</Text>
+                  </TouchableOpacity>
+                  {(isOwnStory || isCurrentUserAdmin) ? (
+                    <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleDeleteStory} activeOpacity={0.82}>
+                      <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                      <Text style={[styles.storyMoreMenuText, { color: '#ef4444', fontWeight: '700' }]}>Delete</Text>
                     </TouchableOpacity>
                   ) : null}
                   {hasFollowTarget && !isOwnStory && !isAdStory ? (
@@ -2186,6 +2300,17 @@ const handleLike = async () => {
             </View>
           </TouchableWithoutFeedback>
         </Modal>
+
+        <SocialShareModal
+          visible={showSocialShareModal}
+          onClose={() => setShowSocialShareModal(false)}
+          title={story.title}
+          description={story.description || story.excerpt || story.subtitle || ''}
+          url={postLink}
+          onShareSuccess={countShare}
+          mediaKind={shareMediaKind}
+          onShareMedia={handleShareMediaPackage}
+        />
 
         {/* ── Comment Section ── */}
         {showComments ? (

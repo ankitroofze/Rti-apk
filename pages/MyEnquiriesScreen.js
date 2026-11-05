@@ -186,7 +186,7 @@ const Segment = ({ tab, setTab, receivedCount, sentCount }) => (
       return (
         <TouchableOpacity key={t.key} style={[s.segBtn, active && s.segBtnActive]} onPress={() => setTab(t.key)} activeOpacity={0.85}>
           <Ionicons name={t.icon} size={15} color={active ? '#fff' : '#64748b'} />
-          <Text style={[s.segText, active && { color: '#fff' }]}>{t.label}</Text>
+          <Text style={[s.segText, active && { color: '#fff' }]} numberOfLines={1}>{t.label}</Text>
           <View style={[s.segCount, active && { backgroundColor: 'rgba(255,255,255,0.25)' }]}>
             <Text style={[s.segCountText, active && { color: '#fff' }]}>{t.count}</Text>
           </View>
@@ -201,22 +201,27 @@ const STAGES = [
   { key: ST_REVIEW, label: 'Review', icon: 'time-outline' },
   { key: ST_CLOSED, label: 'Closed', icon: 'checkmark-done-outline' },
 ];
-const StageTabs = ({ stage, setStage, counts }) => (
-  <View style={s.stageWrap}>
-    {STAGES.map((t) => {
-      const active = stage === t.key;
-      return (
-        <TouchableOpacity key={t.key} style={[s.stageBtn, active && s.stageBtnActive]} onPress={() => setStage(t.key)} activeOpacity={0.85}>
-          <Ionicons name={t.icon} size={14} color={active ? ORANGE : '#64748b'} />
-          <Text style={[s.stageText, active && { color: ORANGE }]}>{t.label}</Text>
-          <View style={[s.stageCount, active && { backgroundColor: ORANGE }]}>
-            <Text style={[s.stageCountText, active && { color: '#fff' }]}>{counts[t.key] || 0}</Text>
-          </View>
-        </TouchableOpacity>
-      );
-    })}
-  </View>
-);
+const StageTabs = ({ stage, setStage, counts }) => {
+  // Chhoti screen (Android / web mobile view) me icon hata do taaki label + count bahar na nikle
+  const { width } = useWindowDimensions();
+  const compact = width < 480;
+  return (
+    <View style={s.stageWrap}>
+      {STAGES.map((t) => {
+        const active = stage === t.key;
+        return (
+          <TouchableOpacity key={t.key} style={[s.stageBtn, compact && s.stageBtnCompact, active && s.stageBtnActive]} onPress={() => setStage(t.key)} activeOpacity={0.85}>
+            {!compact ? <Ionicons name={t.icon} size={14} color={active ? ORANGE : '#64748b'} /> : null}
+            <Text style={[s.stageText, compact && s.stageTextCompact, active && { color: ORANGE }]} numberOfLines={1}>{t.label}</Text>
+            <View style={[s.stageCount, active && { backgroundColor: ORANGE }]}>
+              <Text style={[s.stageCountText, active && { color: '#fff' }]}>{counts[t.key] || 0}</Text>
+            </View>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+};
 
 // ─── Enquiry card ─────────────────────────────────────────────────────────────
 const EnquiryCard = ({ item, mode, onOpen, onCall, onWhatsApp, onClose, onStatusChange, updating }) => {
@@ -727,17 +732,19 @@ const s = StyleSheet.create({
   pageSub: { fontSize: 13, color: '#94a3b8', marginTop: 4 , fontFamily: FONT.regular },
 
   segmentWrap: { flexDirection: 'row', backgroundColor: '#f1f5f9', borderRadius: 14, padding: 4, marginTop: 14, marginBottom: 14, gap: 4 },
-  segBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 11 },
+  segBtn: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, paddingHorizontal: 6, borderRadius: 11, overflow: 'hidden' },
   segBtnActive: { backgroundColor: ORANGE, shadowColor: ORANGE, shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 3 }, elevation: 3 },
-  segText: { fontSize: 13, color: '#64748b', fontFamily: FONT.bold, fontWeight: '600' },
-  segCount: { minWidth: 20, paddingHorizontal: 6, height: 18, borderRadius: 9, backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' },
+  segText: { flexShrink: 1, fontSize: 13, color: '#64748b', fontFamily: FONT.bold, fontWeight: '600' },
+  segCount: { flexShrink: 0, minWidth: 20, paddingHorizontal: 6, height: 18, borderRadius: 9, backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' },
   segCountText: { fontSize: 10, color: '#475569', fontWeight: '700' , fontFamily: FONT.bold },
 
-  stageWrap: { flexDirection: 'row', gap: 8, marginBottom: 14 },
-  stageBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff' },
+  stageWrap: { flexDirection: 'row', gap: 8, marginBottom: 14, width: '100%' },
+  stageBtn: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 9, paddingHorizontal: 8, overflow: 'hidden', borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff' },
+  stageBtnCompact: { gap: 4, paddingHorizontal: 5 },
   stageBtnActive: { borderColor: ORANGE, backgroundColor: '#FEF2F2' },
-  stageText: { fontSize: 12.5, color: '#64748b', fontWeight: '600', fontFamily: FONT.bold },
-  stageCount: { minWidth: 20, paddingHorizontal: 6, height: 18, borderRadius: 9, backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' },
+  stageText: { flexShrink: 1, fontSize: 12.5, color: '#64748b', fontWeight: '600', fontFamily: FONT.bold },
+  stageTextCompact: { fontSize: 11.5 },
+  stageCount: { flexShrink: 0, minWidth: 20, paddingHorizontal: 6, height: 18, borderRadius: 9, backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' },
   stageCountText: { fontSize: 10, color: '#475569', fontWeight: '700', fontFamily: FONT.bold },
 
   filterBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA', borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 12 },

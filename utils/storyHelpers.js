@@ -119,6 +119,13 @@ export function normalizeStoryItem(item, index = 0) {
     video: item.video || null,
     file: item.file || null,
     mediaType: item.mediaType || (item.video ? 'Video' : 'Image'),
+    // Frame / template (Home, All Feed, Details sab jagah same dikhe) — pehle ye fields yahin drop ho jaate the
+    useFrame: Boolean(item.useFrame),
+    frameTemplate: item.frameTemplate || '',
+    frameMerged: Boolean(item.frameMerged),
+    musicUrl: String(item.musicUrl || item.music_url || '').trim(),
+    musicVolume: item.musicVolume ?? item.music_volume ?? 0.6,
+    muteOriginal: Boolean(item.muteOriginal) || [1, '1', true, 'true'].includes(item.mute_original),
     date: item.date || '05 May 2026',
     createdAt: item.createdAt || item.created_at || item.date || '',
     publishedAgo: item.publishedAgo || 'Updated recently',

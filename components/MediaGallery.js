@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { View, ScrollView, TouchableOpacity, Text, Platform, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useVideoPlayer, VideoView } from 'expo-video';
+import NewsMusicSync from './NewsMusicSync';
 import AutoFitAdImage from './AutoFitAdImage';
 import MediaControlBar, { isAudioUrl } from './MediaControlBar';
 import NewsVideoControls from './NewsVideoControls';
@@ -109,7 +110,7 @@ function useNativeAutoPause(viewRef, player) {
 
 // Ad video par news card jaise controls: prev | -5 | play/pause | +15 | next, progress bar, time, speed, fullscreen.
 // Chalte time kuch second baad chhup jaate hain, video par tap karne se wapas aate hain.
-function AdVideoControls({ player, playing, ended, buffering, onToggle, onFullscreen }) {
+function AdVideoControls({ player, playing, ended, buffering, onToggle, onFullscreen, bottomInset = 0 }) {
   const [visible, setVisible] = useState(true);
   const timerRef = useRef(null);
   const playingRef = useRef(playing);
@@ -135,13 +136,14 @@ function AdVideoControls({ player, playing, ended, buffering, onToggle, onFullsc
         onTogglePlay={onToggle}
         onFullscreen={onFullscreen}
         onInteract={poke}
+        bottomInset={bottomInset}   // frame banner ke upar (seek bar banner ke neeche na chhupe)
         compact
       />
     </>
   );
 }
 
-function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 0, adAutoPlay = false, active = true }) {
+function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 0, adAutoPlay = false, active = true, musicUrl = '', musicVolume = 0.6, muteOriginal = false, bannerH = 0 }) {
   const [ratio, setRatio] = useState(null);
   const [audioOnly, setAudioOnly] = useState(() => isAudioUrl(uri));
   const [st, setSt] = useState({ playing: false, ended: false, cur: 0, dur: 0, muted: false });
@@ -221,6 +223,8 @@ function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 0, 
 
   // ✅ Frame hamesha poori width (kaala background) — video apne asli ratio me beech me, crop / stretch nahi.
   const frameH = coverMode ? Math.round(width * 9 / 16) : getVideoBox(width, ratio, maxHeight).h;
+  // frame banner video ke neeche se maxHeight tak aata hai — jitna hissa video par chadhta hai utna controls upar
+  const ctlInset = bannerH ? Math.max(0, frameH - (maxHeight - bannerH)) : 0;
 
   return (
     <View style={{ width, height: frameH, backgroundColor: '#000', borderRadius: radius || 0, overflow: 'hidden' }}>
@@ -244,6 +248,7 @@ function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 0, 
         onCanPlay: () => setWaiting(false),
         style: { width: '100%', height: '100%', objectFit: 'contain', display: 'block', backgroundColor: '#000' },
       })}
+      {musicUrl && !adAutoPlay ? <NewsMusicSync videoEl={vel} musicUrl={musicUrl} volume={musicVolume} muteOriginal={muteOriginal} /> : null}
       {audioOnly ? (
         <>
           <TouchableOpacity activeOpacity={1} onPress={toggle} style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 56 }} />
@@ -265,6 +270,7 @@ function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 0, 
           buffering={waiting}
           onToggle={toggle}
           onFullscreen={goFullscreen}
+          bottomInset={ctlInset}
         />
       )}
       {adAutoPlay && !audioOnly ? (
@@ -282,7 +288,7 @@ function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 0, 
   );
 }
 
-function NativeVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 0, adAutoPlay = false, active = true }) {
+function NativeVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 0, adAutoPlay = false, active = true, musicUrl = '', musicVolume = 0.6, muteOriginal = false, bannerH = 0 }) {
   const player = useVideoPlayer({ uri }, (p) => {
     p.loop = Boolean(adAutoPlay);
     if (adAutoPlay) { try { p.muted = true; p.play(); } catch (e) { /* ignore */ } }
@@ -377,6 +383,9 @@ function NativeVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 
     try { videoViewRef.current?.enterFullscreen?.(); } catch (e) { /* ignore */ }
   };
 
+  // frame banner jitna video par chadhta hai utna controls (seek bar) upar rakho
+  const ctlInset = bannerH ? Math.max(0, (coverMode ? Math.round(width * 9 / 16) : getVideoBox(width, ratio, maxHeight).h) - (maxHeight - bannerH)) : 0;
+
   const bar = audioOnly ? (
     <>
       <TouchableOpacity activeOpacity={1} onPress={toggle} style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 56 }} />
@@ -398,6 +407,7 @@ function NativeVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 
       buffering={np.loading}
       onToggle={toggle}
       onFullscreen={goFullscreen}
+      bottomInset={ctlInset}
     />
   );
 
@@ -416,6 +426,7 @@ function NativeVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 
         fullscreenOptions={{ enable: true }}
         surfaceType={surface}
       />
+      {musicUrl && !adAutoPlay ? <NewsMusicSync player={player} musicUrl={musicUrl} volume={musicVolume} muteOriginal={muteOriginal} /> : null}
       {bar}
       {adAutoPlay && !audioOnly ? (
         <TouchableOpacity
@@ -437,7 +448,7 @@ function VideoSlide(props) {
 }
 
 // images = [url, url...], video = 'url' (optional). Swipe + auto-slide (Android, iOS, web)
-export default function MediaGallery({ images = [], video = '', width, maxHeight = 420, onPressImage, radius = 0, fit = 'contain', adAutoPlay = false, downloadable = false }) {
+export default function MediaGallery({ images = [], video = '', width, maxHeight = 420, onPressImage, radius = 0, fit = 'contain', adAutoPlay = false, downloadable = false, musicUrl = '', musicVolume = 0.6, muteOriginal = false, bannerH = 0, frame = null }) {
   const [page, setPage] = useState(0);
   const [failedUris, setFailedUris] = useState([]);
   const scrollRef = useRef(null);
@@ -551,7 +562,7 @@ export default function MediaGallery({ images = [], video = '', width, maxHeight
               ]}
             >
               {s.type === 'video' ? (
-                <VideoSlide uri={s.uri} width={width} maxHeight={maxHeight} coverMode={coverMode} onRatio={handleVideoRatio} radius={radius} adAutoPlay={adAutoPlay} active={i === page} />
+                <VideoSlide uri={s.uri} width={width} maxHeight={maxHeight} coverMode={coverMode} onRatio={handleVideoRatio} radius={radius} adAutoPlay={adAutoPlay} active={i === page} musicUrl={musicUrl} musicVolume={musicVolume} muteOriginal={muteOriginal} bannerH={bannerH} />
               ) : (
                 <TouchableOpacity activeOpacity={0.92} disabled={!onPressImage} onPress={onPressImage}>
                   <AutoFitAdImage
@@ -581,7 +592,7 @@ export default function MediaGallery({ images = [], video = '', width, maxHeight
             pointerEvents="box-none"
             style={{ position: 'absolute', top: (count > 1 || (adAutoPlay && currentSlide.type === 'video')) ? 46 : 10, right: 10, zIndex: 8, elevation: 8 }}
           >
-            <MediaDownloadButton uri={currentSlide.uri} type={currentSlide.type} size={32} />
+            <MediaDownloadButton uri={currentSlide.uri} type={currentSlide.type} size={32} musicUrl={currentSlide.type === 'video' && !adAutoPlay ? musicUrl : ''} musicVolume={musicVolume} muteOriginal={muteOriginal} frame={adAutoPlay ? null : frame} />
           </View>
         ) : null}
 

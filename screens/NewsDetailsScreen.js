@@ -13,10 +13,19 @@ import {
   Share,
   TextInput,
   Modal,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import RightUtilityPanel from '../components/RightUtilityPanel';
 import { normalizeStoryItem, dedupeStories } from '../utils/storyHelpers';
+import NewsFrameOverlay, { getLowerBannerHeight } from '../components/NewsFrameOverlay';
+import { frameOptsFromStory, exportOptsFromStory, imageFrameOptsFromStory } from '../utils/videoWithMusic';
+import { shareNewsPackage, shareNewsLink } from '../utils/shareNews';
+import SocialShareModal from '../components/SocialShareModal';
+import useFramedImageCapture from '../components/useFramedImageCapture';
+import { useToast } from '../components/ui/ToastProvider';
+import { useLanguage } from '../contexts/LanguageContext';
+import { getFrameTemplate } from '../constants/frameTemplates';
 import AppNavbar from '../components/AppNavbar';
 import AppFooter from '../components/AppFooter';
 import ProfileAvatar from '../components/ProfileAvatar';
@@ -76,11 +85,50 @@ function buildPlaceholderImage(seedKey) {
   return `https://picsum.photos/seed/${encodeURIComponent(seedKey || 'news-details')}/960/680`;
 }
 
-function buildLocationLabel(article) {
-  const parts = [article?.taluka, article?.district, article?.state]
-    .map((value) => String(value || '').trim())
-    .filter(Boolean);
-  return parts.join(', ');
+// "0", "null", "undefined", false, 0 jaisi junk values ko text ki tarah dikhana nahi hai
+function cleanText(value) {
+  if (value === null || value === undefined || value === false) return '';
+  const t = String(value).trim();
+  if (!t) return '';
+  if (['0', 'null', 'undefined', 'false', 'nan', 'n/a', '-'].includes(t.toLowerCase())) return '';
+  return t;
+}
+
+// Category jaise words location nahi hote ("Politics", "Breaking News" ...)
+const NON_PLACE_WORDS = new Set([
+  'general', 'breaking news', 'breaking', 'news', 'latest', 'latest news', 'politics', 'sports',
+  'elections', 'viral', 'entertainment', 'business', 'crime', 'national', 'international',
+]);
+
+// Pehle author/user ki apni location, nahi to news ki location. Category ka text kabhi location nahi banta.
+function buildLocationLabel(article, authorProfile) {
+  const category = cleanText(article?.category).toLowerCase();
+  const reportType = cleanText(article?.report_type).toLowerCase();
+  const place = (v) => {
+    const t = cleanText(v);
+    if (!t) return '';
+    const low = t.toLowerCase();
+    if (NON_PLACE_WORDS.has(low) || low === category || low === reportType) return '';
+    return t;
+  };
+  const join = (a, b, c) => [place(a), place(b), place(c)].filter(Boolean).join(', ');
+  return (
+    place(authorProfile?.area || authorProfile?.state_seat?.area || authorProfile?.state_seat?.area_name || article?.author_area) ||
+    join(authorProfile?.taluka || article?.author_taluka, authorProfile?.district || article?.author_district, authorProfile?.state || article?.author_state) ||
+    join(article?.taluka, article?.district, article?.state)
+  );
+}
+
+// validity_days -> "1 Year" / "6 Months" / "30 Days"
+function formatPlanDuration(plan) {
+  if (!plan || typeof plan !== 'object') return '';
+  const direct = cleanText(plan.duration || plan.duration_label || plan.validity_label);
+  if (direct) return direct;
+  const days = Number(plan.validity_days ?? plan.days ?? plan.duration_days);
+  if (!Number.isFinite(days) || days <= 0) return '';
+  if (days % 365 === 0) return `${days / 365} ${days / 365 === 1 ? 'Year' : 'Years'}`;
+  if (days % 30 === 0) return `${days / 30} ${days / 30 === 1 ? 'Month' : 'Months'}`;
+  return `${days} ${days === 1 ? 'Day' : 'Days'}`;
 }
 
 function formatArticleDate(value) {
@@ -126,7 +174,12 @@ function normalizeArticle(rawArticle) {
       article.userAvatar ||
       '',
     author_seat_name: article.author_seat_name || 'Reporter',
-    author_role_label: article.author_role_label || '',
+    author_role_label: cleanText(article.author_role_label),
+    author_area: cleanText(article.author_area || article.authorArea),
+    author_state: cleanText(article.author_state || article.authorState),
+    author_district: cleanText(article.author_district || article.authorDistrict),
+    author_taluka: cleanText(article.author_taluka || article.authorTaluka),
+    report_type: cleanText(article.report_type),
     author_has_blue_tick: Boolean(
       article.author_has_blue_tick ||
       article.has_blue_tick ||
@@ -139,6 +192,12 @@ function normalizeArticle(rawArticle) {
     video: article.video || null,
     file: article.file || null,
     mediaType: article.mediaType || (article.video ? 'Video' : 'Image'),
+    useFrame: Boolean(article.useFrame),
+    frameTemplate: article.frameTemplate || '',
+    frameMerged: Boolean(article.frameMerged),
+    musicUrl: String(article.musicUrl || article.music_url || '').trim(),
+    musicVolume: Number.isFinite(Number(article.musicVolume ?? article.music_volume)) ? Number(article.musicVolume ?? article.music_volume) : 0.6,
+    muteOriginal: Boolean(article.muteOriginal) || [1, '1', true, 'true'].includes(article.mute_original),
     date: article.date || '05 May 2026',
     publishedAgo: article.publishedAgo || 'Updated recently',
     likes: Number(article.likes || 0),
@@ -505,11 +564,16 @@ export default function NewsDetailsScreen({ route, navigation }) {
   const [replyText, setReplyText] = useState('');
   const [authorProfileImageUri, setAuthorProfileImageUri] = useState('');
   const [showAuthorImageModal, setShowAuthorImageModal] = useState(false);
+  const [showSocialShareModal, setShowSocialShareModal] = useState(false);
   const [isFollowingAuthor, setIsFollowingAuthor] = useState(false);
   const [followLoading, setFollowLoading] = useState(false);
   const [showFullBody, setShowFullBody] = useState(false);
   // Backend se live author profile — tick isi se decide hoga (article ka purana flag nahi)
   const [liveAuthor, setLiveAuthor] = useState(null);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState(null);
+  const moreBtnRef = useRef(null);
+
   useEffect(() => {
     let cancelled = false;
     const aid = String(article?.author_id ?? '').trim();
@@ -517,7 +581,13 @@ export default function NewsDetailsScreen({ route, navigation }) {
     UserStore.getPublicProfileById(aid).then((p) => { if (!cancelled) setLiveAuthor(p || null); });
     return () => { cancelled = true; };
   }, [article?.author_id]);
-  const authorVerified = liveAuthor ? Boolean(UserStore.hasBlueTick(liveAuthor)) : Boolean(article.author_has_blue_tick);
+
+  const isOwnStory = useMemo(() => isOwnPost(article, currentUser), [article, currentUser]);
+  const authorVerified = isOwnStory
+    ? Boolean(currentUser && UserStore.hasBlueTick(currentUser))
+    : (liveAuthor
+      ? Boolean(UserStore.hasBlueTick(liveAuthor))
+      : Boolean(article.author_has_blue_tick || (article.author_is_premium && article.author_is_subscriber !== false)));
 
   const resolvedHeroImage = useResolvedImageUri(article.image);
   const resolvedGalleryImages = useResolvedImageUris(article.images);
@@ -620,6 +690,13 @@ export default function NewsDetailsScreen({ route, navigation }) {
       const mergedArticle = normalizeArticle({
         ...routeParamArticle,
         ...matchedItem,
+        // khali value (server list me music/frame na aaye) route se aaye sahi value ko overwrite na kare
+        musicUrl: matchedItem.musicUrl || matchedItem.music_url || routeParamArticle.musicUrl || routeParamArticle.music_url || '',
+        musicVolume: matchedItem.musicVolume ?? routeParamArticle.musicVolume,
+        muteOriginal: Boolean(matchedItem.muteOriginal || routeParamArticle.muteOriginal),
+        useFrame: Boolean(matchedItem.useFrame || routeParamArticle.useFrame),
+        frameTemplate: matchedItem.frameTemplate || routeParamArticle.frameTemplate || '',
+        frameMerged: matchedItem.frameMerged ?? routeParamArticle.frameMerged,
         author_profile_image:
           matchedItem.author_profile_image ||
           routeParamArticle.author_profile_image ||
@@ -702,7 +779,10 @@ export default function NewsDetailsScreen({ route, navigation }) {
     { intervalMs: 30000, runOnFocus: false }
   );
 
-  const locationLabel = useMemo(() => buildLocationLabel(article), [article]);
+  const locationLabel = useMemo(
+    () => buildLocationLabel(article, isOwnStory ? currentUser : liveAuthor),
+    [article, isOwnStory, currentUser, liveAuthor]
+  );
   const articleParagraphs = useMemo(() => buildArticleParagraphs(article), [article]);
   const activeCategoryTag = useMemo(
     () => (article.menuTags || []).find((tag) => tag !== 'latest') || 'latest',
@@ -830,27 +910,63 @@ export default function NewsDetailsScreen({ route, navigation }) {
     if (currentUserEmail) persistLikedLocal(currentUserEmail, article.id, finalLiked);
   }, [article.id, isLiked, likeCount, currentUserEmail, engId]);
 
-  const handleShare = useCallback(async () => {
+  const { showPopup } = useToast();
+  const { language: appLanguage } = useLanguage();
+  const { capture: captureFramedImage, host: framedCaptureHost } = useFramedImageCapture();
+
+  const handleShare = useCallback(() => {
+    setShowSocialShareModal(true);
+  }, []);
+
+  const handleShareSuccess = useCallback(async () => {
     try {
-      const articleLink = `https://rtinews.in/news/${encodeURIComponent(article.id || article.title || 'story')}`;
-      const articleImage = article.image || article.images?.[0] || '';
-      const result = await Share.share({
-        title: article.title,
-        message: `${article.title}\n\n${article.excerpt || article.description || ''}\n\n${articleImage ? `Image: ${articleImage}\n\n` : ''}Read full news: ${articleLink}\n\nRTI News App`,
-        url: articleLink,
+      const shareResult = await UserStore.updateNewsFeedItem(article.id, 'share');
+      if (shareResult?.ok) {
+        const nextShares = Number(shareCount || 0) + 1;
+        setShareCount(nextShares);
+        publishEngagement(article.id, { shares: nextShares }, engId);
+      }
+    } catch (_) {}
+  }, [article.id, shareCount, engId]);
+
+  // Share popup ka "Video/Image + Link" button: media (frame + music ke saath) + title + news link ek saath
+  const shareImageUrl = String(article.image || article.images?.[0] || '').trim();
+  const shareMediaKind = canPlayVideo ? 'video' : (/^https?:/i.test(shareImageUrl) ? 'image' : '');
+
+  const handleShareMediaPackage = useCallback(async () => {
+    try {
+      const articleLink = article.url ? String(article.url) : `https://rtinews.in/news/${encodeURIComponent(article.id || article.title || 'story')}`;
+      const brandedVideo = article.branded_video || article.brandedVideo;
+      const kind = shareMediaKind || 'none';
+      const mediaUrl = kind === 'video' ? (brandedVideo || effectiveVideoUri) : (kind === 'image' ? shareImageUrl : '');
+      const exportOpts = exportOptsFromStory(article);
+      const imgFrame = imageFrameOptsFromStory(article);
+      const r = await shareNewsPackage({
+        story: article,
+        postLink: articleLink,
+        language: appLanguage,
+        kind,
+        mediaUrl,
+        opts: brandedVideo ? {} : exportOpts,
+        frame: imgFrame,
+        getNativeImageFile: kind === 'image' && imgFrame ? () => captureFramedImage(mediaUrl, imgFrame) : undefined,
+        confirm: () => new Promise((resolve) => {
+          const t = setTimeout(() => resolve(false), 60000);
+          showPopup('Your post is ready with frame & music. Tap Share to send it with the news link.', 'success', {
+            title: 'Share',
+            primaryLabel: 'Share',
+            onPrimaryPress: () => { clearTimeout(t); resolve(true); },
+            secondaryLabel: 'Cancel',
+            onSecondaryPress: () => { clearTimeout(t); resolve(false); },
+          });
+        }),
       });
-      const wasShared = Platform.OS === 'web' || result.action === Share.sharedAction;
-      if (wasShared) {
-        const shareResult = await UserStore.updateNewsFeedItem(article.id, 'share');
-        if (shareResult?.ok) {
-          const nextShares = Number(shareCount || 0) + 1;
-          setShareCount(nextShares);
-          publishEngagement(article.id, { shares: nextShares }, engId);
-          await loadArticleDetails();
-        }
+      if (r.shared) {
+        if (r.needsPaste) showPopup('News link copy ho gaya hai — caption me paste kar do.', 'info', { title: 'Share' });
+        await handleShareSuccess();
       }
     } catch { Alert.alert('Notice', 'Could not share this article'); }
-  }, [article, loadArticleDetails, shareCount, engId]);
+  }, [article, shareMediaKind, shareImageUrl, effectiveVideoUri, appLanguage, showPopup, captureFramedImage, handleShareSuccess]);
 
   const handleAddComment = useCallback(async () => {
     const trimmed = commentText.trim();
@@ -958,6 +1074,99 @@ export default function NewsDetailsScreen({ route, navigation }) {
     }
     return result;
   }, [article, navigation]);
+
+  const postLink = useMemo(() => (
+    article.url ? String(article.url) : `https://rtinews.in/news/${encodeURIComponent(article.id || article.title || 'story')}`
+  ), [article.url, article.id, article.title]);
+
+  const toggleMoreMenu = useCallback(() => {
+    if (showMoreMenu) { setShowMoreMenu(false); setMenuAnchor(null); return; }
+    if (IS_WEB && moreBtnRef.current?.measureInWindow) {
+      moreBtnRef.current.measureInWindow((x, y, w, h) => {
+        const menuW = 190;
+        const menuH = 180;
+        const viewH = typeof window !== 'undefined' ? window.innerHeight : 800;
+        const viewW = typeof window !== 'undefined' ? window.innerWidth : 1200;
+        const openUp = y + h + menuH + 8 > viewH;
+        setMenuAnchor({
+          top: openUp ? Math.max(8, y - menuH - 4) : y + h + 4,
+          left: Math.max(8, Math.min(x + w - menuW, viewW - menuW - 8)),
+        });
+        setShowMoreMenu(true);
+      });
+      return;
+    }
+    setShowMoreMenu(true);
+  }, [showMoreMenu]);
+
+  const handleMenuShare = useCallback(() => {
+    setShowMoreMenu(false);
+    setMenuAnchor(null);
+    setShowSocialShareModal(true);
+  }, []);
+
+  const handleShareLink = useCallback(async () => {
+    setShowMoreMenu(false);
+    setMenuAnchor(null);
+    try {
+      const { result } = await shareNewsLink({ story: article, postLink, language: appLanguage });
+      if (result?.action === Share.sharedAction) await handleShareSuccess();
+    } catch {}
+  }, [article, postLink, appLanguage, handleShareSuccess]);
+
+  const handleReportArticle = useCallback(async () => {
+    setShowMoreMenu(false);
+    setMenuAnchor(null);
+    await UserStore.recordNewsFeedMenuAction(article.id, 'report', { title: article.title || '', reason: 'Reported from news detail menu' });
+    Alert.alert('Report submitted', 'Thanks. This post has been reported for review.');
+  }, [article.id, article.title]);
+
+  const handleDeleteArticleAction = useCallback(async () => {
+    setShowMoreMenu(false);
+    setMenuAnchor(null);
+    const confirmed = IS_WEB
+      ? (typeof window !== 'undefined' && typeof window.confirm === 'function'
+          ? window.confirm('Are you sure you want to delete this post? This cannot be undone.')
+          : true)
+      : await new Promise((resolve) => {
+          Alert.alert(
+            'Delete Post',
+            'Are you sure you want to delete this post? This cannot be undone.',
+            [
+              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Delete', style: 'destructive', onPress: () => resolve(true) },
+            ]
+          );
+        });
+    if (!confirmed) return;
+    const result = await handleDeleteArticle();
+    if (result && result.ok === false) {
+      Alert.alert('Delete failed', result.message || 'Unable to delete post.');
+    }
+  }, [handleDeleteArticle]);
+
+  const handleBlockAuthorAction = useCallback(async () => {
+    setShowMoreMenu(false);
+    setMenuAnchor(null);
+    if (!currentUserEmail) {
+      Alert.alert('Login Required', 'Please login to block this user.');
+      return;
+    }
+    try {
+      const aid = String(article?.author_id ?? '').trim();
+      const aemail = String(article?.author_email || article?.createdBy || '').trim().toLowerCase();
+      const res = await UserStore.blockUser(aemail, aid);
+      if (res?.ok === false) {
+        Alert.alert('Block', res?.message || 'Unable to block user.');
+        return;
+      }
+      Alert.alert('Blocked', 'This user has been blocked.');
+      if (navigation?.canGoBack?.()) navigation.goBack();
+      else navigation?.navigate?.('Home');
+    } catch {
+      Alert.alert('Block', 'Unable to block user.');
+    }
+  }, [currentUserEmail, article?.author_id, article?.author_email, article?.createdBy, navigation]);
 
   const handleDeleteComment = useCallback(async (commentId) => {
     const confirmed = IS_WEB
@@ -1089,34 +1298,59 @@ export default function NewsDetailsScreen({ route, navigation }) {
                       </View>
                       {(() => {
                         // Plan expire / inactive => koi plan ya role label nahi dikhana
-                        const planForRole = liveAuthor?.subscription_plan || article.author_subscription_plan || null;
-                        const planActive = liveAuthor
-                          ? UserStore.hasActiveRolePlan(liveAuthor)
-                          : UserStore.hasActiveRolePlan({
-                              subscription_plan: article.author_subscription_plan || null,
-                              is_subscribed: article.author_is_subscribed ?? article.author_is_premium,
-                            });
+                        const planForRole = isOwnStory
+                          ? (currentUser?.subscription_plan || liveAuthor?.subscription_plan || article.author_subscription_plan || null)
+                          : (liveAuthor?.subscription_plan || article.author_subscription_plan || null);
+                        const planActive = isOwnStory
+                          ? UserStore.hasActiveRolePlan(currentUser)
+                          : (liveAuthor
+                            ? UserStore.hasActiveRolePlan(liveAuthor)
+                            : UserStore.hasActiveRolePlan({
+                                subscription_plan: article.author_subscription_plan || null,
+                                is_subscribed: article.author_is_subscribed ?? article.author_is_subscriber ?? article.author_is_premium,
+                                is_premium: article.author_is_premium,
+                                is_subscriber: article.author_is_subscriber,
+                              }));
                         if (!planActive) return null;
                         const _rn = planForRole?.role_names;
                         const _rnList = Array.isArray(_rn) ? _rn : (typeof _rn === 'string' && _rn.trim() ? _rn.split(',') : []);
                         const planRoleLabel = (_rnList.length
                           ? _rnList
                           : String(UserStore.getSeatRoleNameForPlanRoleId(planForRole?.role_id_raw || planForRole?.role_id || '') || '').split(', ')
-                        ).map((n) => String(n || '').trim()).filter(Boolean).join(', ');
-                        const label = planRoleLabel || article.author_role_label || 'Reporter';
-                        return <Text style={styles.storyAuthorRoleText}>{label}</Text>;
+                        ).map((n) => cleanText(n)).filter(Boolean).join(', ');
+                        const rawRoleOrPlan = isOwnStory
+                          ? (cleanText(currentUser?.subscription_plan?.plan_name) || cleanText(currentUser?.subscription_plan?.name) || cleanText(currentUser?.role_label) || cleanText(article.author_role_label))
+                          : (cleanText(planForRole?.plan_name) || cleanText(planForRole?.name) || cleanText(liveAuthor?.role_label) || cleanText(article.author_role_label));
+                        // Purchased subscription ka naam + uski duration (time) + kab tak valid
+                        const purchasedPlanName = cleanText(planForRole?.plan_name) || cleanText(planForRole?.name) || cleanText(planForRole?.title);
+                        const durationLabel = formatPlanDuration(planForRole);
+                        const expiresRaw = planForRole?.expires_at || planForRole?.expiry || planForRole?.end_date;
+                        const validTill = expiresRaw ? formatArticleDate(expiresRaw) : '';
+                        const roleLabel = planRoleLabel || rawRoleOrPlan || 'Reporter';
+                        const headLine = [roleLabel, purchasedPlanName && purchasedPlanName !== roleLabel ? purchasedPlanName : '', durationLabel]
+                          .filter(Boolean)
+                          .join(' • ');
+                        return (
+                          <>
+                            <Text style={styles.storyAuthorRoleText}>{headLine}</Text>
+                            {validTill ? <Text style={styles.storyAuthorPlanTimeText}>{`Valid till ${validTill}`}</Text> : null}
+                          </>
+                        );
                       })()}
                     </View>
                   </View>
-                  {canDeleteArticle ? (
-                    <PostMenuButton
-                      inline
-                      dark
-                      size={36}
-                      label={Number(routeArticle?.type) === 2 ? 'reel' : 'post'}
-                      onDelete={handleDeleteArticle}
-                    />
-                  ) : null}
+                  <View ref={moreBtnRef} collapsable={false}>
+                    <TouchableOpacity
+                      style={styles.authorMoreBtn}
+                      onPress={toggleMoreMenu}
+                      activeOpacity={0.8}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      accessibilityRole="button"
+                      accessibilityLabel="More options"
+                    >
+                      <Ionicons name="ellipsis-vertical" size={20} color="#64748b" />
+                    </TouchableOpacity>
+                  </View>
                  {false ? (
                     <TouchableOpacity
                       style={[styles.followAuthorButton, isFollowingAuthor && styles.followAuthorButtonActive, followLoading && styles.followAuthorButtonDisabled]}
@@ -1146,7 +1380,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
                     <Ionicons name="calendar-outline" size={17} color="#94a3b8" />
                                    <Text style={styles.storyMetaPillText}>{formatArticleDate(article.date)}</Text>
                   </View>
-                  {article.category ? (
+                  {cleanText(article.category) ? (
                     <View style={styles.storyMetaPill}>
                       <Ionicons name="pricetag-outline" size={17} color="#94a3b8" />
                       <Text style={styles.storyMetaPillText} numberOfLines={1}>{article.category}</Text>
@@ -1181,8 +1415,15 @@ export default function NewsDetailsScreen({ route, navigation }) {
                       key={effectiveVideoUri}
                       images={[]}
                       video={effectiveVideoUri}
+                      musicUrl={article.musicUrl}
+                      musicVolume={article.musicVolume}
+                      muteOriginal={article.muteOriginal}
                       width={Math.max(1, heroWrapWidth || Math.min(responsiveWidth - (isCompactLayout ? 32 : 64), 668))}
                       maxHeight={heroFrameHeight}
+                      // frame overlay ho to seek bar / controls banner ke UPAR rahein, neeche chhupein nahi
+                      bannerH={article.useFrame && !article.frameMerged && heroWrapWidth > 0 ? getLowerBannerHeight(getFrameTemplate(article.frameTemplate), heroWrapWidth) : 0}
+                      // download me frame + music dono judein
+                      frame={frameOptsFromStory(article)}
                       downloadable
                     />
                   ) : article.images.length > 1 ? (
@@ -1192,13 +1433,14 @@ export default function NewsDetailsScreen({ route, navigation }) {
                       maxHeight={heroFrameHeight}
                       radius={5}
                       downloadable
+                      frame={imageFrameOptsFromStory(article)}
                     />
                   ) : heroImageSource ? (
                     <>
                       <Image source={heroImageSource} style={styles.storyHeroImage} resizeMode="contain" />
                       {heroImageSource?.uri ? (
                         <View pointerEvents="box-none" style={{ position: 'absolute', top: 10, right: 10, zIndex: 8, elevation: 8 }}>
-                          <MediaDownloadButton uri={heroImageSource.uri} type="image" size={32} />
+                          <MediaDownloadButton uri={heroImageSource.uri} type="image" size={32} frame={imageFrameOptsFromStory(article)} />
                         </View>
                       ) : null}
                     </>
@@ -1208,6 +1450,17 @@ export default function NewsDetailsScreen({ route, navigation }) {
                       <Text style={styles.imagePlaceholderText}>Loading image...</Text>
                     </View>
                   )}
+                  {framedCaptureHost}
+                  {/* Frame: image par hamesha; video par tabhi jab server ne merge nahi kiya (frameMerged = false) */}
+                  {article.useFrame && heroWrapWidth > 0 && !(canPlayVideo && article.frameMerged) ? (
+                    <NewsFrameOverlay
+                      width={heroWrapWidth}
+                      height={(!canPlayVideo && article.images.length > 1) ? heroFrameHeight + 26 : heroFrameHeight}
+                      title={article.title}
+                      description={article.description || article.excerpt || ''}
+                      templateId={getFrameTemplate(article.frameTemplate).id}
+                    />
+                  ) : null}
                 </View>
 
                 {/* ✅ Stats in Single Line - Fixed */}
@@ -1433,6 +1686,65 @@ export default function NewsDetailsScreen({ route, navigation }) {
           </ScrollView>
         </View>
       </Modal>
+
+      {/* ── 3-Dots More Menu Modal ── */}
+      <Modal
+        visible={showMoreMenu}
+        transparent
+        animationType={menuAnchor ? 'none' : 'fade'}
+        statusBarTranslucent
+        onRequestClose={() => { setShowMoreMenu(false); setMenuAnchor(null); }}
+      >
+        <TouchableWithoutFeedback onPress={() => { setShowMoreMenu(false); setMenuAnchor(null); }}>
+          <View style={menuAnchor ? styles.moreMenuBackdropWeb : styles.moreMenuBackdrop}>
+            <TouchableWithoutFeedback>
+              <View style={menuAnchor ? [styles.moreMenuWeb, { position: 'absolute', top: menuAnchor.top, left: menuAnchor.left }] : styles.moreMenuSheet}>
+                {!menuAnchor ? <View style={styles.moreMenuHandle} /> : null}
+                <TouchableOpacity style={styles.moreMenuItem} onPress={handleMenuShare} activeOpacity={0.82}>
+                  <Ionicons name="share-social-outline" size={18} color="#0ea5e9" />
+                  <Text style={styles.moreMenuText}>Share</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.moreMenuItem} onPress={handleShareLink} activeOpacity={0.82}>
+                  <Ionicons name="link-outline" size={18} color="#0ea5e9" />
+                  <Text style={styles.moreMenuText}>Share link</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.moreMenuItem} onPress={handleReportArticle} activeOpacity={0.82}>
+                  <Ionicons name="flag-outline" size={18} color="#f59e0b" />
+                  <Text style={styles.moreMenuText}>Report</Text>
+                </TouchableOpacity>
+                {canDeleteArticle ? (
+                  <TouchableOpacity style={styles.moreMenuItem} onPress={handleDeleteArticleAction} activeOpacity={0.82}>
+                    <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                    <Text style={[styles.moreMenuText, { color: '#ef4444', fontWeight: '700' }]}>Delete</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {!canDeleteArticle ? (
+                  <TouchableOpacity style={styles.moreMenuItem} onPress={handleBlockAuthorAction} activeOpacity={0.82}>
+                    <Ionicons name="ban-outline" size={18} color="#ef4444" />
+                    <Text style={styles.moreMenuText}>Block</Text>
+                  </TouchableOpacity>
+                ) : null}
+                {!menuAnchor ? (
+                  <TouchableOpacity style={[styles.moreMenuItem, { borderBottomWidth: 0, justifyContent: 'center' }]} onPress={() => { setShowMoreMenu(false); setMenuAnchor(null); }} activeOpacity={0.82}>
+                    <Text style={[styles.moreMenuText, { color: '#64748b' }]}>Cancel</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
+
+      <SocialShareModal
+        visible={showSocialShareModal}
+        onClose={() => setShowSocialShareModal(false)}
+        title={article.title}
+        description={article.description || article.excerpt || ''}
+        url={postLink}
+        onShareSuccess={handleShareSuccess}
+        mediaKind={shareMediaKind}
+        onShareMedia={handleShareMediaPackage}
+      />
     </View>
   );
 
@@ -1522,6 +1834,7 @@ const styles = StyleSheet.create({
   storyAuthorTextWrap: { flex: 1 },
   storyAuthorNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   storyAuthorName: { color: '#0f172a', fontSize: 22, fontWeight: '900', fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
+  storyAuthorPlanTimeText: { color: '#94a3b8', fontSize: 12, fontWeight: '600', marginTop: 2, fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   storyAuthorRoleText: { color: '#64748b', fontSize: 13, fontWeight: '700', marginTop: 4, fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
    followAuthorButton: {
     flexDirection: 'row',
@@ -1669,6 +1982,13 @@ const styles = StyleSheet.create({
   commentRepliesWrap: { marginTop: 10 },
   commentRepliesToggle: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingLeft: 4, marginBottom: 4 },
   commentRepliesLine: { width: 24, height: 1, backgroundColor: '#cbd5e1' },
-  commentRepliesToggleText: { fontSize: 12, fontWeight: '700', color: '#475569', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   commentReplies: { marginTop: 10, borderLeftWidth: 2, borderLeftColor: '#e2e8f0', paddingLeft: 10 },
+  authorMoreBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#e2e8f0' },
+  moreMenuBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  moreMenuBackdropWeb: { flex: 1, backgroundColor: 'transparent' },
+  moreMenuSheet: { backgroundColor: '#ffffff', borderTopLeftRadius: 18, borderTopRightRadius: 18, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 24 },
+  moreMenuHandle: { alignSelf: 'center', width: 38, height: 4, borderRadius: 2, backgroundColor: '#e2e8f0', marginBottom: 8 },
+  moreMenuWeb: { width: 190, backgroundColor: '#ffffff', borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', paddingVertical: 4, zIndex: 100, ...(IS_WEB ? { boxShadow: '0 8px 24px rgba(15,23,42,0.18)' } : null) },
+  moreMenuItem: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
+  moreMenuText: { fontSize: 14, fontWeight: '600', color: '#1e293b' },
 });

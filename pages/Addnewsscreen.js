@@ -1396,6 +1396,9 @@ console.log("Platform:", Platform.OS);
           visible={audioEditorVisible}
           videoUri={video}
           initial={audioMix}
+          frameTemplate={useFrame ? frameTemplate : ''}
+          title={title}
+          description={descriptionText}
           onClose={() => setAudioEditorVisible(false)}
           onDone={(mix) => {
             setAudioMix(mix.musicId || mix.voiceUri || mix.muteOriginal ? mix : null);
@@ -1601,6 +1604,9 @@ console.log("Platform:", Platform.OS);
         visible={audioEditorVisible}
         videoUri={video}
         initial={audioMix}
+        frameTemplate={useFrame ? frameTemplate : ''}
+        title={title}
+        description={descriptionText}
         onClose={() => setAudioEditorVisible(false)}
         onDone={(mix) => {
           setAudioMix(mix.musicId || mix.voiceUri || mix.muteOriginal ? mix : null);

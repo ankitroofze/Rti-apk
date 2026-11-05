@@ -11,6 +11,9 @@ import { Feather } from '@expo/vector-icons';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
+import { exportOptsFromStory, imageFrameOptsFromStory } from '../utils/videoWithMusic';
+import { shareNewsPackage } from '../utils/shareNews';
+import useFramedImageCapture from '../components/useFramedImageCapture';
 import ProfileAvatar from '../components/ProfileAvatar';
 import VideoPreview from '../components/VideoPreview';
 import VerifiedBadge from '../components/VerifiedBadge';
@@ -27,6 +30,8 @@ import useLiveRefresh from '../utils/useLiveRefresh';
 import { MODULE_HEADER_HEIGHT_WEB } from '../constants/subscriptionThemes';
 import ModuleWebHeader from '../components/Modulewebheader';
 import MediaGallery from '../components/MediaGallery';
+import NewsFrameOverlay from '../components/NewsFrameOverlay';
+import { getFrameTemplate } from '../constants/frameTemplates';
 import ModuleMobileHeader from '../components/ModuleMobileHeader';
 // ── Design tokens — matched to the Advertise / Add News screens ────────────────
 const C = {
@@ -97,6 +102,35 @@ function interleaveSponsoredCards(items = [], ads = []) {
     }
   });
   return [...mixed, ...sponsoredAds.slice(adIndex).map((ad) => ({ ...ad, __type: 'ad' }))];
+}
+
+// ─── FramedBox ─────────────────────────────────────────────────────
+// Post me template (use_frame + frame_template) select hai to media 16:9 box me aata hai
+// aur neeche breaking-news banner (title / description scroll ke saath) lagta hai.
+function FramedBox({ item, children }) {
+  const [w, setW] = useState(0);
+  const h = w ? Math.round((w * 9) / 16) : 0;
+  const tpl = getFrameTemplate(item.frameTemplate);
+  return (
+    <View
+      style={{ width: '100%', aspectRatio: 16 / 9, overflow: 'hidden', backgroundColor: '#0f172a', marginBottom: 10 }}
+      onLayout={(e) => {
+        const nw = Math.round(e.nativeEvent.layout.width);
+        if (nw && nw !== w) setW(nw);
+      }}
+    >
+      {typeof children === 'function' ? children(w, h) : children}
+      {w ? (
+        <NewsFrameOverlay
+          width={w}
+          height={h}
+          title={item.title || ''}
+          description={item.description || item.excerpt || item.subtitle || ''}
+          templateId={tpl.id}
+        />
+      ) : null}
+    </View>
+  );
 }
 
 // ─── ResolvedImage ─────────────────────────────────────────────────
@@ -751,33 +785,30 @@ const syncFeed = useCallback(async (focusItemId = null, { silent = false } = {})
   // Keep rendering while fonts load. Returning here would skip the callbacks
   // declared below and changes the hook order on the next render.
 
+  const { capture: captureFramedImage, host: framedCaptureHost } = useFramedImageCapture();
+
+  // Media (video / image — frame + music ke saath) + title + news link, ek hi share me
   const handleShare = async (item) => {
-    const newsLink = `https://rtinews.in/news/${encodeURIComponent(item.id || item.title || 'story')}`;
-    const image = item.image || item.images?.[0] || '';
-    const shareText = `${item.title}\n\n${item.subtitle || item.description || ''}\n\n${image ? `Image: ${image}\n\n` : ''}Read full news: ${newsLink}`;
-    const canShareMedia = Platform.OS !== 'web' && (await Sharing.isAvailableAsync());
-    const ensureLocalFile = async (uri, fallbackExt = 'bin') => {
-      if (!uri) return null;
-      if (uri.startsWith('file://') || uri.startsWith('content://')) return uri;
-      if (uri.startsWith('data:')) {
-        const match = uri.match(/^data:([^;]+);base64,(.+)$/);
-        if (!match) return null;
-        const ext = (match[1] || '').includes('/') ? match[1].split('/')[1] : fallbackExt;
-        const target = `${FileSystem.cacheDirectory}share-${Date.now()}.${ext}`;
-        await FileSystem.writeAsStringAsync(target, match[2], { encoding: FileSystem.EncodingType.Base64 });
-        return target;
-      }
-      return uri;
-    };
-    const mediaCandidate = item.video || (item.images?.length ? item.images[0] : null) || item.file?.uri;
     try {
-      if (canShareMedia && mediaCandidate) {
-        const uri = await ensureLocalFile(mediaCandidate, item.video ? 'mp4' : 'jpg');
-        if (uri) { await Sharing.shareAsync(uri, { dialogTitle: item.title || 'Share media' }); }
-        else { await Share.share({ title: item.title, message: shareText, url: newsLink }); }
-      } else {
-        await Share.share({ title: item.title, message: shareText, url: newsLink });
-      }
+      const newsLink = item.url ? String(item.url) : `https://rtinews.in/news/${encodeURIComponent(item.id || item.title || 'story')}`;
+      const itemVideoUri = typeof item.video === 'string' ? item.video : item.video?.uri;
+      const itemImage = String(item.image || item.images?.[0] || '').trim();
+      const kind = itemVideoUri ? 'video' : (/^https?:/i.test(itemImage) ? 'image' : 'none');
+      const mediaUrl = kind === 'video' ? itemVideoUri : (kind === 'image' ? itemImage : '');
+      const brandedVideo = item.branded_video || item.brandedVideo;
+      const imgFrame = imageFrameOptsFromStory(item);
+      const r = await shareNewsPackage({
+        story: item,
+        postLink: newsLink,
+        language,
+        kind,
+        mediaUrl,
+        opts: brandedVideo ? {} : exportOptsFromStory(item),
+        frame: imgFrame,
+        getNativeImageFile: kind === 'image' && imgFrame ? () => captureFramedImage(mediaUrl, imgFrame) : undefined,
+      });
+      if (r.needsPaste) showToast('News link copy ho gaya hai — caption me paste kar do.', 'info');
+      if (!r.shared) return;
     } catch { showToast('Share failed.', 'error'); return; }
     const result = await UserStore.updateNewsFeedItem(item.id, 'share');
     if (!result.ok) { showToast(result.message, 'error'); return; }
@@ -1277,6 +1308,7 @@ const handleLike = async (item) => {
 
    return (
     <View style={{ flex: 1 }}>
+    {framedCaptureHost}
     <View style={styles.root}>
          {/* Fixed Header — ek hi common header (Android/iOS: ModuleMobileHeader.js, Web: ModuleWebHeader.js) */}
       {Platform.OS === 'web' ? (
@@ -1654,7 +1686,15 @@ const handleLike = async (item) => {
                   </View>
                 )}
 
-                            {item.images?.length ? (
+                {item.images?.length && item.useFrame ? (
+                  <FramedBox item={item}>
+                    {(w, h) => (item.images.length === 1 ? (
+                      <ResolvedImage uri={item.images[0]} style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' }} resizeMode="contain" />
+                    ) : (
+                      <MediaGallery images={item.images} width={w || Math.max(220, Math.min(windowWidth - 42, 720))} maxHeight={h || 420} />
+                    ))}
+                  </FramedBox>
+                ) : item.images?.length ? (
                   <View
                     style={styles.mediaPreviewWrap}
                     onLayout={(e) => {
@@ -1673,7 +1713,11 @@ const handleLike = async (item) => {
                     )}
                   </View>
                 ) : null}
-                         {item.video ? (
+                {item.video && item.useFrame && !item.frameMerged ? (
+                  <FramedBox item={item}>
+                    <VideoPreview uri={typeof item.video === 'string' ? item.video : item.video?.uri} style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' }} contentFit="contain" />
+                  </FramedBox>
+                ) : item.video ? (
                   <View style={styles.videoPreviewWrap}>
                     <VideoPreview uri={typeof item.video === 'string' ? item.video : item.video?.uri} style={styles.videoPreview} contentFit="cover" />
                   </View>

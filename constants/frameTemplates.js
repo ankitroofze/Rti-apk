@@ -9,6 +9,7 @@
 export const FRAME_TEMPLATES = [
   {
     id: 'glossy2',
+    file: 'frame-glossy2',
     label: 'Orange Blue',
     kind: 'lower',
     asset: require('../assets/frames/frame-glossy2.png'),
@@ -19,6 +20,7 @@ export const FRAME_TEMPLATES = [
   },
   {
     id: 'glossy1',
+    file: 'frame-glossy1',
     label: 'Glossy Blue',
     kind: 'lower',
     asset: require('../assets/frames/frame-glossy1.png'),
@@ -29,6 +31,7 @@ export const FRAME_TEMPLATES = [
   },
   {
     id: 'redbar',
+    file: 'frame-redbar',
     label: 'Red Bar',
     kind: 'lower',
     asset: require('../assets/frames/frame-redbar.png'),
@@ -39,6 +42,7 @@ export const FRAME_TEMPLATES = [
   },
   {
     id: 'banner',
+    file: 'frame-banner',
     label: 'White + Blue',
     kind: 'lower',
     asset: require('../assets/frames/frame-banner.png'),
@@ -54,6 +58,33 @@ export const FRAME_TEMPLATES = [
 // Purani posts (jinme template id nahi aata) isi template se dikhengi
 export const DEFAULT_FRAME_ID = 'glossy2';
 
-export function getFrameTemplate(id) {
-  return FRAME_TEMPLATES.find((t) => t.id === id) || FRAME_TEMPLATES.find((t) => t.id === DEFAULT_FRAME_ID) || FRAME_TEMPLATES[0];
+// id ('glossy2'), file name ('frame-glossy2.png') ya label — kisi se bhi template mil jata hai
+// (server ab file name save karta hai, purani posts me id hai).
+// 'frame-redbar.png' / 'frame-redbar' / 'redbar' / 'assets/frames/frame-redbar.png' / 'Red Bar' -> 'redbar'
+const toKey = (v) => String(v ?? '')
+  .trim()
+  .toLowerCase()
+  .split(/[\\/]/).pop()          // folder path hata do
+  .replace(/\.(png|jpe?g|webp)$/i, '') // extension hata do
+  .replace(/^frame[-_]/, '')          // 'frame-' prefix hata do
+  .replace(/[^a-z0-9]/g, '');
+
+export function getFrameTemplate(idOrName) {
+  const key = toKey(idOrName);
+  return (
+    (key && FRAME_TEMPLATES.find((t) => toKey(t.id) === key || toKey(t.file) === key || toKey(t.label) === key)) ||
+    FRAME_TEMPLATES.find((t) => t.id === DEFAULT_FRAME_ID) ||
+    FRAME_TEMPLATES[0]
+  );
+}
+
+// Server ko bhejne ke liye: assets/frames wala exact file name (e.g. 'frame-glossy2.png').
+export function getFrameTemplateName(idOrName) {
+  return getFrameTemplate(idOrName).file;
+}
+
+// Server se aaya value (file name / label / id) -> app ke andar hamesha id ('' ho to '' hi)
+export function normalizeFrameTemplateId(idOrName) {
+  const raw = String(idOrName ?? '').trim();
+  return raw ? getFrameTemplate(raw).id : '';
 }

@@ -90,6 +90,18 @@ const webConfigContent = `<?xml version="1.0" encoding="UTF-8"?>
           <action type="Rewrite" url="api-proxy.php?__proxy_endpoint={R:1}" appendQueryString="true" />
         </rule>
 
+        <!-- Rule 1a: News share link (OG tags + SPA) -->
+        <rule name="NewsShare" stopProcessing="true">
+          <match url="^news/([0-9]+)/?$" />
+          <action type="Rewrite" url="news-share.php" appendQueryString="true" />
+        </rule>
+
+        <!-- Rule 1b: Forward Storage media calls to PHP proxy -->
+        <rule name="StorageProxy" stopProcessing="true">
+          <match url="^storage-proxy(/.*)?$" />
+          <action type="Rewrite" url="storage-proxy.php?__proxy_endpoint={R:1}" appendQueryString="true" />
+        </rule>
+
         <!-- Rule 2: Exclude physical files and directories from SPA rewrite -->
         <rule name="StaticFiles" stopProcessing="true">
           <match url=".*" />
@@ -338,13 +350,36 @@ echo $bodyContent;
 `;
 fs.writeFileSync(path.join(outDir, 'api-proxy.php'), apiProxyContent, 'utf8');
 
-// 4b. Write .htaccess for Apache / Nginx proxy environments on Plesk
+// 4b. Write storage-proxy.php
+const storageProxyContent = apiProxyContent.replace(
+  "\\$TARGET_BASE = 'https://rtiapi.roofze.in/api';",
+  "\\$TARGET_BASE = 'https://rtiapi.roofze.in/storage';"
+).replace(
+  "preg_match('#^/api-proxy(?:/(.*))?\\$#i'",
+  "preg_match('#^/storage-proxy(?:/(.*))?\\$#i'"
+);
+fs.writeFileSync(path.join(outDir, 'storage-proxy.php'), storageProxyContent, 'utf8');
+
+// 4b2. news-share.php (root me rakhi hai) -> out/ me copy (WhatsApp preview ke liye news OG tags)
+const newsShareSrc = path.join(rootDir, 'news-share.php');
+if (fs.existsSync(newsShareSrc)) {
+  fs.copyFileSync(newsShareSrc, path.join(outDir, 'news-share.php'));
+  console.log('[prepare-plesk-build] Copied news-share.php');
+} else {
+  console.warn('[prepare-plesk-build] news-share.php root me nahi mili — share link preview kaam nahi karega.');
+}
+
+// 4c. Write .htaccess for Apache / Nginx proxy environments on Plesk
 const htaccessContent = `<IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
 
   # Forward API calls to PHP proxy
   RewriteRule ^api-proxy(/.*)?$ api-proxy.php?__proxy_endpoint=$1 [QSA,L]
+  # Forward Storage media calls to PHP proxy
+  RewriteRule ^storage-proxy(/.*)?$ storage-proxy.php?__proxy_endpoint=$1 [QSA,L]
+  # News share link: OG tags + SPA
+  RewriteRule ^news/([0-9]+)/?$ news-share.php [QSA,L]
 
   # Exclude existing physical files and directories from SPA rewrite
   RewriteCond %{REQUEST_FILENAME} -f [OR]

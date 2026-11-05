@@ -88,12 +88,12 @@ async function fileOk(path) {
 }
 
 // ── Engine 1: react-native-video-trim -> mixAudio() ──────────────────────────
-async function mergeWithVideoTrim({ videoPath, voicePath, musicPath, vol }) {
+async function mergeWithVideoTrim({ videoPath, voicePath, musicPath, vol, keepOriginal = false }) {
   let current = videoPath;
   // 1) Music: original awaaz band (0), music loop hokar video ki poori length par
   if (musicPath) {
     const r = await VideoTrim.mixAudio(current, musicPath, {
-      originalAudioVolume: 0,
+      originalAudioVolume: keepOriginal ? 1 : 0,   // muteOriginal=false => video ki apni awaaz bhi rahegi
       backgroundAudioVolume: vol,
       loopAudio: true,
     });
@@ -146,10 +146,10 @@ async function mergeWithFFmpegKit({ videoPath, voicePath, musicPath, vol }) {
 }
 
 /**
- * @param {{videoUri:string, voiceUri?:string|null, musicUrl?:string|null, musicVolume?:number}} opts
+ * @param {{videoUri:string, voiceUri?:string|null, musicUrl?:string|null, musicVolume?:number, muteOriginal?:boolean}} opts
  * @returns {Promise<string|null>} merged FINAL mp4 ka file:// uri, ya null (fallback)
  */
-export async function mergeAudioOnDevice({ videoUri, voiceUri, musicUrl, musicVolume = 0.6 }) {
+export async function mergeAudioOnDevice({ videoUri, voiceUri, musicUrl, musicVolume = 0.6, muteOriginal = true }) {
   lastError = null;
   try {
     if (Platform.OS === 'web') return fail('web par on-device merge available nahi');
@@ -170,7 +170,7 @@ export async function mergeAudioOnDevice({ videoUri, voiceUri, musicUrl, musicVo
     let outPath = null;
     if (VideoTrim?.mixAudio) {
       try {
-        outPath = await mergeWithVideoTrim({ videoPath, voicePath, musicPath, vol });
+        outPath = await mergeWithVideoTrim({ videoPath, voicePath, musicPath, vol, keepOriginal: !muteOriginal });
       } catch (e) {
         lastError = `video-trim mixAudio failed: ${e?.message || e}`;
         console.warn('[mergeAudioOnDevice]', lastError);

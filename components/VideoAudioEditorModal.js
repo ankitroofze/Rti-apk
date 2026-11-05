@@ -26,12 +26,14 @@ import { Ionicons, Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MUSIC_LIBRARY, resolveSong } from '../constants/musicLibrary';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
+import NewsFrameOverlay from './NewsFrameOverlay';
+import { getFrameTemplate } from '../constants/frameTemplates';
 
 const IS_WEB = Platform.OS === 'web';
 const VOLUMES = [0.3, 0.6, 1.0];
 const clamp01 = (n) => Math.max(0, Math.min(1, Number(n) || 0));
 
-export default function VideoAudioEditorModal({ visible, videoUri, initial, onClose, onDone }) {
+export default function VideoAudioEditorModal({ visible, videoUri, initial, onClose, onDone, frameTemplate = '', title = '', description = '' }) {
   const insets = useSafeAreaInsets();
   const { width: winW, height: winH } = useWindowDimensions();
   // Web: centered phone-width column, full height (top to bottom). Mobile: full screen.
@@ -44,6 +46,10 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
   const [voiceMime, setVoiceMime] = useState(initial?.voiceMime || null);
   const [muteOriginal, setMuteOriginal] = useState(initial?.muteOriginal ?? true); // mute_original: 1 = video ki original awaaz band
   const [recording, setRecording] = useState(false);
+  // Video stage (panel ke upar ka area) ka size — video + frame isi me device ke hisaab se fit hote hain
+  const [stage, setStage] = useState({ w: 0, h: 0 });
+  // Smooth playback guard: video kabhi tez / aage na bhaage (music / voice lagne ke baad bhi)
+  const playClock = useRef({ active: false, wall: 0, base: 0 });
   const [previewing, setPreviewing] = useState(false);
   const progressAnim = useRef(new Animated.Value(0)).current;   // 0..1 (no re-render while playing)
   const previewingRef = useRef(false);
@@ -87,6 +93,8 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
       try { videoPlayer.playbackRate = 1; } catch {}   // never let the video run faster than normal
       videoPlayer.currentTime = 0;
       videoPlayer.play();
+      try { videoPlayer.playbackRate = 1; } catch {}
+      playClock.current = { active: true, wall: Date.now(), base: 0 };
     } catch {}
   }, [videoPlayer]);
 
@@ -127,6 +135,7 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
   }, [musicPlayer, voicePlayer]);
 
   const stopAll = useCallback(() => {
+    playClock.current.active = false;
     try { videoPlayer.pause(); } catch {}
     pauseAudio();
     setPreviewing(false);
@@ -180,12 +189,35 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
       try { if (videoPlayer.playbackRate !== 1) videoPlayer.playbackRate = 1; } catch {}
     });
     const subStatus = videoPlayer.addListener?.('statusChange', (e) => {
+      if (e?.status === 'loading') playClock.current.active = false;          // buffering: clock rukta hai
+      else if (e?.status === 'readyToPlay' && playClock.current.wall) {         // buffering ke baad clock wahin se
+        playClock.current = { active: true, wall: Date.now(), base: Number(videoPlayer.currentTime || 0) };
+      }
       if (!previewingRef.current) return;
       if (e?.status === 'loading') pauseAudio();
       else if (e?.status === 'readyToPlay') resumeAudio();
     });
     return () => { subEnd?.remove?.(); subTime?.remove?.(); subRate?.remove?.(); subStatus?.remove?.(); };
   }, [videoPlayer, stopAll, pauseAudio, resumeAudio, progressAnim]);
+
+  // Drift guard: video real time se aage nikle (fast-forward jaisa) to turant sahi jagah wapas + speed 1x
+  useEffect(() => {
+    if (!visible) return undefined;
+    const id = setInterval(() => {
+      const clk = playClock.current;
+      if (!clk.active) return;
+      try {
+        if (videoPlayer.playbackRate !== 1) videoPlayer.playbackRate = 1;
+        const expected = clk.base + (Date.now() - clk.wall) / 1000;
+        const cur = Number(videoPlayer.currentTime || 0);
+        const dur = Number(videoPlayer.duration || 0);
+        if (cur - expected > 0.8 && (!dur || expected < dur - 0.3)) {
+          videoPlayer.currentTime = Math.max(0, expected);
+        }
+      } catch {}
+    }, 400);
+    return () => clearInterval(id);
+  }, [visible, videoPlayer]);
 
   // Cleanup on unmount
   useEffect(() => () => {
@@ -360,22 +392,46 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
     );
   };
 
-  const listMaxH = Math.max(170, Math.min(250, Math.round(winH * 0.3)));
+  const listMaxH = Math.max(150, Math.min(250, Math.round(winH * 0.26)));
+  const frameTpl = frameTemplate ? getFrameTemplate(frameTemplate) : null;
+  // Frame ho to video 16:9 box (feed jaisa) me, warna poore stage me; dono me video 'contain' = kabhi crop nahi
+  const boxW = frameTpl ? Math.min(stage.w, Math.round(stage.h * 16 / 9)) : stage.w;
+  const boxH = frameTpl ? Math.round(boxW * 9 / 16) : stage.h;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={close} statusBarTranslucent>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
       <View style={s.root}>
         <View style={[s.column, { width: colW }]}>
-          {/* VIDEO: fills the whole column, top to bottom */}
-          <View style={StyleSheet.absoluteFill}>
-            {playUri ? (
-              <VideoView
-                player={videoPlayer}
-                style={[StyleSheet.absoluteFill, IS_WEB ? { objectFit: 'contain' } : null]}
-                contentFit={IS_WEB ? 'contain' : 'cover'}
-                nativeControls={false}
-              />
+          {/* VIDEO STAGE: panel ke upar ka poora area. Video + frame device ki size ke hisaab se auto fit */}
+          <View
+            style={s.stage}
+            onLayout={(e) => {
+              const w = Math.round(e.nativeEvent.layout.width);
+              const h = Math.round(e.nativeEvent.layout.height);
+              if (w && h && (w !== stage.w || h !== stage.h)) setStage({ w, h });
+            }}
+          >
+            {stage.w > 0 ? (
+              <View style={{ width: boxW, height: boxH, backgroundColor: '#000', overflow: 'hidden' }}>
+                {playUri ? (
+                  <VideoView
+                    player={videoPlayer}
+                    style={[{ width: boxW, height: boxH }, IS_WEB ? { objectFit: 'contain' } : null]}
+                    contentFit="contain"
+                    nativeControls={false}
+                  />
+                ) : null}
+                {frameTpl ? (
+                  <NewsFrameOverlay
+                    width={boxW}
+                    height={boxH}
+                    title={title}
+                    description={description}
+                    templateId={frameTpl.id}
+                  />
+                ) : null}
+              </View>
             ) : null}
             <View style={s.dim} pointerEvents="none" />
 
@@ -481,6 +537,7 @@ const s = StyleSheet.create({
   column: { flex: 1, backgroundColor: '#000', overflow: 'hidden' },
 
   // video stage
+  stage: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   dim: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.12)' },
   centerPlay: {
     position: 'absolute', alignSelf: 'center', top: '50%', marginTop: -32, width: 64, height: 64, borderRadius: 32,
@@ -505,7 +562,7 @@ const s = StyleSheet.create({
   doneText: { color: '#fff', fontWeight: '800', fontSize: 14 },
 
   // panel
-  panel: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(17,24,39,0.96)', paddingTop: 12, paddingHorizontal: 12, borderTopLeftRadius: 18, borderTopRightRadius: 18 },
+  panel: { backgroundColor: 'rgba(17,24,39,0.98)', paddingTop: 12, paddingHorizontal: 12, borderTopLeftRadius: 18, borderTopRightRadius: 18 },
   tabs: { flexDirection: 'row', gap: 10, marginBottom: 10 },
   tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 10, borderRadius: 10, backgroundColor: 'rgba(255,255,255,0.1)' },
   tabOn: { backgroundColor: '#ea580c' },

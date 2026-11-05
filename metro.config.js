@@ -26,6 +26,25 @@ config.server = {
           },
         })(req, res, next);
       }
+      if (req.url.startsWith('/storage-proxy')) {
+        return createProxyMiddleware({
+          target: 'https://rtiapi.roofze.in',
+          changeOrigin: true,
+          secure: true,
+          pathRewrite: { '^/storage-proxy': '/storage' },
+          onProxyReq: (proxyReq) => {
+            proxyReq.removeHeader('transfer-encoding');
+          },
+          onProxyRes: (proxyRes) => {
+            proxyRes.headers['access-control-allow-origin'] = '*';
+          },
+          onError: (err, req2, res2) => {
+            console.error('[STORAGE PROXY ERROR]', req2.url, '->', err.code, err.message);
+            res2.writeHead(502, { 'Content-Type': 'application/json' });
+            res2.end(JSON.stringify({ message: 'Storage proxy failed', code: err.code }));
+          },
+        })(req, res, next);
+      }
       return metroMiddleware(req, res, next);
     };
   },

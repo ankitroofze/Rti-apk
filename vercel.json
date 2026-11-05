@@ -4,6 +4,7 @@
   "outputDirectory": "dist",
   "rewrites": [
     { "source": "/api-proxy/:path*", "destination": "https://rtiapi.roofze.in/api/:path*" },
+    { "source": "/storage-proxy/:path*", "destination": "https://rtiapi.roofze.in/storage/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [

@@ -724,15 +724,6 @@ export default function FarmingBuyScreen({ navigation, route }) {
                   <Text style={styles.sortItemText}>{opt.label}</Text>
                 </TouchableOpacity>
               ))}
-
-              <TouchableOpacity
-                style={styles.applyBtn}
-                activeOpacity={0.85}
-                onPress={() => { setActiveCategory(activeCategory); }}
-              >
-                <Ionicons name="options-outline" size={16} color="#fff" />
-                <Text style={styles.applyBtnText}>Apply Filters</Text>
-              </TouchableOpacity>
             </View>
           )}
 

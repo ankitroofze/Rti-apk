@@ -8,6 +8,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import { getFrameTemplateName } from '../../constants/frameTemplates';
 import { getIdbMediaBlob, isIdbMediaUri } from '../../utils/webMediaStore';
 import { setAdsHidden, isAdsHidden, registerAdsRefresher, subscriptionsHideAds } from '../../utils/adsVisibility';
 
@@ -401,7 +402,9 @@ const appendAudioMix = async (formData, audioMix) => {
   if (audioMix.musicId && !isLocalSong) formData.append('music_id', String(audioMix.musicId));
   const remoteMusicUrl = audioMix.music?.remoteUrl
     || (/^https?:/i.test(String(audioMix.musicUrl || '')) ? audioMix.musicUrl : null);
-  if (remoteMusicUrl) formData.append('music_url', String(remoteMusicUrl));
+  // https link ho to wahi; bundled song ho to assets/music folder wala exact file name (e.g. 'nastelbom-breaking-news-513433.mp3')
+  const musicUrlToSend = remoteMusicUrl || audioMix.music?.file || null;
+  if (musicUrlToSend) formData.append('music_url', String(musicUrlToSend));
   if (audioMix.musicId || audioMix.musicUrl) {
     formData.append('music_volume', String(clampMusicVolume(audioMix.musicVolume)));
   }
@@ -1822,7 +1825,8 @@ if (status === 200 || status === 201) {
       formData.append('report_type', reportType || '');
       formData.append('media_type', String(mediaType));
       formData.append('use_frame', useFrame ? '1' : '0');
-      formData.append('frame_template', useFrame ? String(frameTemplate || 'glossy2') : '');
+      // assets/frames wala exact file name (e.g. 'frame-glossy2.png') save hoga, id ('glossy2') ya label nahi
+      formData.append('frame_template', useFrame ? getFrameTemplateName(frameTemplate || 'glossy2') : '');
       // ✅ frame_merged: 1 = frame lag gaya (true), 0 = frame nahi (false) — hamesha 0/1 hi bhejna hai
       formData.append('frame_merged', toBinaryFlag(frameMerged === undefined ? useFrame : frameMerged));
 
@@ -2184,7 +2188,7 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
 
       const response = await fetch(`${BASE_URL}/comments/${commentId}`, {
-        method: 'DELETE',
+        method: 'POST',
         headers: {
           Accept: 'application/json',
           Authorization: `Bearer ${token}`,
@@ -2461,7 +2465,7 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
       const keepsExistingVideo = Number(mediaType) === 2 && !mediaUri;
       if (!keepsExistingVideo) {
         formData.append('use_frame', useFrame ? '1' : '0');
-        formData.append('frame_template', useFrame ? String(frameTemplate || 'glossy2') : '');
+        formData.append('frame_template', useFrame ? getFrameTemplateName(frameTemplate || 'glossy2') : '');
         // ✅ frame_merged: 1 = frame lag gaya (true), 0 = frame nahi (false)
         formData.append('frame_merged', toBinaryFlag(frameMerged === undefined ? useFrame : frameMerged));
       }
@@ -3308,21 +3312,18 @@ updateEcomDetails: async (id, fields = {}) => {
     const token = await getAuthToken();
     if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
 
-    // ✅ Server (ModSecurity) real PUT ko 403 de raha tha — isliye POST bhejte hain,
-    // aur Laravel ko `_method=PUT` se batate hain ki ye update hai (news / ads jaisa hi trick)
     const formData = new FormData();
     Object.entries(fields).forEach(([key, value]) => {
       if (key === '_method') return;
       if (value !== undefined && value !== null) formData.append(key, String(value));
     });
-    formData.append('_method', 'POST');
 
     const res = await fetch(`${BASE_URL}/ecom-details/${id}`, {
       method: 'POST',
       headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
       body: formData,
     });
-const json = await res.json().catch(() => null);
+    const json = await res.json().catch(() => null);
     if (res.status === 200 || res.status === 201) return { ok: true, detail: json?.data || json?.detail || json };
     if (res.status === 401) return { ok: false, isAuth: true, message: json?.message || 'Session expired. Please login again.' };
     if (res.status === 404) return { ok: false, message: 'Product not found.' };
@@ -3344,8 +3345,7 @@ updateEcomDetailsStatus: async (id, statusValue) => {
     if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
     const formData = new FormData();
     formData.append('status', String(statusValue));
-    formData.append('_method', 'PATCH');
-    const res = await fetch(`${BASE_URL}/ecom-details/${id}/status`, {
+    const res = await fetch(`${BASE_URL}/ecom-details/${id}`, {
       method: 'POST',
       headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
       body: formData,
@@ -3361,16 +3361,14 @@ updateEcomDetailsStatus: async (id, statusValue) => {
   }
 },
 
-// ✅ NEW: seller ka In Stock / Out of Stock toggle  →  PATCH /ecom-details/{id}/stock
+// ✅ Seller ka In Stock / Out of Stock toggle  →  POST /ecom-details/{id}
 updateEcomDetailsStock: async (id, inStock) => {
   try {
     const token = await getAuthToken();
     if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
-    // ✅ Server real PATCH ko 403 de raha tha — POST + `_method=PATCH` (form-data) bhejte hain
     const formData = new FormData();
     formData.append('in_stock', toBinaryFlag(inStock));
-    formData.append('_method', 'PATCH');
-    const res = await fetch(`${BASE_URL}/ecom-details/${id}/stock`, {
+    const res = await fetch(`${BASE_URL}/ecom-details/${id}`, {
       method: 'POST',
       headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
       body: formData,

@@ -10,6 +10,8 @@ import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from './webMediaStore';
+import { getVideoWithMusic, needsVideoMerge, toCorsSafeMediaUrl } from './videoWithMusic';
+import { composeFramedImageWeb } from './composeFramedImage';
 
 const IMG_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'avif'];
 const VID_EXTS = ['mp4', 'mov', 'webm', '3gp', 'mkv', 'm4v'];
@@ -27,14 +29,14 @@ function mimeFor(ext, type) {
   return ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : ext === 'gif' ? 'image/gif' : 'image/jpeg';
 }
 
-function buildName(url, type) {
-  return `rti-news-${type}-${Date.now()}.${extFromUrl(url, type)}`;
+function buildName(url, type, extOverride) {
+  return `rti-news-${type}-${Date.now()}.${extOverride || extFromUrl(url, type)}`;
 }
 
 // ───────────────────────── WEB ─────────────────────────
-async function downloadWeb(url, type) {
-  const name = buildName(url, type);
-  let href = String(url);
+async function downloadWeb(url, type, { ext, owned } = {}) {
+  const name = buildName(url, type, ext);
+  let href = toCorsSafeMediaUrl(String(url));
   let idbObjectUrl = null;
 
   if (isIdbMediaUri(href)) {
@@ -75,6 +77,7 @@ async function downloadWeb(url, type) {
   setTimeout(() => {
     try { if (blobUrl) URL.revokeObjectURL(blobUrl); } catch (_) { /* ignore */ }
     try { if (idbObjectUrl) URL.revokeObjectURL(idbObjectUrl); } catch (_) { /* ignore */ }
+    try { if (owned) URL.revokeObjectURL(href); } catch (_) { /* ignore */ }   // music-merge se bana blob
   }, 60000);
 
   return {
@@ -160,11 +163,36 @@ async function downloadNative(url, type) {
 }
 
 // type: 'image' | 'video'. Hamesha { ok, message } return karta hai (throw nahi karta).
-export async function downloadMedia(url, { type = 'image' } = {}) {
+// Video ke saath `musicUrl` (backend music_url) / `frame` diya ho to wo video me merge hokar hi download hota hai.
+export async function downloadMedia(url, { type = 'image', musicUrl = '', musicVolume = 0.6, muteOriginal = false, frame = null } = {}) {
   const src = String(url || '').trim();
   if (!src) return { ok: false, message: 'Nothing to download.' };
   try {
-    return Platform.OS === 'web' ? await downloadWeb(src, type) : await downloadNative(src, type);
+    let target = src;
+    let extra = {};
+    let warn = '';
+    if (type === 'video' && needsVideoMerge({ musicUrl, frame })) {
+      const m = await getVideoWithMusic(src, { musicUrl, musicVolume, muteOriginal, frame });
+      if (m.merged) {
+        target = m.uri;
+        extra = { ext: m.ext, owned: m.owned };
+        // native par music judta hai, par frame video me tabhi aata hai jab backend ne pehle merge kiya ho
+        if (frame && Platform.OS !== 'web') warn = 'Video music ke saath save hui (frame is device par video me nahi judta).';
+      } else {
+        warn = `Frame / music add nahi ho paaya${m.error ? ` (${m.error})` : ''}. Original video save hui.`;
+      }
+    } else if (type === 'image' && frame && Platform.OS === 'web') {
+      // WEB image: frame + title ko canvas par jodkar ek JPG (native par ye MediaDownloadButton me capture se hota hai)
+      try {
+        const c = await composeFramedImageWeb(src, frame);
+        target = c.uri;
+        extra = { ext: c.ext, owned: true };
+      } catch (err) {
+        warn = `Frame add nahi ho paaya${err?.message ? ` (${err.message})` : ''}. Original image save hui.`;
+      }
+    }
+    const res = Platform.OS === 'web' ? await downloadWeb(target, type, extra) : await downloadNative(target, type);
+    return warn ? { ...res, message: [res.message, warn].filter(Boolean).join(' ') } : res;
   } catch (e) {
     return { ok: false, message: e?.message || 'Download failed. Please try again.' };
   }

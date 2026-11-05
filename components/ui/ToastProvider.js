@@ -1,6 +1,6 @@
 // components/ui/ToastProvider.js
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import SystemBars from '../SystemBars'; // ✅ Android navigation bar ko brand red karta hai (neeche ki safed patti hatane ke liye)
 
 const ToastContext = createContext({
@@ -90,6 +90,42 @@ export function ToastProvider({ children }) {
       onSecondaryPress,
     });
   }, []);
+
+  // ✅ App me koi bhi Alert.alert(...) / window.alert(...) ab system alert nahi dikhata —
+  // sab isi existing popup (showPopup) me aata hai. Alert ke 1–2 buttons popup ke buttons ban jaate hain;
+  // 3+ buttons wale alerts (popup me jagah nahi) purane tareeke se hi chalte hain.
+  useEffect(() => {
+    const origNative = Alert.alert;
+    const origWindow = typeof window !== 'undefined' ? window.alert : null;
+
+    Alert.alert = function patchedAlert(title, message, buttons, options) {
+      const list = Array.isArray(buttons) ? buttons.filter(Boolean) : [];
+      if (list.length > 2) return origNative.call(Alert, title, message, buttons, options);
+      const t = String(title ?? '').trim();
+      const m = message != null ? String(message).trim() : '';
+      const body = cleanToastMessage(m || t);
+      const popupTitle = m && !GENERIC_ERROR_TITLES.test(t) ? t : '';
+      const primary = list.length === 1 ? list[0] : (list.find((x) => x.style !== 'cancel') || list[1]);
+      const secondary = list.length === 2 ? list.find((x) => x !== primary) : null;
+      showPopup(body, 'info', {
+        title: popupTitle || undefined,
+        primaryLabel: primary?.text,
+        onPrimaryPress: primary?.onPress,
+        secondaryLabel: secondary?.text,
+        onSecondaryPress: secondary?.onPress,
+      });
+      return undefined;
+    };
+
+    if (origWindow) {
+      window.alert = (msg) => { showPopup(cleanToastMessage(msg), 'info'); };
+    }
+
+    return () => {
+      Alert.alert = origNative;
+      if (origWindow) window.alert = origWindow;
+    };
+  }, [showPopup]);
 
     const value = useMemo(
     () => ({ showToast, showPopup, hidePopup, showLoader, hideLoader }),

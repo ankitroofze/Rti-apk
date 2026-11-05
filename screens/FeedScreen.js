@@ -1,4 +1,5 @@
 import NameWithTick from '../components/NameWithTick';
+import NewsMusicSync from '../components/NewsMusicSync';
 import { isAdsHidden } from '../utils/adsVisibility';
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
@@ -1947,6 +1948,9 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
               {/* ✅ FIX (stretch): video ko uske ASLI ratio wale box me rakha hai (MediaGallery jaisa),
                   Android par textureView — taaki surface kabhi width/height kheench na sake. */}
               <View style={{ width: videoBox.w, height: videoBox.h, overflow: 'hidden', backgroundColor: '#000' }}>
+                {safePost.musicUrl && !safePost.localMusicUrl ? (
+                  <NewsMusicSync player={player} musicUrl={safePost.musicUrl} volume={safePost.musicVolume} muted={muted} muteOriginal={safePost.muteOriginal} />
+                ) : null}
                 {(safePost.localVoiceUri || safePost.localMusicUrl) ? (
                   <LocalVoiceOver
                     voiceUri={safePost.localVoiceUri}
@@ -2816,6 +2820,9 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     useFrame: Boolean(serverItem.useFrame),
     frameTemplate: serverItem.frameTemplate,
     frameMerged: Boolean(serverItem.frameMerged),
+    musicUrl: serverItem.musicUrl || '',
+    musicVolume: serverItem.musicVolume ?? 0.6,
+    muteOriginal: Boolean(serverItem.muteOriginal),
     headline: headline || 'My RTI Story',
     caption, fullDescription: caption,
     likes: 0, shares: 0, comments: [],

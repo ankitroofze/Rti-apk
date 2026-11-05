@@ -29,8 +29,21 @@ const RED = '#b91c1c';
 
 // ─── helpers (sirf display ke liye — kisi newspaper ko hide NAHI karte) ───────
 const titleOf = (n = {}) => n.title || n.name || n.newspaper_name || `Newspaper #${n.id}`;
-const thumbOf = (n = {}) => n.thumbnail || n.thumbnail_url || null;                 // cover = thumbnail
-const pdfOf = (n = {}) => n.pdf_url || n.pdf || null;                              // PDF = pdf_url
+// Backend kabhi full URL deta hai, kabhi sirf relative path (e.g. "newspapers/thumbs/a.jpg").
+// Relative path ko storage URL bana do, warna thumbnail / PDF load nahi hote.
+const FILE_ORIGIN = (() => {
+  try { return new URL(process.env.EXPO_PUBLIC_API_URL || 'https://rtiapi.roofze.in/api').origin; }
+  catch { return 'https://rtiapi.roofze.in'; }
+})();
+const toFileUrl = (value) => {
+  const v = String(value || '').trim();
+  if (!v) return null;
+  if (/^(https?:)?\/\//i.test(v) || v.startsWith('data:') || v.startsWith('blob:')) return v;
+  if (v.startsWith('/')) return `${FILE_ORIGIN}${v}`;
+  return `${FILE_ORIGIN}/storage/${v}`;
+};
+const thumbOf = (n = {}) => toFileUrl(n.thumbnail_url || n.thumbnail);              // cover = thumbnail (full URL pehle)
+const pdfOf = (n = {}) => toFileUrl(n.pdf_url || n.pdf);                           // PDF = pdf_url (full URL pehle)
 const dateOf = (n = {}) => n.date || n.publish_date || n.published_date || n.newspaper_date || n.published_at || n.created_at || '';
 const fmtDate = (raw) => {
   if (!raw) return '';
