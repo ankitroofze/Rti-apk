@@ -281,3 +281,61 @@ export function ensureStoryCount(stories, { selectedMenuKey, selectedStateName }
   }
   return dedupeStories(dedupedStories);
 }
+
+// ─────────────────────────────────────────────────────────────
+// HOME SEARCH — title, description, state, district, taluka, category/menu tags
+// aur USER NAME (author / reporter / role / seat / email) — sab ek saath search hote hain.
+// Android, iOS aur Web teeno par yahi function chalta hai.
+// ─────────────────────────────────────────────────────────────
+const _searchNorm = (v) => String(v ?? '')
+  .normalize('NFC')
+  .toLowerCase()
+  .replace(/[_\-]+/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+
+export function normalizeSearchText(value) {
+  return _searchNorm(value);
+}
+
+// Return 0 => match nahi. Zyada number => behtar match (naam / title se start hone wale upar).
+export function scoreStorySearch(story, query) {
+  const q = _searchNorm(query);
+  if (!story || !q) return 0;
+  const tokens = q.split(' ').filter(Boolean);
+
+  const personName = _searchNorm(story.author_name || story.owner_name);
+  const personExtra = _searchNorm([
+    story.author_seat_name, story.author_role_label, story.report_type,
+    String(story.createdBy || '').split('@')[0],
+  ].filter(Boolean).join(' '));
+  const title = _searchNorm(story.title);
+  const place = _searchNorm([story.state, story.district, story.taluka].filter(Boolean).join(' '));
+  const category = _searchNorm([
+    story.category,
+    Array.isArray(story.menuTags) ? story.menuTags.filter((t) => t !== 'latest').join(' ') : '',
+  ].filter(Boolean).join(' '));
+  const body = _searchNorm([story.description, story.excerpt].filter(Boolean).join(' '));
+
+  const haystack = `${personName} ${personExtra} ${title} ${place} ${category} ${body}`;
+  // Har typed word kahin na kahin milna chahiye (e.g. "jay mumbai" => naam + state dono)
+  if (!tokens.every((t) => haystack.includes(t))) return 0;
+
+  let score = 1;
+  if (personName.startsWith(q)) score += 100;
+  else if (personName.includes(q)) score += 70;
+  else if (tokens.every((t) => personName.split(' ').some((w) => w.startsWith(t)))) score += 60;
+  else if (tokens.some((t) => personName.includes(t))) score += 25;
+  if (title.startsWith(q)) score += 80;
+  else if (title.includes(q)) score += 50;
+  else if (tokens.every((t) => title.includes(t))) score += 30;
+  if (place.includes(q)) score += 40;
+  if (category.includes(q)) score += 35;
+  if (personExtra.includes(q)) score += 20;
+  if (body.includes(q)) score += 10;
+  return score;
+}
+
+export function storyMatchesSearch(story, query) {
+  return scoreStorySearch(story, query) > 0;
+}

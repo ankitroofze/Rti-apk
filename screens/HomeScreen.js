@@ -19,8 +19,9 @@ import { getSiteCopy } from '../constants/siteCopy';
 import { IS_WEB, FEATURED_STATE_OPTIONS } from '../constants/homeData';
 import {
   normalizeStoryItem, dedupeStories, storyMatchesMenu,
-  buildHomeStateFromParams, buildPanelContent, buildStateDistrictList,
+  buildHomeStateFromParams, buildPanelContent, buildStateDistrictList, scoreStorySearch,
 } from '../utils/storyHelpers';
+import useRotatingRandomAds, { AD_ROTATE_MS } from '../utils/useRotatingAds';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
 import { openExternalUrl, buildWhatsappUrl } from '../utils/adRedirect';
 import { emitFeedScroll } from '../utils/feedScrollBus';
@@ -37,7 +38,7 @@ import MediaGallery from '../components/MediaGallery';
 import * as MediaDownloadButtonModule from '../components/MediaDownloadButton';
 const MediaDownloadButton = MediaDownloadButtonModule.MediaDownloadButton || MediaDownloadButtonModule.default;
 import { groupAdStories } from '../utils/adGrouping';
-import { useAdsHidden, isAdsHidden } from '../utils/adsVisibility';
+import { useAdsHidden } from '../utils/adsVisibility';
 const PINK = '#FF2D78';
 const PINK_LIGHT = '#fff5f9';
 const PINK_BORDER = '#ffe0ed';
@@ -94,7 +95,7 @@ export function homeStoryFromAd(ad = {}) {
 }
 
 function interleaveAdStories(stories = [], ads = []) {
-  if (isAdsHidden() || !ads.length) return stories;
+  if (!ads.length) return stories;
   if (!stories.length) return ads;
   const mixed = [];
   let adIndex = 0;
@@ -351,7 +352,7 @@ function TopRotatingAdSlot({ ads = [], onPress }) {
   const [index, setIndex] = useState(0);
   useEffect(() => {
     if (ads.length < 2) return undefined;
-    const timer = setInterval(() => setIndex((current) => (current + 1) % ads.length), 3000);
+    const timer = setInterval(() => setIndex((current) => (current + 1) % ads.length), 120000); // 2 minute
     return () => clearInterval(timer);
   }, [ads.length]);
   const ad = ads[index];
@@ -416,14 +417,11 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
                   const imgs = Array.isArray(a?.images) ? a.images.filter(Boolean) : [];
                   const first = imageOf(a);
                   if (a?.video || imgs.length > 1) {
-                    return <MediaGallery images={imgs.length ? imgs : (first ? [first] : [])} video={a.video} width={slideW} maxHeight={420} adAutoPlay downloadable onPressImage={() => onPress?.(a)} />;
+                    return <MediaGallery images={imgs.length ? imgs : (first ? [first] : [])} video={a.video} width={slideW} maxHeight={420} adAutoPlay onPressImage={() => onPress?.(a)} />;
                   }
                   return first ? (
                     <View style={{ width: slideW, position: 'relative' }}>
                       <AutoFitAdImage uri={first} maxWidth={slideW} maxHeight={420} radius={10} />
-                      <View pointerEvents="box-none" style={{ position: 'absolute', top: 10, right: 10, zIndex: 8, elevation: 8 }}>
-                        <MediaDownloadButton uri={first} type="image" size={32} />
-                      </View>
                     </View>
                   ) : null;
                 })()}
@@ -471,7 +469,6 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
             width={contentW}
             maxHeight={420}
             adAutoPlay
-            downloadable
             onPressImage={() => onPress?.(ad)}
           />
           <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={hasVideo ? 46 : 12} />
@@ -486,9 +483,6 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
         <Text style={styles.adCaption}>ADVERTISEMENT</Text>
         <View style={{ width: contentW, position: 'relative', alignItems: 'center' }}>
           <AutoFitAdImage uri={image} maxWidth={contentW} maxHeight={420} radius={10} />
-          <View pointerEvents="box-none" style={{ position: 'absolute', top: 10, right: 10, zIndex: 8, elevation: 8 }}>
-            <MediaDownloadButton uri={image} type="image" size={32} />
-          </View>
           <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={12} />
         </View>
       </TouchableOpacity>
@@ -815,7 +809,7 @@ export default function HomeScreen({ navigation, route }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [liveStories, setLiveStories] = useState([]);
   const [activeAds, setActiveAds] = useState([]);
-  // ✅ ads_hidden (GET /ads-details) = final source of truth. true => Home banners, popup, feed ads, right panel — sab hide.
+  // ✅ ads_hidden (ad-free subscription) => SIRF POP-UP ad band. Right-side aur center feed ads phir bhi dikhte hain (2-2 sec me random).
   const adsHidden = useAdsHidden();
   const feedFreshRef = useRef(false); // fresh API data aa chuka ho to cache usko overwrite na kare
   useEffect(() => {
@@ -823,7 +817,6 @@ export default function HomeScreen({ navigation, route }) {
     // Priority 1: Instant ads load on page mount so sponsored popup appears immediately
     UserStore.getActiveAdsFeed().then((ads) => {
       if (!alive) return;
-      if (isAdsHidden()) { adStoriesRef.current = []; setActiveAds([]); return; }
       if (!Array.isArray(ads) || !ads.length) return;
       const adStories = ads.map(homeStoryFromAd);
       adStoriesRef.current = adStories;
@@ -906,10 +899,7 @@ export default function HomeScreen({ navigation, route }) {
         newsStoriesRef.current = [...newsStoriesRef.current, ...pageStories.filter((s) => !seen.has(String(s.id)))];
       } else {
         newsStoriesRef.current = pageStories;
-        if (isAdsHidden()) {
-          adStoriesRef.current = [];
-          setActiveAds([]);
-        } else if (Array.isArray(rawAds) && rawAds.length) {
+        if (Array.isArray(rawAds) && rawAds.length) {
           adStoriesRef.current = rawAds.map(homeStoryFromAd);
           setActiveAds(adStoriesRef.current);
         }
@@ -1019,10 +1009,7 @@ export default function HomeScreen({ navigation, route }) {
     const added = fresh.filter((s) => !seen.has(String(s.id)));
 
     let adsChanged = false;
-    if (isAdsHidden()) {
-      // plan expire / subscription change ke baad API ne ads_hidden=true diya — ads turant hata do
-      if (adStoriesRef.current.length) { adStoriesRef.current = []; setActiveAds([]); adsChanged = true; }
-    } else if (Array.isArray(rawAds) && rawAds.length) {
+    if (Array.isArray(rawAds) && rawAds.length) {
       const nextAds = rawAds.map(homeStoryFromAd);
       const sig = (list) => list.map((a) => String(a.id)).join('|');
       if (sig(nextAds) !== sig(adStoriesRef.current)) {
@@ -1106,17 +1093,15 @@ export default function HomeScreen({ navigation, route }) {
       showToast(err?.message || 'Something went wrong. Please try again.', 'error');
     }
   };
-const allStories = useMemo(() => {
-  const deduped = dedupeStories([...liveStories]);
-  return adsHidden ? deduped.filter((story) => !story?.isAd) : deduped;
-}, [liveStories, adsHidden]);
+const allStories = useMemo(() => dedupeStories([...liveStories]), [liveStories]);
 
   const firstNewsStory = useMemo(
     () => allStories.find((s) => !s.isAd && !s.isEcome) || null,
     [allStories]
   );
 
-  const allAdsList = useMemo(() => (adsHidden ? [] : activeAds), [activeAds, adsHidden]);
+  // ✅ Ad-free user ke liye bhi ads list poori rahegi (side + center). Popup alag se `adsHidden` se band hota hai.
+  const allAdsList = activeAds;
 
   const visibleStories = useMemo(() => {
     if (viewMode === 'states') return [];
@@ -1128,13 +1113,14 @@ const allStories = useMemo(() => {
     }
     const q = String(searchQuery || '').trim().toLowerCase();
     if (q) {
-      // User search: jo naam typed letters se start hota hai wahi users (unki news) dikhe,
-      // aur result alphabetically (A → Z) sorted aaye.
+      // ✅ Search: title, description, state, district, category AUR user name (author/reporter) —
+      // sab kuch search hota hai. Best match upar (naam / title se start hone wale pehle), baaki newest-first.
       scopedStories = scopedStories
         .filter((story) => !story.isAd && !story.isEcome)
-        .filter((story) => String(story.author_name || '').trim().toLowerCase().startsWith(q))
-        .sort((a, b) => String(a.author_name || '').trim().toLowerCase()
-          .localeCompare(String(b.author_name || '').trim().toLowerCase()));
+        .map((story, order) => ({ story, order, score: scoreStorySearch(story, q) }))
+        .filter((x) => x.score > 0)
+        .sort((a, b) => (b.score - a.score) || (a.order - b.order))
+        .map((x) => x.story);
     }
      // Home shows only live API news; never pad the feed with dummy stories.
     // ✅ Web par center feed me sirf news cards — ecom/ads ko hata do (right panel me already dikh rahe hai)
@@ -1143,6 +1129,28 @@ const allStories = useMemo(() => {
     }
     return scopedStories;
   }, [allStories, language, searchQuery, selectedMenuKey, selectedStateName, viewMode]);
+
+  // ✅ Search karte waqt result kam ho to aage ke pages bhi chupchap load karo (max 15 pages),
+  // taaki purani news / purane users bhi search me mil sakein — sirf pehle 10 news tak limited na rahe.
+  const searchPagesRef = useRef(0);
+  useEffect(() => {
+    const q = String(searchQuery || '').trim();
+    if (!q) { searchPagesRef.current = 0; return undefined; }
+    if (viewMode === 'states' || visibleStories.length >= 10) return undefined;
+    if (loadingMore || !newsHasMoreRef.current || newsLoadingRef.current || searchPagesRef.current >= 15) return undefined;
+    const t = setTimeout(() => { searchPagesRef.current += 1; handleLoadMoreNews(); }, 350);
+    return () => clearTimeout(t);
+  }, [searchQuery, viewMode, visibleStories.length, allStories.length, loadingMore, handleLoadMoreNews]);
+
+  // ✅ CENTER FEED ADS: har ad slot har 2 second me RANDOM ad se badalta hai
+  // (ad-free user ko bhi — unka sirf popup band hota hai)
+  const adSlotByIndex = useMemo(() => {
+    const map = {};
+    let n = 0;
+    visibleStories.forEach((st, i) => { if (st?.isAd) { map[i] = n; n += 1; } });
+    return { map, count: n };
+  }, [visibleStories]);
+  const centerRotatingAds = useRotatingRandomAds(allAdsList, adSlotByIndex.count, AD_ROTATE_MS);
   const stateDistrictOptions = useMemo(() => buildStateDistrictList(allStories, selectedStateName), [allStories, selectedStateName]);
 
   const panelContent = useMemo(() => buildPanelContent({
@@ -1174,7 +1182,7 @@ const allStories = useMemo(() => {
     if (!story) return;
     // View count background me — API slow / fail ho (ads par aksar hota hai) to bhi navigation block na ho
     try { if (story.id && !story.isAd) Promise.resolve(UserStore.updateNewsFeedItem(story.id, 'view')).catch(() => {}); } catch { }
-    navigation?.navigate?.('NewsDetails', { article: story });
+    navigation?.navigate?.('NewsDetails', { article: story, id: story?.id });
   }, [navigation]);
 
   const handleOpenLocation = useCallback((stateName) => {
@@ -1511,13 +1519,16 @@ const handleOpenLeadForm = useCallback(async (story) => {
                       </View>
                     ) : null}
                     {String(searchQuery || '').trim() && visibleStories.length === 0 ? (
-                      <Text style={{ color: '#64748b', fontSize: 15, fontWeight: '600', paddingVertical: 32, textAlign: 'center' }}>User not found</Text>
+                      <Text style={{ color: '#64748b', fontSize: 15, fontWeight: '600', paddingVertical: 32, textAlign: 'center' }}>{loadingMore ? 'Searching…' : 'No results found'}</Text>
                     ) : null}
                     <View style={[styles.storyCardsStack, isMobileLayout && styles.storyCardsStackMobile]}>
                       {visibleStories.map((story, index) => (
                         <React.Fragment key={`story-${story.id || 'item'}-${index}`}>
                         {story.isAd ? (
-                          <InFeedAdSlot ad={story} onPress={handleSponsoredAdPress} onOpenLeadForm={handleOpenLeadForm} />
+                          (() => {
+                            const rotated = centerRotatingAds[adSlotByIndex.map[index]] || story;
+                            return <InFeedAdSlot key={`feed-ad-${adSlotByIndex.map[index]}-${rotated.id}`} ad={rotated} onPress={handleSponsoredAdPress} onOpenLeadForm={handleOpenLeadForm} />;
+                          })()
                         ) : story.isEcome ? (
                       (visibleStories.findIndex((x) => x.isEcome) === index
                         ? <EcomeTopSection items={visibleStories.filter((x) => x.isEcome)} navigation={navigation} compact={isMobileLayout} />

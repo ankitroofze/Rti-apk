@@ -8,12 +8,12 @@ import {
 } from 'react-native';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
 import ProfileAvatar from './ProfileAvatar';
+import ReportModal from './ReportModal';
 import VerifiedBadge from './VerifiedBadge';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useIsFocused, useFocusEffect } from '@react-navigation/native';
 import { CATEGORY_COLOR_MAP } from '../constants/homeData';
-import { useAdsHidden } from '../utils/adsVisibility';
 import { isValidImageUrl, buildPlaceholderImage, getLocalizedCategoryLabel, getLocalizedSeatLabel } from '../utils/storyHelpers';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 import { safePause, safePlay, safeSetMuted } from '../utils/videoPlayerSafe';
@@ -36,8 +36,9 @@ import AutoFitAdImage from './AutoFitAdImage';
 import * as MediaDownloadButtonModule from './MediaDownloadButton';
 const MediaDownloadButton = MediaDownloadButtonModule.MediaDownloadButton || MediaDownloadButtonModule.default;
 import { MediaLogo } from './MediaBrandOverlay';
+import DocumentThumb, { getPostFile } from './DocumentThumb';
 import NewsFrameOverlay, { getFrameBoxAspect, getFrameWindow, getLowerBannerHeight } from './NewsFrameOverlay';
-import NewsVideoControls from './NewsVideoControls';
+import NewsVideoControls, { isHoverDevice } from './NewsVideoControls';
 import { getFrameTemplate } from '../constants/frameTemplates';
 import NewsMusicSync from './NewsMusicSync';
 import { captureRef } from 'react-native-view-shot';
@@ -484,9 +485,14 @@ function TrendingCard({ item, onPress, onLike, onOpenComments, onShare, currentU
   // video wali news me `image` sirf random placeholder hota hai — isliye video ka asli frame dikhao
   const trendVideoUri = String(typeof item.video === 'string' ? item.video : item.video?.uri || '').trim();
   const isVideoItem = item.mediaType === 'Video' && Boolean(trendVideoUri);
+  const trendDocFile = item.mediaType === 'File' ? getPostFile(item) : null;
   return (
     <TouchableOpacity style={styles.trndCard} onPress={() => onPress(item)} activeOpacity={0.85}>
-      {isVideoItem ? (
+      {trendDocFile ? (
+        <View style={[styles.trndCardImg, { overflow: 'hidden' }]}>
+          <DocumentThumb file={trendDocFile} title={item.title} showName={false} />
+        </View>
+      ) : isVideoItem ? (
         <View style={[styles.trndCardImg, { overflow: 'hidden' }]}>
           <PostGridThumb videoUri={trendVideoUri} />
           <View pointerEvents="none" style={{ position: 'absolute', right: 6, bottom: 6, width: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(0,0,0,0.6)', alignItems: 'center', justifyContent: 'center' }}>
@@ -599,10 +605,8 @@ const formatUploadTime = (value) => {
 // Is session me jin news ka view record ho chuka hai (dobara API hit nahi hoga)
 const viewedNewsIds = new Set();
 
-// ✅ ads_hidden=true hone par news-feed me aane wale ad cards kahin render nahi hote
+// ✅ Ad-free user ke liye bhi feed ad cards render hote hain (sirf popup band hota hai)
 export default function NewsFeedCard(props) {
-  const adsHidden = useAdsHidden();
-  if (adsHidden && props?.story?.isAd) return null;
   return <NewsFeedCardInner {...props} />;
 }
 
@@ -663,6 +667,7 @@ function NewsFeedCardInner({
   const [repliesMeta, setRepliesMeta] = useState({});
   const likeBusyRef = useRef(new Set());
   const [showActionMenu, setShowActionMenu] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
   // ✅ Web: 3-dot menu chhota dropdown ban ke button ke neeche khulta hai (bottom sheet nahi)
   const moreBtnRef = useRef(null);
   const [menuAnchor, setMenuAnchor] = useState(null);
@@ -1033,13 +1038,21 @@ const safeImage = isValidImageUrl(effectiveImageUri)
   const player = useVideoPlayer(canPlayVideo && videoActivated ? { uri: effectiveVideoUri } : null, (p) => {
     p.loop = false;
     p.muted = getGlobalMuted();
+    try { p.playbackRate = 1; } catch (_) {}              // video kabhi tez nahi chalna chahiye
+    try { p.preservesPitch = true; } catch (_) {}
+    try { p.bufferOptions = { preferredForwardBufferDuration: 15, minBufferForPlayback: 1.5, waitsToMinimizeStalling: true }; } catch (_) {} // ruk-ruk kar chalna kam
   });
 
   // Global mute: feed me kisi bhi video par mute/unmute -> yahan bhi turant lagta hai
-  const [globalMuted, , toggleGlobalMuted] = useGlobalMuted();
+  const [globalMuted, , toggleGlobalMuted] = useGlobalMuted(canPlayVideo);
   useEffect(() => {
     if (!canPlayVideo || !player) return;
     safeSetMuted(player, globalMuted);
+    // mute karne se video ki speed nahi badalni chahiye — user ki chuni speed (agar koi) wapas lagao, warna 1x
+    try {
+      const want = Number(player.__userSpeed) || 1;
+      if (player.playbackRate !== want) player.playbackRate = want;
+    } catch (_) { /* ignore */ }
   }, [canPlayVideo, globalMuted, player]);
 
   useEffect(() => {
@@ -1166,6 +1179,7 @@ const safeImage = isValidImageUrl(effectiveImageUri)
 
   const handleHeroVideoTap = () => {
     if (videoPaused) { handleVideoPress(); return; } // paused video par tap = play
+    if (isHoverDevice()) { handleVideoPress(); return; } // laptop (hover) par: click = pause, controls hover se aate hain
     if (controlsVisible) {
       if (controlsTimer.current) clearTimeout(controlsTimer.current);
       setControlsVisible(false);
@@ -1621,10 +1635,17 @@ const handleLike = async () => {
   };
   const showActionResult = (title, message) => { try { Alert.alert(title, message); } catch {} };
 
-  const handleReport = async () => {
+  // Report post: pehle menu band, phir ReportModal (reason dropdown) kholo
+  const handleReport = () => {
     closeActionMenu();
-    await UserStore.recordNewsFeedMenuAction(story.id, 'report', { title: story.title || '', reason: 'Reported from news feed menu' });
-    showActionResult('Report submitted', 'Thanks. This post has been reported for review.');
+    setReportVisible(true);
+  };
+  const submitPostReport = async ({ reason, details }) => {
+    const result = await UserStore.reportNews(story.id, { reason, details });
+    if (result?.ok) {
+      try { await UserStore.recordNewsFeedMenuAction(story.id, 'report', { title: story.title || '', reason }); } catch {}
+    }
+    return result;
   };
 
   const handleDeleteStory = async () => {
@@ -1805,7 +1826,11 @@ const handleLike = async () => {
         onPress: canPlayVideo ? handleHeroVideoTap : (isFileAttachment ? handleFileOpen : handleImagePress),
         activeOpacity: 0.95,
       };
-  const authorAvatarUri = isValidImageUrl(story.author_profile_image) ? story.author_profile_image : '';
+  const authorAvatarUri = (() => {
+    const cands = [story.author_profile_image, story.authorProfileImage, story.author_avatar, story.authorAvatar, story.avatar];
+    const hit = cands.map((v) => String(v || '').trim()).find((v) => isValidImageUrl(v));
+    return hit || '';
+  })();
   // News location and an author's purchased-role area are different things.
   // Show the member's own current area here, falling back to the news location
   // only for older posts that do not carry author profile fields.
@@ -1876,7 +1901,7 @@ const handleLike = async () => {
 
         {/* ── Author Row with Gaps and Better Buttons ── */}
         <TouchableOpacity style={styles.storyAuthorRow} onPress={() => onOpenAuthorProfile(story)} activeOpacity={0.86}>
-       <ProfileAvatar uri={authorAvatarUri} size={44} style={styles.storyAuthorAvatar} forceDefault={authorTier.key === 'common'} />
+       <ProfileAvatar uri={authorAvatarUri} size={44} style={styles.storyAuthorAvatar} />
           
           <View style={styles.storyAuthorTextWrap}>
             <View style={styles.storyAuthorNameRow}>
@@ -2032,7 +2057,7 @@ const handleLike = async () => {
               images={story.images}
               width={framed ? Math.round(mediaWidth * frameWin.width) : mediaWidth}
               maxHeight={framed ? Math.round(frameBoxH * frameWin.height) : 480}
-              downloadable
+              downloadable={!isAdStory}
               frame={framed ? exportOptsFromStory(story).frame : null}
               onPressImage={handleImagePress}
             />
@@ -2044,7 +2069,7 @@ const handleLike = async () => {
           )}
           </MediaBox>
           {/* ⬇ Download: news ki video / image (gallery me MediaGallery ka apna button hai) */}
-          {!isFileAttachment && !(hasImageGallery && mediaWidth) && (canPlayVideo || isValidImageUrl(effectiveImageUri)) ? (
+          {!isAdStory && !isFileAttachment && !(hasImageGallery && mediaWidth) && (canPlayVideo || isValidImageUrl(effectiveImageUri)) ? (
             <View pointerEvents="box-none" style={{ position: 'absolute', top: canPlayVideo ? 52 : 10, right: 10, zIndex: 20, elevation: 20 }}>
               <MediaDownloadButton uri={canPlayVideo ? effectiveVideoUri : effectiveImageUri} type={canPlayVideo ? 'video' : 'image'} size={32} musicUrl={canPlayVideo ? story.musicUrl : ''} musicVolume={story.musicVolume} muteOriginal={story.muteOriginal} frame={exportOptsFromStory(story).frame} />
             </View>
@@ -2058,11 +2083,9 @@ const handleLike = async () => {
               description={story.description || story.excerpt || story.subtitle || ''}
               templateId={frameTpl.id}
             />
-          ) : story.frameMerged ? null : (
-            <>
-              <MediaLogo />
-            </>
-          )}
+          ) : null}
+          {/* ✅ Logo hamesha top-left corner me (frame ke saath bhi) — frameMerged me logo already image me baked hota hai */}
+          {story.frameMerged ? null : <MediaLogo />}
           {story.isFeatured ? (
             <View style={styles.topStoryRibbon}>
               <Text style={styles.topStoryRibbonText}>TOP STORY</Text>
@@ -2176,7 +2199,7 @@ const handleLike = async () => {
             const de = String(story.description || '').trim();
             const useDesc = de.length >= ex.length;
             const shown = useDesc ? de : ex;
-            if (!shown) return null;
+            if (!shown || isAdStory) return null; // ads me description / View More nahi
             return <InlineReadMore text={shown} style={useDesc ? styles.storyDescriptionText : styles.storyExcerptText} onPress={() => { if (!handleAdPress()) onOpenDetails(story); }} />;
           })()}
         </View>
@@ -2255,6 +2278,8 @@ const handleLike = async () => {
           <VideoPopupModal uri={effectiveVideoUri} title={story.title} onClose={() => setShowVideoModal(false)} />
         ) : null}
 
+        <ReportModal visible={reportVisible} kind="post" onClose={() => setReportVisible(false)} onSubmit={submitPostReport} />
+
         {/* ── More Menu ── */}
         <Modal visible={showActionMenu} transparent animationType={menuAnchor ? 'none' : 'fade'} statusBarTranslucent onRequestClose={closeActionMenu}>
           <TouchableWithoutFeedback onPress={closeActionMenu}>
@@ -2274,10 +2299,12 @@ const handleLike = async () => {
                     <Ionicons name="link-outline" size={18} color="#0ea5e9" />
                     <Text style={styles.storyMoreMenuText}>Share link</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleReport} activeOpacity={0.82}>
-                    <Ionicons name="flag-outline" size={18} color="#f59e0b" />
-                    <Text style={styles.storyMoreMenuText}>Report</Text>
-                  </TouchableOpacity>
+                  {!isOwnStory && !isAdStory ? (
+                    <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleReport} activeOpacity={0.82}>
+                      <Ionicons name="flag-outline" size={18} color="#f59e0b" />
+                      <Text style={styles.storyMoreMenuText}>Report post</Text>
+                    </TouchableOpacity>
+                  ) : null}
                   {(isOwnStory || isCurrentUserAdmin) ? (
                     <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleDeleteStory} activeOpacity={0.82}>
                       <Ionicons name="trash-outline" size={18} color="#ef4444" />

@@ -30,7 +30,10 @@ function subscribe(listener) {
 }
 
 // const [muted, setMuted, toggleMuted] = useGlobalMuted();
-export function useGlobalMuted() {
-  const muted = useSyncExternalStore(subscribe, getGlobalMuted, getGlobalMuted);
+// enabled=false => ye component mute badalne par re-render nahi hota (jin cards me video nahi unke liye).
+const _alwaysMuted = () => true;
+export function useGlobalMuted(enabled = true) {
+  const snap = enabled ? getGlobalMuted : _alwaysMuted;
+  const muted = useSyncExternalStore(subscribe, snap, snap);
   return [muted, setGlobalMuted, toggleGlobalMuted];
 }

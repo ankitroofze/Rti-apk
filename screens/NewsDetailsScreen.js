@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import {
+  ActivityIndicator,
   Image,
   Linking,
   Platform,
@@ -17,6 +18,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import RightUtilityPanel from '../components/RightUtilityPanel';
+import ReportModal from '../components/ReportModal';
 import { normalizeStoryItem, dedupeStories } from '../utils/storyHelpers';
 import NewsFrameOverlay, { getLowerBannerHeight } from '../components/NewsFrameOverlay';
 import { frameOptsFromStory, exportOptsFromStory, imageFrameOptsFromStory } from '../utils/videoWithMusic';
@@ -34,18 +36,43 @@ import WebLayout from '../components/WebLayout';
 import LeftEcomSidebar from '../components/LeftEcomSidebar';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { UserStore } from '../store/UserStore';
+import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import PostMenuButton from '../components/PostMenuButton';
 import { isOwnPost } from '../components/profileContent';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
 import { safePause, safePlay } from '../utils/videoPlayerSafe';
 import MediaGallery from '../components/MediaGallery';
+import DocumentThumb, { isImageFile, isPdfFile } from '../components/DocumentThumb';
 import * as MediaDownloadButtonModule from '../components/MediaDownloadButton';
 const MediaDownloadButton = MediaDownloadButtonModule.MediaDownloadButton || MediaDownloadButtonModule.default;
 import { getEngagement, publishEngagement, subscribeEngagement, getLikedLocal, persistLikedLocal } from '../utils/newsEngagementStore';
 import useLiveRefresh from '../utils/useLiveRefresh';
 
 const IS_WEB = Platform.OS === 'web';
+
+// ── Refresh (F5) fix ────────────────────────────────────────────────
+// Web par page refresh hone par navigation params (article object) kho jaate hain, isliye pehle placeholder
+// image + "News Details" dikhta tha. Ab khulte hi article sessionStorage me save hota hai; refresh par wahi se
+// turant uthta hai aur phir server se taza data aata hai.
+const DETAIL_CACHE_PREFIX = 'rti_news_detail_';
+function readCachedArticle(id) {
+  if (!IS_WEB || typeof window === 'undefined') return null;
+  try {
+    const ss = window.sessionStorage;
+    const key = String(id || '').trim();
+    const raw = (key && ss.getItem(DETAIL_CACHE_PREFIX + key)) || ss.getItem(DETAIL_CACHE_PREFIX + 'last');
+    return raw ? JSON.parse(raw) : null;
+  } catch (_) { return null; }
+}
+function writeCachedArticle(a) {
+  if (!IS_WEB || typeof window === 'undefined' || !a || !a.id || a.id === 'news-details-fallback') return;
+  try {
+    const raw = JSON.stringify(a);
+    window.sessionStorage.setItem(DETAIL_CACHE_PREFIX + a.id, raw);
+    window.sessionStorage.setItem(DETAIL_CACHE_PREFIX + 'last', raw);
+  } catch (_) { /* storage full / blocked */ }
+}
 
 function stripHtml(value) {
   return String(value || '')
@@ -100,23 +127,32 @@ const NON_PLACE_WORDS = new Set([
   'elections', 'viral', 'entertainment', 'business', 'crime', 'national', 'international',
 ]);
 
-// Pehle author/user ki apni location, nahi to news ki location. Category ka text kabhi location nahi banta.
+// Location pill: sirf "District, State" (taluka / area nahi). Category ka text (Politics, Sports ...) kabhi location nahi banta.
+// NOTE: backend mapper me `state` ka fallback category hota hai, isliye category se match hone wali value hata di jaati hai.
 function buildLocationLabel(article, authorProfile) {
-  const category = cleanText(article?.category).toLowerCase();
-  const reportType = cleanText(article?.report_type).toLowerCase();
+  const banned = new Set(
+    [article?.category, article?.report_type, ...(Array.isArray(article?.menuTags) ? article.menuTags : [])]
+      .map((v) => cleanText(v).toLowerCase())
+      .filter(Boolean)
+  );
   const place = (v) => {
     const t = cleanText(v);
     if (!t) return '';
     const low = t.toLowerCase();
-    if (NON_PLACE_WORDS.has(low) || low === category || low === reportType) return '';
+    if (NON_PLACE_WORDS.has(low) || banned.has(low)) return '';
     return t;
   };
-  const join = (a, b, c) => [place(a), place(b), place(c)].filter(Boolean).join(', ');
-  return (
-    place(authorProfile?.area || authorProfile?.state_seat?.area || authorProfile?.state_seat?.area_name || article?.author_area) ||
-    join(authorProfile?.taluka || article?.author_taluka, authorProfile?.district || article?.author_district, authorProfile?.state || article?.author_state) ||
-    join(article?.taluka, article?.district, article?.state)
-  );
+  // ek hi source se district + state lo (alag-alag source mix karke galat jodi na bane)
+  const sources = [
+    { d: article?.author_district, s: article?.author_state },
+    { d: authorProfile?.district, s: authorProfile?.state },
+    { d: article?.district, s: article?.state },
+  ];
+  for (const src of sources) {
+    const label = [place(src.d), place(src.s)].filter(Boolean).join(', ');
+    if (label) return label;
+  }
+  return '';
 }
 
 // validity_days -> "1 Year" / "6 Months" / "30 Days"
@@ -144,12 +180,14 @@ function normalizeArticle(rawArticle) {
     (Array.isArray(article.images) ? article.images.find((u) => u && String(u).trim()) : '') ||
     article.image ||
     '';
+  // File (document) post: random placeholder photo nahi — asli document dikhana hai
+  const isFilePost = String(article.mediaType || '') === 'File' && Boolean(article.file?.uri || article.file?.url);
   const safeImage = rawImage && rawImage !== 'null' && rawImage !== 'undefined'
     ? rawImage
-    : buildPlaceholderImage(article.id || article.title);
+    : (isFilePost ? '' : buildPlaceholderImage(article.id || article.title));
   const galleryImages = Array.isArray(article.images)
     ? article.images.filter((u) => u && String(u).trim() && u !== 'null' && u !== 'undefined')
-    : [safeImage];
+    : (safeImage ? [safeImage] : []);
   return {
     id: article.id || 'news-details-fallback',
     title: article.title || 'News Details',
@@ -188,7 +226,7 @@ function normalizeArticle(rawArticle) {
     ),
     author_is_premium: Boolean(article.author_is_premium),
     image: safeImage,
-    images: galleryImages.length ? galleryImages : [safeImage],
+    images: galleryImages.length ? galleryImages : (safeImage ? [safeImage] : []),
     video: article.video || null,
     file: article.file || null,
     mediaType: article.mediaType || (article.video ? 'Video' : 'Image'),
@@ -524,18 +562,24 @@ export default function NewsDetailsScreen({ route, navigation }) {
 
   const handleOpenTrendingStory = useCallback((story) => {
     if (!story) return;
-    navigation?.navigate?.('NewsDetails', { article: story });
+    navigation?.navigate?.('NewsDetails', { article: story, id: story?.id });
   }, [navigation]);
 
   // Left sidebar (Trending Topics) sirf {title} deta hai — full story dhoondh ke open karo
   const handleOpenSidebarTopic = useCallback((topic) => {
     if (!topic) return;
     const full = trendingStories.find((s) => s?.title === topic?.title) || topic;
-    navigation?.navigate?.('NewsDetails', { article: full });
+    navigation?.navigate?.('NewsDetails', { article: full, id: full?.id });
   }, [navigation, trendingStories]);
 
-  const routeArticle = route?.params?.article || null;
+  const routeArticle = useMemo(
+    () => route?.params?.article || readCachedArticle(route?.params?.id) || null,
+    [route?.params?.article, route?.params?.id]
+  );
   const initialArticle = useMemo(() => normalizeArticle(routeArticle), [routeArticle]);
+  // refresh ke baad jab tak server se article na aa jaye, placeholder nahi — loading dikhao
+  const [hydrated, setHydrated] = useState(Boolean(routeArticle));
+  const isHydrating = !routeArticle && !hydrated;
 
   const [article, setArticle] = useState(initialArticle);
   const [currentUser, setCurrentUser] = useState(null);
@@ -571,6 +615,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
   // Backend se live author profile — tick isi se decide hoga (article ka purana flag nahi)
   const [liveAuthor, setLiveAuthor] = useState(null);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState(null);
   const moreBtnRef = useRef(null);
 
@@ -605,7 +650,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
     () => String(currentUser?.name || currentUser?.full_name || currentUser?.username || '').trim(),
     [currentUser?.full_name, currentUser?.name, currentUser?.username]
   );
-  const articleId = String(route?.params?.id || routeArticle?.id || initialArticle.id || '').trim();
+  const articleId = String(route?.params?.id || routeArticle?.id || '').trim();
 
   useEffect(() => {
     if (typeof document !== 'undefined' && (article?.tittle || article?.title)) {
@@ -643,7 +688,14 @@ export default function NewsDetailsScreen({ route, navigation }) {
           ) || null;
         }
         if (!alive) return;
-        const nextImage = String(authorUser?.profile_image || authorUser?.avatar || '').trim();
+        let nextImage = String(authorUser?.profile_image || authorUser?.avatar || '').trim();
+        // Local cache me author nahi mila / image nahi thi -> server se public profile lao
+        const numericAuthorId = String(article.author_id ?? '').trim();
+        if (!isValidImageUrl(nextImage) && /^\d+$/.test(numericAuthorId)) {
+          const pub = await UserStore.getPublicProfileById(numericAuthorId).catch(() => null);
+          if (!alive) return;
+          nextImage = String(pub?.profile_image || pub?.profile_image_url || pub?.avatar || '').trim();
+        }
         setAuthorProfileImageUri(isValidImageUrl(nextImage) ? nextImage : '');
       } catch {
         if (alive) setAuthorProfileImageUri('');
@@ -653,13 +705,16 @@ export default function NewsDetailsScreen({ route, navigation }) {
   }, [article.author_email, article.author_id, article.author_name, article.author_profile_image, article.createdBy]);
 
   const loadArticleDetails = useCallback(async () => {
-    const fallbackArticle = normalizeArticle(route?.params?.article);
-    setArticle(fallbackArticle);
-    setLikeCount(fallbackArticle.likes);
-    setCommentCount(fallbackArticle.comments);
-    setShareCount(fallbackArticle.shares);
-    setViewCount(fallbackArticle.views);
-    applyEngagement(getEngagement(fallbackArticle.id));
+    const fallbackArticle = normalizeArticle(routeArticle);
+    // route/cached article ho tabhi pehle usse dikhao; nahi to placeholder se overwrite mat karo
+    if (routeArticle) {
+      setArticle(fallbackArticle);
+      setLikeCount(fallbackArticle.likes);
+      setCommentCount(fallbackArticle.comments);
+      setShareCount(fallbackArticle.shares);
+      setViewCount(fallbackArticle.views);
+      applyEngagement(getEngagement(fallbackArticle.id));
+    }
 
     try {
       const [user, summary] = await Promise.all([
@@ -669,15 +724,25 @@ export default function NewsDetailsScreen({ route, navigation }) {
       setCurrentUser(user || null);
       await refreshAuthorFollowState(fallbackArticle.createdBy || fallbackArticle.author_email, user?.email);
 
-      const matchedItem = articleId && Array.isArray(summary?.items)
+      let matchedItem = articleId && Array.isArray(summary?.items)
         ? summary.items.find((item) => String(item.id || '') === articleId)
         : null;
+
+      // list me na mile (refresh / purani post) => seedha is article ko server se lao
+      if (!matchedItem && articleId) {
+        try {
+          const single = await AuthAPI.getNewsById(articleId);
+          if (single?.ok && single.news && !Array.isArray(single.news)) {
+            matchedItem = UserStore.mapApiNewsItem(single.news);
+          }
+        } catch (_) { /* neeche wala fallback chalega */ }
+      }
 
       if (!matchedItem) {
         const likedFallback = Boolean(
           user?.email
-            && Array.isArray(route?.params?.article?.liked_by)
-            && route.params.article.liked_by.includes(String(user.email).trim().toLowerCase())
+            && Array.isArray(routeArticle?.liked_by)
+            && routeArticle.liked_by.includes(String(user.email).trim().toLowerCase())
         );
         const localSaved = user?.email ? await getLikedLocal(user.email) : {};
         setIsLiked(likedFallback || Boolean(localSaved[articleId]));
@@ -686,7 +751,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
         return;
       }
 
-      const routeParamArticle = route?.params?.article || {};
+      const routeParamArticle = routeArticle || {};
       const mergedArticle = normalizeArticle({
         ...routeParamArticle,
         ...matchedItem,
@@ -740,8 +805,13 @@ export default function NewsDetailsScreen({ route, navigation }) {
       setComments([]);
       setIsLiked(false);
       setIsFollowingAuthor(false);
+    } finally {
+      setHydrated(true);
     }
-  }, [articleId, refreshAuthorFollowState, route?.params?.article]);
+  }, [articleId, refreshAuthorFollowState, routeArticle]);
+
+  // article jab bhi (route se ya server se) mile => refresh ke liye save
+  useEffect(() => { writeCachedArticle(article); }, [article]);
 
   useEffect(() => {
     setArticle(initialArticle);
@@ -1114,11 +1184,19 @@ export default function NewsDetailsScreen({ route, navigation }) {
     } catch {}
   }, [article, postLink, appLanguage, handleShareSuccess]);
 
-  const handleReportArticle = useCallback(async () => {
+  // Report post: menu band -> ReportModal (reason dropdown) -> POST /news/{id}/report
+  const handleReportArticle = useCallback(() => {
     setShowMoreMenu(false);
     setMenuAnchor(null);
-    await UserStore.recordNewsFeedMenuAction(article.id, 'report', { title: article.title || '', reason: 'Reported from news detail menu' });
-    Alert.alert('Report submitted', 'Thanks. This post has been reported for review.');
+    setReportVisible(true);
+  }, []);
+
+  const submitArticleReport = useCallback(async ({ reason, details }) => {
+    const result = await UserStore.reportNews(article.id, { reason, details });
+    if (result?.ok) {
+      try { await UserStore.recordNewsFeedMenuAction(article.id, 'report', { title: article.title || '', reason }); } catch {}
+    }
+    return result;
   }, [article.id, article.title]);
 
   const handleDeleteArticleAction = useCallback(async () => {
@@ -1240,6 +1318,10 @@ export default function NewsDetailsScreen({ route, navigation }) {
     if (!uri || uri === 'null' || uri === 'undefined') return null;
     return { uri };
   }, [resolvedHeroImage, article.image]);
+
+  // File (document) post: hero me wahi document dikhao jo add kiya gaya tha
+  const isFilePost = String(article.mediaType || '') === 'File' && Boolean(article.file?.uri);
+  const docFile = isFilePost ? { uri: String(article.file.uri), name: String(article.file.name || '') } : null;
 
   const authorImageUri = useMemo(() => {
     const uri = resolvedAuthorImage || authorProfileImageUri || article.author_profile_image;
@@ -1388,7 +1470,6 @@ export default function NewsDetailsScreen({ route, navigation }) {
                   ) : null}
                   {locationLabel ? (
                     <View style={styles.storyMetaPill}>
-                      <Ionicons name="pin-outline" size={17} color="#94a3b8" />
                       <Text style={styles.storyMetaPillText}>{locationLabel}</Text>
                     </View>
                   ) : null}
@@ -1426,6 +1507,26 @@ export default function NewsDetailsScreen({ route, navigation }) {
                       frame={frameOptsFromStory(article)}
                       downloadable
                     />
+                  ) : isFilePost ? (
+                    <View style={{ width: '100%', height: '100%', backgroundColor: '#f8fafc', overflow: 'hidden' }}>
+                      {IS_WEB && isPdfFile(docFile)
+                        ? React.createElement('iframe', {
+                            src: `${docFile.uri}#toolbar=0&navpanes=0`,
+                            title: docFile.name || article.title || 'Document',
+                            style: { width: '100%', height: '100%', border: 0, background: '#fff', display: 'block' },
+                          })
+                        : isImageFile(docFile)
+                          ? <Image source={{ uri: docFile.uri }} style={{ width: '100%', height: '100%' }} resizeMode="contain" />
+                          : <DocumentThumb file={docFile} title={article.title} />}
+                      <TouchableOpacity
+                        onPress={handleOpenAttachment}
+                        activeOpacity={0.85}
+                        style={{ position: 'absolute', top: 10, right: 10, zIndex: 8, flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(0,0,0,0.65)', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 7 }}
+                      >
+                        <Ionicons name="open-outline" size={15} color="#ffffff" />
+                        <Text style={{ color: '#ffffff', fontSize: 12, fontWeight: '700' }}>Open</Text>
+                      </TouchableOpacity>
+                    </View>
                   ) : article.images.length > 1 ? (
                     <MediaGallery
                       images={resolvedGalleryImages}
@@ -1437,7 +1538,12 @@ export default function NewsDetailsScreen({ route, navigation }) {
                     />
                   ) : heroImageSource ? (
                     <>
-                      <Image source={heroImageSource} style={styles.storyHeroImage} resizeMode="contain" />
+                      <Image
+                        key={heroImageSource.uri}
+                        source={heroImageSource}
+                        style={styles.storyHeroImage}
+                        resizeMode="contain"
+                      />
                       {heroImageSource?.uri ? (
                         <View pointerEvents="box-none" style={{ position: 'absolute', top: 10, right: 10, zIndex: 8, elevation: 8 }}>
                           <MediaDownloadButton uri={heroImageSource.uri} type="image" size={32} frame={imageFrameOptsFromStory(article)} />
@@ -1452,7 +1558,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
                   )}
                   {framedCaptureHost}
                   {/* Frame: image par hamesha; video par tabhi jab server ne merge nahi kiya (frameMerged = false) */}
-                  {article.useFrame && heroWrapWidth > 0 && !(canPlayVideo && article.frameMerged) ? (
+                  {article.useFrame && !isFilePost && heroWrapWidth > 0 && !(canPlayVideo && article.frameMerged) ? (
                     <NewsFrameOverlay
                       width={heroWrapWidth}
                       height={(!canPlayVideo && article.images.length > 1) ? heroFrameHeight + 26 : heroFrameHeight}
@@ -1687,6 +1793,8 @@ export default function NewsDetailsScreen({ route, navigation }) {
         </View>
       </Modal>
 
+      <ReportModal visible={reportVisible} kind="post" onClose={() => setReportVisible(false)} onSubmit={submitArticleReport} />
+
       {/* ── 3-Dots More Menu Modal ── */}
       <Modal
         visible={showMoreMenu}
@@ -1710,7 +1818,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.moreMenuItem} onPress={handleReportArticle} activeOpacity={0.82}>
                   <Ionicons name="flag-outline" size={18} color="#f59e0b" />
-                  <Text style={styles.moreMenuText}>Report</Text>
+                  <Text style={styles.moreMenuText}>Report post</Text>
                 </TouchableOpacity>
                 {canDeleteArticle ? (
                   <TouchableOpacity style={styles.moreMenuItem} onPress={handleDeleteArticleAction} activeOpacity={0.82}>
@@ -1747,6 +1855,20 @@ export default function NewsDetailsScreen({ route, navigation }) {
       />
     </View>
   );
+
+  // refresh ke baad article load hone tak: placeholder image / "News Details" ki jagah proper loader
+  if (isHydrating) {
+    const loadingPage = (
+      <View style={styles.screenShell}>
+        <AppNavbar navigation={navigation} activeScreen={null} hideBottomBar={!IS_WEB ? true : undefined} />
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 120 }}>
+          <ActivityIndicator size="large" color="#e11d48" />
+          <Text style={{ marginTop: 12, color: '#64748b', fontSize: 14, fontWeight: '600' }}>Loading news...</Text>
+        </View>
+      </View>
+    );
+    return IS_WEB ? <WebLayout>{loadingPage}</WebLayout> : loadingPage;
+  }
 
   return IS_WEB ? <WebLayout>{page}</WebLayout> : page;
 }

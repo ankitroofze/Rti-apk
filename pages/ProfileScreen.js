@@ -3,6 +3,7 @@
 import { smartGoBack } from '../utils/smartBack';
 import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import NameWithTick from '../components/NameWithTick';
+import ProfileAvatar from '../components/ProfileAvatar';
 import { Feather, MaterialIcons, MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -39,6 +40,7 @@ import AutoIdCardPreview from '../components/IdCardPreview';
 import AutoIdCardBackPreview from '../components/IdCardBackPreview';
 import ScaledCard from '../components/ScaledCard';
 import PostGridThumb from '../components/PostGridThumb';
+import DocumentThumb, { getPostFile } from '../components/DocumentThumb';
 import ProfileContentTabs from '../components/ProfileContentTabs';
 import { CONTENT_TABS, getPostKind as getContentKind } from '../components/profileContent';
 import { PageLoader, useAppFontsReady } from '../components/WebReadyGate';
@@ -575,6 +577,28 @@ function ProfileScreenInner({ navigation, route }) {
     // endpoint. Android/iOS API objects don't always include `createdBy`, so
     // filtering by that web-only field used to make the native post count 0.
     const ownFeedPosts = Array.isArray(feedSummary?.items) ? feedSummary.items : [];
+
+    // ✅ FIX (apni profile par Premium dikhta nahi tha): server ka /profile aur /my-subscriptions kai baar active
+    // plan nahi bhejte (subscription_plan: null, has_blue_tick: false), jabki posts ke author data me plan aata hai
+    // (isi se doosron ko "Premium User" dikhta hai). Local plan na ho to wahi plan apni profile par bhi lagao.
+    try {
+      const planNow = user?.subscription_plan;
+      const localActive = Boolean(planNow) && UserStore.hasActiveSubscription(user);
+      if (!localActive) {
+        const withPlan = ownFeedPosts.find((it) => it?.author_subscription_plan && typeof it.author_subscription_plan === 'object');
+        const feedPlan = withPlan?.author_subscription_plan || null;
+        const feedSaysPremium = Boolean(withPlan?.author_is_premium) || Boolean(feedPlan && UserStore.hasPremiumAccess({ subscription_plan: feedPlan }));
+        if (feedPlan && feedSaysPremium && UserStore.hasActiveSubscription({ subscription_plan: feedPlan })) {
+          const merged = await UserStore.updateUser(user.email, {
+            // plan_name na aaye to bhi "Premium Plan" maana jaye (plan_id / plan_name ke bina plan save nahi hota)
+            subscription_plan: { plan_name: 'Premium Plan', ...feedPlan },
+            subscription_type: 'premium',
+            is_subscribed: true,
+          });
+          if (merged) user = merged;
+        }
+      }
+    } catch { /* best-effort — profile phir bhi khulegi */ }
     const ownLocalPosts = [
       ...(Array.isArray(user.news) ? user.news : []),
       ...(Array.isArray(user.news_feed) ? user.news_feed : []),
@@ -1313,7 +1337,7 @@ const handlePickImage = async () => {
                 <TouchableOpacity key={item.id || item.email} style={ProfileStyles.followUserRow} activeOpacity={0.8}
                                   onPress={() => { closeFollowList(); navigation.navigate('UserPublicProfile', { userId: item.id || undefined, email: item.email, author: item }); }}
                 >
-                  <Image source={item.profile_image ? { uri: item.profile_image } : DEFAULT_AVATAR} style={ProfileStyles.followUserAvatar} />
+                  <ProfileAvatar uri={item.profile_image} size={42} style={[ProfileStyles.followUserAvatar, { borderRadius: 21 }]} />
                   <View style={ProfileStyles.followUserInfo}>
                     <NameWithTick name={item.name || 'User'} user={item} style={ProfileStyles.followUserName} />
                     <Text style={ProfileStyles.followUserEmail} numberOfLines={1}>{item.email || ''}</Text>
@@ -1376,8 +1400,41 @@ const handlePickImage = async () => {
 
   const openUserPost = async (post) => {
     if (!post) return;
-    // ✅ Ad post: NewsDetails (news-only) nahi, My Ads screen kholo (wahin edit/delete hai)
-    if (post.is_ad) { navigation.navigate('MyAds'); return; }
+    // ✅ Reel / Ad: NewsDetails nahi — Feed screen par usi reel / ad par redirect
+    const contentKind = getContentKind(post);
+    if (contentKind === 'reel' || contentKind === 'ad') {
+      const me = savedProfile || {};
+      const feedPost = contentKind === 'ad'
+        ? {
+            ...post,
+            owner_name: post.owner_name || me.name || '',
+            owner_email: post.owner_email || me.email || '',
+            owner_profile_image: post.owner_profile_image || me.profile_image || '',
+            owner_has_blue_tick: Boolean(post.owner_has_blue_tick || me.has_blue_tick),
+          }
+        : {
+            ...post,
+            author_name: post.author_name || me.name || '',
+            author_profile_image: post.author_profile_image || me.profile_image || '',
+            createdBy: post.createdBy || me.email || '',
+            author_id: post.author_id ?? me.id ?? null,
+            author_has_blue_tick: Boolean(post.author_has_blue_tick || me.has_blue_tick),
+          };
+      if (contentKind === 'reel') { try { if (post.id) await UserStore.updateNewsFeedItem(post.id, 'view'); } catch {} }
+      // Reel: usi user ki saari reels bhi bhejo, taaki Feed me scroll par wahi reels aayein
+      const reelsList = contentKind === 'reel'
+        ? userPosts.filter((p) => getContentKind(p) === 'reel').map((p) => ({
+            ...p,
+            author_name: p.author_name || me.name || '',
+            author_profile_image: p.author_profile_image || me.profile_image || '',
+            createdBy: p.createdBy || me.email || '',
+            author_id: p.author_id ?? me.id ?? null,
+            author_has_blue_tick: Boolean(p.author_has_blue_tick || me.has_blue_tick),
+          }))
+        : null;
+      navigation.navigate('Feed', { id: String(feedPost.id), post: feedPost, ...(reelsList && reelsList.length ? { reels: reelsList } : {}) });
+      return;
+    }
     // ✅ Ecom product: news detail nahi, My Ecom Product (list + edit/stock) kholo
     if (post.is_ecom) { navigation.navigate('CommerceAdsCenter'); return; }
     try { if (post.id) await UserStore.updateNewsFeedItem(post.id, 'view'); } catch {}
@@ -1597,7 +1654,15 @@ const handlePickImage = async () => {
                   <PostGridThumb
                     imageUri={postImage}
                     videoUri={postVideo}
-                    fallback={(
+                    fallback={getPostFile(post) ? (
+                      <View style={{ flex: 1, width: '100%', height: '100%' }}>
+                        <DocumentThumb file={getPostFile(post)} title={post.title || post.content || ''} />
+                        <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(0,0,0,0.4)', flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 6, paddingVertical: 3 }}>
+                          <Feather name="eye" size={10} color="#fff" />
+                          <Text style={{ fontSize: 10, color: '#fff', fontWeight: '700' }}>{post.views || post.likes || 0}</Text>
+                        </View>
+                      </View>
+                    ) : (
                       <View style={{ flex: 1, width: '100%', height: '100%', backgroundColor: '#1e293b', alignItems: 'center', justifyContent: 'center', padding: 8 }}>
                         <Feather name={postKind.includes('video') ? 'video' : postKind.includes('file') ? 'file-text' : 'file'} size={18} color="#ffffff" style={{ marginBottom: 6 }} />
                         <Text style={{ fontSize: 11, color: '#ffffff', fontWeight: '600', textAlign: 'center', lineHeight: 15 }} numberOfLines={6}>
@@ -1649,8 +1714,8 @@ const handlePickImage = async () => {
               </View>
               <Text style={w.postContent}>{post.content || post.title || post.description || ''}</Text>
               {(getPostImage(post) || getPostVideo(post)) ? (
-                <View style={[w.postImage, { overflow: 'hidden' }]}>
-                  <PostGridThumb imageUri={getPostImage(post)} videoUri={getPostVideo(post)} />
+                <View style={{ width: '100%', borderRadius: 6, marginBottom: 12, overflow: 'hidden', backgroundColor: '#0f172a' }}>
+                  <PostGridThumb natural imageUri={getPostImage(post)} videoUri={getPostVideo(post)} />
                 </View>
               ) : null}
               <View style={w.postActions}>
@@ -1950,9 +2015,6 @@ const handlePickImage = async () => {
               <View style={w.card}>
                 <View style={w.cardHeaderRow}>
                   <Text style={w.cardHeading}>My Posts</Text>
-                  <TouchableOpacity onPress={() => setShowSavedProfile(false)} activeOpacity={0.7}>
-                    <Text style={[w.viewAllLink, { color: accent }]}>View All</Text>
-                  </TouchableOpacity>
                 </View>
                 {!postsLoaded && userPosts.length === 0 ? (
                   <View style={[w.emptyBox, { minHeight: 180 }]}>
@@ -2173,7 +2235,7 @@ style={[ProfileStyles.avatarCameraBadge, !canPickPhoto && { display: 'none' }]}
                 <View style={ProfileStyles.summaryCard}>
                   <View style={ProfileStyles.summaryTopRow}>
                     <View style={ProfileStyles.avatarRing}>
-                      <Image source={DEFAULT_AVATAR} style={ProfileStyles.avatar} />
+                      <Image source={require('../assets/images/avatar.png')} style={ProfileStyles.avatar} />
                       <View style={ProfileStyles.onlineDot} />
                     </View>
                     <View style={ProfileStyles.summaryContent}>

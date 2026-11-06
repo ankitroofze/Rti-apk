@@ -5,7 +5,7 @@ import { useVideoPlayer, VideoView } from 'expo-video';
 import NewsMusicSync from './NewsMusicSync';
 import AutoFitAdImage from './AutoFitAdImage';
 import MediaControlBar, { isAudioUrl } from './MediaControlBar';
-import NewsVideoControls from './NewsVideoControls';
+import NewsVideoControls, { isHoverDevice } from './NewsVideoControls';
 import { subscribeUserScroll } from '../utils/feedScrollBus';
 import * as MediaDownloadButtonModule from './MediaDownloadButton';
 const MediaDownloadButton = MediaDownloadButtonModule.MediaDownloadButton || MediaDownloadButtonModule.default;
@@ -115,6 +115,7 @@ function AdVideoControls({ player, playing, ended, buffering, onToggle, onFullsc
   const timerRef = useRef(null);
   const playingRef = useRef(playing);
   playingRef.current = playing;
+  const hoverMode = useMemo(() => isHoverDevice(), []);
   const poke = useCallback(() => {
     setVisible(true);
     if (timerRef.current) clearTimeout(timerRef.current);
@@ -126,7 +127,8 @@ function AdVideoControls({ player, playing, ended, buffering, onToggle, onFullsc
   }, [playing, poke]);
   return (
     <>
-      <TouchableOpacity activeOpacity={1} onPress={poke} style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 3 }} />
+      {/* mouse (laptop) par: video par click = play/pause, controls sirf hover par; touch par: tap = controls dikhao */}
+      <TouchableOpacity activeOpacity={1} onPress={hoverMode ? onToggle : poke} style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, zIndex: 3 }} />
       <NewsVideoControls
         player={player}
         visible={visible}
@@ -587,12 +589,12 @@ export default function MediaGallery({ images = [], video = '', width, maxHeight
         ) : null}
 
         {/* Download button (current slide ki image / video) — top-right, mute / counter ke neeche */}
-        {downloadable && currentSlide ? (
+        {downloadable && !adAutoPlay && currentSlide ? (
           <View
             pointerEvents="box-none"
-            style={{ position: 'absolute', top: (count > 1 || (adAutoPlay && currentSlide.type === 'video')) ? 46 : 10, right: 10, zIndex: 8, elevation: 8 }}
+            style={{ position: 'absolute', top: count > 1 ? 46 : 10, right: 10, zIndex: 8, elevation: 8 }}
           >
-            <MediaDownloadButton uri={currentSlide.uri} type={currentSlide.type} size={32} musicUrl={currentSlide.type === 'video' && !adAutoPlay ? musicUrl : ''} musicVolume={musicVolume} muteOriginal={muteOriginal} frame={adAutoPlay ? null : frame} />
+            <MediaDownloadButton uri={currentSlide.uri} type={currentSlide.type} size={32} musicUrl={currentSlide.type === 'video' ? musicUrl : ''} musicVolume={musicVolume} muteOriginal={muteOriginal} frame={frame} />
           </View>
         ) : null}
 

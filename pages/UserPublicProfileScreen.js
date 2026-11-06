@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import ProfileAvatar from '../components/ProfileAvatar';
+import ReportModal from '../components/ReportModal';
 import AutoIdCardPreview from '../components/IdCardPreview';
 import AutoIdCardBackPreview from '../components/IdCardBackPreview';
 import ScaledCard from '../components/ScaledCard';
@@ -27,6 +28,7 @@ import { getEngagement, defaultApplyEngagement, useEngagementSync, persistLikedL
 import useLiveRefresh from '../utils/useLiveRefresh';
 import ProfileContentTabs from '../components/ProfileContentTabs';
 import PostMenuButton from '../components/PostMenuButton';
+import DocumentThumb, { getPostFile } from '../components/DocumentThumb';
 import { CONTENT_TABS, getPostKind } from '../components/profileContent';
 import { isValidImageUrl } from '../utils/storyHelpers';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
@@ -65,16 +67,40 @@ function useResolvedUri(rawUri) {
   return resolved;
 }
 
-function PostCardImage({ rawUri, style, resizeMode = 'cover' }) {
+function PostCardImage({ rawUri, style, resizeMode = 'cover', natural = false }) {
   const resolved = useResolvedUri(rawUri);
   const [error, setError] = useState(false);
+  const [ratio, setRatio] = useState(null);
 
-  useEffect(() => { setError(false); }, [rawUri]);
+  useEffect(() => { setError(false); setRatio(null); }, [rawUri]);
+
+  // natural=true: image apne asli ratio me poori dikhe (crop nahi)
+  useEffect(() => {
+    if (!natural || !resolved) return undefined;
+    let alive = true;
+    try {
+      Image.getSize(resolved, (w, h) => { if (alive && w > 0 && h > 0) setRatio(w / h); }, () => {});
+    } catch (_) { /* ignore */ }
+    return () => { alive = false; };
+  }, [natural, resolved]);
 
   if (!resolved || error) {
     return (
       <View style={[style, { backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' }]}>
         <Feather name="image" size={22} color="#cbd5e1" />
+      </View>
+    );
+  }
+  if (natural) {
+    const r = Math.min(2, Math.max(0.75, ratio || 16 / 9));
+    return (
+      <View style={[style, { height: undefined, aspectRatio: r, backgroundColor: '#0f172a', overflow: 'hidden' }]}>
+        <Image
+          source={{ uri: resolved }}
+          style={{ width: '100%', height: '100%' }}
+          resizeMode="contain"
+          onError={() => setError(true)}
+        />
       </View>
     );
   }
@@ -204,7 +230,7 @@ const ProfileMenuSheet = ({ visible, onClose, onCopyLink, onReport, onBlock }) =
             <View style={{ height: 1, backgroundColor: '#f1f5f9', marginHorizontal: 24 }} />
             <TouchableOpacity onPress={onReport} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 24, gap: 16 }}>
               <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff7ed', justifyContent: 'center', alignItems: 'center' }}><Feather name="flag" size={18} color="#f97316" /></View>
-              <View><Text style={{ fontSize: 15, fontWeight: '600', color: '#0f172a' }}>Report</Text><Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Report inappropriate content</Text></View>
+              <View><Text style={{ fontSize: 15, fontWeight: '600', color: '#0f172a' }}>Report account</Text><Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Report this account for review</Text></View>
             </TouchableOpacity>
             <View style={{ height: 1, backgroundColor: '#f1f5f9', marginHorizontal: 24 }} />
             <TouchableOpacity onPress={onBlock} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 24, gap: 16 }}>
@@ -308,6 +334,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const [modalImage, setModalImage] = useState('');
   const [modalName, setModalName] = useState('');
   const [menuVisible, setMenuVisible] = useState(false);
+  const [reportVisible, setReportVisible] = useState(false);
   const [shareVisible, setShareVisible] = useState(false);
   const [viewerEmail, setViewerEmail] = useState('');
   const [viewerId, setViewerId] = useState('');
@@ -679,7 +706,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const locationLine = [taluka, district, state].filter(Boolean).join(', ');
   const accountAge = formatAccountAge(joinDate);
 
-  const photoUri = display?.profile_image || display?.author_profile_image || '';
+  const photoUri = display?.profile_image || display?.profile_image_url || display?.avatar || display?.author_profile_image || '';
   const safePhotoUri = isValidImageUrl(photoUri) ? photoUri : '';
   // Never trust stale post/legacy flags: entitlement belongs to this profile's
   // active Premium Plan and is identical on web and Android.
@@ -996,6 +1023,40 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     if (!post) return;
     // Ecom product: apni profile ho to My Listings, warna koi news detail nahi
     if (post.is_ecom) { if (isOwnProfile) navigation.navigate('MyListings'); return; }
+    // ✅ Reel / Ad: NewsDetails nahi — Feed screen par usi reel / ad par redirect
+    const contentKind = getPostKind(post);
+    if (contentKind === 'reel' || contentKind === 'ad') {
+      const feedPost = contentKind === 'ad'
+        ? {
+            ...post,
+            owner_name: post.owner_name || post.author_name || name || '',
+            owner_email: post.owner_email || post.createdBy || resolvedEmail || '',
+            owner_profile_image: post.owner_profile_image || safePhotoUri || '',
+            owner_has_blue_tick: Boolean(post.owner_has_blue_tick || UserStore.hasBlueTick(display)),
+          }
+        : {
+            ...post,
+            author_name: post.author_name || name || '',
+            author_profile_image: post.author_profile_image || safePhotoUri || '',
+            createdBy: post.createdBy || resolvedEmail || '',
+            author_id: post.author_id ?? profile?.id ?? userId ?? null,
+            author_has_blue_tick: Boolean(post.author_has_blue_tick || UserStore.hasBlueTick(display)),
+          };
+      if (contentKind === 'reel') { try { if (post.id) await UserStore.updateNewsFeedItem(post.id, 'view'); } catch {} }
+      // Reel: is user ki saari reels bhi bhejo (profile me jis order me dikhti hain), taaki Feed me scroll par wahi reels aayein
+      const reelsList = contentKind === 'reel'
+        ? allSortedPosts.filter((p) => getPostKind(p) === 'reel').map((p) => ({
+            ...p,
+            author_name: p.author_name || name || '',
+            author_profile_image: p.author_profile_image || safePhotoUri || '',
+            createdBy: p.createdBy || resolvedEmail || '',
+            author_id: p.author_id ?? profile?.id ?? userId ?? null,
+            author_has_blue_tick: Boolean(p.author_has_blue_tick || UserStore.hasBlueTick(display)),
+          }))
+        : null;
+      navigation.navigate('Feed', { id: String(feedPost.id), post: feedPost, ...(reelsList && reelsList.length ? { reels: reelsList } : {}) });
+      return;
+    }
     try { if (post.id) await UserStore.updateNewsFeedItem(post.id, 'view'); } catch {}
     navigation.navigate('NewsDetails', { article: post });
   };
@@ -1170,12 +1231,15 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     showToast('Referral code copied!', 'success');
   };
 
+  // Report account: menu band -> ReportModal (reason dropdown) -> POST /users/{id}/report
   const handleReport = () => {
     setMenuVisible(false);
-    Alert.alert('Report User', `Are you sure you want to report "${name}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Report', style: 'destructive', onPress: async () => { try { await UserStore.reportUser?.(resolvedEmail); } catch {} showToast('User reported. We will review shortly.', 'success'); } },
-    ]);
+    if (!viewerEmailRef.current) { showToast(loginMessage('report'), 'info'); return; }
+    setReportVisible(true);
+  };
+  const submitAccountReport = async ({ reason, details }) => {
+    const targetId = profile?.id ?? userId ?? null;
+    return UserStore.reportUser(resolvedEmail, targetId, { reason, details });
   };
 
    const handleBlock = () => {
@@ -1347,6 +1411,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       >
         {thumb ? (
           <PostCardImage rawUri={thumb} style={styles.postThumbImage} resizeMode="cover" />
+        ) : getPostFile(p) ? (
+          <View style={styles.postThumbImage}><DocumentThumb file={getPostFile(p)} title={titleSnippet} /></View>
         ) : (
           <View style={[styles.postThumbImage, { backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center', padding: 6 }]}>
             <Feather name="file-text" size={20} color="#cbd5e1" />
@@ -1416,10 +1482,10 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           <Text style={styles.feedTitle} numberOfLines={3}>{stripHtml(postTitle)}</Text>
         </TouchableOpacity>
         {postDescription ? <ExpandableDescription text={postDescription} /> : null}
-        {postVideo ? <View style={styles.feedVideoBox}><VideoPreview uri={postVideo} style={styles.feedVideo} contentFit="cover" /></View> : null}
+        {postVideo ? <View style={styles.feedVideoBox}><VideoPreview uri={postVideo} style={styles.feedVideo} contentFit="contain" /></View> : null}
         {postThumb ? (
           <TouchableOpacity onPress={() => openPost(p)} activeOpacity={0.9}>
-            <PostCardImage rawUri={postThumb} style={styles.feedImage} resizeMode="cover" />
+            <PostCardImage natural rawUri={postThumb} style={styles.feedImage} resizeMode="contain" />
           </TouchableOpacity>
         ) : null}
         {postImages.length > 1 ? (
@@ -1520,6 +1586,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     <>
       <ProfileImageModal visible={modalVisible} imageUri={modalImage} name={modalName} onClose={() => setModalVisible(false)} />
       <ShareProfileSheet visible={shareVisible} onClose={() => setShareVisible(false)} name={name} url={profileShareUrl} message={profileShareMessage} onCopy={handleCopyProfileLink} onMore={handleShareMore} />
+      <ReportModal visible={reportVisible} kind="account" onClose={() => setReportVisible(false)} onSubmit={submitAccountReport} />
       <ProfileMenuSheet visible={menuVisible} onClose={() => setMenuVisible(false)} onCopyLink={handleCopyProfileLink} onReport={handleReport} onBlock={handleBlock} />
       <BlockConfirmModal visible={blockConfirmVisible} name={name} onCancel={() => setBlockConfirmVisible(false)} onConfirm={confirmBlock} />
       <Modal visible={Boolean(followModalType)} transparent animationType="slide" onRequestClose={() => setFollowModalType('')}>
@@ -1606,10 +1673,10 @@ export default function UserPublicProfileScreen({ route, navigation }) {
               <TouchableOpacity
                 style={[styles.avatarWrap, { borderColor: pillTheme.border }]}
                 
-                onPress={() => openImageModal(profileTier.key === 'common' ? '' : (resolvedProfilePhoto || safePhotoUri), name)}
+                onPress={() => openImageModal(resolvedProfilePhoto || safePhotoUri, name)}
                 activeOpacity={0.85}
               >
-               <ProfileAvatar uri={resolvedProfilePhoto || safePhotoUri} size={82} style={styles.avatar} forceDefault={profileTier.key === 'common'} />
+               <ProfileAvatar uri={resolvedProfilePhoto || safePhotoUri} size={82} style={styles.avatar}  />
               </TouchableOpacity>
 
               {/* RIGHT: name + stats */}
@@ -1765,6 +1832,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                           </View>
                           {titleSnippet ? <Text numberOfLines={2} style={{ fontSize: 9, color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginTop: 4, paddingHorizontal: 4 }}>{titleSnippet}</Text> : null}
                         </View>
+                      ) : getPostFile(p) ? (
+                        <DocumentThumb file={getPostFile(p)} title={titleSnippet} />
                       ) : (
                         <View style={{ flex: 1, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' }}>
                           <Feather name="file-text" size={22} color="#cbd5e1" />
@@ -1824,10 +1893,10 @@ export default function UserPublicProfileScreen({ route, navigation }) {
               <View style={webSt.profileRow}>
                 <TouchableOpacity
                   style={[webSt.avatarWrap, { borderColor: '#ffffff' }]}
-                  onPress={() => openImageModal(profileTier.key === 'common' ? '' : (resolvedProfilePhoto || safePhotoUri), name)}
+                  onPress={() => openImageModal(resolvedProfilePhoto || safePhotoUri, name)}
                   activeOpacity={0.85}
                 >
-                  <ProfileAvatar uri={resolvedProfilePhoto || safePhotoUri} size={132} style={webSt.avatar} forceDefault={profileTier.key === 'common'} />
+                  <ProfileAvatar uri={resolvedProfilePhoto || safePhotoUri} size={132} style={webSt.avatar}  />
                 </TouchableOpacity>
 
                 <View style={webSt.profileInfo}>
@@ -1962,6 +2031,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                             </View>
                             {titleSnippet ? <Text numberOfLines={2} style={{ fontSize: 11, color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginTop: 8, paddingHorizontal: 8 }}>{titleSnippet}</Text> : null}
                           </View>
+                        ) : getPostFile(p) ? (
+                          <View style={webSt.gridThumbImg}><DocumentThumb file={getPostFile(p)} title={titleSnippet} /></View>
                         ) : (
                           <View style={[webSt.gridThumbImg, { backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' }]}>
                             <Feather name="file-text" size={28} color="#cbd5e1" />
@@ -2032,10 +2103,10 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           <View style={ProfileStyles.profileCardAvatarWrap}>
             <TouchableOpacity
               style={ProfileStyles.profileCardAvatarRing}
-              onPress={() => openImageModal(profileTier.key === 'common' ? '' : (resolvedProfilePhoto || safePhotoUri), name)}
+              onPress={() => openImageModal(resolvedProfilePhoto || safePhotoUri, name)}
               activeOpacity={0.85}
             >
-              <ProfileAvatar uri={resolvedProfilePhoto || safePhotoUri} size={100} style={ProfileStyles.profileCardAvatar} forceDefault={profileTier.key === 'common'} />
+              <ProfileAvatar uri={resolvedProfilePhoto || safePhotoUri} size={100} style={ProfileStyles.profileCardAvatar}  />
             </TouchableOpacity>
             {showShield ? (
               <View style={ProfileStyles.roleShieldBadge} pointerEvents="none">

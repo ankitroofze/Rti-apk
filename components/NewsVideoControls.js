@@ -5,11 +5,18 @@
 //              00:12 · 01:29                              ⚙  ⛶
 // Bada alag play button nahi; yahi play/pause hai. Video chalte time controls
 // kuch second baad chhup jaate hain, video par tap karne se wapas aate hain.
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 const SPEEDS = [1, 1.25, 1.5, 2, 0.5];
+
+// Laptop / desktop (mouse wala web): controls SIRF hover par dikhte hain.
+// Touch (mobile / tablet / native app): purana tap-to-show behaviour.
+export function isHoverDevice() {
+  if (Platform.OS !== 'web' || typeof window === 'undefined' || !window.matchMedia) return false;
+  try { return window.matchMedia('(hover: hover) and (pointer: fine)').matches; } catch (_) { return false; }
+}
 
 export function fmt(sec) {
   const s = Math.max(0, Math.floor(Number(sec) || 0));
@@ -64,9 +71,28 @@ export default function NewsVideoControls({
   const [speedIdx, setSpeedIdx] = useState(0);
   const trackW = useRef(0);
 
+  // ── Hover-only mode (web + mouse): parent (video box) par mouse aaye tabhi controls dikhen ──
+  const hoverMode = useMemo(() => isHoverDevice(), []);
+  const [hovered, setHovered] = useState(false);
+  const sentinelRef = useRef(null);
+  useEffect(() => {
+    if (!hoverMode) return undefined;
+    const parent = sentinelRef.current?.parentElement;
+    if (!parent || !parent.addEventListener) return undefined;
+    const on = () => setHovered(true);
+    const off = () => setHovered(false);
+    parent.addEventListener('mouseenter', on);
+    parent.addEventListener('mouseleave', off);
+    return () => {
+      parent.removeEventListener('mouseenter', on);
+      parent.removeEventListener('mouseleave', off);
+    };
+  }, [hoverMode]);
+  const show = hoverMode ? hovered : visible;
+
   // current time / duration — player ho tabhi, aur controls dikh rahe ho tabhi poll
   useEffect(() => {
-    if (!player || !visible) return undefined;
+    if (!player || !show) return undefined;
     const tick = () => {
       const t = readTimes(player);
       setTimes((prev) =>
@@ -76,14 +102,34 @@ export default function NewsVideoControls({
     tick();
     const id = setInterval(tick, 250);
     return () => clearInterval(id);
-  }, [player, visible]);
+  }, [player, show]);
 
-  // naya player / naya video => reset
+  // naya player / naya video => reset; player ho to label uski asli speed se sync
   useEffect(() => {
     if (!player) {
       setTimes({ cur: 0, dur: 0 });
       setSpeedIdx(0);
+      return undefined;
     }
+    const syncRate = () => {
+      try {
+        const idx = SPEEDS.indexOf(Number(player.__userSpeed) || 1);
+        if (player.playbackRate !== (SPEEDS[idx] || 1)) player.playbackRate = SPEEDS[idx] || 1;
+        setSpeedIdx(idx >= 0 ? idx : 0);
+      } catch (_) { /* ignore */ }
+    };
+    syncRate();
+    let sub;
+    try {
+      // kisi bhi wajah se speed badle (mute / audio focus / buffering) to user ki speed wapas
+      sub = player.addListener?.('playbackRateChange', () => {
+        try {
+          const want = Number(player.__userSpeed) || 1;
+          if (player.playbackRate !== want) player.playbackRate = want;
+        } catch (_) { /* ignore */ }
+      });
+    } catch (_) { /* purana expo-video */ }
+    return () => { try { sub?.remove?.(); } catch (_) { /* ignore */ } };
   }, [player]);
 
   const { cur, dur } = times;
@@ -111,15 +157,19 @@ export default function NewsVideoControls({
     onInteract?.();
     if (!player) return;
     const next = (speedIdx + 1) % SPEEDS.length;
-    try { player.playbackRate = SPEEDS[next]; } catch (_) {}
+    try { player.__userSpeed = SPEEDS[next]; player.playbackRate = SPEEDS[next]; } catch (_) {}
     setSpeedIdx(next);
   };
 
-  if (!visible) return null;
-
   const playSize = compact ? 54 : 64;
 
+  // sentinel hamesha mounted (hover listener isi ke parent par lagta hai), controls sirf show hone par
+  const sentinel = <View ref={sentinelRef} pointerEvents="none" style={{ position: 'absolute', width: 0, height: 0 }} />;
+  if (!show) return sentinel;
+
   return (
+    <>
+    {sentinel}
     <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { bottom: bottomInset, zIndex: 4, elevation: 4 }]}>
       {/* halka dark scrim — jaise ad player me */}
       <View pointerEvents="none" style={[StyleSheet.absoluteFill, st.scrim, paused ? null : { backgroundColor: 'transparent' }]} />
@@ -201,6 +251,7 @@ export default function NewsVideoControls({
         </View>
       </View>
     </View>
+    </>
   );
 }
 

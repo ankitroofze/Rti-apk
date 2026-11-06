@@ -13,7 +13,7 @@ import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaS
  */
 
 // Native (Android / iOS): paused expo-video, shows first frame
-function NativeVideoFrame({ uri }) {
+function NativeVideoFrame({ uri, fit = 'cover' }) {
   const player = useVideoPlayer(uri, (p) => {
     try { p.muted = true; p.loop = false; p.pause(); } catch {}
     try { p.currentTime = 0.1; } catch {}
@@ -22,7 +22,7 @@ function NativeVideoFrame({ uri }) {
     <VideoView
       player={player}
       style={{ width: '100%', height: '100%' }}
-      contentFit="cover"
+      contentFit={fit}
       nativeControls={false}
       allowsFullscreen={false}
       allowsPictureInPicture={false}
@@ -33,7 +33,7 @@ function NativeVideoFrame({ uri }) {
 }
 
 // Web: plain <video> tag, #t=0.1 makes the browser paint the first frame
-function WebVideoFrame({ uri }) {
+function WebVideoFrame({ uri, fit = 'cover' }) {
   const [src, setSrc] = useState(isIdbMediaUri(uri) ? null : uri);
 
   useEffect(() => {
@@ -59,16 +59,47 @@ function WebVideoFrame({ uri }) {
     muted: true,
     playsInline: true,
     preload: 'metadata',
-    style: { width: '100%', height: '100%', objectFit: 'cover', display: 'block', pointerEvents: 'none', background: '#0f172a' },
+    style: { width: '100%', height: '100%', objectFit: fit, display: 'block', pointerEvents: 'none', background: '#0f172a' },
   });
 }
 
-export default function PostGridThumb({ imageUri, videoUri, fallback = null }) {
+// natural=true  -> list/feed card: poori image dikhe (crop nahi), apne asli ratio me
+// natural=false -> grid tile: parent box bhar kar (cover) dikhe
+export default function PostGridThumb({ imageUri, videoUri, fallback = null, natural = false }) {
   const [imageFailed, setImageFailed] = useState(false);
+  const [ratio, setRatio] = useState(null);
 
-  useEffect(() => { setImageFailed(false); }, [imageUri]);
+  useEffect(() => { setImageFailed(false); setRatio(null); }, [imageUri]);
+
+  // natural mode: image ka asli width/height ratio nikalo
+  useEffect(() => {
+    if (!natural || !imageUri) return undefined;
+    let alive = true;
+    try {
+      Image.getSize(
+        imageUri,
+        (w, h) => { if (alive && w > 0 && h > 0) setRatio(w / h); },
+        () => { /* ratio na mile to 16:9 */ }
+      );
+    } catch (_) { /* ignore */ }
+    return () => { alive = false; };
+  }, [natural, imageUri]);
 
   if (imageUri && !imageFailed) {
+    if (natural) {
+      // bahut lambi / chaudi image par box control me rahe (0.75 se 2:1), image phir bhi poori dikhti hai (contain)
+      const r = Math.min(2, Math.max(0.75, ratio || 16 / 9));
+      return (
+        <View style={{ width: '100%', aspectRatio: r, backgroundColor: '#0f172a' }}>
+          <Image
+            source={{ uri: imageUri }}
+            style={{ width: '100%', height: '100%' }}
+            resizeMode="contain"
+            onError={() => setImageFailed(true)}
+          />
+        </View>
+      );
+    }
     return (
       <Image
         source={{ uri: imageUri }}
@@ -80,9 +111,10 @@ export default function PostGridThumb({ imageUri, videoUri, fallback = null }) {
   }
 
   if (videoUri) {
+    const fit = natural ? 'contain' : 'cover';
     return (
-      <View style={{ width: '100%', height: '100%', backgroundColor: '#0f172a', alignItems: 'center', justifyContent: 'center' }}>
-        {Platform.OS === 'web' ? <WebVideoFrame uri={videoUri} /> : <NativeVideoFrame uri={videoUri} />}
+      <View style={[{ width: '100%', backgroundColor: '#0f172a', alignItems: 'center', justifyContent: 'center' }, natural ? { aspectRatio: 16 / 9 } : { height: '100%' }]}>
+        {Platform.OS === 'web' ? <WebVideoFrame uri={videoUri} fit={fit} /> : <NativeVideoFrame uri={videoUri} fit={fit} />}
         {/* dark icon behind the frame if the video cannot load */}
         <View pointerEvents="none" style={{ position: 'absolute', zIndex: -1 }}>
           <Feather name="video" size={22} color="#64748b" />

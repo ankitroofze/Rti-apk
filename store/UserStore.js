@@ -10,9 +10,10 @@ import {
   YOUTUBE_STREAM_KEY_PLACEHOLDER,
 } from '../constants/liveStreamingConfig';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
-import { isAdsHidden, resetAdsVisibility, refreshAdsVisibility } from '../utils/adsVisibility';
+import { resetAdsVisibility, refreshAdsVisibility } from '../utils/adsVisibility';
 import { unregisterDeviceToken } from '../utils/Pushnotifications';
-import { getAwardeeFontSize } from '../utils/profileHelpers';
+import { getAwardeeFontSize, generateMemberId } from '../utils/profileHelpers';
+import { getScoreText } from '../utils/quizResultLogic';
 import { makePasswordVerifier, verifyPasswordVerifier } from '../utils/localCredential';
 import { getPostKind } from '../components/profileContent';
 import { normalizeFrameTemplateId } from '../constants/frameTemplates';
@@ -939,6 +940,7 @@ const normalizeWalletTransactions = (transactions = []) => {
 const normalizeWithdrawRequests = (requests = []) => {
   if (!Array.isArray(requests)) return [];
   return requests.map((r, i) => ({
+    ...r, // API ke extra fields (paid_at, fee, tds, net_amount, utr ...) — invoice / receipt me kaam aate hain
     id:                  r.id                  || `withdraw-${i + 1}`,
     amount:              Number(r.amount       || 0),
     payment_mode:        r.payment_mode || r.method || 'bank',
@@ -953,6 +955,8 @@ const normalizeWithdrawRequests = (requests = []) => {
     payout_reference:    r.payout_reference || null,
     rejection_reason:    r.rejection_reason || null,
     date:                r.date || r.created_at || '2026-03-24',
+    created_at:          r.created_at || r.date || null,
+    processed_at:        r.processed_at || r.paid_at || r.approved_at || r.updated_at || null,
   }));
 };
 const normalizeSubscription = (s = {}) => ({
@@ -2143,9 +2147,24 @@ const escapeXml = (value = '') =>
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 
+// ✅ Certificate par Score + User ID (preview screen jaisa hi logic)
+const getCertScoreLabel = (item = {}) => {
+  const info = getScoreText(item || {});
+  return info.full || `${Number(item?.percentage ?? item?.score ?? 0) || 0}%`;
+};
+const getCertUserIdLabel = (user = {}, item = {}) => {
+  const direct = user?.member_id || user?.memberId || user?.id_number || item?.member_id || item?.user_member_id;
+  if (direct) return String(direct);
+  const email = user?.email || item?.user_email || '';
+  if (email) return generateMemberId(email);
+  const id = user?.id ?? user?.user_id ?? item?.user_id;
+  return id != null && id !== '' ? `#${id}` : 'N/A';
+};
+
 const buildCertificateSvg = ({
   userName, quizTitle, score, resultType, issueDate,
   certificateNumber, photoUri, email, village, contactNumber,
+  scoreText, userIdText,
 }) => {
   const safePhoto = photoUri && !String(photoUri).startsWith('blob:') ? escapeXml(photoUri) : '';
   const nameFontSize = getAwardeeFontSize(userName, 44); // ✅ lamba naam chota font, ek line me fit
@@ -2187,7 +2206,8 @@ const buildCertificateSvg = ({
   <text x="700" y="652" text-anchor="middle" fill="#1a5c1a" font-size="42" font-weight="900">${escapeXml(resultType)}</text>
   <line x1="320" y1="668" x2="1080" y2="668" stroke="#c8a94a" stroke-width="3"/>
     <text x="700" y="686" text-anchor="middle" fill="#333333" font-size="18">Subjected to the movement of Right to Information in the organisational social work field since "15th" Years</text>
-  <text x="700" y="746" text-anchor="middle" fill="#8b0000" font-size="26" font-style="italic" font-weight="700">Congratulations on your outstanding achievement!</text>
+  <text x="700" y="718" text-anchor="middle" fill="#3a2a1a" font-size="22" font-weight="700">Score: <tspan fill="#b00000" font-weight="900">${escapeXml(scoreText || `${Number(score) || 0}%`)}</tspan>     |     User ID: <tspan fill="#b00000" font-weight="900">${escapeXml(userIdText || 'N/A')}</tspan></text>
+  <text x="700" y="754" text-anchor="middle" fill="#8b0000" font-size="26" font-style="italic" font-weight="700">Congratulations on your outstanding achievement!</text>
   <text x="160" y="790" fill="#333333" font-size="70">&#128220;</text>
   <rect x="300" y="770" width="520" height="150" rx="12" fill="#fff9eb" stroke="#ead9ab"/>
   <text x="324" y="800" fill="#8b6914" font-size="15" font-weight="800">MEMBER DETAILS</text>
@@ -2353,7 +2373,11 @@ const _normalizeFollowListItem = (raw) => {
     id: u.id ?? u.user_id ?? null,
     name: fullName || u.name || u.username || 'User',
     email: String(u.email || u.user_email || '').trim().toLowerCase(),
-    profile_image: u.profile_image || u.profile_image_url || '',
+    profile_image: resolveMediaUrl(
+      u.profile_image || u.profile_image_url || u.profile_photo || u.profile_photo_url
+      || u.avatar || u.avatar_url || u.photo || u.image
+      || u.user?.profile_image || u.user?.profile_image_url || u.user?.avatar || ''
+    ),
   };
 };
 
@@ -3562,6 +3586,15 @@ consumeQuizAttempt: async () => {
         AuthAPI.getWalletApi(),
         AuthAPI.getWalletWithdrawalsApi({ perPage: 100 }),
       ]);
+      // 100 se zyada requests ho to baaki pages bhi lao (max 10 page)
+      if (withdrawalsRes.ok && withdrawalsRes.meta?.last_page > 1) {
+        const last = Math.min(Number(withdrawalsRes.meta.last_page) || 1, 10);
+        for (let pg = 2; pg <= last; pg += 1) {
+          const more = await AuthAPI.getWalletWithdrawalsApi({ page: pg, perPage: 100 });
+          if (!more.ok) break;
+          withdrawalsRes.requests = [...withdrawalsRes.requests, ...more.requests];
+        }
+      }
       if (!walletRes.ok || !walletRes.wallet) return null;
       const wallet = walletRes.wallet;
       const requests = normalizeWithdrawRequests(withdrawalsRes.ok ? withdrawalsRes.requests : [])
@@ -5249,6 +5282,33 @@ const db = await getEngagementDb();
     }
   },
 
+  // ✅ Report API: post report -> POST /news/{id}/report
+  reportNews: async (newsId, { reason, details } = {}) => {
+    try {
+      return await AuthAPI.reportNewsApi(newsId, { reason, details });
+    } catch (error) {
+      console.error('reportNews error:', error);
+      return { ok: false, message: 'Unable to submit report.' };
+    }
+  },
+
+  // ✅ Report API: account report -> POST /users/{id}/report
+  // targetUserId na ho to email se local cache me numeric id dhundhta hai.
+  reportUser: async (targetUserEmail, targetUserId, { reason, details } = {}) => {
+    try {
+      let targetId = targetUserId ?? null;
+      if (!targetId && targetUserEmail) {
+        const targetUser = await UserStore.getUser(String(targetUserEmail).trim().toLowerCase());
+        targetId = targetUser?.id ?? targetUser?.user_id ?? null;
+      }
+      if (!targetId) return { ok: false, message: 'Unable to identify this account.' };
+      return await AuthAPI.reportUserApi(targetId, { reason, details });
+    } catch (error) {
+      console.error('reportUser error:', error);
+      return { ok: false, message: 'Unable to submit report.' };
+    }
+  },
+
   recordNewsFeedMenuAction: async (itemId, action, extra = {}) => {
     try {
       const postId = String(itemId || '').trim();
@@ -5849,6 +5909,8 @@ const db = await getEngagementDb();
         userName:      targetItem.user_name || user.name || 'Participant',
         quizTitle:     targetItem.quiz_title || 'Quiz Examination',
         score:         targetItem.score ?? 0,
+        scoreText:     getCertScoreLabel(targetItem),
+        userIdText:    getCertUserIdLabel(user, targetItem),
         resultType:    targetItem.result_type || 'Pass',
         issueDate, certificateNumber,
         photoUri:      user.profile_image || '',
@@ -5916,6 +5978,8 @@ downloadCertificateForAttempt: async (item) => {
       userName: user.name || "Participant",
       quizTitle: item.quiz_title || "Quiz Examination",
       score: item.percentage ?? 0,
+      scoreText: getCertScoreLabel(item),
+      userIdText: getCertUserIdLabel(user, item),
       resultType: tier.badge_label ? `${tier.result_type} — ${tier.badge_label}` : tier.result_type,
       issueDate,
       certificateNumber,
@@ -6711,9 +6775,13 @@ getActiveAdsFeed: async (options = {}) => {
         : UserStore.getBlockedUsers().catch(() => ({ ok: true, list: [] })),
       UserStore.getCurrentUser().catch(() => null),
     ]);
-    // ✅ hide_ads (active subscription) => adsHidden true => kisi bhi jagah ads nahi dikhane
-    if (res?.adsHidden || isAdsHidden()) return [];
-    if (!res.ok || !Array.isArray(res.ads)) return [];
+    // ✅ hide_ads (ad-free subscription) => sirf POPUP band hota hai (HomePromoPopup khud handle karta hai).
+    //    Side / center feed ads yahan se normal aate rahenge.
+    if (!res.ok || !Array.isArray(res.ads)) {
+      console.log('[ADS-DEBUG] ads-details fail/empty -> ok:', res?.ok, '| message:', res?.message, '| adsHidden:', res?.adsHidden);
+      return [];
+    }
+    console.log('[ADS-DEBUG] backend ads:', res.ads.length, '| adsHidden(popup only):', Boolean(res?.adsHidden));
 
     const today = new Date().toISOString().slice(0, 10);
 

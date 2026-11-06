@@ -3,10 +3,17 @@ import { Image, Platform, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 
+const MEDIA_ORIGIN = 'https://rtiapi.roofze.in';
+
 function normalizeUri(value) {
   const uri = String(value || '').trim();
   if (!uri || uri === 'null' || uri === 'undefined') return '';
-  return uri;
+  // Backend kabhi relative path ("profiles/abc.jpg") bhejta hai — absolute banao,
+  // warna Image load fail hoke default penguin dikhta hai.
+  if (/^(https?:|blob:|data:|file:|content:|ph:|asset:|idb:)/i.test(uri) || isIdbMediaUri(uri)) return uri;
+  if (uri.startsWith('//')) return `https:${uri}`;
+  const clean = uri.replace(/^\/+/, '');
+  return `${MEDIA_ORIGIN}/${clean.startsWith('storage/') ? '' : 'storage/'}${clean}`;
 }
 
 export default function ProfileAvatar({

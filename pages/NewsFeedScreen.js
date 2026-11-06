@@ -1587,7 +1587,7 @@ const handleLike = async (item) => {
 
                 <View style={styles.authorRow}>
                   <TouchableOpacity style={styles.authorAvatarBtn} onPress={() => openAuthorProfile(item)} activeOpacity={0.8}>
-                    <ProfileAvatar uri={item.author_profile_image} size={34} style={styles.authorAvatar} forceDefault={!(item.author_seat_id || item.author_has_blue_tick || item.has_blue_tick || item.author_is_subscriber || item.author_is_premium)} />
+                    <ProfileAvatar uri={item.author_profile_image} size={34} style={styles.authorAvatar} />
                   </TouchableOpacity>
                   <Text style={styles.authorName}>{item.author_name || 'RTI News'}</Text>
                   {Boolean(

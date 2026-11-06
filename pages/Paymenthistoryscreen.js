@@ -25,6 +25,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { UserStore } from '../store/UserStore';
+import { buildSubscriptionInvoiceHtml, loadInvoiceLogo, canInvoicePayment, downloadInvoicePdf, getPaymentInvoiceNo } from '../utils/invoiceGenerator';
+import { useToast } from '../components/ui/ToastProvider';
+import InvoiceViewerModal from '../components/InvoiceViewerModal';
 import S from '../styles/Paymenthistorystyles';
 import ModuleWebHeader from '../components/Modulewebheader';
 
@@ -79,6 +82,53 @@ function PaymentHistoryScreen__Inner({ navigation }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [usingFallback, setUsingFallback] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const { showToast } = useToast();
+  const [invoiceBusyId, setInvoiceBusyId] = useState(null);
+  const [invoiceView, setInvoiceView] = useState(null);   // { html, name, txn } — View Invoice popup
+
+  // ✅ Paid payment ka invoice (PDF) — GET /payment-history ki row se banta hai
+  const handleInvoice = useCallback(async (txn) => {
+    const key = String(txn.payment_id);
+    if (invoiceBusyId) return;
+    setInvoiceBusyId(key);
+    try {
+      const user = (await UserStore.getCurrentUser()) || {};
+      const logoSrc = await loadInvoiceLogo();
+      const html = buildSubscriptionInvoiceHtml(txn, user, logoSrc);
+      const res = await downloadInvoicePdf(html, getPaymentInvoiceNo(txn));
+      showToast(res.message || (res.ok ? 'Invoice ready.' : 'Unable to generate the invoice.'), res.ok ? 'success' : 'error');
+    } finally {
+      setInvoiceBusyId(null);
+    }
+  }, [invoiceBusyId, showToast]);
+
+  // ✅ Invoice ko download kiye bina app ke andar dekho (same HTML jo PDF me jaata hai)
+  const handleViewInvoice = useCallback(async (txn) => {
+    const key = `view-${txn.payment_id}`;
+    if (invoiceBusyId) return;
+    setInvoiceBusyId(key);
+    try {
+      const user = (await UserStore.getCurrentUser()) || {};
+      const logoSrc = await loadInvoiceLogo();
+      const html = buildSubscriptionInvoiceHtml(txn, user, logoSrc);
+      setInvoiceView({ html, name: getPaymentInvoiceNo(txn) });
+    } catch (_) {
+      showToast('Unable to open the invoice.', 'error');
+    } finally {
+      setInvoiceBusyId(null);
+    }
+  }, [invoiceBusyId, showToast]);
+
+  const downloadFromViewer = useCallback(async () => {
+    if (!invoiceView || invoiceBusyId) return;
+    setInvoiceBusyId('viewer');
+    try {
+      const res = await downloadInvoicePdf(invoiceView.html, invoiceView.name);
+      showToast(res.message || (res.ok ? 'Invoice ready.' : 'Unable to generate the invoice.'), res.ok ? 'success' : 'error');
+    } finally {
+      setInvoiceBusyId(null);
+    }
+  }, [invoiceView, invoiceBusyId, showToast]);
 
   const loadCurrentPlans = useCallback(async () => {
     const user = await UserStore.getCurrentUser();
@@ -365,6 +415,32 @@ function PaymentHistoryScreen__Inner({ navigation }) {
                           </View>
                         ) : null}
                       </View>
+                      {canInvoicePayment(t) ? (
+                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                        <TouchableOpacity
+                          onPress={() => handleViewInvoice(t)}
+                          disabled={!!invoiceBusyId}
+                          activeOpacity={0.8}
+                          style={{ marginTop: 10, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: '#fff', borderWidth: 1, borderColor: '#fecaca' }}
+                        >
+                          <Feather name="eye" size={13} color="#dc2626" />
+                          <Text style={{ color: '#dc2626', fontSize: 12, fontWeight: '700' }}>
+                            {invoiceBusyId === `view-${t.payment_id}` ? 'Opening…' : 'View Invoice'}
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => handleInvoice(t)}
+                          disabled={invoiceBusyId === String(t.payment_id)}
+                          activeOpacity={0.8}
+                          style={{ marginTop: 10, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca' }}
+                        >
+                          <Feather name="download" size={13} color="#dc2626" />
+                          <Text style={{ color: '#dc2626', fontSize: 12, fontWeight: '700' }}>
+                            {invoiceBusyId === String(t.payment_id) ? 'Preparing…' : 'Download Invoice'}
+                          </Text>
+                        </TouchableOpacity>
+                        </View>
+                      ) : null}
                       {t.status === 'failed' && t.failure_description ? (
                         <Text style={[S.planCardMetaLabel, { marginTop: 6 }]} numberOfLines={2}>{t.failure_description}</Text>
                       ) : null}
@@ -389,6 +465,14 @@ function PaymentHistoryScreen__Inner({ navigation }) {
           </ScrollView>
         )}
       </View>
+      <InvoiceViewerModal
+        visible={!!invoiceView}
+        html={invoiceView?.html}
+        title={invoiceView?.name ? `Invoice ${invoiceView.name}` : 'Invoice'}
+        onClose={() => setInvoiceView(null)}
+        onDownload={downloadFromViewer}
+        downloading={invoiceBusyId === 'viewer'}
+      />
     </SafeAreaView>
   );
 }

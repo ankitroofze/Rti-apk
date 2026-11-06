@@ -2,8 +2,12 @@
 // ─────────────────────────────────────────────────────────
 // Ads hide/show ka SINGLE rule:
 //   User ke paas koi ACTIVE subscription ho jiske plan me backend ne `hide_ads: true` bheja ho
-//   (admin panel se banaya hua special subscription) => ads (popup/feed/panels) kahin nahi dikhenge.
-//   Premium / Role / Ads / Ecom / Quiz — sirf type se ads hide NAHI hote. Sirf `hide_ads: true` se.
+//   (admin panel se banaya hua "Ads Free" subscription) => SIRF POP-UP ADS band hote hain.
+//   Home page ke right-side ads aur center feed ads PHIR BHI dikhte hain (2-2 sec me random badalte hue).
+//   Premium / Role / Ads / Ecom / Quiz — sirf type se pop-up hide NAHI hota. Sirf `hide_ads: true` se.
+//
+//   NOTE: `isAdsHidden / useAdsHidden` ka matlab ab "POPUP ads hidden" hai.
+//   Naye naam `isPopupAdsHidden / usePopupAdsHidden` neeche alias hain (same cheez).
 //
 // Flow:
 //   AuthAPI.getAdsDetails()  ->  /my-subscriptions + /my-role-subscriptions me `hide_ads` check
@@ -92,6 +96,9 @@ export const refreshAdsVisibility = async () => {
   return _hidden;
 };
 
+// Alias — naam ka matlab saaf: ad-free user ke liye sirf popup band hota hai
+export const isPopupAdsHidden = () => _hidden;
+
 // React hook: ads_hidden badalte hi component re-render hota hai
 export const useAdsHidden = () => {
   const [hidden, setHidden] = useState(_hidden);
@@ -101,3 +108,4 @@ export const useAdsHidden = () => {
   }, []);
   return hidden;
 };
+export const usePopupAdsHidden = useAdsHidden;

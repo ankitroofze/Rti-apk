@@ -2624,15 +2624,29 @@ postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
     ]);
 
     if (status === 200 || status === 201) {
-      setAdsHidden(adsHidden);   // sab screens ko turant batao (Home, popup, feed, panels...)
-      if (adsHidden) return { ok: true, adsHidden: true, ads: [] };
-      const ads = data?.ads_details
-        || data?.data?.ads_details
-        || data?.data?.ads
-        || data?.data
-        || data?.ads
-        || data;
-      return { ok: true, adsHidden: false, ads: Array.isArray(ads) ? ads : [] };
+      setAdsHidden(adsHidden);   // popup ko turant batao (ad-free user => sirf POPUP band)
+      // ✅ Ad-free subscription me bhi side / center ads aate rahenge — isliye ads yahan khaali nahi karte
+      const pickAds = (d) => {
+        const found = d?.ads_details
+          || d?.data?.ads_details
+          || d?.data?.ads
+          || d?.data
+          || d?.ads
+          || d;
+        return Array.isArray(found) ? found : [];
+      };
+      let adsList = pickAds(data);
+      // ✅ Backend kabhi kabhi logged-in AD-FREE user ko khaali list deta hai (wo khud ads hide kar deta hai).
+      //    Ads-details public API hai (login zaroori nahi), isliye bina token ke dobara mangwa lete hain —
+      //    taaki ad-free user ko side / center ads dikh sakein (sirf popup band rahe).
+      if (!adsList.length && token) {
+        try {
+          const guest = await getJSON('/ads-details', null, 45000);
+          if (guest.status === 200 || guest.status === 201) adsList = pickAds(guest.data);
+          console.log('[ADS-DEBUG] logged-in ads-details empty -> guest retry ads:', adsList.length);
+        } catch (_) { /* ignore */ }
+      }
+      return { ok: true, adsHidden, ads: adsList };
     }
     if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
     return { ok: false, message: data?.message || `Server error (${status}).` };
@@ -3642,6 +3656,53 @@ unblockUserApi: async (userId) => {
     return { ok: false, isNetwork: true, message: 'Network error.' };
   }
 },
+// ─────────────────────────────────────────────────────────
+// REPORT API  (POST /news/{id}/report , POST /users/{id}/report)
+// body: { reason (required), details (optional) }
+// 200/201 -> { message, report_id } | 401 login nahi | 404 post/user nahi | 422 validation
+// ─────────────────────────────────────────────────────────
+reportNewsApi: async (newsId, { reason, details } = {}) => {
+  return AuthAPI._submitReport(`/news/${encodeURIComponent(String(newsId ?? '').trim())}/report`, newsId, { reason, details }, 'post');
+},
+
+reportUserApi: async (userId, { reason, details } = {}) => {
+  return AuthAPI._submitReport(`/users/${encodeURIComponent(String(userId ?? '').trim())}/report`, userId, { reason, details }, 'account');
+},
+
+_submitReport: async (endpoint, targetId, { reason, details } = {}, kind = 'post') => {
+  try {
+    const cleanReason = String(reason || '').trim();
+    if (!String(targetId ?? '').trim()) return { ok: false, status: 404, message: kind === 'account' ? 'Unable to identify this account.' : 'Unable to identify this post.' };
+    if (!cleanReason) return { ok: false, status: 422, message: 'Please select a reason.' };
+    const token = await getAuthToken();
+    if (!token) return { ok: false, isAuth: true, status: 401, message: 'Please login to submit a report.' };
+    const body = { reason: cleanReason };
+    const cleanDetails = String(details || '').trim();
+    if (cleanDetails) body.details = cleanDetails;
+    const { status, data } = await postJSON(endpoint, body, token);
+    if (status === 200 || status === 201) {
+      return { ok: true, status, reportId: data?.report_id ?? null, message: data?.message || 'Report submitted successfully.' };
+    }
+    if (status === 401) return { ok: false, isAuth: true, status, message: 'Please login to submit a report.' };
+    if (status === 404) return { ok: false, status, message: kind === 'account' ? 'This account does not exist anymore.' : 'This post does not exist anymore.' };
+    if (status === 422) {
+      // Laravel validation: { message, errors: { reason: ['...'] } }
+      const firstError = data?.errors && typeof data.errors === 'object'
+        ? Object.values(data.errors).flat().find(Boolean)
+        : '';
+      return {
+        ok: false,
+        status,
+        message: data?.message || firstError || (kind === 'account' ? "You can't report your own account." : "You can't report your own post."),
+      };
+    }
+    return { ok: false, status, message: data?.message || `Server error (${status}).` };
+  } catch (err) {
+    console.error('[AuthAPI._submitReport] Error:', err);
+    return { ok: false, isNetwork: true, message: 'Network error. Please try again.' };
+  }
+},
+
 getBlockedUsersApi: async () => {
   try {
     const token = await getAuthToken();

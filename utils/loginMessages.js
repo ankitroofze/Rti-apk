@@ -6,6 +6,7 @@ const LOGIN_MESSAGES = {
   follow: 'Please login to follow this user.',
   save: 'Please login to save this post.',
   block: 'Please login to block this user.',
+  report: 'Please login to submit a report.',
   continue: 'Please login to continue.',
 };
 

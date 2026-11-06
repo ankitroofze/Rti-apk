@@ -68,7 +68,7 @@ import MyListingsScreen from '../pages/MyListingsScreen';
 import SellerReportsScreen from '../pages/SellerReportsScreen';
 import NewspaperPage from '../pages/NewspaperPage';
 import NewspaperList from '../screens/NewspaperList';
-import PreviewScreen from '../pages/PreviewScreen';
+// ❌ REMOVED: '../pages/PreviewScreen' file project me exist nahi karti (bundling error de rahi thi)
 import QuizSubscriptionScreen from '../screens/QuizSubscriptionScreen';
 import EcomSubscriptionScreen from '../screens/EcomSubscriptionScreen';
 import LegalPolicyScreen from '../pages/LegalPolicyScreen';
@@ -231,7 +231,7 @@ export default function AppNavigator() {
     { name: 'SellerReports', component: SellerReportsScreen },
     { name: 'NewspaperPage', component: NewspaperPage },
     { name: 'NewspaperList', component: NewspaperList },
-    { name: 'Preview', component: PreviewScreen },
+    // ❌ REMOVED: { name: 'Preview', component: PreviewScreen } (PreviewScreen file exist nahi karti)
     { name: 'QuizSubscription', component: QuizSubscriptionScreen },
     { name: 'EcomSubscription', component: EcomSubscriptionScreen },
     { name: 'LegalPolicy', component: LegalPolicyScreen },

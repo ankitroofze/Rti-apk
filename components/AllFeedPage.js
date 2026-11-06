@@ -20,7 +20,6 @@ import { IS_WEB } from '../constants/homeData';
 import { normalizeStoryItem, dedupeStories } from '../utils/storyHelpers';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
 import { smartGoBack } from '../utils/smartBack';
-import { useAdsHidden } from '../utils/adsVisibility';
 import { homeStoryFromAd } from '../screens/HomeScreen';
 
 const newestFirst = (a, b) => {
@@ -45,9 +44,7 @@ export default function AllFeedPage({ navigation, kind = 'news' }) {
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const adsHidden = useAdsHidden();
-  // ✅ ads_hidden=true => 'Sponsored Ads' page par bhi koi ad nahi
-  useEffect(() => { if (isAds && adsHidden) setItems([]); }, [isAds, adsHidden]);
+  // ✅ Ad-free user ko 'Sponsored Ads' page par ads dikhte hain (sirf popup band hota hai)
   const [loadingMore, setLoadingMore] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
@@ -105,7 +102,7 @@ export default function AllFeedPage({ navigation, kind = 'news' }) {
   const handleOpenDetails = useCallback((story) => {
     if (!story) return;
     try { if (story.id && !story.isAd) Promise.resolve(UserStore.updateNewsFeedItem(story.id, 'view')).catch(() => {}); } catch (_) {}
-    navigation?.navigate?.('NewsDetails', { article: story });
+    navigation?.navigate?.('NewsDetails', { article: story, id: story?.id });
   }, [navigation]);
 
   const handleOpenLocation = useCallback((stateName) => {

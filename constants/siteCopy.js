@@ -52,7 +52,7 @@ const SITE_COPY = {
       contactLine: 'Contact Us: info@rtinews.in',
     },
     home: {
-      searchFeedPlaceholder: 'Search title, state, reporter, or category',
+      searchFeedPlaceholder: 'Search news, state, category or user name',
       searchStatePlaceholder: 'Search a state or union territory',
       resetFeed: 'Reset Feed',
       stateDirectoryTitle: 'Explore news from',
@@ -233,7 +233,7 @@ const SITE_COPY = {
       contactLine: 'संपर्क करें: info@rtinews.in',
     },
     home: {
-      searchFeedPlaceholder: 'शीर्षक, राज्य, रिपोर्टर या श्रेणी खोजें',
+      searchFeedPlaceholder: 'खबर, राज्य, श्रेणी या यूज़र का नाम खोजें',
       searchStatePlaceholder: 'राज्य या केंद्र शासित प्रदेश खोजें',
       resetFeed: 'फीड रीसेट करें',
       stateDirectoryTitle: 'यहां से खबरें देखें',
@@ -404,6 +404,9 @@ const SITE_COPY = {
       reporter: 'रिपोर्टर',
       video: 'व्हिडिओ',
     },
+    home: {
+      searchFeedPlaceholder: 'बातमी, राज्य, श्रेणी किंवा युजरचे नाव शोधा',
+    },
   },
   bn: {
     common: {
@@ -446,6 +449,9 @@ const SITE_COPY = {
       viewPost: 'পোস্ট দেখুন',
       reporter: 'রিপোর্টার',
       video: 'ভিডিও',
+    },
+    home: {
+      searchFeedPlaceholder: 'খবর, রাজ্য, বিভাগ বা ইউজারের নাম খুঁজুন',
     },
   },
   gu: {
@@ -490,6 +496,9 @@ const SITE_COPY = {
       reporter: 'રિપોર્ટર',
       video: 'વિડિયો',
     },
+    home: {
+      searchFeedPlaceholder: 'સમાચાર, રાજ્ય, શ્રેણી અથવા યુઝરનું નામ શોધો',
+    },
   },
   ta: {
     common: {
@@ -532,6 +541,9 @@ const SITE_COPY = {
       viewPost: 'பதிவைக் காண்க',
       reporter: 'நிருபர்',
       video: 'வீடியோ',
+    },
+    home: {
+      searchFeedPlaceholder: 'செய்தி, மாநிலம், வகை அல்லது பயனர் பெயரைத் தேடுங்கள்',
     },
   },
   te: {
@@ -576,6 +588,9 @@ const SITE_COPY = {
       reporter: 'రిపోర్టర్',
       video: 'వీడియో',
     },
+    home: {
+      searchFeedPlaceholder: 'వార్తలు, రాష్ట్రం, వర్గం లేదా వినియోగదారు పేరు వెతకండి',
+    },
   },
   kn: {
     common: {
@@ -618,6 +633,9 @@ const SITE_COPY = {
       viewPost: 'ಪೋಸ್ಟ್ ನೋಡಿ',
       reporter: 'ವರದಿಗಾರ',
       video: 'ವೀಡಿಯೊ',
+    },
+    home: {
+      searchFeedPlaceholder: 'ಸುದ್ದಿ, ರಾಜ್ಯ, ವರ್ಗ ಅಥವಾ ಬಳಕೆದಾರರ ಹೆಸರು ಹುಡುಕಿ',
     },
   },
   ml: {
@@ -662,6 +680,9 @@ const SITE_COPY = {
       reporter: 'റിപ്പോർട്ടർ',
       video: 'വീഡിയോ',
     },
+    home: {
+      searchFeedPlaceholder: 'വാർത്ത, സംസ്ഥാനം, വിഭാഗം അല്ലെങ്കിൽ ഉപയോക്താവിന്റെ പേര് തിരയുക',
+    },
   },
   pa: {
     common: {
@@ -704,6 +725,9 @@ const SITE_COPY = {
       viewPost: 'ਪੋਸਟ ਵੇਖੋ',
       reporter: 'ਰਿਪੋਰਟਰ',
       video: 'ਵੀਡੀਓ',
+    },
+    home: {
+      searchFeedPlaceholder: 'ਖ਼ਬਰ, ਰਾਜ, ਸ਼੍ਰੇਣੀ ਜਾਂ ਯੂਜ਼ਰ ਦਾ ਨਾਮ ਖੋਜੋ',
     },
   },
 };

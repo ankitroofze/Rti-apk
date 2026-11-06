@@ -4,14 +4,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { openExternalUrl, buildWhatsappUrl } from '../utils/adRedirect';
 import AdOverlayCta from './AdOverlayCta';
 import VerifiedBadge from './VerifiedBadge';
-import { groupAdsByOwner } from '../utils/adGrouping';
-import { useAdsHidden } from '../utils/adsVisibility';
+import useRotatingRandomAds, { AD_ROTATE_MS } from '../utils/useRotatingAds';
 import UserStore from '../store/UserStore';
 import ProfileAvatar from './ProfileAvatar';
 import MediaGallery from './MediaGallery';
 import * as MediaDownloadButtonModule from './MediaDownloadButton';
 const MediaDownloadButton = MediaDownloadButtonModule.MediaDownloadButton || MediaDownloadButtonModule.default;
 import PostGridThumb from './PostGridThumb';
+import DocumentThumb, { getPostFile } from './DocumentThumb';
 
 // India ke Chief Editor ki user ID yahan daalo (backend/admin panel se dekh lo).
 const CHIEF_EDITOR_USER_ID = ''; // example: '12'
@@ -21,6 +21,15 @@ const CHIEF_EDITOR_USER_ID = ''; // example: '12'
 function TrendingThumb({ story, index }) {
   const videoUri = String(typeof story?.video === 'string' ? story.video : story?.video?.uri || '').trim();
   const isVideo = story?.mediaType === 'Video' || Boolean(videoUri);
+  // Document (PDF / Word / Excel ...) wali news: random placeholder image nahi, document ka preview tile dikhao
+  const docFile = story?.mediaType === 'File' ? getPostFile(story) : null;
+  if (docFile) {
+    return (
+      <View style={[styles.updateThumb, { overflow: 'hidden' }]}>
+        <DocumentThumb file={docFile} title={story?.title} showName={false} />
+      </View>
+    );
+  }
   if (isVideo && videoUri) {
     return (
       <View style={[styles.updateThumb, { overflow: 'hidden' }]}>
@@ -31,7 +40,7 @@ function TrendingThumb({ story, index }) {
       </View>
     );
   }
-  return <Image source={{ uri: story?.image || 'https://picsum.photos/seed/update' + index + '/80/80' }} style={styles.updateThumb} />;
+  return <Image source={{ uri: story?.images?.[0] || story?.image || 'https://picsum.photos/seed/update' + index + '/80/80' }} style={styles.updateThumb} />;
 }
 
 const formatCount = (n) => {
@@ -67,7 +76,7 @@ function SponsoredMedia({ images, videoUri }) {
       }}
     >
       {w > 0 ? (
-        <MediaGallery images={images} video={videoUri} width={w} maxHeight={420} adAutoPlay downloadable />
+        <MediaGallery images={images} video={videoUri} width={w} maxHeight={420} adAutoPlay />
       ) : (
         <View style={{ width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000' }} />
       )}
@@ -115,9 +124,6 @@ function SponsoredImage({ ad }) {
         }}
         onError={() => setFailedToLoad(true)}
       />
-      <View pointerEvents="box-none" style={{ position: 'absolute', top: 10, right: 10, zIndex: 8, elevation: 8 }}>
-        <MediaDownloadButton uri={imageUri} type="image" size={32} />
-      </View>
     </View>
   );
 }
@@ -189,9 +195,11 @@ export default function RightUtilityPanel({
   onViewMoreAds, onBackFromAds, showingAllAds = false, firstNewsStory = null,
   onViewAllTrending,
 }) {
-  // ✅ ads_hidden=true => right panel me koi ad nahi
-  const adsHidden = useAdsHidden();
-  const ads = adsHidden ? [] : adsProp;
+  // ✅ Ad-free subscription wale user ko bhi right-side ads dikhte hain (unka sirf POPUP band hota hai).
+  const ads = adsProp;
+  // ✅ Right panel me max 3 ad slots — har slot ka ad har 2 second me RANDOM badalta hai
+  const sideAds = useRotatingRandomAds(ads, Math.min(3, ads.length), AD_ROTATE_MS);
+  console.log('[ADS-DEBUG] right panel ads:', ads.length, '| showing:', sideAds.length);
   const [desk, setDesk] = useState(null);
   useEffect(() => {
     let alive = true;
@@ -248,13 +256,6 @@ export default function RightUtilityPanel({
             >
               <SponsoredHeader ad={ad} navigation={navigation} />
               <Text style={styles.sponsoredHeadline}>{ad.title}</Text>
-              {ad.description ? (
-                <TouchableOpacity onPress={() => onOpenDetails?.(ad)} activeOpacity={0.7}>
-                  <Text style={styles.sponsoredDesc} numberOfLines={2} ellipsizeMode="tail">
-                    {ad.description}
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
             <View style={{ position: 'relative', marginBottom: (ad.video || ad.video_url) ? 14 : 0 }}>
               <SponsoredImage ad={ad} />
               <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={(ad.video || ad.video_url) ? 46 : 12} />
@@ -270,31 +271,17 @@ export default function RightUtilityPanel({
               <Ionicons name="megaphone" size={15} color="#e11d48" />
               <Text style={styles.cardTitle}>Sponsored</Text>
             </View>
-            {ads.length > 3 ? (
-              <TouchableOpacity onPress={onViewMoreAds} activeOpacity={0.8}>
-                <Text style={styles.viewMoreText}>View More</Text>
-              </TouchableOpacity>
-            ) : null}
           </View>
-          {groupAdsByOwner(ads).slice(0, 3).map((group) => (
-            <SponsoredAdGroup key={`ad-group-${group[0]?.id || 'g'}-${group.map(x => x.id).join('-')}`} group={group}>{(ad, aIdx) => (
-            <View key={`group-ad-${ad.id || 'ad'}-${aIdx}`} style={{ marginBottom: 18, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', paddingBottom: 14 }}>
+          {sideAds.map((ad, aIdx) => (
+            <View key={`side-ad-${aIdx}-${ad?.id || 'ad'}`} style={{ marginBottom: 18, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', paddingBottom: 14 }}>
               <SponsoredHeader ad={ad} navigation={navigation} />
               <Text style={styles.sponsoredHeadline}>{ad.title}</Text>
-              {ad.description ? (
-                <TouchableOpacity onPress={() => onOpenDetails?.(ad)} activeOpacity={0.7}>
-                  <Text style={styles.sponsoredDesc} numberOfLines={2} ellipsizeMode="tail">
-                    {ad.description}
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
           <View style={{ position: 'relative', marginBottom: (ad.video || ad.video_url) ? 14 : 0 }}>
               <SponsoredImage ad={ad} />
               <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={(ad.video || ad.video_url) ? 46 : 12} />
             </View>
               
             </View>
-          )}</SponsoredAdGroup>
           ))}
         </View>
       ) : null}

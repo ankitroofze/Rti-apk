@@ -8,8 +8,10 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
 import Sidebar from '../components/Sidebar';
 import { useToast } from '../components/ui/ToastProvider';
+import InvoiceViewerModal from '../components/InvoiceViewerModal';
 import WithdrawStyles from '../styles/WithdrawStyles';
 import { UserStore } from '../store/UserStore';
+import { buildWithdrawalReceiptHtml, loadInvoiceLogo, canInvoiceWithdrawal, downloadInvoicePdf, getWithdrawalReceiptNo } from '../utils/invoiceGenerator';
 import { MODULE_HEADER_HEIGHT_WEB, HEADER_BG_IMAGE } from '../constants/subscriptionThemes';
 import ModuleWebHeader from '../components/Modulewebheader';
 import ModuleMobileHeader from '../components/ModuleMobileHeader';
@@ -369,6 +371,75 @@ export default function WithdrawScreen({ navigation }) {
     setTimeout(() => setSuccessMessage(''), 3000);
     loadWithdraw();
   };
+
+  // ✅ Paid / approved withdrawal ki receipt (invoice) PDF
+  const [receiptBusyId, setReceiptBusyId] = useState(null);
+  const [receiptView, setReceiptView] = useState(null);   // { html, name } — View Invoice popup
+  const handleDownloadReceipt = async (item) => {
+    if (receiptBusyId) return;
+    setReceiptBusyId(item.id);
+    try {
+      const logoSrc = await loadInvoiceLogo();
+      const html = buildWithdrawalReceiptHtml(item, withdrawData.currentUser || {}, logoSrc);
+      const res = await downloadInvoicePdf(html, getWithdrawalReceiptNo(item));
+      showToast(res.message || (res.ok ? 'Receipt ready.' : 'Unable to generate the receipt.'), res.ok ? 'success' : 'error');
+    } finally {
+      setReceiptBusyId(null);
+    }
+  };
+
+  // ✅ Receipt ko download kiye bina app ke andar dekho
+  const handleViewReceipt = async (item) => {
+    if (receiptBusyId) return;
+    setReceiptBusyId(`view-${item.id}`);
+    try {
+      const logoSrc = await loadInvoiceLogo();
+      const html = buildWithdrawalReceiptHtml(item, withdrawData.currentUser || {}, logoSrc);
+      setReceiptView({ html, name: getWithdrawalReceiptNo(item) });
+    } catch (_) {
+      showToast('Unable to open the receipt.', 'error');
+    } finally {
+      setReceiptBusyId(null);
+    }
+  };
+
+  const downloadFromViewer = async () => {
+    if (!receiptView || receiptBusyId) return;
+    setReceiptBusyId('viewer');
+    try {
+      const res = await downloadInvoicePdf(receiptView.html, receiptView.name);
+      showToast(res.message || (res.ok ? 'Receipt ready.' : 'Unable to generate the receipt.'), res.ok ? 'success' : 'error');
+    } finally {
+      setReceiptBusyId(null);
+    }
+  };
+
+  const renderReceiptButton = (item) => (canInvoiceWithdrawal(item) ? (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+    <TouchableOpacity
+      style={{ marginTop: 10, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: '#fff', borderWidth: 1, borderColor: '#fecaca' }}
+      onPress={() => handleViewReceipt(item)}
+      disabled={!!receiptBusyId}
+      activeOpacity={0.8}
+    >
+      <Feather name="eye" size={13} color={ORANGE} />
+      <Text style={{ color: ORANGE, fontSize: 12, fontWeight: '700' }}>
+        {receiptBusyId === `view-${item.id}` ? 'Opening…' : 'View Invoice'}
+      </Text>
+    </TouchableOpacity>
+    <TouchableOpacity
+      style={{ marginTop: 10, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: '#fef2f2', borderWidth: 1, borderColor: '#fecaca' }}
+      onPress={() => handleDownloadReceipt(item)}
+      disabled={receiptBusyId === item.id}
+      activeOpacity={0.8}
+    >
+      <Feather name="download" size={13} color={ORANGE} />
+      <Text style={{ color: ORANGE, fontSize: 12, fontWeight: '700' }}>
+        {receiptBusyId === item.id ? 'Preparing…' : 'Download Invoice'}
+      </Text>
+    </TouchableOpacity>
+    </View>
+  ) : null);
 
   const handleCancelRequest = async (id) => {
     const result = await UserStore.cancelWithdrawRequest(id);
@@ -760,6 +831,7 @@ export default function WithdrawScreen({ navigation }) {
                           <Text style={WithdrawStyles.webRequestDate}>
                             Requested on: {item.date}
                           </Text>
+                          {renderReceiptButton(item)}
 
                           {item.status?.toLowerCase() === 'pending' ? (
                             <TouchableOpacity
@@ -1187,6 +1259,7 @@ export default function WithdrawScreen({ navigation }) {
                       <Text style={WithdrawStyles.requestDate}>
                         Requested on: {item.date}
                       </Text>
+                      {renderReceiptButton(item)}
 
                       {item.status?.toLowerCase() === 'pending' ? (
                         <TouchableOpacity
@@ -1255,6 +1328,14 @@ export default function WithdrawScreen({ navigation }) {
         visible={sidebarVisible}
         onClose={() => setSidebarVisible(false)}
         activeItem={moduleName}
+      />
+      <InvoiceViewerModal
+        visible={!!receiptView}
+        html={receiptView?.html}
+        title={receiptView?.name ? `Invoice ${receiptView.name}` : 'Invoice'}
+        onClose={() => setReceiptView(null)}
+        onDownload={downloadFromViewer}
+        downloading={receiptBusyId === 'viewer'}
       />
     </View>
   );

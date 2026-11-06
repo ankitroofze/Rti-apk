@@ -22,8 +22,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useToast } from '../components/ui/ToastProvider';
 import { UserStore } from '../store/UserStore';
 import styles, { getScaledCertStyles } from '../styles/CertificatePreviewStyles';
-import { getAwardeeFontSize } from '../utils/profileHelpers';
-import { getQuizResultTier } from '../utils/quizResultLogic';
+import { generateMemberId, getAwardeeFontSize } from '../utils/profileHelpers';
+import { getQuizResultTier, getScoreText } from '../utils/quizResultLogic';
 
 /* ── IMAGES ── */
 const CERT_TEMPLATE   = require('../assets/images/certificate_template_v3.png');
@@ -59,6 +59,21 @@ const _getAssetSize = (mod) => {
 };
 const _emailSrc = _getAssetSize(EMAIL_BANNER);
 const EMAIL_ASPECT = _emailSrc && _emailSrc.width && _emailSrc.height ? _emailSrc.width / _emailSrc.height : 3.4;
+
+// ✅ Certificate par dikhne wala Score (jitna marks mila: e.g. 42/50 (84%)) aur User ID.
+// User ID wahi hai jo Appointment Letter / ID card me dikhta hai (member_id, warna email se generate).
+const getCertScoreText = (result) => {
+  const info = getScoreText(result || {});
+  return info.full || `${Number(result?.percentage ?? 0) || 0}%`;
+};
+const getCertUserId = (user, result) => {
+  const direct = user?.member_id || user?.memberId || user?.id_number || result?.member_id || result?.user_member_id;
+  if (direct) return String(direct);
+  const email = user?.email || result?.user_email || '';
+  if (email) return generateMemberId(email);
+  const id = user?.id ?? user?.user_id ?? result?.user_id;
+  return id != null && id !== '' ? `#${id}` : 'N/A';
+};
 
 const CERT_WIDTH = 1024;
 const CERT_HEIGHT = 1536;
@@ -149,7 +164,7 @@ const resolvePhotoUriForHtml = async (uri) => {
   return str;
 };
 
-const buildCertificateHtml = ({ images, userName, issueDate, photoUri, resultTier }) => `
+const buildCertificateHtml = ({ images, userName, issueDate, photoUri, resultTier, scoreText, userIdText }) => `
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -217,6 +232,16 @@ const buildCertificateHtml = ({ images, userName, issueDate, photoUri, resultTie
       font-size: ${9.5 * FONT_SCALE}px; line-height: ${14 * FONT_SCALE}px;
     }
     .since-text .highlight { color: #b00000; font-weight: 700; }
+    .score-row {
+      top: 58.8%; left: 8%; right: 27%;
+      display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
+      column-gap: ${14 * FONT_SCALE}px; row-gap: ${2 * FONT_SCALE}px;
+      color: #3a2a1a; text-align: center;
+      font-size: ${9.5 * FONT_SCALE}px; line-height: ${14 * FONT_SCALE}px; font-weight: 600;
+      white-space: normal;
+    }
+    .score-row .label { color: #3a2a1a; font-weight: 600; }
+    .score-row .value { color: #b00000; font-weight: 800; }
     .congrats {
       top: 64%; left: 10%; right: 44%;
       color: #8b0000; text-align: right; font-style: italic;
@@ -295,6 +320,10 @@ const buildCertificateHtml = ({ images, userName, issueDate, photoUri, resultTie
       <div class="result-wrap"><span class="result-badge">${resultTier.dot} ${escapeHtml(resultTier.result)} — ${escapeHtml(resultTier.badge)}</span></div>
       <p class="text since-text">Subjected to the movement of Right to Information in the
 organisational social work field since <span class="highlight">"15th"</span> Years</p>
+      <div class="text score-row">
+        <span class="item"><span class="label">Score:</span> <span class="value">${escapeHtml(scoreText)}</span></span>
+        <span class="item"><span class="label">User ID:</span> <span class="value">${escapeHtml(userIdText)}</span></span>
+      </div>
       <p class="text congrats">Congratulations on your
 outstanding achievement!</p>
       <img class="layer gold-wings" src="${images.goldWings}" alt="" />
@@ -415,6 +444,8 @@ export default function CertificatePreviewScreen({ navigation, route }) {
               issueDate: issueDateForHtml,
               photoUri: resolvedPhotoUri,
               resultTier: getQuizResultTier(result?.percentage),
+              scoreText: getCertScoreText(result),
+              userIdText: getCertUserId(user, result),
             })
               .replace('%BODY_CLASS%', 'preview')
               .replace('%PAGE_CLASS%', 'scale')
@@ -435,6 +466,8 @@ export default function CertificatePreviewScreen({ navigation, route }) {
  const issueDate = formatIssueDate(result?.date);
   const photoUri = currentUser?.profile_image || result?.user_photo || '';
   const resultTier = getQuizResultTier(result?.percentage);
+  const scoreText = getCertScoreText(result);
+  const userIdText = getCertUserId(currentUser, result);
   const sc = useMemo(() => getScaledCertStyles(cardWidth, getAwardeeFontSize(userName, 18)), [cardWidth, userName]);
 
   const handleDownload = async () => {
@@ -491,6 +524,8 @@ export default function CertificatePreviewScreen({ navigation, route }) {
         issueDate,
         photoUri: resolvedPhotoUri,
         resultTier,
+        scoreText,
+        userIdText,
       })
         .replace('%BODY_CLASS%', '')
         .replace('%PAGE_CLASS%', '')
@@ -539,6 +574,8 @@ export default function CertificatePreviewScreen({ navigation, route }) {
           issueDate,
           photoUri: resolvedPhotoUri,
           resultTier,
+          scoreText,
+          userIdText,
         })
           .replace('%BODY_CLASS%', '')
           .replace('%PAGE_CLASS%', '')
@@ -677,6 +714,16 @@ export default function CertificatePreviewScreen({ navigation, route }) {
                 organisational social work field since{' '}
                 <Text style={styles.yearsHighlight}>"15th"</Text> Years
               </Text>
+
+              {/* ── SCORE + USER ID ── */}
+              <View style={styles.scoreRow}>
+                <Text style={[styles.scoreItem, sc.scoreItem]}>
+                  Score: <Text style={[styles.scoreValue, sc.scoreItem]}>{scoreText}</Text>
+                </Text>
+                <Text style={[styles.scoreItem, sc.scoreItem]}>
+                  User ID: <Text style={[styles.scoreValue, sc.scoreItem]}>{userIdText}</Text>
+                </Text>
+              </View>
 
               {/* ── CONGRATS ── */}
               <Text style={[styles.congratsText, sc.congratsText]}>

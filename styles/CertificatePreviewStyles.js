@@ -250,6 +250,34 @@ awardeeName: {
   },
 
   /* ─────────────────────────────
+     SCORE + USER ID
+  ───────────────────────────── */
+  scoreRow: {
+    position: 'absolute',
+    top: '58.8%',
+    left: '8%',
+    right: '27%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'center',
+    columnGap: 14,
+    rowGap: 2,
+  },
+
+  scoreItem: {
+    fontSize: 9.5,
+    lineHeight: 14,
+    fontWeight: '600',
+    color: '#3a2a1a',
+  },
+
+  scoreValue: {
+    fontWeight: '800',
+    color: RED,
+  },
+
+  /* ─────────────────────────────
      CONGRATS TEXT
   ───────────────────────────── */
   congratsText: {
@@ -507,6 +535,8 @@ export const getScaledCertStyles = (cardWidth = 360, awardeeFontBase = 18) => {
     },
     sinceText: { fontSize: 9.5 * S, lineHeight: 14 * S },
     congratsText: { fontSize: 11 * S, lineHeight: 16 * S },
+    scoreRow: { columnGap: 14 * S, rowGap: 2 * S },
+    scoreItem: { fontSize: 9.5 * S, lineHeight: 14 * S },
     signatoryName: { fontSize: 9 * S },
     signatoryRole: { fontSize: 7.5 * S, lineHeight: 11 * S },
     signatorySmall: { fontSize: 7 * S },

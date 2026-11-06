@@ -1,6 +1,5 @@
 import NameWithTick from '../components/NameWithTick';
 import NewsMusicSync from '../components/NewsMusicSync';
-import { isAdsHidden } from '../utils/adsVisibility';
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet,
@@ -146,6 +145,51 @@ const feedCommentVerify = new Map(); // postId -> { server, real }
 // "1" dikh kar comment kholte hi "0" ho jaata tha.
 const feedCommentsConfirmed = new Set();
 
+// ✅ FIX (comment gayab ho jaata tha): abhi user ne jo comment / reply kiya wo server list ya server ke
+// stale count me turant nahi aata. Jab tak server list me na dikhe (max 3 min) use local list/count me rakhte hain.
+const RECENT_COMMENT_MS = 3 * 60 * 1000;
+const feedPendingComments = new Map(); // postId -> [{ comment, replyToId, ts }]
+const pendKey = (c) => `${String(c?.text || '').trim()}|${String(c?.author_email || '')}`;
+function listHasComment(list, c) {
+  return (Array.isArray(list) ? list : []).some((x) =>
+    String(x.id) === String(c.id) || pendKey(x) === pendKey(c) || listHasComment(x.replies, c));
+}
+function addPendingComment(postId, comment, replyToId) {
+  const key = String(postId);
+  const arr = (feedPendingComments.get(key) || []).filter((p) => Date.now() - p.ts < RECENT_COMMENT_MS);
+  arr.push({ comment, replyToId: replyToId || null, ts: Date.now() });
+  feedPendingComments.set(key, arr);
+}
+function removePendingComment(postId, commentId) {
+  const key = String(postId);
+  const arr = (feedPendingComments.get(key) || []).filter((p) => String(p.comment.id) !== String(commentId));
+  if (arr.length) feedPendingComments.set(key, arr); else feedPendingComments.delete(key);
+}
+function hasRecentPending(postId) {
+  const arr = feedPendingComments.get(String(postId));
+  return Boolean(arr && arr.some((p) => Date.now() - p.ts < RECENT_COMMENT_MS));
+}
+function mergePendingComments(postId, serverList) {
+  const key = String(postId);
+  const pend = feedPendingComments.get(key);
+  let out = Array.isArray(serverList) ? serverList : [];
+  if (!pend || !pend.length) return out;
+  const still = [];
+  pend.forEach((p) => {
+    if (Date.now() - p.ts >= RECENT_COMMENT_MS) return;
+    if (listHasComment(out, p.comment)) return; // server list me aa gaya
+    still.push(p);
+    if (p.replyToId) {
+      out = out.map((c) => (String(c.id) === String(p.replyToId)
+        ? { ...c, replies: [...(c.replies || []), p.comment] } : c));
+    } else {
+      out = [...out, p.comment];
+    }
+  });
+  if (still.length) feedPendingComments.set(key, still); else feedPendingComments.delete(key);
+  return out;
+}
+
 // Server refresh me wahi stale count wapas aaye to verified real count laga do
 function fixStaleCommentCount(post) {
   if (!post || post.isAd) return post;
@@ -168,6 +212,7 @@ function applyFeedEngagement(post, patch) {
   if (patch.liked !== undefined) set('liked', patch.liked);
   if (patch.comments !== undefined) {
     let nextCount = patch.comments;
+    if (hasRecentPending(post.id) && Number(nextCount) < Number(post.commentsCount || 0)) nextCount = post.commentsCount;
     const verified = feedCommentVerify.get(String(post.id));
     if (verified) {
       if (Number(nextCount) === verified.server) nextCount = verified.real;
@@ -671,6 +716,59 @@ function feedPostFromNewsItem(item = {}, currentEmail = '') {
   };
 }
 
+// Profile grid (Reels / Ads tab) se aaya item -> Feed (ReelCard) ke item me convert.
+// Reel: FeedScreen ke fetch wala hi media/kind logic. Ad: feedPostFromAdItem (wahi sponsored card).
+function feedPostFromProfileItem(item = {}, currentEmail = '') {
+  if (!item || typeof item !== 'object') return null;
+  const isAdItem = Boolean(item.isAd || item.is_ad || item.post_type === 'ad');
+  if (isAdItem) {
+    const rawAdId = item.ad_id ?? item.originalAdId ?? String(item.id || '').replace(/^ad-(feed-)?/, '');
+    return feedPostFromAdItem({ ...item, id: rawAdId });
+  }
+  const mt = String(item.mediaType || '');
+  const rawMedia = typeof item.media === 'string' ? item.media.trim() : '';
+  const isHttp = /^https?:/i.test(rawMedia);
+  const videoFromItem = String(typeof item.video === 'string' ? item.video : item.video?.uri || '').trim();
+  let kind;
+  if (mt === 'Video') kind = 'video';
+  else if (mt === 'File') kind = 'pdf';
+  else if (mt === 'Link') kind = 'link';
+  else if (mt === 'Image') kind = 'image';
+  else kind = (videoFromItem || (isHttp && /\.(mp4|m4v|mov|webm|ogv|m3u8)(\?.*)?$/i.test(rawMedia))) ? 'video' : 'image';
+  const videoUri = kind === 'video' ? (videoFromItem || (isHttp ? rawMedia : '')) : '';
+  const imagesList = kind === 'image' && Array.isArray(item.images)
+    ? item.images.filter((u) => typeof u === 'string' && u.trim())
+    : [];
+  const imageUri = kind === 'image'
+    ? String(item.thumbnail || item.image || imagesList[0] || (isHttp ? rawMedia : '') || '').trim()
+    : '';
+  if (kind === 'image' && !imagesList.length && imageUri) imagesList.push(imageUri);
+  const docUrl = (kind === 'pdf' || kind === 'link') && isHttp ? rawMedia : '';
+  const avatarRaw = item.avatar || item.author_profile_image || '';
+  return {
+    ...item,
+    id: String(item.id || Date.now()),
+    type: kind,
+    media: kind === 'video' ? videoUri : kind === 'image' ? imageUri : docUrl,
+    video: kind === 'video' ? videoUri : null,
+    thumbnail: kind === 'video' ? String(item.thumbnail || '') : imageUri,
+    image: imageUri,
+    images: imagesList,
+    avatar: isValidImageUrl(avatarRaw) ? avatarRaw : null,
+    comments: [],
+    commentsCount: Number(item.commentsCount ?? item.comments_count ?? (typeof item.comments === 'number' ? item.comments : 0)) || 0,
+    liked: Boolean(
+      item.liked_by_me === true ||
+      item.liked === true ||
+      (currentEmail && Array.isArray(item.liked_by) &&
+        item.liked_by.some((e) => String(e || '').trim().toLowerCase() === currentEmail))
+    ),
+    bookmarked: Boolean(item.bookmarked),
+    likes: Number(item.likes) || 0,
+    shares: Number(item.shares) || 0,
+  };
+}
+
 function feedPostFromAdItem(ad = {}) {
   const title = String(ad.title || 'Sponsored Advertisement').trim();
   const description = String(ad.description || '').trim();
@@ -720,8 +818,7 @@ function feedPostFromAdItem(ad = {}) {
 }
 
 function interleaveSponsoredPosts(posts = [], ads = []) {
-  // ✅ ads_hidden=true => reels ke beech me koi ad nahi
-  if (isAdsHidden()) return posts;
+  // ✅ Ad-free user ko bhi feed ads dikhte hain (sirf popup band hota hai)
   if (!Array.isArray(ads) || ads.length === 0) return posts;
   if (!Array.isArray(posts) || posts.length === 0) return ads;
   const mixed = [];
@@ -1732,7 +1829,15 @@ return t || '';
   // ✅ FIX (crash): har card ka apna native player hona = FlatList window me 5 ExoPlayer/AVPlayer ek saath.
   // Kam RAM / kam hardware decoder wale phones par ye scroll karte waqt app band kar deta tha.
   // Ab sirf ACTIVE card + uske aas-paas ke (agle/pichle) cards ko source milta hai (max 3 player).
-  const activeSource = isNear ? videoSource : null;
+  // ✅ FIX (shuru me lag): agla reel turant preload hone se pehle video ki bandwidth kha leta tha.
+  // Active reel ko seedha source milta hai; aas-paas wale reels 2.5 sec baad preload hote hain.
+  const [nearDelayOk, setNearDelayOk] = useState(false);
+  useEffect(() => {
+    if (!isNear) { setNearDelayOk(false); return undefined; }
+    const t = setTimeout(() => setNearDelayOk(true), 2500);
+    return () => clearTimeout(t);
+  }, [isNear]);
+  const activeSource = isNear && (isActive || nearDelayOk) ? videoSource : null;
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
@@ -1742,6 +1847,8 @@ return t || '';
   const player = useVideoPlayer(activeSource, (p) => {
     try {
       p.loop = true;
+      try { p.playbackRate = 1; p.preservesPitch = true; } catch (_) {}   // video kabhi tez nahi
+      try { p.bufferOptions = { preferredForwardBufferDuration: 15, minBufferForPlayback: 1.5, waitsToMinimizeStalling: true }; } catch (_) {}
       p.muted = getGlobalMuted() || Boolean(safePost.localMuteOriginal);   // global mute state se start (voice-over reel => original hamesha mute)
       p.volume = 1;
       p.autoplay = false;
@@ -1780,6 +1887,7 @@ return t || '';
   useEffect(() => {
     if (!canPlayVideo || !player || !activeSource) return;
     safeSetMuted(player, muted || Boolean(safePost.localMuteOriginal));
+    try { if (player.playbackRate !== 1) player.playbackRate = 1; } catch (_) { /* ignore */ }   // mute se speed nahi badlegi
   }, [canPlayVideo, activeSource, muted, player, safePost.localMuteOriginal]);
 
   // ✅ FIX (beech me ruk jaana): video chalte chalte ruk jaaye (buffering / audio focus) to khud dobara chalao.
@@ -1793,9 +1901,12 @@ return t || '';
     const id = setInterval(() => {
       if (pausedRef.current || !mountedRef.current) return;
       try {
+        // ✅ FIX (shuru me lag): video abhi load / buffer ho raha ho to play() baar-baar mat bhejo —
+        // har second ka play() buffering ko restart karke video ko atkata tha.
+        if (player.status === 'loading') { stuck = 0; return; }
         const t = Number(player.currentTime) || 0;
-        if (!player.playing) { safePlay(player); stuck = 0; }
-        else if (t === lastT) { stuck += 1; if (stuck >= 3) { safePlay(player); stuck = 0; } }
+        if (!player.playing) { stuck += 1; if (stuck >= 2) { safePlay(player); stuck = 0; } }
+        else if (t === lastT) { stuck += 1; if (stuck >= 5) { safePlay(player); stuck = 0; } }
         else stuck = 0;
         lastT = t;
       } catch (_) { /* released player */ }
@@ -2186,17 +2297,11 @@ function LoginRequiredModal({ visible, onClose, onLogin }) {
 export default function FeedScreen({ navigation, route }) {
   const targetReelId = route?.params?.id ? String(route.params.id) : null;
   const [posts, setPosts]               = useState([]);
+  const pinnedPostRef = useRef(null);
+  const profileReelsParam = Array.isArray(route?.params?.reels) && route.params.reels.length ? route.params.reels : null;
+  const profileModeRef = useRef(false);
+  profileModeRef.current = Boolean(profileReelsParam);
 
-  useEffect(() => {
-    if (!targetReelId || !posts.length) return;
-    const idx = posts.findIndex((p) => String(p.id) === targetReelId);
-    if (idx > 0) {
-      setActiveIndex(idx);
-      try {
-        feedListRef.current?.scrollToIndex?.({ index: idx, animated: false });
-      } catch (_) {}
-    }
-  }, [targetReelId, posts]);
   const [uploadVisible, setUploadVisible] = useState(false);
   const [newsLimitModal, setNewsLimitModal] = useState({ visible: false, message: '' });
   const [commentPost, setCommentPost]   = useState(null);
@@ -2244,6 +2349,78 @@ const MOBILE_CHROME_BAR = (Platform.OS === 'web' && isMobileLayout) ? 0 : 0;
 const browserHeight = typeof window !== 'undefined' ? window.innerHeight : windowHeight;
 const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
   const feedListRef = useRef(null);
+
+  // Profile ke Reels / Ads tab se tap -> yahin (Feed) khulta hai, usi reel / ad par.
+  // route.params: { id, post }. Target pehle loaded list me dhundhte hain; na mile (purani reel / ad)
+  // to `post` ko list ke top par inject karte hain.
+  const targetPostParam = route?.params?.post || null;
+  const injectedTarget = useMemo(
+    () => (targetPostParam ? feedPostFromProfileItem(targetPostParam, String(currentUserEmail || '').trim().toLowerCase()) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [targetPostParam]
+  );
+  const wantedTargetId = injectedTarget?.id ? String(injectedTarget.id) : targetReelId;
+  const handledTargetRef = useRef(null);
+
+  useEffect(() => {
+    if (profileModeRef.current) return;
+    if (!wantedTargetId || !posts.length) return;
+    if (handledTargetRef.current === wantedTargetId) return;
+    const idx = posts.findIndex((p) => String(p.id) === wantedTargetId);
+    if (idx < 0) {
+      if (injectedTarget) {
+        pinnedPostRef.current = injectedTarget;
+        setTimeout(() => { if (pinnedPostRef.current === injectedTarget) pinnedPostRef.current = null; }, 6000);
+        setPosts((prev) => (prev.some((p) => String(p.id) === wantedTargetId) ? prev : [injectedTarget, ...prev]));
+      }
+      return;
+    }
+    handledTargetRef.current = wantedTargetId;
+    setActiveIndex(idx);
+    try {
+      feedListRef.current?.scrollToIndex?.({ index: idx, animated: false });
+    } catch (_) {}
+    // Params saaf karo, taaki dobara Feed tab kholne par ye purana target na khule
+    try { navigation?.setParams?.({ id: undefined, post: undefined }); } catch (_) {}
+  }, [wantedTargetId, injectedTarget, posts]);
+
+  // ── Profile mode ──────────────────────────────────────────────────────────
+  // Profile ke Reels tab se aane par Feed me SIRF usi user ki reels dikhti hain
+  // (tapped reel se shuru, scroll par usi ki baaki reels). Wapas jaakar normal
+  // News Feed kholne par random reels hi aate hain (blur par ye mode reset hota hai).
+  const profileReelsKey = profileReelsParam ? profileReelsParam.map((r) => String(r?.id ?? '')).join(',') : '';
+  useEffect(() => {
+    if (!profileReelsParam || !profileReelsParam.length) return;
+    const email = String(currentUserEmail || '').trim().toLowerCase();
+    const seen = new Set();
+    const list = [];
+    profileReelsParam.forEach((it) => {
+      const p = feedPostFromProfileItem(it, email);
+      if (p && p.id && !seen.has(String(p.id))) { seen.add(String(p.id)); list.push(p); }
+    });
+    if (!list.length) return;
+    pinnedPostRef.current = null;
+    setPosts(list);
+    const idx = Math.max(0, list.findIndex((p) => String(p.id) === String(targetReelId || '')));
+    setActiveIndex(idx);
+    const t = setTimeout(() => {
+      try { feedListRef.current?.scrollToIndex?.({ index: idx, animated: false }); } catch (_) {}
+    }, 60);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileReelsKey]);
+
+  // Feed se bahar jaate hi (back / navbar) profile mode band -> agli baar normal random feed
+  useFocusEffect(
+    useCallback(() => () => {
+      if (profileModeRef.current) {
+        profileModeRef.current = false;
+        handledTargetRef.current = null;
+        setPosts([]);
+        try { navigation?.setParams?.({ id: undefined, post: undefined, reels: undefined }); } catch (_) {}
+      }
+    }, [navigation])
+  );
   const snapOffsets = useMemo(
     () => Array.from({ length: Math.max(posts.length, 1) }, (_, i) => i * cardHeight),
     [posts.length, cardHeight]
@@ -2409,7 +2586,8 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
 
       setPosts((prev) => prev.map((post) => {
         if (post.id !== id) return post;
-        let next = normalizedComments;
+        // ✅ FIX: server se post hi na mile / request fail ho (item nahi) to local comments mat udao
+        let next = mergePendingComments(id, (!item && Array.isArray(post.comments)) ? post.comments : normalizedComments);
         // ✅ FIX: server list khali / fail aaye (list endpoint lag ya error) to local comments mat udao
         if (keepIfEmpty && next.length === 0 && Array.isArray(post.comments) && post.comments.length) {
           next = post.comments;
@@ -2424,7 +2602,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
         }
         const realCount = countFeedComments(next);
         // server ka stale count 20s live-refresh me wapas na aaye
-        if (item && !ensureComment && next === normalizedComments) {
+        if (item && !ensureComment && next === normalizedComments && !hasRecentPending(id)) {
           feedCommentVerify.set(String(id), { server: Number(item.comments), real: realCount });
         }
         return { ...post, comments: next, commentsCount: realCount };
@@ -2438,6 +2616,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
   const handleVerifyComments = useCallback(async (id) => {
     const key = String(id);
     if (commentsVerifiedRef.current.has(key)) return;
+    if (hasRecentPending(key)) return; // user ka naya comment server count me nahi aaya hota — count kam mat karo
     if ((commentsVerifyTriesRef.current[key] || 0) >= 3) return;
     commentsVerifyTriesRef.current[key] = (commentsVerifyTriesRef.current[key] || 0) + 1;
     commentsVerifiedRef.current.add(key);
@@ -2468,7 +2647,8 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
         const server = Number(p.commentsCount || 0);
         feedCommentsConfirmed.add(key);
         if (server !== real) feedCommentVerify.set(key, { server, real });
-        return { ...p, commentsCount: real };   // hamesha naya object → card dobara render ho
+        const localCount = Array.isArray(p.comments) ? countFeedComments(p.comments) : 0;
+        return { ...p, commentsCount: Math.max(real, localCount) };   // hamesha naya object → card dobara render ho
       }));
     } catch {
       if ((commentsVerifyTriesRef.current[key] || 0) >= 3) {
@@ -2488,13 +2668,18 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       .slice(0, 30);
     if (!pending.length) return undefined;
     let cancelled = false;
-    (async () => {
-      for (const p of pending) {
-        if (cancelled) break;
-        await handleVerifyComments(p.id);
-      }
-    })();
-    return () => { cancelled = true; };
+    // ✅ FIX (shuru me lag): feed khulte hi 30 comment-requests video ke download se ladte the —
+    // ab pehle video ko bandwidth milti hai, 4 sec baad count verify hota hai (aur sirf pehle 10 reels).
+    const startTimer = setTimeout(() => {
+      (async () => {
+        for (const p of pending.slice(0, 10)) {
+          if (cancelled) break;
+          await handleVerifyComments(p.id);
+          await new Promise((r) => setTimeout(r, 150));
+        }
+      })();
+    }, 4000);
+    return () => { cancelled = true; clearTimeout(startTimer); };
   }, [posts, handleVerifyComments]);
 
   // ✅ Login required popup (like / comment / save bina login ke nahi)
@@ -2619,6 +2804,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       liked_by: [],
     };
 
+    addPendingComment(targetPostId, newComment, replyToId);
     setPosts(prev =>
       prev.map(p => p.id === targetPostId
         ? {
@@ -2642,6 +2828,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       if (!result?.ok) {
         // ✅ FIX: comment server par save nahi hua — chup-chaap gayab karne ke bajay asli error dikhao
         console.warn('[Feed comment] failed', { targetPostId, replyToId, result });
+        removePendingComment(targetPostId, tempId);
         setPosts(prev => prev.map(p => {
           if (p.id !== targetPostId) return p;
           const strip = (list) => (Array.isArray(list) ? list : [])
@@ -2658,7 +2845,9 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       const saved = result.comment
         ? normalizeFeedComment({ ...newComment, ...result.comment, text: result.comment.text || text }, `cmt-${tempId}`, commentProfilesByEmail)
         : null;
-      await syncPostComments(targetPostId, { keepIfEmpty: true, ensureComment: replyToId ? null : saved });
+      // pending entry ko server wale real comment se badlo (real id ke saath)
+      if (saved) { removePendingComment(targetPostId, tempId); addPendingComment(targetPostId, saved, replyToId); }
+      await syncPostComments(targetPostId, { keepIfEmpty: true, ensureComment: replyToId ? null : (saved || newComment) });
     } catch {
       await syncPostComments(targetPostId, { keepIfEmpty: true });
     }
@@ -2689,6 +2878,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     // ✅ FIX: pehle yahan SAARI reels ka comment count 1-1 kam ho jaata tha (sirf target post ka hona chahiye),
     // aur server fail hone par comment wapas bhi nahi aata tha.
     const targetId = commentPost || descPost;
+    removePendingComment(targetId, commentId);
     setPosts(prev =>
       prev.map(p => {
         if (String(p.id) !== String(targetId)) return p;
@@ -3040,17 +3230,25 @@ image: item.image || null,
 };
             });
             setPosts((prevPosts) => {
+              if (profileModeRef.current) return prevPosts;
               if (loadMore) {
                 const seen = new Set(prevPosts.map((post) => String(post.id)));
                 return [...prevPosts, ...cleanedPosts.filter((post) => !seen.has(String(post.id))).map(overlayFeedEngagement)];
               }
-              return cleanedPosts.map((np) => {
+              const refreshed = cleanedPosts.map((np) => {
                 const old = prevPosts.find((op) => String(op.id) === String(np.id));
-                const merged = (old && Array.isArray(old.comments) && old.comments.length && !(np.comments && np.comments.length))
+                let merged = (old && Array.isArray(old.comments) && old.comments.length && !(np.comments && np.comments.length))
                   ? { ...np, comments: old.comments }
                   : np;
+                if (hasRecentPending(np.id)) {
+                  merged = { ...merged, comments: mergePendingComments(np.id, merged.comments), commentsCount: Math.max(Number(merged.commentsCount || 0), Number(old?.commentsCount || 0)) };
+                }
                 return overlayFeedEngagement(merged);
               });
+              // Profile se khola gaya reel / ad refetch ke baad bhi top par bana rahe
+              const pinned = pinnedPostRef.current;
+              if (pinned && !refreshed.some((p) => String(p.id) === String(pinned.id))) return [pinned, ...refreshed];
+              return refreshed;
             });
           } else {
             if (!loadMore) setPosts([]);

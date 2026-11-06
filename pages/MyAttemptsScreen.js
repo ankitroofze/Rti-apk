@@ -90,6 +90,12 @@ const handleDownload = (item) => {
       quiz_type: item.quiz_type,
       quiz_title: item.quiz_title,
       percentage: item.percentage,
+      obtained_marks: item.obtained_marks,
+      total_marks: item.total_marks,
+      correct_answers: item.correct_answers,
+      total_questions: item.total_questions,
+      score: item.score,
+      certificate_number: item.certificate_number,
       user_name: item.user_name,
       date: item.issued_at
         ? new Date(item.issued_at).toLocaleDateString('en-IN')
