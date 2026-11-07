@@ -252,12 +252,7 @@ const styles = StyleSheet.create({
     lineHeight: 40,
     fontWeight: '900',
     marginTop: 10,
-    fontFamily: Platform.select({
-      web: 'Georgia, "Times New Roman", serif',
-      ios: 'Georgia',
-      android: 'serif',
-      default: undefined,
-    }),
+    fontFamily: Platform.OS === 'web' ? 'Roboto, sans-serif' : 'Roboto_700Bold',
   },
   contentSubtitle: {
     color: '#475569',

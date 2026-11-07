@@ -1,4 +1,4 @@
-﻿import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { readReferralCodeFromUrl } from '../utils/Referralservice';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
@@ -454,9 +454,22 @@ export default function RegisterScreen({ navigation, route }) {
 
       await UserStore.setCurrentUser(pending.email);
       try {
-        await UserStore.completeLocationSetup(pending.email, locState, locDistrict, locTaluka, locVillage);
+        await UserStore.completeLocationSetup(pending.email, locState, locDistrict, locTaluka, locVillage, commit.token);
         await UserStore.clearPendingRegistration();
       } catch (e) { console.warn('[register] local setup failed:', e?.message || e); }
+
+      // ✅ Backend /state API ko registration ke token ke saath link & sync karo
+      try {
+        await AuthAPI.updateState({
+          state: locState,
+          district: locDistrict,
+          taluka: locTaluka,
+          village: locVillage,
+          ...ids,
+        }, commit.token);
+      } catch (e) {
+        console.warn('[register] updateState failed:', e?.message || e);
+      }
 
       // Register complete -> Home (stack reset), login() sabse last me
       try {

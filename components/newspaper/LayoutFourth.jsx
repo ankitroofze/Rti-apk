@@ -50,7 +50,7 @@ const LoremBlock = ({ lines = 6, size = 6.5, style }) => {
   return (
     <View style={style}>
       {rows.map((r, i) => (
-        <Text key={i} style={{ fontSize: size, color: C.inkLight, lineHeight: size * 1.55, fontFamily: 'serif' }}>{r}</Text>
+        <Text key={i} style={{ fontSize: size, color: C.inkLight, lineHeight: size * 1.55, fontFamily: 'Roboto' }}>{r}</Text>
       ))}
     </View>
   );
@@ -64,7 +64,7 @@ const Headline = ({ children, size = 14, caps, inverted, lines = 1, style }) => 
         fontSize: size,
         fontWeight: '900',
         color: inverted ? C.white : C.ink,
-        fontFamily: 'serif',
+        fontFamily: 'Roboto',
         textTransform: caps ? 'uppercase' : undefined,
         lineHeight: size * 1.2,
         letterSpacing: caps ? 0.5 : 0,
@@ -77,7 +77,7 @@ const Headline = ({ children, size = 14, caps, inverted, lines = 1, style }) => 
 );
 
 const SubHead = ({ children, size = 8, style }) => (
-  <Text style={[{ fontSize: size, fontWeight: '700', color: C.inkMid, fontFamily: 'serif', lineHeight: size * 1.4 }, style]}>
+  <Text style={[{ fontSize: size, fontWeight: '700', color: C.inkMid, fontFamily: 'Roboto', lineHeight: size * 1.4 }, style]}>
     {children}
   </Text>
 );
@@ -136,10 +136,10 @@ const Header = () => (
     {/* Top thin info strip */}
     <HRule thick />
     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 4, paddingVertical: 2, borderBottomWidth: 0.8, borderBottomColor: C.ruleFaint }}>
-      <Text style={{ fontSize: 6, color: C.inkLight, fontFamily: 'serif' }}>बुधवार, १० जून २०२५ | वर्ष ४२ | अंक १५३</Text>
-      <Text style={{ fontSize: 6, color: C.inkLight, fontFamily: 'serif' }}>मूल्य: ₹ ३.०० | पृष्ठ: १२</Text>
+      <Text style={{ fontSize: 6, color: C.inkLight, fontFamily: 'Roboto' }}>बुधवार, १० जून २०२५ | वर्ष ४२ | अंक १५३</Text>
+      <Text style={{ fontSize: 6, color: C.inkLight, fontFamily: 'Roboto' }}>मूल्य: ₹ ३.०० | पृष्ठ: १२</Text>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        <Text style={{ fontSize: 6, color: C.inkLight, fontFamily: 'serif' }}>www.prathamdarpan.com</Text>
+        <Text style={{ fontSize: 6, color: C.inkLight, fontFamily: 'Roboto' }}>www.prathamdarpan.com</Text>
         <View style={{ marginLeft: 6, borderWidth: 0.8, borderColor: C.rule, paddingHorizontal: 4, paddingVertical: 1 }}>
           <Text style={{ fontSize: 6, fontWeight: '800', color: C.ink }}>पृ. १</Text>
         </View>
@@ -162,14 +162,14 @@ const Header = () => (
           fontSize: 36,
           fontWeight: '900',
           color: C.ink,
-          fontFamily: 'serif',
+          fontFamily: 'Roboto',
           letterSpacing: 2,
           textAlign: 'center',
         }}
       >
         प्रथम दर्पण
       </Text>
-      <Text style={{ fontSize: 10, color: C.inkMid, letterSpacing: 4, fontFamily: 'serif', marginTop: 1 }}>
+      <Text style={{ fontSize: 10, color: C.inkMid, letterSpacing: 4, fontFamily: 'Roboto', marginTop: 1 }}>
         PRATHAM DARPAN  •  प्रतिदिन  •  DAILY
       </Text>
 
@@ -378,7 +378,7 @@ const Footer = () => (
     </View>
     {/* Full-width slogan strip */}
     <View style={{ backgroundColor: C.ink, alignItems: 'center', paddingVertical: 5 }}>
-      <Text style={{ fontSize: 9, color: C.white, letterSpacing: 5, fontFamily: 'serif', fontWeight: '700' }}>
+      <Text style={{ fontSize: 9, color: C.white, letterSpacing: 5, fontFamily: 'Roboto', fontWeight: '700' }}>
         सत्य  •  निर्भय  •  निष्पक्ष  —  SATYA  •  NIRBHAY  •  NISHPAKSH
       </Text>
     </View>

@@ -28,7 +28,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { openExternalUrl } from '../utils/adRedirect';
 import { useAdsHidden } from '../utils/adsVisibility';
-import { useGlobalMuted, getGlobalMuted } from '../utils/Globalmutestore';
 import { safePause, safePlay, safeSetMuted } from '../utils/videoPlayerSafe';
 
 const AD_SECONDS = 5;          // har ad ka fixed time (image + video)
@@ -36,38 +35,52 @@ const AD_FIT = 'contain';      // ad poora dikhta hai (crop nahi); khaali jagah 
 const IS_WEB = Platform.OS === 'web';
 
 // ── WEB video: asli <video> tag ──────────────────────────────────────────────
-function PromoVideoWeb({ uri, onSize }) {
-  const [muted, , toggleMuted] = useGlobalMuted();
+function PromoVideoWeb({ uri, onSize, muted, onToggleMute }) {
+  // muted = popup ka apna state (default false => ads hamesha AWAZ ke saath). Sirf user button se mute karega.
   const elRef = useRef(null);
+  const mutedRef = useRef(muted);
+  mutedRef.current = muted;
+  const unlockedAtRef = useRef(0);
+  // Browser kabhi-kabhi bina user-click ke awaaz wali autoplay rok deta hai.
+  // Tab video muted chalta hai aur user ke PEHLE click/touch/key par apne aap unmute ho jata hai.
+  const [blocked, setBlocked] = useState(false);
 
   useEffect(() => {
     const el = elRef.current;
-    if (el) el.muted = Boolean(muted);
-  }, [muted]);
+    if (el && !blocked) el.muted = Boolean(muted);
+  }, [muted, blocked]);
 
   useEffect(() => {
     const el = elRef.current;
     if (!el) return undefined;
-    el.muted = Boolean(getGlobalMuted());
-    const tryPlay = () => {
-      const pr = el.play?.();
-      if (pr && pr.catch) {
-        pr.catch(() => {
-          try {
-            el.muted = true;
-            el.play?.().catch(() => { });
-          } catch (_) { }
-        });
-      }
+    let cleanup = () => { };
+    el.muted = Boolean(mutedRef.current);
+    const unlock = () => {
+      cleanup();
+      unlockedAtRef.current = Date.now();
+      setBlocked(false);
+      try {
+        el.muted = Boolean(mutedRef.current);
+        el.play?.().catch(() => { });
+      } catch (_) { }
     };
-    tryPlay();
+    const onBlocked = () => {
+      if (mutedRef.current) { try { el.play?.().catch(() => { }); } catch (_) { } return; }
+      setBlocked(true);
+      try { el.muted = true; el.play?.().catch(() => { }); } catch (_) { }
+      const evts = ['pointerdown', 'touchstart', 'keydown', 'click'];
+      evts.forEach((ev) => document.addEventListener(ev, unlock, true));
+      cleanup = () => evts.forEach((ev) => document.removeEventListener(ev, unlock, true));
+    };
+    const pr = el.play?.();
+    if (pr && pr.catch) pr.catch(onBlocked);
 
-    // agar video size pehle se available ho
     if (el.videoWidth && el.videoHeight && onSize) {
       onSize({ w: el.videoWidth, h: el.videoHeight });
     }
 
     return () => {
+      cleanup();
       try { el.pause?.(); } catch (_) { }
     };
   }, [uri, onSize]);
@@ -77,6 +90,18 @@ function PromoVideoWeb({ uri, onSize }) {
     if (v?.videoWidth && v?.videoHeight && onSize) {
       onSize({ w: v.videoWidth, h: v.videoHeight });
     }
+  };
+
+  const shownMuted = Boolean(muted) || blocked;
+  const handleMutePress = () => {
+    // Isi click ne abhi-abhi unlock karke unmute kar diya ho to dobara mute na karo
+    if (Date.now() - unlockedAtRef.current < 600) return;
+    if (blocked) {
+      setBlocked(false);
+      try { if (elRef.current) { elRef.current.muted = Boolean(mutedRef.current); elRef.current.play?.().catch(() => { }); } } catch (_) { }
+      return;
+    }
+    onToggleMute && onToggleMute();
   };
 
   return (
@@ -103,24 +128,23 @@ function PromoVideoWeb({ uri, onSize }) {
       })}
       <TouchableOpacity
         style={styles.muteBtn}
-        onPress={toggleMuted}
+        onPress={handleMutePress}
         activeOpacity={0.8}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-        accessibilityLabel={muted ? 'Unmute' : 'Mute'}
+        accessibilityLabel={shownMuted ? 'Unmute' : 'Mute'}
       >
-        <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={22} color="#fff" />
+        <Ionicons name={shownMuted ? 'volume-mute' : 'volume-high'} size={22} color="#fff" />
       </TouchableOpacity>
     </View>
   );
 }
 
-// ── Native Video ad (muted autoplay) ─────────────────────────────────────────
-function PromoVideo({ uri, poster, onSize }) {
-  const [muted, , toggleMuted] = useGlobalMuted();
+// ── Native Video ad (awaaz ke saath) ─────────────────────────────────────────
+function PromoVideo({ uri, poster, onSize, muted, onToggleMute }) {
   const player = useVideoPlayer(uri ? { uri } : null, (p) => {
     try {
       p.loop = true;
-      p.muted = getGlobalMuted();
+      p.muted = Boolean(muted);
       p.volume = 1;
       p.play();
     } catch (_) { }
@@ -158,7 +182,7 @@ function PromoVideo({ uri, poster, onSize }) {
       />
       <TouchableOpacity
         style={styles.muteBtn}
-        onPress={toggleMuted}
+        onPress={onToggleMute}
         activeOpacity={0.8}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         accessibilityLabel={muted ? 'Unmute' : 'Mute'}
@@ -198,6 +222,9 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
   const [, setUnlocked] = useState(false);
   const [areaSize, setAreaSize] = useState({ w: 0, h: 0 });
   const [mediaNatural, setMediaNatural] = useState(null);
+  // Popup ads hamesha unmuted — popup khulte hi false; user sirf button se mute kar sakta hai
+  const [adMuted, setAdMuted] = useState(false);
+  const toggleAdMuted = useCallback(() => setAdMuted((m) => !m), []);
 
   // `ads` (array) ho to wahi, warna purana single `ad`
   // ✅ ads_hidden=true => popup ad kabhi nahi khulega (aur khula ho to band ho jayega)
@@ -253,6 +280,7 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
     const sorted = orderBySeen(items, seenRef.current);
     setList(sorted);
     setVisible(true);
+    setAdMuted(false);
     setIndex(0);
     setRemaining(AD_SECONDS);
     setUnlocked(false);
@@ -435,8 +463,8 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
         >
           {videoUri ? (
             IS_WEB
-              ? <PromoVideoWeb key={`v-${currentKey}`} uri={videoUri} onSize={setMediaNatural} />
-              : <PromoVideo key={`v-${currentKey}`} uri={videoUri} poster={imageUri} onSize={setMediaNatural} />
+              ? <PromoVideoWeb key={`v-${currentKey}`} uri={videoUri} onSize={setMediaNatural} muted={adMuted} onToggleMute={toggleAdMuted} />
+              : <PromoVideo key={`v-${currentKey}`} uri={videoUri} poster={imageUri} onSize={setMediaNatural} muted={adMuted} onToggleMute={toggleAdMuted} />
           ) : (
             <Image
               key={`i-${currentKey}`}

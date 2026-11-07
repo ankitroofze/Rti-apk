@@ -40,7 +40,7 @@ import AutoIdCardPreview from '../components/IdCardPreview';
 import AutoIdCardBackPreview from '../components/IdCardBackPreview';
 import ScaledCard from '../components/ScaledCard';
 import PostGridThumb from '../components/PostGridThumb';
-import DocumentThumb, { getPostFile } from '../components/DocumentThumb';
+import DocumentThumb, { getPostFile, isImageFile } from '../components/DocumentThumb';
 import ProfileContentTabs from '../components/ProfileContentTabs';
 import { CONTENT_TABS, getPostKind as getContentKind } from '../components/profileContent';
 import { PageLoader, useAppFontsReady } from '../components/WebReadyGate';
@@ -1551,7 +1551,9 @@ const handlePickImage = async () => {
       }
       return '';
     };
-    const getPostImage = (post = {}) => firstImageUri([
+    const getPostImage = (post = {}) => {
+      if (post.mediaType === 'File' || Number(post.type) === 3 || Number(post.media_type) === 3) return '';
+      return firstImageUri([
       post.thumbnail,
       post.videoThumb,
       post.video_thumb,
@@ -1570,7 +1572,9 @@ const handlePickImage = async () => {
       post.coverImage,
       post.images,
       post.media,
+      post.media_url,
     ]);
+    };
     const getPostKind = (post = {}) => String(post.mediaType || post.type || '').toLowerCase();
 
     // Tab ke hisaab se filter (Posts / Reels / Ads / Ecom)
@@ -1955,9 +1959,6 @@ const handlePickImage = async () => {
                       <Text style={[w.nameText, { color: primaryProfileText }]}>{displayProfile.name || 'Your Name'}</Text>
                       {displayHasBlueTick ? <VerifiedBadge size={16} /> : null}
                     </View>
-                    {generateMemberId(displayProfile.email) ? (
-                      <Text style={[w.memberIdText, { color: secondaryProfileText }]}>Member ID: {generateMemberId(displayProfile.email)}</Text>
-                    ) : null}
                                {displayProfile.state ? (
                       <View style={[w.locationRow, isWebNarrow && { justifyContent: 'center' }]}>
                         <Feather name="map-pin" size={12} color={secondaryProfileText} />
@@ -2170,11 +2171,6 @@ style={[ProfileStyles.avatarCameraBadge, !canPickPhoto && { display: 'none' }]}
                       @{displayProfile.username || 'ankityadav123'}
                     </Text> */}
 
-                    {generateMemberId(displayProfile.email) ? (
-                      <Text style={ProfileStyles.profileCardUsername}>
-                        Member ID: {generateMemberId(displayProfile.email)}
-                      </Text>
-                    ) : null}
 
                                        {displayProfile.state ? (
                       <View style={ProfileStyles.profileCardLocation}>

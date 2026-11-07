@@ -28,7 +28,7 @@ import { getEngagement, defaultApplyEngagement, useEngagementSync, persistLikedL
 import useLiveRefresh from '../utils/useLiveRefresh';
 import ProfileContentTabs from '../components/ProfileContentTabs';
 import PostMenuButton from '../components/PostMenuButton';
-import DocumentThumb, { getPostFile } from '../components/DocumentThumb';
+import DocumentThumb, { getPostFile, isImageFile } from '../components/DocumentThumb';
 import { CONTENT_TABS, getPostKind } from '../components/profileContent';
 import { isValidImageUrl } from '../utils/storyHelpers';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
@@ -216,37 +216,98 @@ const ShareProfileSheet = ({ visible, onClose, name, url, message, onCopy, onMor
   );
 };
 
-const ProfileMenuSheet = ({ visible, onClose, onCopyLink, onReport, onBlock }) => (
-  <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
-    <TouchableWithoutFeedback onPress={onClose}>
-      <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
-        <TouchableWithoutFeedback>
-          <View style={{ backgroundColor: '#ffffff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 12, paddingBottom: Platform.OS === 'ios' ? 36 : 24 }}>
-            <View style={{ width: 40, height: 4, backgroundColor: '#e2e8f0', borderRadius: 2, alignSelf: 'center', marginBottom: 16 }} />
-            <TouchableOpacity onPress={onCopyLink} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 24, gap: 16 }}>
-              <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFF0E6', justifyContent: 'center', alignItems: 'center' }}><Feather name="link" size={18} color={ORANGE} /></View>
-              <View><Text style={{ fontSize: 15, fontWeight: '600', color: '#0f172a' }}>Copy Profile Link</Text><Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Share this profile with others</Text></View>
-            </TouchableOpacity>
-            <View style={{ height: 1, backgroundColor: '#f1f5f9', marginHorizontal: 24 }} />
-            <TouchableOpacity onPress={onReport} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 24, gap: 16 }}>
-              <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff7ed', justifyContent: 'center', alignItems: 'center' }}><Feather name="flag" size={18} color="#f97316" /></View>
-              <View><Text style={{ fontSize: 15, fontWeight: '600', color: '#0f172a' }}>Report account</Text><Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Report this account for review</Text></View>
-            </TouchableOpacity>
-            <View style={{ height: 1, backgroundColor: '#f1f5f9', marginHorizontal: 24 }} />
-            <TouchableOpacity onPress={onBlock} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 24, gap: 16 }}>
-              <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff1f2', justifyContent: 'center', alignItems: 'center' }}><Feather name="slash" size={18} color="#ef4444" /></View>
-              <View><Text style={{ fontSize: 15, fontWeight: '600', color: '#ef4444' }}>Block</Text><Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Block this user from your feed</Text></View>
-            </TouchableOpacity>
-            <View style={{ height: 8, backgroundColor: '#f8fafc', marginTop: 8 }} />
-            <TouchableOpacity onPress={onClose} activeOpacity={0.7} style={{ paddingVertical: 16, alignItems: 'center' }}>
-              <Text style={{ fontSize: 15, fontWeight: '600', color: '#64748b' }}>Cancel</Text>
-            </TouchableOpacity>
+const ProfileMenuSheet = ({ visible, anchor, onClose, onCopyLink, onReport, onBlock }) => {
+  if (Platform.OS === 'web' || anchor) {
+    const top = anchor?.top ?? 80;
+    const left = anchor?.left ?? 80;
+    return (
+      <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={onClose}>
+        <TouchableWithoutFeedback onPress={onClose}>
+          <View style={{ flex: 1, backgroundColor: 'transparent' }}>
+            <TouchableWithoutFeedback>
+              <View
+                style={{
+                  position: 'absolute',
+                  top,
+                  left,
+                  width: 210,
+                  backgroundColor: '#ffffff',
+                  borderRadius: 8,
+                  borderWidth: 1,
+                  borderColor: '#e2e8f0',
+                  paddingVertical: 4,
+                  ...Platform.select({
+                    web: { boxShadow: '0 8px 24px rgba(15, 23, 42, 0.14)' },
+                    default: { elevation: 12 },
+                  }),
+                }}
+              >
+                <TouchableOpacity
+                  onPress={onCopyLink}
+                  activeOpacity={0.8}
+                  style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 14, gap: 10 }}
+                >
+                  <Feather name="link" size={16} color={ORANGE} />
+                  <Text style={{ fontSize: 13.5, fontWeight: '600', color: '#0f172a' }}>Copy Profile Link</Text>
+                </TouchableOpacity>
+                <View style={{ height: 1, backgroundColor: '#f1f5f9' }} />
+                <TouchableOpacity
+                  onPress={onReport}
+                  activeOpacity={0.8}
+                  style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 14, gap: 10 }}
+                >
+                  <Feather name="flag" size={16} color="#f97316" />
+                  <Text style={{ fontSize: 13.5, fontWeight: '600', color: '#0f172a' }}>Report account</Text>
+                </TouchableOpacity>
+                <View style={{ height: 1, backgroundColor: '#f1f5f9' }} />
+                <TouchableOpacity
+                  onPress={onBlock}
+                  activeOpacity={0.8}
+                  style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 14, gap: 10 }}
+                >
+                  <Feather name="slash" size={16} color="#ef4444" />
+                  <Text style={{ fontSize: 13.5, fontWeight: '600', color: '#ef4444' }}>Block</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
           </View>
         </TouchableWithoutFeedback>
-      </View>
-    </TouchableWithoutFeedback>
-  </Modal>
-);
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" statusBarTranslucent onRequestClose={onClose}>
+      <TouchableWithoutFeedback onPress={onClose}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
+          <TouchableWithoutFeedback>
+            <View style={{ backgroundColor: '#ffffff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 12, paddingBottom: Platform.OS === 'ios' ? 36 : 24 }}>
+              <View style={{ width: 40, height: 4, backgroundColor: '#e2e8f0', borderRadius: 2, alignSelf: 'center', marginBottom: 16 }} />
+              <TouchableOpacity onPress={onCopyLink} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 24, gap: 16 }}>
+                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#FFF0E6', justifyContent: 'center', alignItems: 'center' }}><Feather name="link" size={18} color={ORANGE} /></View>
+                <View><Text style={{ fontSize: 15, fontWeight: '600', color: '#0f172a' }}>Copy Profile Link</Text><Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Share this profile with others</Text></View>
+              </TouchableOpacity>
+              <View style={{ height: 1, backgroundColor: '#f1f5f9', marginHorizontal: 24 }} />
+              <TouchableOpacity onPress={onReport} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 24, gap: 16 }}>
+                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff7ed', justifyContent: 'center', alignItems: 'center' }}><Feather name="flag" size={18} color="#f97316" /></View>
+                <View><Text style={{ fontSize: 15, fontWeight: '600', color: '#0f172a' }}>Report account</Text><Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Report this account for review</Text></View>
+              </TouchableOpacity>
+              <View style={{ height: 1, backgroundColor: '#f1f5f9', marginHorizontal: 24 }} />
+              <TouchableOpacity onPress={onBlock} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 24, gap: 16 }}>
+                <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff1f2', justifyContent: 'center', alignItems: 'center' }}><Feather name="slash" size={18} color="#ef4444" /></View>
+                <View><Text style={{ fontSize: 15, fontWeight: '600', color: '#ef4444' }}>Block</Text><Text style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Block this user from your feed</Text></View>
+              </TouchableOpacity>
+              <View style={{ height: 8, backgroundColor: '#f8fafc', marginTop: 8 }} />
+              <TouchableOpacity onPress={onClose} activeOpacity={0.7} style={{ paddingVertical: 16, alignItems: 'center' }}>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: '#64748b' }}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
+  );
+};
 
 const BlockConfirmModal = ({ visible, name, onCancel, onConfirm }) => (
   <Modal visible={visible} transparent animationType="fade" statusBarTranslucent onRequestClose={onCancel}>
@@ -334,6 +395,34 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const [modalImage, setModalImage] = useState('');
   const [modalName, setModalName] = useState('');
   const [menuVisible, setMenuVisible] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState(null);
+  const topBarMoreRef = useRef(null);
+  const cardMoreRef = useRef(null);
+
+  const openProfileMenu = (targetRef) => {
+    if (Platform.OS === 'web' && targetRef?.current?.measureInWindow) {
+      targetRef.current.measureInWindow((x, y, w, h) => {
+        const menuW = 210;
+        const menuH = 130;
+        const viewH = typeof window !== 'undefined' ? window.innerHeight : 800;
+        const viewW = typeof window !== 'undefined' ? window.innerWidth : 1200;
+        const openUp = y + h + menuH + 8 > viewH;
+        setMenuAnchor({
+          top: openUp ? Math.max(8, y - menuH - 4) : y + h + 4,
+          left: Math.max(8, Math.min(x + w - menuW, viewW - menuW - 8)),
+        });
+        setMenuVisible(true);
+      });
+      return;
+    }
+    setMenuAnchor(null);
+    setMenuVisible(true);
+  };
+
+  const closeProfileMenu = () => {
+    setMenuVisible(false);
+    setTimeout(() => setMenuAnchor(null), 250);
+  };
   const [reportVisible, setReportVisible] = useState(false);
   const [shareVisible, setShareVisible] = useState(false);
   const [viewerEmail, setViewerEmail] = useState('');
@@ -914,7 +1003,6 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     { key: 'plan', icon: 'clock', value: planDurationText ? `${planDurationText}${planValidTill ? ` · Valid till ${planValidTill}` : ''}` : (planValidTill ? `Valid till ${planValidTill}` : '') },
     { key: 'area', icon: 'map-pin', value: roleAreaPlace || shownLocationLine },
     { key: 'mobile', icon: 'phone', value: mobileText, onPress: mobileText ? () => Linking.openURL(`tel:${mobileText}`).catch(() => {}) : null },
-    { key: 'id', icon: 'credit-card', value: memberIdText },
     { key: 'since', icon: 'calendar', value: accountAge ? `Member ${accountAge}` : '' },
   ].filter((r) => r.value);
   const hasContactCard = detailItems.length > 0;
@@ -1201,7 +1289,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const profileShareMessage = `${name} on RTI News\n${profileShareUrl}`;
 
   const handleCopyProfileLink = () => {
-    setMenuVisible(false);
+    closeProfileMenu();
     Clipboard.setString(profileShareUrl);
     showToast('Profile link copied!', 'success');
   };
@@ -1233,7 +1321,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
   // Report account: menu band -> ReportModal (reason dropdown) -> POST /users/{id}/report
   const handleReport = () => {
-    setMenuVisible(false);
+    closeProfileMenu();
     if (!viewerEmailRef.current) { showToast(loginMessage('report'), 'info'); return; }
     setReportVisible(true);
   };
@@ -1243,7 +1331,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   };
 
    const handleBlock = () => {
-    setMenuVisible(false);
+    closeProfileMenu();
     setBlockConfirmVisible(true);
   };
 
@@ -1395,9 +1483,12 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       ...(Array.isArray(p.images) ? p.images : []),
       p.image, p.thumbnail, p.thumb, p.cover_image, p.coverImage,
       p.featured_image, p.featuredImage, p.photo,
+      (p.file && isImageFile(p.file)) ? p.file.uri : null,
+      (p.media && isImageFile({ uri: p.media })) ? p.media : null,
+      (p.media_url && isImageFile({ uri: p.media_url })) ? p.media_url : null,
     ]
       .map((u) => String(u || '').trim())
-      .filter((u) => u && u !== 'null' && u !== 'undefined' && u.startsWith('http'));
+      .filter((u) => u && u !== 'null' && u !== 'undefined' && (u.startsWith('http') || u.startsWith('blob:') || u.startsWith('data:') || u.startsWith('/')));
 
     const thumb = imageCandidates.length ? imageCandidates[0] : null;
     const titleSnippet = String(p.title || '').trim().slice(0, 60);
@@ -1447,6 +1538,9 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       ...(Array.isArray(p.images) ? p.images : []),
       p.image, p.thumbnail, p.thumb, p.cover_image, p.coverImage,
       p.featured_image, p.featuredImage, p.photo,
+      (p.file && isImageFile(p.file)) ? p.file.uri : null,
+      (p.media && isImageFile({ uri: p.media })) ? p.media : null,
+      (p.media_url && isImageFile({ uri: p.media_url })) ? p.media_url : null,
     ]
       .map((u) => String(u || '').trim())
       .filter((u) => u && u !== 'null' && u !== 'undefined');
@@ -1587,7 +1681,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       <ProfileImageModal visible={modalVisible} imageUri={modalImage} name={modalName} onClose={() => setModalVisible(false)} />
       <ShareProfileSheet visible={shareVisible} onClose={() => setShareVisible(false)} name={name} url={profileShareUrl} message={profileShareMessage} onCopy={handleCopyProfileLink} onMore={handleShareMore} />
       <ReportModal visible={reportVisible} kind="account" onClose={() => setReportVisible(false)} onSubmit={submitAccountReport} />
-      <ProfileMenuSheet visible={menuVisible} onClose={() => setMenuVisible(false)} onCopyLink={handleCopyProfileLink} onReport={handleReport} onBlock={handleBlock} />
+      <ProfileMenuSheet visible={menuVisible} anchor={menuAnchor} onClose={closeProfileMenu} onCopyLink={handleCopyProfileLink} onReport={handleReport} onBlock={handleBlock} />
       <BlockConfirmModal visible={blockConfirmVisible} name={name} onCancel={() => setBlockConfirmVisible(false)} onConfirm={confirmBlock} />
       <Modal visible={Boolean(followModalType)} transparent animationType="slide" onRequestClose={() => setFollowModalType('')}>
         <TouchableOpacity style={styles.followModalOverlay} activeOpacity={1} onPress={() => setFollowModalType('')}>
@@ -1808,7 +1902,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
               // 3-col grid — tiles sized from live windowWidth
               <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
                 {sortedPosts.map((p) => {
-                  const imgCandidates = [
+                  const isFilePost = p.mediaType === 'File' || Number(p.type) === 3 || Number(p.media_type) === 3;
+                  const imgCandidates = isFilePost ? [] : [
                     ...(Array.isArray(p.images) ? p.images : []),
                     p.image, p.thumbnail, p.thumb, p.cover_image, p.coverImage,
                     p.featured_image, p.featuredImage, p.photo,
@@ -1879,7 +1974,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
             <Feather name="arrow-left" size={20} color="#FFFFFF" />
           </TouchableOpacity>
           <Text style={[webSt.topBarTitle, { color: '#FFFFFF' }]}>Profile</Text>
-          <TouchableOpacity style={[webSt.menuBtn, { backgroundColor: 'rgba(255,255,255,0.22)' }]} onPress={() => setMenuVisible(true)} activeOpacity={0.8}>
+          <TouchableOpacity ref={topBarMoreRef} style={[webSt.menuBtn, { backgroundColor: 'rgba(255,255,255,0.22)' }]} onPress={() => openProfileMenu(topBarMoreRef)} activeOpacity={0.8}>
             <Feather name="more-vertical" size={18} color="#FFFFFF" />
           </TouchableOpacity>
         </ImageBackground>
@@ -1921,7 +2016,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                         <Feather name="share-2" size={15} color="#0f172a" />
                         <Text style={webSt.shareBtnText}>Share Profile</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={webSt.moreBtn} onPress={() => setMenuVisible(true)} activeOpacity={0.8}>
+                      <TouchableOpacity ref={cardMoreRef} style={webSt.moreBtn} onPress={() => openProfileMenu(cardMoreRef)} activeOpacity={0.8}>
                         <Feather name="more-horizontal" size={20} color="#0f172a" />
                       </TouchableOpacity>
                     </View>
@@ -2007,7 +2102,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
               gridView ? (
                 <View style={webSt.grid}>
                   {sortedPosts.map((p) => {
-                    const imageCandidates = [
+                    const isFilePost = p.mediaType === 'File' || Number(p.type) === 3 || Number(p.media_type) === 3;
+                    const imageCandidates = isFilePost ? [] : [
                       ...(Array.isArray(p.images) ? p.images : []),
                       p.image, p.thumbnail, p.thumb, p.cover_image, p.coverImage,
                       p.featured_image, p.featuredImage, p.photo,
@@ -2121,9 +2217,6 @@ export default function UserPublicProfileScreen({ route, navigation }) {
               <Text style={ProfileStyles.profileCardName} numberOfLines={2}>{name}</Text>
               {isVerified ? <VerifiedBadge size={20} /> : null}
             </View>
-            {memberIdText ? (
-              <Text style={ProfileStyles.profileCardUsername}>Member ID: {memberIdText}</Text>
-            ) : null}
             {shownState || shownLocationLine ? (
               <View style={ProfileStyles.profileCardLocation}>
                 <MaterialIcons name="location-on" size={11} color="#555555" />

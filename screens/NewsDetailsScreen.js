@@ -27,6 +27,7 @@ import SocialShareModal from '../components/SocialShareModal';
 import useFramedImageCapture from '../components/useFramedImageCapture';
 import { useToast } from '../components/ui/ToastProvider';
 import { useLanguage } from '../contexts/LanguageContext';
+import { getSiteCopy } from '../constants/siteCopy';
 import { getFrameTemplate } from '../constants/frameTemplates';
 import AppNavbar from '../components/AppNavbar';
 import AppFooter from '../components/AppFooter';
@@ -109,7 +110,7 @@ function isPlayableVideoSource(uri) {
 }
 
 function buildPlaceholderImage(seedKey) {
-  return `https://picsum.photos/seed/${encodeURIComponent(seedKey || 'news-details')}/960/680`;
+  return '';
 }
 
 // "0", "null", "undefined", false, 0 jaisi junk values ko text ki tarah dikhana nahi hai
@@ -177,16 +178,16 @@ function formatArticleDate(value) {
 function normalizeArticle(rawArticle) {
   const article = rawArticle || {};
   const rawImage =
-    (Array.isArray(article.images) ? article.images.find((u) => u && String(u).trim()) : '') ||
-    article.image ||
+    (Array.isArray(article.images) ? article.images.find((u) => u && String(u).trim() && !String(u).includes('picsum.photos')) : '') ||
+    (article.image && !String(article.image).includes('picsum.photos') ? article.image : '') ||
     '';
   // File (document) post: random placeholder photo nahi — asli document dikhana hai
   const isFilePost = String(article.mediaType || '') === 'File' && Boolean(article.file?.uri || article.file?.url);
   const safeImage = rawImage && rawImage !== 'null' && rawImage !== 'undefined'
     ? rawImage
-    : (isFilePost ? '' : buildPlaceholderImage(article.id || article.title));
+    : '';
   const galleryImages = Array.isArray(article.images)
-    ? article.images.filter((u) => u && String(u).trim() && u !== 'null' && u !== 'undefined')
+    ? article.images.filter((u) => u && String(u).trim() && u !== 'null' && u !== 'undefined' && !String(u).includes('picsum.photos'))
     : (safeImage ? [safeImage] : []);
   return {
     id: article.id || 'news-details-fallback',
@@ -229,7 +230,7 @@ function normalizeArticle(rawArticle) {
     images: galleryImages.length ? galleryImages : (safeImage ? [safeImage] : []),
     video: article.video || null,
     file: article.file || null,
-    mediaType: article.mediaType || (article.video ? 'Video' : 'Image'),
+    mediaType: article.mediaType || (article.video ? 'Video' : (article.file ? 'File' : (safeImage ? 'Image' : 'None'))),
     useFrame: Boolean(article.useFrame),
     frameTemplate: article.frameTemplate || '',
     frameMerged: Boolean(article.frameMerged),
@@ -982,6 +983,8 @@ export default function NewsDetailsScreen({ route, navigation }) {
 
   const { showPopup } = useToast();
   const { language: appLanguage } = useLanguage();
+  const copy = useMemo(() => getSiteCopy(appLanguage), [appLanguage]);
+  const commonCopy = copy.common;
   const { capture: captureFramedImage, host: framedCaptureHost } = useFramedImageCapture();
 
   const handleShare = useCallback(() => {
@@ -1149,8 +1152,13 @@ export default function NewsDetailsScreen({ route, navigation }) {
     article.url ? String(article.url) : `https://rtinews.in/news/${encodeURIComponent(article.id || article.title || 'story')}`
   ), [article.url, article.id, article.title]);
 
+  const closeMoreMenu = useCallback(() => {
+    setShowMoreMenu(false);
+    setTimeout(() => setMenuAnchor(null), 250);
+  }, []);
+
   const toggleMoreMenu = useCallback(() => {
-    if (showMoreMenu) { setShowMoreMenu(false); setMenuAnchor(null); return; }
+    if (showMoreMenu) { closeMoreMenu(); return; }
     if (IS_WEB && moreBtnRef.current?.measureInWindow) {
       moreBtnRef.current.measureInWindow((x, y, w, h) => {
         const menuW = 190;
@@ -1167,29 +1175,26 @@ export default function NewsDetailsScreen({ route, navigation }) {
       return;
     }
     setShowMoreMenu(true);
-  }, [showMoreMenu]);
+  }, [showMoreMenu, closeMoreMenu]);
 
   const handleMenuShare = useCallback(() => {
-    setShowMoreMenu(false);
-    setMenuAnchor(null);
+    closeMoreMenu();
     setShowSocialShareModal(true);
-  }, []);
+  }, [closeMoreMenu]);
 
   const handleShareLink = useCallback(async () => {
-    setShowMoreMenu(false);
-    setMenuAnchor(null);
+    closeMoreMenu();
     try {
       const { result } = await shareNewsLink({ story: article, postLink, language: appLanguage });
       if (result?.action === Share.sharedAction) await handleShareSuccess();
     } catch {}
-  }, [article, postLink, appLanguage, handleShareSuccess]);
+  }, [article, postLink, appLanguage, handleShareSuccess, closeMoreMenu]);
 
   // Report post: menu band -> ReportModal (reason dropdown) -> POST /news/{id}/report
   const handleReportArticle = useCallback(() => {
-    setShowMoreMenu(false);
-    setMenuAnchor(null);
+    closeMoreMenu();
     setReportVisible(true);
-  }, []);
+  }, [closeMoreMenu]);
 
   const submitArticleReport = useCallback(async ({ reason, details }) => {
     const result = await UserStore.reportNews(article.id, { reason, details });
@@ -1200,8 +1205,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
   }, [article.id, article.title]);
 
   const handleDeleteArticleAction = useCallback(async () => {
-    setShowMoreMenu(false);
-    setMenuAnchor(null);
+    closeMoreMenu();
     const confirmed = IS_WEB
       ? (typeof window !== 'undefined' && typeof window.confirm === 'function'
           ? window.confirm('Are you sure you want to delete this post? This cannot be undone.')
@@ -1221,11 +1225,10 @@ export default function NewsDetailsScreen({ route, navigation }) {
     if (result && result.ok === false) {
       Alert.alert('Delete failed', result.message || 'Unable to delete post.');
     }
-  }, [handleDeleteArticle]);
+  }, [handleDeleteArticle, closeMoreMenu]);
 
   const handleBlockAuthorAction = useCallback(async () => {
-    setShowMoreMenu(false);
-    setMenuAnchor(null);
+    closeMoreMenu();
     if (!currentUserEmail) {
       Alert.alert('Login Required', 'Please login to block this user.');
       return;
@@ -1244,7 +1247,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
     } catch {
       Alert.alert('Block', 'Unable to block user.');
     }
-  }, [currentUserEmail, article?.author_id, article?.author_email, article?.createdBy, navigation]);
+  }, [currentUserEmail, article?.author_id, article?.author_email, article?.createdBy, navigation, closeMoreMenu]);
 
   const handleDeleteComment = useCallback(async (commentId) => {
     const confirmed = IS_WEB
@@ -1315,7 +1318,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
 
   const heroImageSource = useMemo(() => {
     const uri = resolvedHeroImage || article.image;
-    if (!uri || uri === 'null' || uri === 'undefined') return null;
+    if (!uri || uri === 'null' || uri === 'undefined' || String(uri).includes('picsum.photos')) return null;
     return { uri };
   }, [resolvedHeroImage, article.image]);
 
@@ -1536,7 +1539,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
                       downloadable
                       frame={imageFrameOptsFromStory(article)}
                     />
-                  ) : heroImageSource ? (
+                  ) : heroImageSource?.uri ? (
                     <>
                       <Image
                         key={heroImageSource.uri}
@@ -1551,14 +1554,17 @@ export default function NewsDetailsScreen({ route, navigation }) {
                       ) : null}
                     </>
                   ) : (
-                    <View style={styles.imagePlaceholder}>
-                      <Ionicons name="image-outline" size={48} color="#94a3b8" />
-                      <Text style={styles.imagePlaceholderText}>Loading image...</Text>
+                    <View style={styles.noMediaDetailsWrap}>
+                      <View style={styles.noMediaDetailsCircle}>
+                        <Ionicons name="images-outline" size={40} color="#94a3b8" />
+                      </View>
+                      <Text style={styles.noMediaDetailsTitle}>No image / video</Text>
+                      <Text style={styles.noMediaDetailsSub}>Is post me koi image ya video nahi hai</Text>
                     </View>
                   )}
                   {framedCaptureHost}
                   {/* Frame: image par hamesha; video par tabhi jab server ne merge nahi kiya (frameMerged = false) */}
-                  {article.useFrame && !isFilePost && heroWrapWidth > 0 && !(canPlayVideo && article.frameMerged) ? (
+                  {article.useFrame && !isFilePost && heroWrapWidth > 0 && !(canPlayVideo && article.frameMerged) && (canPlayVideo || Boolean(heroImageSource?.uri)) ? (
                     <NewsFrameOverlay
                       width={heroWrapWidth}
                       height={(!canPlayVideo && article.images.length > 1) ? heroFrameHeight + 26 : heroFrameHeight}
@@ -1799,42 +1805,42 @@ export default function NewsDetailsScreen({ route, navigation }) {
       <Modal
         visible={showMoreMenu}
         transparent
-        animationType={menuAnchor ? 'none' : 'fade'}
+        animationType={IS_WEB ? 'none' : (menuAnchor ? 'none' : 'fade')}
         statusBarTranslucent
-        onRequestClose={() => { setShowMoreMenu(false); setMenuAnchor(null); }}
+        onRequestClose={closeMoreMenu}
       >
-        <TouchableWithoutFeedback onPress={() => { setShowMoreMenu(false); setMenuAnchor(null); }}>
-          <View style={menuAnchor ? styles.moreMenuBackdropWeb : styles.moreMenuBackdrop}>
+        <TouchableWithoutFeedback onPress={closeMoreMenu}>
+          <View style={(IS_WEB || menuAnchor) ? styles.moreMenuBackdropWeb : styles.moreMenuBackdrop}>
             <TouchableWithoutFeedback>
-              <View style={menuAnchor ? [styles.moreMenuWeb, { position: 'absolute', top: menuAnchor.top, left: menuAnchor.left }] : styles.moreMenuSheet}>
-                {!menuAnchor ? <View style={styles.moreMenuHandle} /> : null}
+              <View style={(IS_WEB || menuAnchor) ? [styles.moreMenuWeb, { position: 'absolute', top: menuAnchor?.top || 80, left: menuAnchor?.left || 80 }] : styles.moreMenuSheet}>
+                {(!menuAnchor && !IS_WEB) ? <View style={styles.moreMenuHandle} /> : null}
                 <TouchableOpacity style={styles.moreMenuItem} onPress={handleMenuShare} activeOpacity={0.82}>
                   <Ionicons name="share-social-outline" size={18} color="#0ea5e9" />
-                  <Text style={styles.moreMenuText}>Share</Text>
+                  <Text style={styles.moreMenuText}>{commonCopy?.share || 'Share'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.moreMenuItem} onPress={handleShareLink} activeOpacity={0.82}>
                   <Ionicons name="link-outline" size={18} color="#0ea5e9" />
-                  <Text style={styles.moreMenuText}>Share link</Text>
+                  <Text style={styles.moreMenuText}>{commonCopy?.shareLink || 'Share link'}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={styles.moreMenuItem} onPress={handleReportArticle} activeOpacity={0.82}>
                   <Ionicons name="flag-outline" size={18} color="#f59e0b" />
-                  <Text style={styles.moreMenuText}>Report post</Text>
+                  <Text style={styles.moreMenuText}>{commonCopy?.reportPost || 'Report post'}</Text>
                 </TouchableOpacity>
                 {canDeleteArticle ? (
                   <TouchableOpacity style={styles.moreMenuItem} onPress={handleDeleteArticleAction} activeOpacity={0.82}>
                     <Ionicons name="trash-outline" size={18} color="#ef4444" />
-                    <Text style={[styles.moreMenuText, { color: '#ef4444', fontWeight: '700' }]}>Delete</Text>
+                    <Text style={[styles.moreMenuText, { color: '#ef4444', fontWeight: '700' }]}>{commonCopy?.delete || 'Delete'}</Text>
                   </TouchableOpacity>
                 ) : null}
                 {!canDeleteArticle ? (
                   <TouchableOpacity style={styles.moreMenuItem} onPress={handleBlockAuthorAction} activeOpacity={0.82}>
                     <Ionicons name="ban-outline" size={18} color="#ef4444" />
-                    <Text style={styles.moreMenuText}>Block</Text>
+                    <Text style={styles.moreMenuText}>{commonCopy?.block || 'Block'}</Text>
                   </TouchableOpacity>
                 ) : null}
-                {!menuAnchor ? (
-                  <TouchableOpacity style={[styles.moreMenuItem, { borderBottomWidth: 0, justifyContent: 'center' }]} onPress={() => { setShowMoreMenu(false); setMenuAnchor(null); }} activeOpacity={0.82}>
-                    <Text style={[styles.moreMenuText, { color: '#64748b' }]}>Cancel</Text>
+                {(!menuAnchor && !IS_WEB) ? (
+                  <TouchableOpacity style={[styles.moreMenuItem, { borderBottomWidth: 0, justifyContent: 'center' }]} onPress={closeMoreMenu} activeOpacity={0.82}>
+                    <Text style={[styles.moreMenuText, { color: '#64748b' }]}>{commonCopy?.cancel || 'Cancel'}</Text>
                   </TouchableOpacity>
                 ) : null}
               </View>
@@ -1997,6 +2003,38 @@ const styles = StyleSheet.create({
   storyHeroImageWrap: { marginTop: 18, height: 220, borderRadius: 5, overflow: 'hidden', backgroundColor: '#e2e8f0', marginBottom: 16, zIndex: 0, position: 'relative', flexShrink: 0 },
   storyHeroImageWrapCompact: { height: 220 },
   storyHeroImage: { width: '100%', height: '100%' },
+  noMediaDetailsWrap: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#f8fafc',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 8,
+  },
+  noMediaDetailsCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#edf2f7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  noMediaDetailsTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#475569',
+    textAlign: 'center',
+  },
+  noMediaDetailsSub: {
+    fontSize: 13,
+    color: '#94a3b8',
+    textAlign: 'center',
+    marginTop: 3,
+  },
   imagePlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f1f5f9' },
   imagePlaceholderText: { color: '#94a3b8', fontSize: 13, marginTop: 8, fontWeight: '600', fontFamily: Platform.OS === 'ios' ? 'Roboto_700Bold' : 'Roboto' },
   videoContainer: { width: '100%', height: '100%', position: 'relative', backgroundColor: '#000000' },

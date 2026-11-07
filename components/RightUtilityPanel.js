@@ -40,7 +40,17 @@ function TrendingThumb({ story, index }) {
       </View>
     );
   }
-  return <Image source={{ uri: story?.images?.[0] || story?.image || 'https://picsum.photos/seed/update' + index + '/80/80' }} style={styles.updateThumb} />;
+  const imgUri = (Array.isArray(story?.images) && story.images.length > 0)
+    ? story.images[0]
+    : story?.image;
+  if (imgUri && !String(imgUri).includes('picsum.photos')) {
+    return <Image source={{ uri: imgUri }} style={styles.updateThumb} />;
+  }
+  return (
+    <View style={[styles.updateThumb, { backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' }]}>
+      <Ionicons name="images-outline" size={20} color="#94a3b8" />
+    </View>
+  );
 }
 
 const formatCount = (n) => {
@@ -84,7 +94,7 @@ function SponsoredMedia({ images, videoUri }) {
   );
 }
 
-function SponsoredImage({ ad }) {
+function SponsoredImage({ ad, commonCopy }) {
   const [failedToLoad, setFailedToLoad] = useState(false);
   const [ratio, setRatio] = useState(null);
   const images = useMemo(() => collectAdImages(ad), [ad]);
@@ -106,7 +116,7 @@ function SponsoredImage({ ad }) {
     return (
       <View style={[styles.sponsoredImage, styles.sponsoredImageFallback]}>
         <Ionicons name="image-outline" size={28} color="#94a3b8" />
-        <Text style={styles.sponsoredImageFallbackText}>Advertisement</Text>
+        <Text style={styles.sponsoredImageFallbackText}>{commonCopy?.advertisement || 'Advertisement'}</Text>
       </View>
     );
   }
@@ -152,7 +162,7 @@ function SponsoredAdGroup({ group = [], children }) {
 }
 
 // Advertiser ka header: profile image + naam + Sponsored. Click karne par uske profile par jata hai.
-function SponsoredHeader({ ad, navigation }) {
+function SponsoredHeader({ ad, navigation, commonCopy }) {
   const name = ad.owner_name || 'Advertiser';
   const handlePress = async () => {
     const email = String(ad.owner_email || '').trim().toLowerCase();
@@ -184,7 +194,7 @@ function SponsoredHeader({ ad, navigation }) {
           <Text style={styles.sponsoredName} numberOfLines={1}>{name}</Text>
           {(ad.owner_has_blue_tick || ad.verified) ? <VerifiedBadge size={14} /> : null}
         </View>
-        <Text style={styles.sponsoredSub}>Sponsored</Text>
+        <Text style={styles.sponsoredSub}>{commonCopy?.sponsored || 'Sponsored'}</Text>
       </View>
     </TouchableOpacity>
   );
@@ -193,7 +203,7 @@ function SponsoredHeader({ ad, navigation }) {
 export default function RightUtilityPanel({
   navigation, trendingStories = [], onOpenDetails, ads: adsProp = [], onOpenLeadForm,
   onViewMoreAds, onBackFromAds, showingAllAds = false, firstNewsStory = null,
-  onViewAllTrending,
+  onViewAllTrending, commonCopy, homeCopy,
 }) {
   // ✅ Ad-free subscription wale user ko bhi right-side ads dikhte hain (unka sirf POPUP band hota hai).
   const ads = adsProp;
@@ -241,10 +251,10 @@ export default function RightUtilityPanel({
           <View style={[styles.cardHeaderRow, { justifyContent: 'space-between' }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Ionicons name="megaphone" size={15} color="#e11d48" />
-              <Text style={styles.cardTitle}>Sponsored</Text>
+              <Text style={styles.cardTitle}>{commonCopy?.sponsored || 'Sponsored'}</Text>
             </View>
             <TouchableOpacity onPress={onBackFromAds} activeOpacity={0.8}>
-              <Text style={styles.viewMoreText}>View Less</Text>
+              <Text style={styles.viewMoreText}>{commonCopy?.viewLess || 'View Less'}</Text>
             </TouchableOpacity>
           </View>
           {ads.map((ad, idx) => (
@@ -254,10 +264,10 @@ export default function RightUtilityPanel({
                 idx === ads.length - 1 && styles.sponsoredAdBlockLast,
               ]}
             >
-              <SponsoredHeader ad={ad} navigation={navigation} />
+              <SponsoredHeader ad={ad} navigation={navigation} commonCopy={commonCopy} />
               <Text style={styles.sponsoredHeadline}>{ad.title}</Text>
             <View style={{ position: 'relative', marginBottom: (ad.video || ad.video_url) ? 14 : 0 }}>
-              <SponsoredImage ad={ad} />
+              <SponsoredImage ad={ad} commonCopy={commonCopy} />
               <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={(ad.video || ad.video_url) ? 46 : 12} />
             </View>
               
@@ -269,15 +279,15 @@ export default function RightUtilityPanel({
           <View style={[styles.cardHeaderRow, { justifyContent: 'space-between' }]}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Ionicons name="megaphone" size={15} color="#e11d48" />
-              <Text style={styles.cardTitle}>Sponsored</Text>
+              <Text style={styles.cardTitle}>{commonCopy?.sponsored || 'Sponsored'}</Text>
             </View>
           </View>
           {sideAds.map((ad, aIdx) => (
             <View key={`side-ad-${aIdx}-${ad?.id || 'ad'}`} style={{ marginBottom: 18, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', paddingBottom: 14 }}>
-              <SponsoredHeader ad={ad} navigation={navigation} />
+              <SponsoredHeader ad={ad} navigation={navigation} commonCopy={commonCopy} />
               <Text style={styles.sponsoredHeadline}>{ad.title}</Text>
           <View style={{ position: 'relative', marginBottom: (ad.video || ad.video_url) ? 14 : 0 }}>
-              <SponsoredImage ad={ad} />
+              <SponsoredImage ad={ad} commonCopy={commonCopy} />
               <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={(ad.video || ad.video_url) ? 46 : 12} />
             </View>
               
@@ -291,9 +301,9 @@ export default function RightUtilityPanel({
         <View style={[styles.cardHeaderRow, { justifyContent: 'space-between' }]}>
           <View style={styles.trendingHeaderTitle}>
           <Ionicons name="trending-up" size={18} color="#dc2626" />
-          <Text style={styles.cardTitle}>Trending News</Text>
+          <Text style={styles.cardTitle}>{commonCopy?.trendingNews || 'Trending News'}</Text>
           </View>
-          <TouchableOpacity onPress={() => (onViewAllTrending ? onViewAllTrending() : navigation?.navigate?.('Home', { showAllTrending: true, showAllTrendingTs: Date.now() }))}><Text style={styles.viewMoreText}>See All <Ionicons name="arrow-forward" size={12} /></Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => (onViewAllTrending ? onViewAllTrending() : navigation?.navigate?.('Home', { showAllTrending: true, showAllTrendingTs: Date.now() }))}><Text style={styles.viewMoreText}>{commonCopy?.viewAll || 'See All'} <Ionicons name="arrow-forward" size={12} /></Text></TouchableOpacity>
         </View>
         {(latestUpdates.length ? latestUpdates : []).map((story, i) => (
           <TouchableOpacity key={story.id || i} style={[styles.updateRow, i === latestUpdates.length - 1 && styles.updateRowLast]} activeOpacity={0.8} onPress={() => onOpenDetails?.(story)}>
@@ -301,7 +311,7 @@ export default function RightUtilityPanel({
             <View style={{ flex: 1 }}>
               <Text style={styles.updateCategory}>{String(story.category || 'India')}</Text>
               <Text style={styles.updateTitle} numberOfLines={3}>{story.title}</Text>
-              <View style={styles.updateMeta}><Ionicons name="flame" size={13} color="#ef4444" /><Text style={styles.updateTime}>{story.publishedAgo || 'Recently'}</Text><Ionicons name="eye-outline" size={13} color="#94a3b8" /><Text style={styles.updateTime}>{Number(story.views || 0).toLocaleString()} views</Text></View>
+              <View style={styles.updateMeta}><Ionicons name="flame" size={13} color="#ef4444" /><Text style={styles.updateTime}>{story.publishedAgo || 'Recently'}</Text><Ionicons name="eye-outline" size={13} color="#94a3b8" /><Text style={styles.updateTime}>{Number(story.views || 0).toLocaleString()} {commonCopy?.views || 'views'}</Text></View>
             </View>
           </TouchableOpacity>
         ))}
@@ -326,14 +336,14 @@ export default function RightUtilityPanel({
                 author: { name: desk.name, profile_image: desk.avatar },
               })}
             >
-              <Text style={styles.viewProfileLink}>View Profile</Text>
+              <Text style={styles.viewProfileLink}>{commonCopy?.viewProfile || 'View Profile'}</Text>
             </TouchableOpacity>
           </View>
           <Text style={styles.deskDesc}>{desk.bio}</Text>
           <View style={styles.deskStatsRow}>
-            <View style={styles.deskStat}><Text style={styles.deskStatNum}>{formatCount(desk.posts)}</Text><Text style={styles.deskStatLabel}>Posts</Text></View>
-            <View style={styles.deskStat}><Text style={styles.deskStatNum}>{formatCount(desk.followers)}</Text><Text style={styles.deskStatLabel}>Followers</Text></View>
-            <View style={styles.deskStat}><Text style={styles.deskStatNum}>{formatCount(desk.following)}</Text><Text style={styles.deskStatLabel}>Following</Text></View>
+            <View style={styles.deskStat}><Text style={styles.deskStatNum}>{formatCount(desk.posts)}</Text><Text style={styles.deskStatLabel}>{commonCopy?.posts || 'Posts'}</Text></View>
+            <View style={styles.deskStat}><Text style={styles.deskStatNum}>{formatCount(desk.followers)}</Text><Text style={styles.deskStatLabel}>{commonCopy?.followers || 'Followers'}</Text></View>
+            <View style={styles.deskStat}><Text style={styles.deskStatNum}>{formatCount(desk.following)}</Text><Text style={styles.deskStatLabel}>{commonCopy?.following || 'Following'}</Text></View>
           </View>
         </View>
       ) : null}

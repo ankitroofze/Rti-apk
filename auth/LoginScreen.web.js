@@ -64,8 +64,25 @@ export default function LoginScreen({ navigation, route }) {
         email: apiUser.email || email,
         password,
         state: apiUser.state || '',
+        district: apiUser.district || '',
+        taluka: apiUser.taluka || '',
+        village: apiUser.village || '',
       });
       stored = sync?.user || null;
+    }
+    if (stored && apiUser) {
+      const locPatch = {};
+      if (apiUser.id && !stored.id) locPatch.id = apiUser.id;
+      if (apiUser.state && (!stored.state || stored.state !== apiUser.state)) locPatch.state = apiUser.state;
+      if (apiUser.district && (!stored.district || stored.district !== apiUser.district)) locPatch.district = apiUser.district;
+      if (apiUser.taluka && (!stored.taluka || stored.taluka !== apiUser.taluka)) locPatch.taluka = apiUser.taluka;
+      if (apiUser.village && (!stored.village || stored.village !== apiUser.village)) locPatch.village = apiUser.village;
+      if ((locPatch.state || stored.state) && (locPatch.district || stored.district) && (locPatch.taluka || stored.taluka)) {
+        locPatch.location_complete = true;
+      }
+      if (Object.keys(locPatch).length > 0) {
+        stored = (await UserStore.updateUser(stored.email, locPatch)) || stored;
+      }
     }
     if (!stored) throw new Error('Unable to restore your account details.');
     await UserStore.setCurrentUser(stored.email);
@@ -121,6 +138,18 @@ export default function LoginScreen({ navigation, route }) {
       const localUser = !isEmail && Array.isArray(users) ? users.find((user) => String(user.mobile || '').trim() === mobile) : null;
       if (!localUser) { setErrors((prev) => ({ ...prev, email: isEmail ? 'Unable to connect. Please try again.' : 'Account not found. Please sign up first.' })); return; }
       if (!UserStore.verifyLocalPassword(localUser, password)) { setErrors((prev) => ({ ...prev, password: 'Incorrect password. Please try again.' })); return; }
+      
+      // ✅ Sync with backend to acquire auth token for mobile login
+      if (localUser.email) {
+        try {
+          const apiRes = await AuthAPI.login({ email: localUser.email, password });
+          if (apiRes.ok && apiRes.user) {
+            await finishLogin(localUser.email, apiRes.user);
+            return;
+          }
+        } catch (_) {}
+      }
+
       await UserStore.setCurrentUser(localUser.email);
       login();
       navigation.reset({ index: 0, routes: [{ name: redirectTo }] });

@@ -103,12 +103,12 @@ if (typeof document !== 'undefined') {
   const el = document.createElement('style');
   el.id = id;
   el.textContent = `
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Instrument+Serif&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700;800;900&display=swap');
     @keyframes ecomeFadeUp {
       from { opacity: 0; transform: translateY(8px); }
       to   { opacity: 1; transform: translateY(0); }
     }
-    .ecome-root { display: flex; flex-direction: column; height: 100vh; font-family: 'DM Sans', sans-serif; background: #fff; }
+    .ecome-root { display: flex; flex-direction: column; height: 100vh; font-family: 'Roboto', sans-serif; background: #fff; }
     .ecome-topbar { height: 56px; background-image: url(${PROFILE_RED_IMAGE_URI}); background-size: cover; background-position: center; border-bottom: 1px solid #EDEDED; display: flex; align-items: center; padding: 0 20px; gap: 14px; }
     .ecome-topbar button {
       background: transparent; border: none; padding: 0;
@@ -136,7 +136,7 @@ if (typeof document !== 'undefined') {
       display: inline-flex; align-items: center; gap: 6px; background: ${SHURU.primary}; color: #fff;
       font-size: 12px; font-weight: 700; padding: 6px 14px; border-radius: 999px; margin-bottom: 18px;
     }
-    .ecome-hero-title { font-family: 'DM Sans', sans-serif; font-size: 38px; font-weight: 800; line-height: 1.18; color: #1e293b; margin-bottom: 14px; }
+    .ecome-hero-title { font-family: 'Roboto', sans-serif; font-size: 38px; font-weight: 800; line-height: 1.18; color: #1e293b; margin-bottom: 14px; }
     .ecome-hero-title span { color: ${SHURU.primary}; }
     .ecome-hero-desc { font-size: 15px; color: #64748b; line-height: 1.6; max-width: 480px; margin-bottom: 22px; }
     .ecome-hero-features { display: flex; flex-wrap: wrap; gap: 22px; }

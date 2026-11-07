@@ -25,7 +25,7 @@ export function isValidImageUrl(url) {
 }
 
 export function buildPlaceholderImage(seedKey) {
-  return `https://picsum.photos/seed/${encodeURIComponent(seedKey)}/900/640`;
+  return '';
 }
 
 export function getMenuPresentation(menuKey) {
@@ -85,10 +85,9 @@ export function normalizeStoryItem(item, index = 0) {
   const title = String(item.title || '').trim();
   if (!title) return null;
   const rawImage =
-    (Array.isArray(item.images) ? item.images.find((u) => isValidImageUrl(u)) : '') ||
-    (isValidImageUrl(item.image) ? item.image : '') ||
-    (isValidImageUrl(item.author_profile_image) ? item.author_profile_image : '');
-  const storyImage = rawImage || buildPlaceholderImage(item.id || `story-${index}`);
+    (Array.isArray(item.images) ? item.images.find((u) => isValidImageUrl(u) && !String(u).includes('picsum.photos')) : '') ||
+    (isValidImageUrl(item.image) && !String(item.image).includes('picsum.photos') ? item.image : '');
+  const storyImage = rawImage || '';
    return {
     id: item.id || `story-${index}`,
     author_id: item.author_id ?? null,
@@ -114,11 +113,11 @@ export function normalizeStoryItem(item, index = 0) {
     author_is_subscriber: Boolean(item.author_is_subscriber || item.createdBySubscriber || false),
     image: storyImage,
     images: Array.isArray(item.images) && item.images.length
-      ? item.images.filter((u) => isValidImageUrl(u))
-      : [storyImage],
+      ? item.images.filter((u) => isValidImageUrl(u) && !String(u).includes('picsum.photos'))
+      : (storyImage ? [storyImage] : []),
     video: item.video || null,
     file: item.file || null,
-    mediaType: item.mediaType || (item.video ? 'Video' : 'Image'),
+    mediaType: item.mediaType || (item.video ? 'Video' : (item.file ? 'File' : (storyImage ? 'Image' : 'None'))),
     // Frame / template (Home, All Feed, Details sab jagah same dikhe) — pehle ye fields yahin drop ho jaate the
     useFrame: Boolean(item.useFrame),
     frameTemplate: item.frameTemplate || '',

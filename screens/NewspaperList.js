@@ -221,7 +221,7 @@
 //           >
 //             ← Back
 //           </button>
-//           <span style={{ fontSize: 18, fontWeight: 800, color: '#111', fontFamily: 'serif' }}>
+//           <span style={{ fontSize: 18, fontWeight: 800, color: '#111', fontFamily: 'Roboto' }}>
 //             📰 Newspaper
 //           </span>
 //         </div>

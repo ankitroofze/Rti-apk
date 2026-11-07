@@ -88,7 +88,38 @@ const readResponseBody = async (response, context) => {
   }
 };
 
+// ── High-Performance In-Memory Cache for GET Requests ─────────────
+const _apiGetCache = new Map();
+const API_CACHE_TTL_MS = 15000; // 15s in-memory cache for speed
+const NO_CACHE_PATTERNS = ['/verify-otp', '/orders/verify', '/logout'];
+
+const clearApiGetCache = (pattern = null) => {
+  if (!pattern) {
+    _apiGetCache.clear();
+    return;
+  }
+  for (const k of _apiGetCache.keys()) {
+    if (k.includes(pattern)) _apiGetCache.delete(k);
+  }
+};
+
+let _cachedAuthToken = null;
+
 const fetchWithDebug = async (endpoint, options = {}, debugBody = null, customTimeoutMs = null) => {
+  const method = String(options.method || 'GET').toUpperCase();
+  const isGet = method === 'GET';
+  const shouldSkipCache = options.skipCache === true || NO_CACHE_PATTERNS.some((p) => endpoint.includes(p));
+  const tokenHeader = options.headers?.Authorization || '';
+  const cacheKey = `${endpoint}::${tokenHeader}`;
+
+  // ✅ SPEED: Return instantly from in-memory cache if available (0ms)
+  if (isGet && !shouldSkipCache) {
+    const cached = _apiGetCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp < (options.cacheTtlMs || API_CACHE_TTL_MS))) {
+      return cached.result;
+    }
+  }
+
   const url = `${BASE_URL}${endpoint}`;
   const startedAt = Date.now();
   const effectiveTimeoutMs = customTimeoutMs || REQUEST_TIMEOUT_MS;
@@ -109,9 +140,6 @@ const fetchWithDebug = async (endpoint, options = {}, debugBody = null, customTi
   });
 
   try {
-    // ✅ FIX (stale data): GET responses browser / iOS NSURLSession cache se purane aa jaate the —
-    // isliye like/comment/follow badalne ke baad bhi refresh karna padta tha. GET hamesha server se fresh.
-    const isGet = String(options.method || 'GET').toUpperCase() === 'GET';
     const noCacheOptions = isGet
       ? {
           ...options,
@@ -140,8 +168,34 @@ const fetchWithDebug = async (endpoint, options = {}, debugBody = null, customTi
       durationMs: result.durationMs,
     });
 
+    if (isGet && result.ok && result.status === 200 && !shouldSkipCache) {
+      _apiGetCache.set(cacheKey, { timestamp: Date.now(), result });
+    } else if (!isGet && result.ok) {
+      // ✅ Invalidate related cached GET responses on mutation
+      if (endpoint.includes('/news') || endpoint.includes('/like') || endpoint.includes('/comment')) {
+        clearApiGetCache('/news');
+        clearApiGetCache('/my-news');
+        clearApiGetCache('/feeds');
+      }
+      if (endpoint.includes('/follow') || endpoint.includes('/unfollow') || endpoint.includes('/profile') || endpoint.includes('/users')) {
+        clearApiGetCache('/profile');
+        clearApiGetCache('/users');
+        clearApiGetCache('/follow');
+      }
+      if (endpoint.includes('/wallet') || endpoint.includes('/orders') || endpoint.includes('/withdraw')) {
+        clearApiGetCache('/wallet');
+        clearApiGetCache('/subscription');
+      }
+      if (endpoint.includes('/ecom')) {
+        clearApiGetCache('/ecom');
+      }
+      if (endpoint.includes('/ads')) {
+        clearApiGetCache('/ads');
+      }
+    }
+
     return result;
-   } catch (err) {
+  } catch (err) {
     const isTimeout = err?.name === 'AbortError';
     const logFn = isTimeout ? console.warn : console.error;
     logFn('[AuthAPI] Fetch failed:', {
@@ -157,18 +211,43 @@ const fetchWithDebug = async (endpoint, options = {}, debugBody = null, customTi
 };
 
 const getAuthToken = async () => {
-  const asyncToken = await AsyncStorage.getItem('auth_token');
-  if (asyncToken) return asyncToken;
+  if (_cachedAuthToken) return _cachedAuthToken;
 
-  if (typeof localStorage !== 'undefined') {
-    return localStorage.getItem('auth_token');
+  let token = null;
+  try {
+    token = await AsyncStorage.getItem('auth_token');
+    if (!token) token = await AsyncStorage.getItem('@auth_token');
+    if (!token) token = await AsyncStorage.getItem('token');
+  } catch {}
+
+  if (!token && typeof localStorage !== 'undefined') {
+    try {
+      token =
+        localStorage.getItem('auth_token') ||
+        localStorage.getItem('@auth_token') ||
+        localStorage.getItem('token');
+    } catch {}
+  }
+
+  if (!token && typeof sessionStorage !== 'undefined') {
+    try {
+      token =
+        sessionStorage.getItem('auth_token') ||
+        sessionStorage.getItem('@auth_token') ||
+        sessionStorage.getItem('token');
+    } catch {}
+  }
+
+  if (token) {
+    _cachedAuthToken = token;
+    return token;
   }
 
   return null;
 };
 
 // 🔒 Bearer token jin-jin jagah save hota hai (AsyncStorage + web localStorage/sessionStorage + purane '@' keys)
-const AUTH_TOKEN_KEYS = ['auth_token', '@auth_token'];
+const AUTH_TOKEN_KEYS = ['auth_token', '@auth_token', 'token'];
 const SESSION_EMAIL_KEYS = ['current_user_email', '@current_user_email'];
 
 const removeKeysEverywhere = async (keys) => {
@@ -181,6 +260,8 @@ const removeKeysEverywhere = async (keys) => {
 
 // ✅ expired / purana token hatane ke liye (har storage se)
 const clearAuthToken = async () => {
+  _cachedAuthToken = null;
+  clearApiGetCache();
   await removeKeysEverywhere(AUTH_TOKEN_KEYS);
 };
 
@@ -194,9 +275,14 @@ const clearLocalSession = async () => {
 const saveAuthToken = async (token) => {
   await clearAuthToken(); // 🔒 purana token hata do, chahe naya token mile ya na mile
   if (!token) return;
+  _cachedAuthToken = token;
   try {
     await AsyncStorage.setItem('auth_token', token);
-    if (typeof localStorage !== 'undefined') localStorage.setItem('auth_token', token);
+    await AsyncStorage.setItem('@auth_token', token);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('auth_token', token);
+      localStorage.setItem('@auth_token', token);
+    }
   } catch (e) {
     console.warn('[AuthAPI] Token save failed:', e);
   }
@@ -430,54 +516,73 @@ export const AuthAPI = {
    * POST /register
    * Body: firstname, middlename, lastname, phone, email, password, confirmed, referral_code
    */
-   register: async ({
-      firstName, middleName = '', lastName, mobile, email, password, referralCode = '', profileImage = '', bio = '', otp = '',
-      state = '', district = '', taluka = '', village = '',
-      stateId = '', districtId = '', talukaId = '', villageId = '',
-    }) => {
+  register: async (params = {}) => {
     try {
-      const { status, data } = await postJSON('/register', {
-        firstname:     firstName.trim(),
-        middlename:    middleName.trim(),
-        lastname:      lastName.trim(),
-        phone:         mobile.trim(),
-        email:         email.trim().toLowerCase(),
+      const firstName = params.firstName || params.firstname || params.first_name || '';
+      const middleName = params.middleName || params.middlename || params.middle_name || '';
+      const lastName = params.lastName || params.lastname || params.last_name || '';
+      const mobile = params.mobile || params.phone || '';
+      const email = params.email || '';
+      const password = params.password || '';
+      const referralCode = params.referralCode || params.referral_code || '';
+      const profileImage = params.profileImage || params.profile_image || '';
+      const bio = params.bio || '';
+      const otp = params.otp || '';
+
+      // ✅ Location: district, state, taluka, village hamesha payload me jayenge
+      const state = String(params.state || '').trim();
+      const district = String(params.district || params.district_name || params.selectedDistrict || '').trim();
+      const taluka = String(params.taluka || params.taluka_name || params.tehsil || '').trim();
+      const village = String(params.village || params.village_name || '').trim();
+
+      const stateId = params.stateId ?? params.state_id;
+      const districtId = params.districtId ?? params.district_id;
+      const talukaId = params.talukaId ?? params.taluka_id;
+      const villageId = params.villageId ?? params.village_id;
+
+      const payload = {
+        firstname:     String(firstName).trim(),
+        middlename:    String(middleName).trim(),
+        lastname:      String(lastName).trim(),
+        phone:         String(mobile).trim(),
+        email:         String(email).trim().toLowerCase(),
         password:      password,
         confirmed:     password,
-        referral_code: referralCode.trim() || '',
+        referral_code: String(referralCode).trim() || '',
         profile_image: profileImage || '',
-        bio:           bio.trim(),
-        // Server /register par otp field required rakhta hai, isliye hamesha bhejo.
-            otp:           String(otp || '').trim(),
-        // ✅ Location: names hamesha, IDs sirf jab available hon
-        state:         String(state || '').trim(),
-        district:      String(district || '').trim(),
-        taluka:        String(taluka || '').trim(),
-        village:       String(village || '').trim(),
-        ...(stateId    ? { state_id:    stateId }    : {}),
-        ...(districtId ? { district_id: districtId } : {}),
-        ...(talukaId   ? { taluka_id:   talukaId }   : {}),
-        ...(villageId  ? { village_id:  villageId }  : {}),
-      });
+        bio:           String(bio).trim(),
+        otp:           String(otp || '').trim(),
+        state:         state,
+        district:      district,
+        taluka:        taluka,
+        village:       village,
+      };
 
+      if (stateId !== undefined && stateId !== null && stateId !== '') payload.state_id = String(stateId);
+      if (districtId !== undefined && districtId !== null && districtId !== '') payload.district_id = String(districtId);
+      if (talukaId !== undefined && talukaId !== null && talukaId !== '') payload.taluka_id = String(talukaId);
+      if (villageId !== undefined && villageId !== null && villageId !== '') payload.village_id = String(villageId);
+
+      const { status, data } = await postJSON('/register', payload);
       if (status === 200 || status === 201) {
         // Token save karo future requests ke liye
-        const token = data?.token || data?.access_token || data?.authorization?.token || null;
-        // 🔒 Naya account: pehle purana token hata do (account switching me purana token reuse na ho)
-        await clearAuthToken();
-        if (token) {
-          try {
-            await AsyncStorage.setItem('auth_token', token);
-            // Web fallback
-            if (typeof localStorage !== 'undefined') {
-              localStorage.setItem('auth_token', token);
-            }
-          } catch {}
-        }
+        const token =
+          data?.token ||
+          data?.access_token ||
+          data?.authorization?.token ||
+          data?.authorisation?.token ||
+          data?.data?.token ||
+          data?.data?.access_token ||
+          data?.data?.authorization?.token ||
+          data?.data?.authorisation?.token ||
+          data?.bearer_token ||
+          data?.data?.bearer_token ||
+          null;
+        await saveAuthToken(token);
         return {
           ok:      true,
           data,
-          token:   data?.token || data?.access_token || null,
+          token:   token,
           user:    data?.user || data?.data?.user || data?.data || null,
           message: data?.message || 'Registration successful!',
         };
@@ -520,23 +625,23 @@ export const AuthAPI = {
       });
 
       if (status === 200 || status === 201) {
-        const token = data?.token || data?.access_token || data?.authorization?.token || null;
-        // 🔒 Naya login: pehle purana token hata do (account switching me purana token reuse na ho)
-        await clearAuthToken();
-        if (token) {
-          try {
-            await AsyncStorage.setItem('auth_token', token);
-            if (typeof localStorage !== 'undefined') {
-              localStorage.setItem('auth_token', token);
-            }
-          } catch (e) {
-            console.warn('[AuthAPI.login] Token save failed:', e);
-          }
-        }
+        const token =
+          data?.token ||
+          data?.access_token ||
+          data?.authorization?.token ||
+          data?.authorisation?.token ||
+          data?.data?.token ||
+          data?.data?.access_token ||
+          data?.data?.authorization?.token ||
+          data?.data?.authorisation?.token ||
+          data?.bearer_token ||
+          data?.data?.bearer_token ||
+          null;
+        await saveAuthToken(token);
         return {
           ok:      true,
           token:   token,
-          user:    data?.user  || null,
+          user:    data?.user  || data?.data?.user || data?.data || null,
           message: data?.message || 'Login successful!',
         };
       }
@@ -637,7 +742,18 @@ export const AuthAPI = {
       });
 
       if (status === 200 || status === 201) {
-        const token = data?.token || data?.access_token || data?.authorization?.token || null;
+        const token =
+          data?.token ||
+          data?.access_token ||
+          data?.authorization?.token ||
+          data?.authorisation?.token ||
+          data?.data?.token ||
+          data?.data?.access_token ||
+          data?.data?.authorization?.token ||
+          data?.data?.authorisation?.token ||
+          data?.bearer_token ||
+          data?.data?.bearer_token ||
+          null;
         await saveAuthToken(token);
         return {
           ok: true,
@@ -821,23 +937,49 @@ export const AuthAPI = {
   },
 
   /**
-   * Update State / District / Taluka
+   * Update State / District / Taluka / Village
    * POST /state
    * Headers: Authorization: Bearer {token}
-   * Body: state, district, taluka
+   * Body: state, district, taluka, village, state_id, district_id, taluka_id, village_id
    */
-  updateState: async ({ state, district, taluka, village = '' }, tokenOverride = null) => {
+  updateState: async (params = {}, tokenOverride = null) => {
     try {
-      const token = tokenOverride || await getAuthToken();
+      const token = tokenOverride || params?.token || await getAuthToken();
       if (!token) {
         return { ok: false, isAuth: true, message: 'Not logged in.' };
       }
 
-      const { status, data } = await postFormData('/state', {
-        state:    state    || '',
-        district: district || '',
-       taluka:   taluka   || '', village:  village  || '',
-      }, token);
+      const state = String(params?.state || '').trim();
+      const district = String(params?.district || '').trim();
+      const taluka = String(params?.taluka || '').trim();
+      const village = String(params?.village || '').trim();
+
+      const fields = {
+        state,
+        district,
+        taluka,
+        village,
+      };
+
+      const stateId = params?.state_id || params?.stateId;
+      const districtId = params?.district_id || params?.districtId;
+      const talukaId = params?.taluka_id || params?.talukaId;
+      const villageId = params?.village_id || params?.villageId;
+      if (stateId) fields.state_id = stateId;
+      if (districtId) fields.district_id = districtId;
+      if (talukaId) fields.taluka_id = talukaId;
+      if (villageId) fields.village_id = villageId;
+
+      let { status, data } = await postFormData('/state', fields, token);
+
+      // Fallback: agar backend content-type application/json prefer karta ho
+      if (status === 422 || status === 400 || status === 415) {
+        const jsonRetry = await postJSON('/state', fields, token);
+        if (jsonRetry.status === 200 || jsonRetry.status === 201) {
+          status = jsonRetry.status;
+          data = jsonRetry.data;
+        }
+      }
 
       if (status === 200 || status === 201) {
         return { ok: true, message: data?.message || 'Location updated successfully!', data };
@@ -856,6 +998,27 @@ export const AuthAPI = {
       return { ok: false, message: data?.message || `Server error (${status}).` };
     } catch (err) {
       console.error('[AuthAPI.updateState] Error:', err);
+      return { ok: false, isNetwork: true, message: 'Network error.' };
+    }
+  },
+
+  /**
+   * Get User State / District / Taluka / Village
+   * GET /state
+   * Headers: Authorization: Bearer {token}
+   */
+  getState: async (tokenOverride = null) => {
+    try {
+      const token = tokenOverride || await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+      const { status, data } = await getJSON('/state', token);
+      if (status === 200 || status === 201) {
+        return { ok: true, data: data?.data || data?.state || data };
+      }
+      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+      return { ok: false, message: data?.message || `Server error (${status}).` };
+    } catch (err) {
+      console.error('[AuthAPI.getState] Error:', err);
       return { ok: false, isNetwork: true, message: 'Network error.' };
     }
   },

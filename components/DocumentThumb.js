@@ -23,9 +23,13 @@ const KINDS = {
 const DEFAULT_KIND = { color: '#475569', bg: '#F1F5F9', label: 'FILE' };
 
 export function getFileExt(file) {
-  const raw = String(file?.name || file?.uri || '').split('?')[0].split('#')[0].toLowerCase();
-  const m = raw.match(/\.([a-z0-9]{1,5})$/);
-  return m ? m[1] : '';
+  const nameStr = typeof file === 'string' ? file : String(file?.name || '');
+  const uriStr = typeof file === 'object' ? String(file?.uri || file?.url || '') : '';
+  const mName = nameStr.split('?')[0].split('#')[0].toLowerCase().match(/\.([a-z0-9]{1,5})$/);
+  if (mName) return mName[1];
+  const mUri = uriStr.split('?')[0].split('#')[0].toLowerCase().match(/\.([a-z0-9]{1,5})$/);
+  if (mUri) return mUri[1];
+  return '';
 }
 
 export function isImageFile(file) {

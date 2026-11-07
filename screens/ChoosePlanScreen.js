@@ -12,8 +12,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // ── Theme ──────────────────────────────────────────────────────────────────────
-// This matches the web design system used on shuru.co.in (see promotion/form page):
-//   • Font family: "Poppins" everywhere
+//   • Font family: "Roboto" everywhere
 //   • Primary color: the brand orange used for buttons, borders & accents
 //   • Inputs / dropdowns: rounded-md (6px) border-radius with a solid primary border
 const FONT = {

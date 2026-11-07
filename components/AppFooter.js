@@ -112,24 +112,24 @@ export default function AppFooter({ navigation }) {
   };
 
   const quickLinks = [
-    { label: copy.common.home, action: { screen: 'Home' } },
-    { label: copy.common.feed, action: { screen: 'Feed' } },
-    { label: 'Create', action: { screen: 'QuickMenu' } },
-    { label: 'Advertise', action: { screen: 'Advertise' } },
+    { label: copy.common?.home || 'Home', action: { screen: 'Home' } },
+    { label: copy.common?.feed || 'Feed', action: { screen: 'Feed' } },
+    { label: copy.footer?.create || 'Create', action: { screen: 'QuickMenu' } },
+    { label: copy.footer?.advertise || 'Advertise', action: { screen: 'Advertise' } },
   ];
 
   const moreLinks = [
-    { label: 'Profile', action: { screen: 'Profile' } },
-    { label: 'Newspaper', action: { screen: 'Newspaper' } },
-    { label: copy.common.aboutUs, action: { screen: 'About' } },
-    { label: copy.common.privacy, action: { screen: 'InfoPage', params: { pageKey: 'privacy' } } },
+    { label: copy.common?.profile || 'Profile', action: { screen: 'Profile' } },
+    { label: copy.footer?.newspaper || 'Newspaper', action: { screen: 'Newspaper' } },
+    { label: copy.common?.aboutUs || 'About Us', action: { screen: 'About' } },
+    { label: copy.common?.privacy || 'Privacy', action: { screen: 'InfoPage', params: { pageKey: 'privacy' } } },
   ];
 
   const bottomLinks = [
-    { label: copy.common.aboutUs, action: { screen: 'About' } },
-    { label: copy.common.terms, action: { screen: 'InfoPage', params: { pageKey: 'terms' } } },
-    { label: copy.common.privacy, action: { screen: 'InfoPage', params: { pageKey: 'privacy' } } },
-    { label: copy.common.contactUs, action: { screen: 'Contact' } },
+    { label: copy.common?.aboutUs || 'About Us', action: { screen: 'About' } },
+    { label: copy.common?.terms || 'Terms', action: { screen: 'InfoPage', params: { pageKey: 'terms' } } },
+    { label: copy.common?.privacy || 'Privacy', action: { screen: 'InfoPage', params: { pageKey: 'privacy' } } },
+    { label: copy.common?.contactUs || 'Contact Us', action: { screen: 'Contact' } },
   ];
 
   return (
@@ -169,7 +169,7 @@ export default function AppFooter({ navigation }) {
           </View>
 
           <View style={styles.footerLinksCol}>
-            <Text style={styles.footerSectionTitle}>More</Text>
+            <Text style={styles.footerSectionTitle}>{copy.footer?.more || 'More'}</Text>
             {moreLinks.map((item) => (
               <TouchableOpacity key={item.label} style={styles.footerLinkRow} onPress={() => handleOpenAction(item.action)} activeOpacity={0.82}>
                 <Text style={styles.footerLinkText}>{item.label}</Text>
@@ -179,9 +179,9 @@ export default function AppFooter({ navigation }) {
           </View>
 
           <View style={styles.footerAboutCol}>
-            <Text style={styles.footerSectionTitle}>{copy.common.aboutUs}</Text>
+            <Text style={styles.footerSectionTitle}>{copy.common?.aboutUs || 'About Us'}</Text>
             <Text style={styles.footerAboutText}>
-              RTI News Network is a platform dedicated to transparent governance, citizen rights and authentic news from across India.
+              {copy.footer?.brandDescription || 'RTI News Network is a platform dedicated to transparent governance, citizen rights and authentic news from across India.'}
             </Text>
             <View style={styles.footerSocialRow}>
               {SOCIAL_LINK_ITEMS.map((item) => (
@@ -202,7 +202,7 @@ export default function AppFooter({ navigation }) {
 
         <View style={styles.footerBottomRow}>
           <Text style={styles.footerCopyrightText}>
-            © {new Date().getFullYear()} {copy.footer.brandTitle}. All rights reserved.
+            © {new Date().getFullYear()} {copy.footer?.brandTitle || 'RTI News Network'}. {copy.footer?.allRightsReserved || 'All rights reserved.'}
           </Text>
           <View style={styles.footerBottomLinksRow}>
             {bottomLinks.map((item, index) => (

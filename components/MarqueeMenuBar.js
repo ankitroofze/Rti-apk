@@ -10,6 +10,11 @@ const VISIBLE_COUNT = 9; // "All" + 8 pills visible, baaki "More" ke andar
   export default function MarqueeMenuBar({ activeMenuKey, onSelectMenu, commonCopy }) {
   const renderPill = (item) => {
     const isActive = (activeMenuKey || 'all') === item.key;
+    const label =
+      commonCopy?.[item.key] ||
+      commonCopy?.[item.labelKey] ||
+      (item.key === 'latest' ? commonCopy?.latestNews : null) ||
+      item.label;
     return (
       <TouchableOpacity
         key={item.key}
@@ -18,7 +23,7 @@ const VISIBLE_COUNT = 9; // "All" + 8 pills visible, baaki "More" ke andar
         activeOpacity={0.82}
       >
         <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
-          {item.label}
+          {label}
         </Text>
         {isActive ? <View style={styles.tabUnderline} /> : null}
       </TouchableOpacity>

@@ -263,7 +263,7 @@ export default function VillageSelectScreen({ navigation, route }) {
 
       await UserStore.setCurrentUser(pending.email);
       try {
-        await UserStore.completeLocationSetup(pending.email, selectedState, selectedDistrict, selectedTaluka, villageValue);
+        await UserStore.completeLocationSetup(pending.email, selectedState, selectedDistrict, selectedTaluka, villageValue, commit.token);
         await UserStore.clearPendingRegistration();
       } catch (e) { console.warn('[register] local setup failed:', e?.message || e); }
 
@@ -317,7 +317,7 @@ export default function VillageSelectScreen({ navigation, route }) {
 
       await UserStore.setCurrentUser(pending.email);
       try {
-        await UserStore.completeLocationSetup(pending.email, selectedState, selectedDistrict, selectedTaluka, '');
+        await UserStore.completeLocationSetup(pending.email, selectedState, selectedDistrict, selectedTaluka, '', commit.token);
         await UserStore.clearPendingRegistration();
       } catch (e) { console.warn('[register] local setup failed:', e?.message || e); }
 

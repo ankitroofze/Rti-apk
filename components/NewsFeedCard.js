@@ -36,7 +36,7 @@ import AutoFitAdImage from './AutoFitAdImage';
 import * as MediaDownloadButtonModule from './MediaDownloadButton';
 const MediaDownloadButton = MediaDownloadButtonModule.MediaDownloadButton || MediaDownloadButtonModule.default;
 import { MediaLogo } from './MediaBrandOverlay';
-import DocumentThumb, { getPostFile } from './DocumentThumb';
+import DocumentThumb, { getPostFile, isImageFile } from './DocumentThumb';
 import NewsFrameOverlay, { getFrameBoxAspect, getFrameWindow, getLowerBannerHeight } from './NewsFrameOverlay';
 import NewsVideoControls, { isHoverDevice } from './NewsVideoControls';
 import { getFrameTemplate } from '../constants/frameTemplates';
@@ -905,12 +905,14 @@ function NewsFeedCardInner({
   }, [story.id, engId]);
 
   const rawImageUri = useMemo(() => {
+    // Document/File attachment post par file ko hero image ki tarah nahi dikhana hai
+    if (story.mediaType === 'File' || story.file) return '';
     const candidates = [
       String(story.image || '').trim(),
       ...(Array.isArray(story.images) ? story.images.map((uri) => String(uri || '').trim()) : []),
     ].filter((uri) => isValidImageUrl(uri));
     return candidates[0] || '';
-  }, [story.image, story.images]);
+  }, [story.image, story.images, story.mediaType, story.file]);
 
   const [resolvedImageUri, setResolvedImageUri] = useState(null);
 
@@ -967,24 +969,28 @@ function NewsFeedCardInner({
     return videoUri;
   }, [resolvedVideoUri, videoUri]);
 
+  const canPlayVideo = Boolean(effectiveVideoUri) && isPlayableVideoSource(effectiveVideoUri);
+
   const effectiveImageUri = useMemo(() => {
     if (Platform.OS === 'web' && isIdbMediaUri(rawImageUri)) return resolvedImageUri || '';
     return rawImageUri;
   }, [rawImageUri, resolvedImageUri]);
 
-const safeImage = isValidImageUrl(effectiveImageUri)
+  const safeImage = isValidImageUrl(effectiveImageUri) && !String(effectiveImageUri).includes('picsum.photos')
     ? effectiveImageUri
-    : buildPlaceholderImage(story.id || story.title);
+    : '';
 
   const isFileAttachment = story.mediaType === 'File' && Boolean(story.file?.uri);
 
   // 2+ images => swipeable gallery. Bahar ka TouchableOpacity Android pe horizontal
   // swipe/scroll chheen leta tha, isliye gallery ke case me plain View use hota hai
   // (image tap MediaGallery ke andar onPressImage se handle hota hai).
-  const hasImageGallery = Array.isArray(story.images) && story.images.filter(Boolean).length > 1;
+  const galleryImages = (Array.isArray(story.images) ? story.images : [])
+    .filter((u) => isValidImageUrl(u) && !String(u).includes('picsum.photos'));
+  const hasImageGallery = galleryImages.length > 1;
   // ✅ Breaking-news red frame: sirf tab jab user ne news add karte time frame select kiya ho
   // Video par frame backend ne final MP4 me merge kar diya hai (`frameMerged`) — dobara overlay karne se double frame dikhta hai.
-  const framed = Boolean(story.useFrame) && !story.frameMerged && !isAdStory && !isFileAttachment;
+  const framed = Boolean(story.useFrame) && !story.frameMerged && !isAdStory && !isFileAttachment && (canPlayVideo || Boolean(safeImage));
   // Kaunsa template (glossy / bar / banner) — backend `frame_template`; purani news => default template
   const frameTpl = getFrameTemplate(story.frameTemplate);
   const frameWin = getFrameWindow(frameTpl);
@@ -1019,7 +1025,6 @@ const safeImage = isValidImageUrl(effectiveImageUri)
     return `https://rtinews.in/news/${encodeURIComponent(story.id || story.title || 'story')}`;
   }, [story.id, story.title, story.url]);
 
-  const canPlayVideo = Boolean(effectiveVideoUri) && isPlayableVideoSource(effectiveVideoUri);
   // ✅ Single image (news + ads): poori image apne asli ratio me dikhe — crop / zoom nahi
   const singleFitImage = !framed && !canPlayVideo && !isFileAttachment && !hasImageGallery && Boolean(safeImage);
   const { thumbnail: videoThumbnail, capturing: thumbnailCapturing } = useVideoThumbnail(
@@ -1613,7 +1618,10 @@ const handleLike = async () => {
     }
   };
 
-  const closeActionMenu = () => { setShowActionMenu(false); setMenuAnchor(null); };
+  const closeActionMenu = () => {
+    setShowActionMenu(false);
+    setTimeout(() => setMenuAnchor(null), 250);
+  };
   const toggleActionMenu = () => {
     if (showActionMenu) { closeActionMenu(); return; }
     if (Platform.OS === 'web' && moreBtnRef.current?.measureInWindow) {
@@ -1727,11 +1735,11 @@ const handleLike = async () => {
           : await UserStore.unfollowUser(storyAuthorEmail, storyAuthorId);
         if (result?.ok === false) {
           setIsFollowingAuthor(!nextFollowing);
-          showActionResult('Follow', result?.message || 'Unable to update follow status.');
+          showLoginToast(result?.message || 'Unable to update follow status.', 'info');
         }
       } catch {
         setIsFollowingAuthor(!nextFollowing);
-        showActionResult('Follow', 'Unable to update follow status.');
+        showLoginToast('Unable to update follow status.', 'info');
       }
     });
   };
@@ -2054,18 +2062,25 @@ const handleLike = async () => {
             </View>
           ) : hasImageGallery && mediaWidth ? (
             <MediaGallery
-              images={story.images}
+              images={galleryImages}
               width={framed ? Math.round(mediaWidth * frameWin.width) : mediaWidth}
               maxHeight={framed ? Math.round(frameBoxH * frameWin.height) : 480}
               downloadable={!isAdStory}
               frame={framed ? exportOptsFromStory(story).frame : null}
               onPressImage={handleImagePress}
             />
-          ) : singleFitImage && mediaWidth ? (
+          ) : singleFitImage && mediaWidth && safeImage ? (
             <AutoFitAdImage uri={safeImage} maxWidth={mediaWidth} maxHeight={520} />
-          ) : (
+          ) : safeImage ? (
             // image hamesha poori dikhe (contain) — crop / zoom nahi; khali jagah dark background se bharti hai
             <Image source={{ uri: safeImage }} style={[styles.storyHeroImage, { backgroundColor: '#0f172a' }]} resizeMode="contain" />
+          ) : (
+            <View style={styles.noMediaFeedWrap}>
+              <View style={styles.noMediaFeedCircle}>
+                <Ionicons name="images-outline" size={32} color="#94a3b8" />
+              </View>
+              <Text style={styles.noMediaFeedText}>No image / video</Text>
+            </View>
           )}
           </MediaBox>
           {/* ⬇ Download: news ki video / image (gallery me MediaGallery ka apna button hai) */}
@@ -2088,13 +2103,13 @@ const handleLike = async () => {
           {story.frameMerged ? null : <MediaLogo />}
           {story.isFeatured ? (
             <View style={styles.topStoryRibbon}>
-              <Text style={styles.topStoryRibbonText}>TOP STORY</Text>
+              <Text style={styles.topStoryRibbonText}>{commonCopy?.topStory || 'TOP STORY'}</Text>
             </View>
           ) : null}
           {/* Orange category tag (Breaking News etc.) hata diya — sirf ads par 'Sponsored' dikhega */}
           {isAdStory ? (
             <TouchableOpacity style={[styles.storyCategoryChip, { backgroundColor: `${categoryColor}CC` }]} onPress={handleAdPress} activeOpacity={0.84}>
-              <Text style={styles.storyCategoryChipText}>Sponsored</Text>
+              <Text style={styles.storyCategoryChipText}>{commonCopy?.sponsored || 'Sponsored'}</Text>
             </TouchableOpacity>
           ) : null}
 
@@ -2109,7 +2124,7 @@ const handleLike = async () => {
                 activeOpacity={0.85}
               >
                 <Ionicons name="document-text-outline" size={16} color="#ffffff" />
-                <Text style={styles.adLeadStripText}>Fill Lead Form</Text>
+                <Text style={styles.adLeadStripText}>{commonCopy?.fillLeadForm || 'Fill Lead Form'}</Text>
               </TouchableOpacity>
 
               {story.owner_mobile ? (
@@ -2119,7 +2134,7 @@ const handleLike = async () => {
                   activeOpacity={0.85}
                 >
                   <Ionicons name="call-outline" size={16} color="#ffffff" />
-                  <Text style={styles.adLeadStripText}>Call Now</Text>
+                  <Text style={styles.adLeadStripText}>{commonCopy?.callNow || 'Call Now'}</Text>
                 </TouchableOpacity>
               ) : null}
             </View>
@@ -2139,7 +2154,7 @@ const handleLike = async () => {
                   color="#ffffff"
                 />
                 <Text style={styles.adLeadStripText}>
-                  {story.redirect === 'shop' ? 'Visit Shop' : story.redirect === 'whatsapp' ? 'Message on Whatsapp' : 'Visit Website'}
+                  {story.redirect === 'shop' ? (commonCopy?.visitShop || 'Visit Shop') : story.redirect === 'whatsapp' ? (commonCopy?.messageOnWhatsapp || 'Message on Whatsapp') : (commonCopy?.visitWebsite || 'Visit Website')}
                 </Text>
               </TouchableOpacity>
               {story.owner_mobile ? (
@@ -2149,7 +2164,7 @@ const handleLike = async () => {
                   activeOpacity={0.85}
                 >
                   <Ionicons name="call-outline" size={16} color="#ffffff" />
-                  <Text style={styles.adLeadStripText}>Call Now</Text>
+                  <Text style={styles.adLeadStripText}>{commonCopy?.callNow || 'Call Now'}</Text>
                 </TouchableOpacity>
               ) : null}
             </View>
@@ -2160,7 +2175,7 @@ const handleLike = async () => {
               activeOpacity={0.85}
             >
               <Ionicons name="call-outline" size={16} color="#ffffff" />
-              <Text style={styles.adLeadStripText}>Call Now</Text>
+              <Text style={styles.adLeadStripText}>{commonCopy?.callNow || 'Call Now'}</Text>
             </TouchableOpacity>
           ) : null}
 
@@ -2225,7 +2240,7 @@ const handleLike = async () => {
               color={isLiked ? '#ef4444' : '#475569'} 
             />
                       <Text style={[styles.singleActionText, isLiked && styles.singleActionTextActive]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
-              Like{likesCount > 0 ? ` (${likesCount})` : ''}
+              {commonCopy?.like || 'Like'}{likesCount > 0 ? ` (${likesCount})` : ''}
             </Text>
           </TouchableOpacity>
 
@@ -2235,7 +2250,7 @@ const handleLike = async () => {
             activeOpacity={0.8}
           >
             <Ionicons name="chatbubble-outline" size={16} color="#475569" />
-            <Text style={styles.singleActionText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>Comment{commentsCount > 0 ? ` (${commentsCount})` : ''}</Text>
+            <Text style={styles.singleActionText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{commonCopy?.comment || 'Comment'}{commentsCount > 0 ? ` (${commentsCount})` : ''}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity 
@@ -2244,7 +2259,7 @@ const handleLike = async () => {
             activeOpacity={0.8}
           >
             <Ionicons name="arrow-redo-outline" size={16} color="#475569" />
-            <Text style={styles.singleActionText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>Share{sharesCount > 0 ? ` (${sharesCount})` : ''}</Text>
+            <Text style={styles.singleActionText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>{commonCopy?.share || 'Share'}{sharesCount > 0 ? ` (${sharesCount})` : ''}</Text>
           </TouchableOpacity>
 
         
@@ -2254,7 +2269,7 @@ const handleLike = async () => {
           <View style={styles.commentPreviewWrap}>
             {commentsCount > 0 ? (
               <TouchableOpacity onPress={handleComment} activeOpacity={0.8}>
-                <Text style={styles.commentPreviewViewAll}>View all {commentsCount} comments</Text>
+                <Text style={styles.commentPreviewViewAll}>{commonCopy?.viewAllCommentsPrefix || 'View all'} {commentsCount} {commonCopy?.comments || 'comments'}</Text>
               </TouchableOpacity>
             ) : null}
             {previewComments.map((c, pIdx) => (
@@ -2281,15 +2296,15 @@ const handleLike = async () => {
         <ReportModal visible={reportVisible} kind="post" onClose={() => setReportVisible(false)} onSubmit={submitPostReport} />
 
         {/* ── More Menu ── */}
-        <Modal visible={showActionMenu} transparent animationType={menuAnchor ? 'none' : 'fade'} statusBarTranslucent onRequestClose={closeActionMenu}>
+        <Modal visible={showActionMenu} transparent animationType={Platform.OS === 'web' ? 'none' : (menuAnchor ? 'none' : 'fade')} statusBarTranslucent onRequestClose={closeActionMenu}>
           <TouchableWithoutFeedback onPress={closeActionMenu}>
-            <View style={menuAnchor ? styles.storyMoreMenuBackdropWeb : styles.storyMoreMenuBackdrop}>
+            <View style={(Platform.OS === 'web' || menuAnchor) ? styles.storyMoreMenuBackdropWeb : styles.storyMoreMenuBackdrop}>
               <TouchableWithoutFeedback>
-                <View style={menuAnchor ? [styles.storyMoreMenu, { position: 'absolute', top: menuAnchor.top, left: menuAnchor.left }] : styles.storyMoreMenuSheet}>
-                  {!menuAnchor ? <View style={styles.storyMoreMenuHandle} /> : null}
+                <View style={(Platform.OS === 'web' || menuAnchor) ? [styles.storyMoreMenu, { position: 'absolute', top: menuAnchor?.top || 80, left: menuAnchor?.left || 80 }] : styles.storyMoreMenuSheet}>
+                  {(!menuAnchor && Platform.OS !== 'web') ? <View style={styles.storyMoreMenuHandle} /> : null}
                   <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleMenuShare} activeOpacity={0.82}>
                     <Ionicons name="share-social-outline" size={18} color="#0ea5e9" />
-                    <Text style={styles.storyMoreMenuText}>Share</Text>
+                    <Text style={styles.storyMoreMenuText}>{commonCopy?.share || 'Share'}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.storyMoreMenuItem}
@@ -2297,29 +2312,29 @@ const handleLike = async () => {
                     activeOpacity={0.82}
                   >
                     <Ionicons name="link-outline" size={18} color="#0ea5e9" />
-                    <Text style={styles.storyMoreMenuText}>Share link</Text>
+                    <Text style={styles.storyMoreMenuText}>{commonCopy?.shareLink || 'Share link'}</Text>
                   </TouchableOpacity>
                   {!isOwnStory && !isAdStory ? (
                     <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleReport} activeOpacity={0.82}>
                       <Ionicons name="flag-outline" size={18} color="#f59e0b" />
-                      <Text style={styles.storyMoreMenuText}>Report post</Text>
+                      <Text style={styles.storyMoreMenuText}>{commonCopy?.reportPost || 'Report post'}</Text>
                     </TouchableOpacity>
                   ) : null}
                   {(isOwnStory || isCurrentUserAdmin) ? (
                     <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleDeleteStory} activeOpacity={0.82}>
                       <Ionicons name="trash-outline" size={18} color="#ef4444" />
-                      <Text style={[styles.storyMoreMenuText, { color: '#ef4444', fontWeight: '700' }]}>Delete</Text>
+                      <Text style={[styles.storyMoreMenuText, { color: '#ef4444', fontWeight: '700' }]}>{commonCopy?.delete || 'Delete'}</Text>
                     </TouchableOpacity>
                   ) : null}
                   {hasFollowTarget && !isOwnStory && !isAdStory ? (
                     <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleBlockAuthor} activeOpacity={0.82}>
                       <Ionicons name="ban-outline" size={18} color="#ef4444" />
-                      <Text style={styles.storyMoreMenuText}>Block</Text>
+                      <Text style={styles.storyMoreMenuText}>{commonCopy?.block || 'Block'}</Text>
                     </TouchableOpacity>
                   ) : null}
-                  {!menuAnchor ? (
+                  {(!menuAnchor && Platform.OS !== 'web') ? (
                     <TouchableOpacity style={[styles.storyMoreMenuItem, { borderBottomWidth: 0, justifyContent: 'center' }]} onPress={closeActionMenu} activeOpacity={0.82}>
-                      <Text style={[styles.storyMoreMenuText, { color: '#64748b' }]}>Cancel</Text>
+                      <Text style={[styles.storyMoreMenuText, { color: '#64748b' }]}>{commonCopy?.cancel || 'Cancel'}</Text>
                     </TouchableOpacity>
                   ) : null}
                 </View>

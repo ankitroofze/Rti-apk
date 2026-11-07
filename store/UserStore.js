@@ -29,13 +29,13 @@ function resolveMediaUrl(path) {
   return `${MEDIA_ORIGIN}/storage/${value.replace(/^\/+/, '')}`;
 }
 
-const USERS_KEY        = 'users';
+const USERS_KEY = 'users';
 // 🔒 OTP_KEY / PENDING_REG_KEY ab sirf PURANE (legacy) AsyncStorage keys hain — inme kuch bhi likha nahi jata,
 // bas app start par purana raw password/OTP data delete karne ke liye use hote hain (purgeLegacySensitiveStorage).
-const OTP_KEY          = 'mock_reset_otps';
+const OTP_KEY = 'mock_reset_otps';
 const CURRENT_USER_KEY = 'current_user_email';
-const STATE_SEATS_KEY  = 'state_seat_allocations_v1';
-const PENDING_REG_KEY  = 'pending_registration_v1';
+const STATE_SEATS_KEY = 'state_seat_allocations_v1';
+const PENDING_REG_KEY = 'pending_registration_v1';
 // 🔒 Pending registration (password + OTP) SIRF memory me rehti hai, expiry ke saath. Disk/AsyncStorage/localStorage me kabhi nahi.
 const PENDING_REG_TTL_MS = 30 * 60 * 1000;      // register -> OTP -> location steps ke liye
 const PENDING_REG_DONE_TTL_MS = 10 * 60 * 1000; // server par account ban chuka, sirf local save baaki
@@ -61,7 +61,7 @@ const holdPendingRegistration = (payload, ttlMs) => {
 const purgeLegacySensitiveStorage = () => {
   if (_legacyPurgeStarted) return;
   _legacyPurgeStarted = true;
-  AsyncStorage.multiRemove([PENDING_REG_KEY, OTP_KEY]).catch(() => {});
+  AsyncStorage.multiRemove([PENDING_REG_KEY, OTP_KEY]).catch(() => { });
 };
 const NEWS_ACTION_LOG_KEY = 'news_feed_action_log_v1';
 const AD_LEAD_SUBMISSIONS_KEY = 'ad_lead_submissions_v1'; // 👈 NEW
@@ -99,7 +99,7 @@ const readEngagementFallback = async () => {
     };
   }
 
-state.likesByPost = state.likesByPost && typeof state.likesByPost === 'object' ? state.likesByPost : {};
+  state.likesByPost = state.likesByPost && typeof state.likesByPost === 'object' ? state.likesByPost : {};
   state.sharesByPost = state.sharesByPost && typeof state.sharesByPost === 'object' ? state.sharesByPost : {};
   state.viewsByPost = state.viewsByPost && typeof state.viewsByPost === 'object' ? state.viewsByPost : {};
   state.commentsByPost = state.commentsByPost && typeof state.commentsByPost === 'object' ? state.commentsByPost : {};
@@ -188,8 +188,8 @@ const getEngagementDb = async () => {
     `);
 
     // Lightweight migration for older db files.
-    try { await db.execAsync('ALTER TABLE post_comments ADD COLUMN parent_comment_id INTEGER'); } catch {}
-    try { await db.execAsync('CREATE INDEX IF NOT EXISTS idx_post_comments_parent ON post_comments(parent_comment_id)'); } catch {}
+    try { await db.execAsync('ALTER TABLE post_comments ADD COLUMN parent_comment_id INTEGER'); } catch { }
+    try { await db.execAsync('CREATE INDEX IF NOT EXISTS idx_post_comments_parent ON post_comments(parent_comment_id)'); } catch { }
     engagementDbInitialized = true;
   }
   return db;
@@ -423,35 +423,35 @@ const getEngagementForPostsFallback = async (postIds = [], currentEmail = '', fo
 };
 const STATE_SEAT_ROLES = [
   // National Level
-  { id: 'chief_editor_published',         name: 'Chief Editor / Publisher',        level: 'national' },
-  { id: 'executive_editor',               name: 'Executive Editor',                level: 'national' },
-  { id: 'deputy_editor_national',         name: 'Deputy Editor (National)',        level: 'national' },
-  { id: 'public_relations_officer',       name: 'Public Relations Officer (PRO)',  level: 'national' },
-  { id: 'national_bureau_chief',          name: 'National Bureau Chief',           level: 'national' },
+  { id: 'chief_editor_published', name: 'Chief Editor / Publisher', level: 'national' },
+  { id: 'executive_editor', name: 'Executive Editor', level: 'national' },
+  { id: 'deputy_editor_national', name: 'Deputy Editor (National)', level: 'national' },
+  { id: 'public_relations_officer', name: 'Public Relations Officer (PRO)', level: 'national' },
+  { id: 'national_bureau_chief', name: 'National Bureau Chief', level: 'national' },
   // State Level
-  { id: 'state_chief_editor',             name: 'State Chief Editor',              level: 'state' },
-  { id: 'state_bureau_chief',             name: 'State Bureau Chief',              level: 'state' },
-  { id: 'state_coordinator',              name: 'State Coordinator',               level: 'state' },
-  { id: 'senior_state_correspondent',     name: 'Senior State Correspondent',      level: 'state' },
-  { id: 'special_state_reporter',         name: 'Special State Reporter',          level: 'state' },
+  { id: 'state_chief_editor', name: 'State Chief Editor', level: 'state' },
+  { id: 'state_bureau_chief', name: 'State Bureau Chief', level: 'state' },
+  { id: 'state_coordinator', name: 'State Coordinator', level: 'state' },
+  { id: 'senior_state_correspondent', name: 'Senior State Correspondent', level: 'state' },
+  { id: 'special_state_reporter', name: 'Special State Reporter', level: 'state' },
   // District Level
-  { id: 'district_head',                  name: 'District Head',                   level: 'district' },
-  { id: 'district_bureau_chief',          name: 'District Bureau Chief',           level: 'district' },
-  { id: 'district_correspondent',         name: 'District Correspondent',          level: 'district' },
-  { id: 'senior_district_reporter',       name: 'Senior District Reporter',        level: 'district' },
-  { id: 'district_coordinator',           name: 'District Coordinator',            level: 'district' },
+  { id: 'district_head', name: 'District Head', level: 'district' },
+  { id: 'district_bureau_chief', name: 'District Bureau Chief', level: 'district' },
+  { id: 'district_correspondent', name: 'District Correspondent', level: 'district' },
+  { id: 'senior_district_reporter', name: 'Senior District Reporter', level: 'district' },
+  { id: 'district_coordinator', name: 'District Coordinator', level: 'district' },
   // Taluka Level
-  { id: 'taluka_head',                    name: 'Taluka Head',                     level: 'taluka' },
-  { id: 'taluka_correspondent',           name: 'Taluka Correspondent',            level: 'taluka' },
-  { id: 'sub_reporter',                   name: 'Sub-Reporter',                    level: 'taluka' },
-  { id: 'taluka_representative',          name: 'Taluka Representative',           level: 'taluka' },
-  { id: 'regional_reporter',              name: 'Regional Reporter',               level: 'taluka' },
+  { id: 'taluka_head', name: 'Taluka Head', level: 'taluka' },
+  { id: 'taluka_correspondent', name: 'Taluka Correspondent', level: 'taluka' },
+  { id: 'sub_reporter', name: 'Sub-Reporter', level: 'taluka' },
+  { id: 'taluka_representative', name: 'Taluka Representative', level: 'taluka' },
+  { id: 'regional_reporter', name: 'Regional Reporter', level: 'taluka' },
   // Village Level
-  { id: 'village_correspondent',          name: 'Village Correspondent',           level: 'village' },
-  { id: 'village_representative',         name: 'Village Representative',          level: 'village' },
-  { id: 'village_reporter',               name: 'Village Reporter',                level: 'village' },
-  { id: 'public_communication_associate', name: 'Public Communication Associate',  level: 'village' },
-  { id: 'rural_reporter',                 name: 'Rural Reporter',                  level: 'village' },
+  { id: 'village_correspondent', name: 'Village Correspondent', level: 'village' },
+  { id: 'village_representative', name: 'Village Representative', level: 'village' },
+  { id: 'village_reporter', name: 'Village Reporter', level: 'village' },
+  { id: 'public_communication_associate', name: 'Public Communication Associate', level: 'village' },
+  { id: 'rural_reporter', name: 'Rural Reporter', level: 'village' },
 ];
 
 // ✅ NEW: backend jo numeric role_id (1-6) plan ke saath bhejta hai, wo isi se
@@ -492,15 +492,15 @@ const CERTIFICATE_DIR = certificateDirectory
 const getRoleFromPlanId = (planId = '') => {
   const id = String(planId).toLowerCase();
   if (id === 'plan-premium') return 'premium';
-  if (id === 'plan-pro')     return 'pro';
-  if (id === 'plan-basic')   return 'basic';
+  if (id === 'plan-pro') return 'pro';
+  if (id === 'plan-basic') return 'basic';
   return 'free';
 };
 
 const ROLE_LABELS = {
-  free:    'Free Member',
-  basic:   'Basic Member',
-  pro:     'Pro Member',
+  free: 'Free Member',
+  basic: 'Basic Member',
+  pro: 'Pro Member',
   premium: 'Premium Member',
 };
 
@@ -519,12 +519,12 @@ const COMMISSION_LEVELS = [
 const isCommissionEligible = (user) => Boolean(hasBlueTick(user) || user.is_approved_representative);
 
 const RANK_TIERS = [
-  { rank: 'Director',  min: 500, bonus: 10000 },
-  { rank: 'Manager',   min: 100, bonus: 2000  },
-  { rank: 'Leader',    min: 25,  bonus: 500   },
-  { rank: 'Promoter',  min: 5,   bonus: 100   },
-  { rank: 'Starter',   min: 1,   bonus: 0     },
-  { rank: 'Member',    min: 0,   bonus: 0     },
+  { rank: 'Director', min: 500, bonus: 10000 },
+  { rank: 'Manager', min: 100, bonus: 2000 },
+  { rank: 'Leader', min: 25, bonus: 500 },
+  { rank: 'Promoter', min: 5, bonus: 100 },
+  { rank: 'Starter', min: 1, bonus: 0 },
+  { rank: 'Member', min: 0, bonus: 0 },
 ];
 
 const calculateRank = (referralCount = 0) => {
@@ -573,11 +573,11 @@ const generateUniqueReferralCode = (existingUsers = []) => {
 
 const defaultWalletTransactions = [
   {
-    id:     'txn-welcome-credit',
+    id: 'txn-welcome-credit',
     amount: 500,
-    type:   'credit',
+    type: 'credit',
     source: 'bonus',
-    date:   '2026-03-24',
+    date: '2026-03-24',
   },
 ];
 
@@ -617,8 +617,8 @@ let roleLookupPlans = []; // bina user-filter wali poori plans list (active plan
 const getRoleFromPlanName = (planName = '') => {
   const name = String(planName).toLowerCase();
   if (name.includes('premium')) return 'premium';
-  if (name.includes('pro'))     return 'pro';
-  if (name.includes('basic'))   return 'basic';
+  if (name.includes('pro')) return 'pro';
+  if (name.includes('basic')) return 'basic';
   return 'free';
 };
 
@@ -658,29 +658,29 @@ const normalizeBackendPlan = (raw = {}) => {
   const finalPrice = (offerPrice !== null && !Number.isNaN(offerPrice)) ? offerPrice : basePrice;
 
   return {
-    plan_id:      raw.id ?? raw.plan_id,          // ✅ real backend numeric id
-    plan_name:    planName,
-    price:        finalPrice,
+    plan_id: raw.id ?? raw.plan_id,          // ✅ real backend numeric id
+    plan_name: planName,
+    price: finalPrice,
     original_price: (offerPrice !== null && offerPrice !== basePrice) ? basePrice : null,
-    duration:     raw.days ? `${raw.days} Days` : (raw.duration || ''),
-    credits:      Number(raw.credits ?? 0),
-    state:        raw.state || '',
-    district:     raw.district || '',
-   taluka:       raw.taluka || '', village:      raw.village || '',
+    duration: raw.days ? `${raw.days} Days` : (raw.duration || ''),
+    credits: Number(raw.credits ?? 0),
+    state: raw.state || '',
+    district: raw.district || '',
+    taluka: raw.taluka || '', village: raw.village || '',
     // ✅ NEW: admin plan ek baar banata hai aur level set karta hai (state/district/taluka/village).
     // Level plan me fixed location nahi hoti — user apni location chunta hai, Sold check
     // usi (plan + level tak ki location) par hota hai.
     location_level: normalizeLocationLevel(raw.location_level || raw.level || raw.seat_level || ''),
-    description:  raw.description || '',
-role_id_raw:  raw.role_id || '',               // ✅ comma-separated multi-role id, ab handled
+    description: raw.description || '',
+    role_id_raw: raw.role_id || '',               // ✅ comma-separated multi-role id, ab handled
     validity_days: Number(raw.days || raw.validity_days || 30),
     // ✅ Sold flag — sirf tab true hoga jab backend plans list me ye field bheje
     // (is_sold / sold / is_taken / seat_taken / is_available:false). Warna false.
-        is_sold: [raw.is_sold, raw.sold, raw.is_taken, raw.seat_taken].some((v) => v === true || v === 1 || v === '1' || String(v).toLowerCase() === 'true') || raw.is_available === false || raw.is_available === 0 || raw.is_available === '0',
-    features:     Array.isArray(raw.features) ? raw.features : [],
+    is_sold: [raw.is_sold, raw.sold, raw.is_taken, raw.seat_taken].some((v) => v === true || v === 1 || v === '1' || String(v).toLowerCase() === 'true') || raw.is_available === false || raw.is_available === 0 || raw.is_available === '0',
+    features: Array.isArray(raw.features) ? raw.features : [],
     // ✅ FIX: plan ke naam se hi role decide hoga (premium/pro/basic/free) — jo plan buy karoge wahi role milega
-    role:         getRoleFromPlanName(planName),
-    is_premium:   Boolean(raw.is_premium),
+    role: getRoleFromPlanName(planName),
+    is_premium: Boolean(raw.is_premium),
   };
 };
 
@@ -788,7 +788,7 @@ const buildCommentTreeFromApi = (rawList = [], { sort = true, me = null } = {}) 
     else if (__DEV__) console.log('[COMMENTS-ORPHAN-REPLY-SKIPPED]', c.id, c.parent_comment_id); // reply ko top-level comment mat banao, replies /comments/{id}/replies se aate hain
   });
 
-   if (sort) {
+  if (sort) {
     topLevel.sort((a, b) => String(b.id).localeCompare(String(a.id)));
     topLevel.forEach((c) => c.replies.sort((a, b) => String(b.id).localeCompare(String(a.id))));
   }
@@ -817,7 +817,11 @@ const fetchBackendCommentsForPost = async (postId) => {
 
 const normalizeEcomDetail = (raw = {}) => {
   const owner = raw.user || raw.owner || {};
-  const rawImages = Array.isArray(raw.images) ? raw.images : (raw.image ? [raw.image] : []);
+  const rawImages = Array.isArray(raw.images) ? raw.images : (raw.image ? [raw.image] : (raw.photo ? [raw.photo] : []));
+  const cleanImages = rawImages
+    .map((img) => (typeof img === 'string' ? img : (img?.url || img?.path || img?.uri || '')))
+    .filter((u) => u && typeof u === 'string' && !u.includes('picsum.photos'));
+  const primaryImage = cleanImages[0] || (typeof raw.image === 'string' && !raw.image.includes('picsum.photos') ? raw.image : '') || '';
   const userId = String(raw.user_id ?? owner.id ?? '').trim();
   const ownerEmail = String(owner.email || raw.owner_email || '').trim().toLowerCase();
   return {
@@ -837,10 +841,12 @@ const normalizeEcomDetail = (raw = {}) => {
     start_date: raw.start_date || '',
     end_date: raw.end_date || '',
     status: raw.status !== undefined && raw.status !== null ? Number(raw.status) : 1,
-    mediaItems: rawImages.map((img) => ({
-      uri: typeof img === 'string' ? img : (img?.url || img?.path || ''),
+    image: primaryImage,
+    images: cleanImages,
+    mediaItems: cleanImages.map((uri) => ({
+      uri,
       type: 'image',
-    })).filter((m) => m.uri),
+    })),
     createdBy: ownerEmail || userId,
     owner_email: ownerEmail,
     owner_name: owner.name || raw.author_name || 'Seller',
@@ -852,10 +858,10 @@ const normalizeEcomDetail = (raw = {}) => {
 };
 
 const defaultActiveSubscription = {
-  plan_id:   'plan-basic',
+  plan_id: 'plan-basic',
   plan_name: 'Basic Access',
-  price:     199,
-  duration:  '30 Days',
+  price: 199,
+  duration: '30 Days',
 };
 
 // ✅ FIX: purana guess-based ID mapping (1,2,3) hata diya — ab plan_id backend ka real numeric id hai,
@@ -909,9 +915,9 @@ const defaultCertifications = [
 ];
 
 const defaultNotifications = [
-  { id: 'notif-1', title: 'Welcome to RTI News',     message: 'Your account setup is complete and modules are ready to use.', date: '2026-03-24', status: 'Unread' },
-  { id: 'notif-2', title: 'Wallet Bonus Added',       message: 'Welcome bonus has been credited to your wallet successfully.',  date: '2026-03-24', status: 'Read'   },
-  { id: 'notif-3', title: 'Profile Update Reminder',  message: 'Complete your profile details to unlock better visibility.',    date: '2026-03-23', status: 'Unread' },
+  { id: 'notif-1', title: 'Welcome to RTI News', message: 'Your account setup is complete and modules are ready to use.', date: '2026-03-24', status: 'Unread' },
+  { id: 'notif-2', title: 'Wallet Bonus Added', message: 'Welcome bonus has been credited to your wallet successfully.', date: '2026-03-24', status: 'Read' },
+  { id: 'notif-3', title: 'Profile Update Reminder', message: 'Complete your profile details to unlock better visibility.', date: '2026-03-23', status: 'Unread' },
 ];
 
 const defaultSettings = { language: 'English', password: '' };
@@ -919,7 +925,7 @@ const defaultSettings = { language: 'English', password: '' };
 // ─── Normalizers ──────────────────────────────────────────────────────────────
 
 const getWalletTransactionSortValue = (transaction = {}) => {
-  const idValue   = Number(String(transaction.id || '').replace(/\D/g, '')) || 0;
+  const idValue = Number(String(transaction.id || '').replace(/\D/g, '')) || 0;
   const dateValue = new Date(transaction.date || 0).getTime();
   return Number.isFinite(dateValue) && dateValue > 0 ? dateValue + idValue : idValue;
 };
@@ -928,11 +934,11 @@ const normalizeWalletTransactions = (transactions = []) => {
   if (!Array.isArray(transactions) || !transactions.length) return defaultWalletTransactions;
   return transactions
     .map((t, i) => ({
-      id:     t.id     || `txn-${i + 1}`,
+      id: t.id || `txn-${i + 1}`,
       amount: Number(t.amount || t.credit || 0),
-      type:   t.type   || (Number(t.credit || 0) > 0 ? 'credit' : 'debit'),
+      type: t.type || (Number(t.credit || 0) > 0 ? 'credit' : 'debit'),
       source: `${t.source || t.transaction_type || 'commission'}${String(t.status || '').toLowerCase() === 'pending' ? ' (Pending)' : ''}`,
-      date:   t.date   || '2026-03-24',
+      date: t.date || '2026-03-24',
     }))
     .sort((a, b) => getWalletTransactionSortValue(b) - getWalletTransactionSortValue(a));
 };
@@ -941,37 +947,37 @@ const normalizeWithdrawRequests = (requests = []) => {
   if (!Array.isArray(requests)) return [];
   return requests.map((r, i) => ({
     ...r, // API ke extra fields (paid_at, fee, tds, net_amount, utr ...) — invoice / receipt me kaam aate hain
-    id:                  r.id                  || `withdraw-${i + 1}`,
-    amount:              Number(r.amount       || 0),
-    payment_mode:        r.payment_mode || r.method || 'bank',
+    id: r.id || `withdraw-${i + 1}`,
+    amount: Number(r.amount || 0),
+    payment_mode: r.payment_mode || r.method || 'bank',
     account_holder_name: r.account_holder_name || '',
-    bank_name:           r.bank_name      || '',
-    account_number:      r.account_number || '',
-    ifsc:                r.ifsc_code || r.ifsc || '',
-    ifsc_code:           r.ifsc_code || r.ifsc || '',
-    upi_id:              r.upi_id         || '',
-    pan_number:          r.pan_number     || '',
-    status:              r.status         || 'pending',
-    payout_reference:    r.payout_reference || null,
-    rejection_reason:    r.rejection_reason || null,
-    date:                r.date || r.created_at || '2026-03-24',
-    created_at:          r.created_at || r.date || null,
-    processed_at:        r.processed_at || r.paid_at || r.approved_at || r.updated_at || null,
+    bank_name: r.bank_name || '',
+    account_number: r.account_number || '',
+    ifsc: r.ifsc_code || r.ifsc || '',
+    ifsc_code: r.ifsc_code || r.ifsc || '',
+    upi_id: r.upi_id || '',
+    pan_number: r.pan_number || '',
+    status: r.status || 'pending',
+    payout_reference: r.payout_reference || null,
+    rejection_reason: r.rejection_reason || null,
+    date: r.date || r.created_at || '2026-03-24',
+    created_at: r.created_at || r.date || null,
+    processed_at: r.processed_at || r.paid_at || r.approved_at || r.updated_at || null,
   }));
 };
 const normalizeSubscription = (s = {}) => ({
-  plan_id:   s.plan_id   || defaultActiveSubscription.plan_id,
+  plan_id: s.plan_id || defaultActiveSubscription.plan_id,
   plan_name: s.plan_name || defaultActiveSubscription.plan_name,
-  price:     Number(s.price ?? defaultActiveSubscription.price),
-  duration:  s.duration  || defaultActiveSubscription.duration,
-  features:  Array.isArray(s.features) ? s.features : [],
-  credits:   Number(s.credits ?? 0),
-  role:      s.role      || getRoleFromPlanId(s.plan_id),
-   purchased_at: s.purchased_at || null,
-  role_id_raw:  s.role_id_raw  || '',
+  price: Number(s.price ?? defaultActiveSubscription.price),
+  duration: s.duration || defaultActiveSubscription.duration,
+  features: Array.isArray(s.features) ? s.features : [],
+  credits: Number(s.credits ?? 0),
+  role: s.role || getRoleFromPlanId(s.plan_id),
+  purchased_at: s.purchased_at || null,
+  role_id_raw: s.role_id_raw || '',
   validity_days: s.validity_days || undefined,
-    expires_at:   s.expires_at   || null,
-  is_premium:   Boolean(s.is_premium),
+  expires_at: s.expires_at || null,
+  is_premium: Boolean(s.is_premium),
 });
 const normalizeSubscriptionPlan = (plan) => {
   if (!plan || (!plan.plan_id && !plan.plan_name)) return null;
@@ -1021,35 +1027,35 @@ const cleanRichTextToPlain = (value = '') =>
 const normalizeNewsFeed = (items = []) => {
   const src = Array.isArray(items) && items.length ? items : [];
   return src.map((item, i) => ({
-      id:          item.id          || `news-${i + 1}`,
-    type:        Number(item.type) === 2 ? 2 : 1,
-    createdBy:   String(item.createdBy || item.created_by || '').trim().toLowerCase(),
+    id: item.id || `news-${i + 1}`,
+    type: Number(item.type) === 2 ? 2 : 1,
+    createdBy: String(item.createdBy || item.created_by || '').trim().toLowerCase(),
     // ✅ FIX: author_id (mapApiNewsToFeedItem se aata hai) pehle yahan drop ho
     // jaata tha — isliye NewsFeedCard se profile pe navigate karte waqt userId
     // hamesha null jaata tha aur follow API target id resolve nahi kar paata tha.
-    author_id:   item.author_id ?? item.authorId ?? null,
+    author_id: item.author_id ?? item.authorId ?? null,
     author_email: String(item.author_email || '').trim().toLowerCase(),
-    title:       cleanRichTextToPlain(item.title || '') || 'News Update',
+    title: cleanRichTextToPlain(item.title || '') || 'News Update',
     description: cleanRichTextToPlain(item.description || item.subtitle || ''),
-    subtitle:    cleanRichTextToPlain(item.subtitle || ''),
-    media:       item.media || (item.mediaType === 'Image'
+    subtitle: cleanRichTextToPlain(item.subtitle || ''),
+    media: item.media || (item.mediaType === 'Image'
       ? `${item.images?.length || 0} image(s)`
       : item.mediaType === 'Video' ? 'video attached'
-      : item.mediaType === 'File' ? (item.file?.name ? `file: ${item.file.name}` : 'file attached')
-      : 'no media'),
-    category:    item.category || item.state || 'General',
+        : item.mediaType === 'File' ? (item.file?.name ? `file: ${item.file.name}` : 'file attached')
+          : 'no media'),
+    category: item.category || item.state || 'General',
     report_type: item.report_type || item.category || '',
-    language:    String(item.language || item.lang || item.news_language || '').trim().toLowerCase(),
-    mediaType:   item.mediaType || 'None',
-    useFrame:    Boolean(item.useFrame),
+    language: String(item.language || item.lang || item.news_language || '').trim().toLowerCase(),
+    mediaType: item.mediaType || 'None',
+    useFrame: Boolean(item.useFrame),
     frameTemplate: item.frameTemplate || '',
     frameMerged: Boolean(item.frameMerged),
-    musicUrl:    item.musicUrl || '',
+    musicUrl: item.musicUrl || '',
     musicVolume: item.musicVolume ?? 0.6,
     muteOriginal: Boolean(item.muteOriginal),
-    state:       item.state || item.category || 'General',
-    district:    item.district || '',
-    taluka:      item.taluka || '',
+    state: item.state || item.category || 'General',
+    district: item.district || '',
+    taluka: item.taluka || '',
     author_name: item.author_name || item.createdByName || item.createdBy || 'RTI News',
     author_profile_image: item.author_profile_image || item.authorProfileImage || item.createdByProfileImage || item.profile_image || '',
     author_subscription_plan: item.author_subscription_plan || item.authorSubscriptionPlan || null,
@@ -1066,19 +1072,19 @@ const normalizeNewsFeed = (items = []) => {
     author_role_label: item.author_role_label || item.authorRoleLabel || item.createdByRoleLabel || '',
     author_seat_id: String(item.author_seat_id || item.authorSeatId || item.createdBySeatId || '').trim(),
     author_seat_name: String(item.author_seat_name || item.authorSeatName || item.createdBySeatName || '').trim(),
-        liked_by:    Array.isArray(item.liked_by) ? item.liked_by : [],
+    liked_by: Array.isArray(item.liked_by) ? item.liked_by : [],
     liked_by_me: item.liked_by_me === undefined ? undefined : Boolean(item.liked_by_me),
     latest_comments: Array.isArray(item.latest_comments) ? item.latest_comments : [],
     comments_list: normalizeComments(item.comments_list),
-    images:      Array.isArray(item.images) ? item.images : [],
-    video:       item.video || null,
-    file:        item.file || null,
-    date:        item.date        || '2026-03-24',
-    createdAt:   item.createdAt || item.created_at || item.date || '',
-    views:       Number(item.views  || 0),
-    shares:      Number(item.shares || 0),
-    likes:       Number(item.likes  || 0),
-    comments:    Number(item.comments ?? (Array.isArray(item.comments_list) ? item.comments_list.length : 0)),
+    images: Array.isArray(item.images) ? item.images : [],
+    video: item.video || null,
+    file: item.file || null,
+    date: item.date || '2026-03-24',
+    createdAt: item.createdAt || item.created_at || item.date || '',
+    views: Number(item.views || 0),
+    shares: Number(item.shares || 0),
+    likes: Number(item.likes || 0),
+    comments: Number(item.comments ?? (Array.isArray(item.comments_list) ? item.comments_list.length : 0)),
   }));
 };
 
@@ -1120,12 +1126,29 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
   const mediaTypeRaw = apiItem.media_type ?? apiItem.mediaType ?? 0;
   // 1 = image, 2 = video, 3 = PDF, 4 = external URL
   const mediaTypeMap = { 0: 'None', 1: 'Image', 2: 'Video', 3: 'File', 4: 'Link' };
-  const mediaType = mediaTypeMap[Number(mediaTypeRaw)] || 'None';
-   // ✅ Video ke liye backend ka `media` hi final processed video hai (music/voice/frame apply ho chuka) —
-   // wahi URL player me use hota hai. Local selected video ka URL kabhi dobara nahi banate.
-   const mediaUrl = (mediaType === 'Video'
-     ? (apiItem.media || apiItem.media_url)
-     : (apiItem.media_url || apiItem.media)) || '';
+  let mediaType = 'None';
+  if (typeof mediaTypeRaw === 'string' && ['none', 'image', 'video', 'file', 'link'].includes(mediaTypeRaw.trim().toLowerCase())) {
+    mediaType = mediaTypeRaw.trim().charAt(0).toUpperCase() + mediaTypeRaw.trim().slice(1).toLowerCase();
+  } else {
+    mediaType = mediaTypeMap[Number(mediaTypeRaw)] || 'None';
+  }
+
+  const rawVideo = apiItem.video || apiItem.video_url || '';
+  const isVideoExt = (u) => {
+    const raw = String(u || '').split('?')[0].split('#')[0].toLowerCase();
+    return /\.(mp4|m4v|webm|mov|mkv|3gp|avi|flv)$/i.test(raw);
+  };
+
+  // ✅ Video ke liye backend ka `media` hi final processed video hai (music/voice/frame apply ho chuka) —
+  // wahi URL player me use hota hai. Local selected video ka URL kabhi dobara nahi banate.
+  const mediaUrl = (mediaType === 'Video'
+    ? (apiItem.media || apiItem.media_url || rawVideo)
+    : (apiItem.media_url || apiItem.media || rawVideo)) || '';
+
+  // Agar media_type 0/None ho lekin URL me video ho ya rawVideo ho, to mediaType Video treat karo
+  if (mediaType === 'None' && (isVideoExt(mediaUrl) || isVideoExt(rawVideo) || Boolean(rawVideo))) {
+    mediaType = 'Video';
+  }
 
   // ✅ FIX: multiple images — pehli image (media_url) + baaki sab images (backend kisi bhi
   // key me bheje: images / news_images / media_images ...), duplicate hata ke ek list banao.
@@ -1147,7 +1170,14 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
     seenImageKeys.add(key);
     collectedImages.push(u);
   };
-  if (mediaType === 'Image') {
+  const isImageByExt = (u) => {
+    const raw = String(u || '').split('?')[0].split('#')[0].toLowerCase();
+    const m = raw.match(/\.([a-z0-9]{1,5})$/);
+    return m ? ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'avif', 'heic'].includes(m[1]) : false;
+  };
+  // ✅ FIX: Jab user ne Document add kiya ho (mediaType === 'File'), use hamesha Document hi treat karo, Image me convert mat karo
+  const shouldCollectImages = mediaType === 'Image' || (mediaType !== 'File' && (isImageByExt(mediaUrl) || (Array.isArray(apiItem.images) && apiItem.images.length > 0)));
+  if (shouldCollectImages) {
     pushImage(mediaUrl);
     [
       apiItem.images, apiItem.news_images, apiItem.media_images, apiItem.extra_images,
@@ -1172,13 +1202,13 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
   }
 
   return {
-       id: apiItem.id ?? apiItem._id,
+    id: apiItem.id ?? apiItem._id,
     type: Number(apiItem.type) === 2 ? 2 : 1, // 1 = News, 2 = Feed (Reel); purani posts = 1
     author_id: author.id ?? apiItem.user_id ?? null,
     createdBy: String(author.email || apiItem.created_by || '').trim().toLowerCase(),
     author_email: String(author.email || apiItem.created_by || '').trim().toLowerCase(),
     title: apiItem.tittle || apiItem.title || '',
-   subtitle: apiItem.sub_tittle || apiItem.sub_title || apiItem.subtitle || '',
+    subtitle: apiItem.sub_tittle || apiItem.sub_title || apiItem.subtitle || '',
     description: apiItem.description || '',
     category: apiItem.report_type || apiItem.category || 'General',
     report_type: apiItem.report_type || apiItem.category || '',
@@ -1195,9 +1225,9 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
     frameMerged: [1, '1', true, 'true'].includes(apiItem.frame_merged ?? apiItem.is_frame_merged),
     mediaType,
     media: mediaType === 'Image' ? undefined : mediaUrl,
-images: mediaType === 'Image' ? collectedImages : [],
+    images: mediaType === 'Image' ? collectedImages : [],
     // video hamesha plain string URL (cards String(video) karte hain; object => "[object Object]")
-    video: mediaType === 'Video' && mediaUrl ? resolveMediaUrl(mediaUrl) : null,
+    video: (mediaType === 'Video' || isVideoExt(mediaUrl) || Boolean(rawVideo)) && (rawVideo || mediaUrl) ? resolveMediaUrl(rawVideo || mediaUrl) : null,
     file: mediaType === 'File' && mediaUrl ? { uri: mediaUrl, name: apiItem.media_name || 'file' } : null,
     author_name: author.name || apiItem.author_name || 'RTI News',
     author_profile_image: author.profile_image_url || author.profile_image || '',
@@ -1225,10 +1255,10 @@ images: mediaType === 'Image' ? collectedImages : [],
     // The API's view total is authoritative. Different deployments use
     // different field names, so preserve all common response variants.
     views: toApiCount(apiItem.views, apiItem.views_count, apiItem.view_count, apiItem.total_views),
-     shares: Number(apiItem.share_count ?? apiItem.shares ?? 0),
+    shares: Number(apiItem.share_count ?? apiItem.shares ?? 0),
     likes: Number(apiItem.likes || apiItem.likes_count || 0),
     comments: Number(apiItem.comments || apiItem.comments_count || 0),
-        liked_by: Array.isArray(apiItem.liked_by) ? apiItem.liked_by : [],
+    liked_by: Array.isArray(apiItem.liked_by) ? apiItem.liked_by : [],
     liked_by_me: apiItem.liked_by_me === undefined ? undefined : Boolean(apiItem.liked_by_me),
     latest_comments: Array.isArray(apiItem.latest_comments) ? apiItem.latest_comments.slice(0, 2) : [],
   };
@@ -1255,12 +1285,12 @@ const getRelativeTimeLabel = (dateLike) => {
 };
 
 const REEL_TAG_COLORS = {
-  Crime:    '#ef4444',
-  Murder:   '#ef4444',
+  Crime: '#ef4444',
+  Murder: '#ef4444',
   Accident: '#f97316',
   Politics: '#3b82f6',
-  Other:    '#14b8a6',
-  General:  '#16a34a',
+  Other: '#14b8a6',
+  General: '#16a34a',
 };
 
 const getReelVideoUri = (item = {}) => {
@@ -1364,8 +1394,8 @@ const normalizeUserNewsItems = (items = []) => {
       media: item.media || (item.mediaType === 'Image'
         ? `${item.images?.length || 0} image(s)`
         : item.mediaType === 'Video' ? 'video attached'
-        : item.mediaType === 'File' ? (item.file?.name ? `file: ${item.file.name}` : 'file attached')
-        : 'no media'),
+          : item.mediaType === 'File' ? (item.file?.name ? `file: ${item.file.name}` : 'file attached')
+            : 'no media'),
       category: item.category || item.state || 'General',
       language: String(item.language || item.lang || item.news_language || '').trim().toLowerCase(),
       mediaType: item.mediaType || 'None',
@@ -1390,15 +1420,15 @@ const normalizeUserNewsItems = (items = []) => {
       liked_by: Array.isArray(item.liked_by) ? item.liked_by : [],
       comments_list: normalizeComments(item.comments_list),
       images: Array.isArray(item.images) ? item.images : [],
-image: Array.isArray(item.images) && item.images.length > 0
-  ? item.images[0]
-  : (item.image || ''),
-thumbnail: Array.isArray(item.images) && item.images.length > 0
-  ? item.images[0]
-  : (item.thumbnail || item.image || ''),
-video: item.video || null,
-file: item.file || null,
-date: item.date, createdAt: item.createdAt || item.date,
+      image: Array.isArray(item.images) && item.images.length > 0
+        ? item.images[0]
+        : (item.image || ''),
+      thumbnail: Array.isArray(item.images) && item.images.length > 0
+        ? item.images[0]
+        : (item.thumbnail || item.image || ''),
+      video: item.video || null,
+      file: item.file || null,
+      date: item.date, createdAt: item.createdAt || item.date,
       status: item.status || 'approved',
       views: Number(item.views || 0), shares: Number(item.shares || 0),
       likes: Number(item.likes || 0),
@@ -1527,25 +1557,25 @@ const normalizeEPapers = (items = []) => {
   const src = Array.isArray(items) && items.length ? items : defaultEPapers;
   return src
     .map((item, i) => ({
-      id:           item.id           || `epaper-${i + 1}`,
-      title:        item.title        || `e-Paper ${i + 1}`,
-      description:  item.description  || '',
-      pdf_file:     item.pdf_file     || '',
+      id: item.id || `epaper-${i + 1}`,
+      title: item.title || `e-Paper ${i + 1}`,
+      description: item.description || '',
+      pdf_file: item.pdf_file || '',
       publish_date: item.publish_date || item.date || item.createdAt?.slice(0, 10) || '2026-03-24',
-      createdAt:    item.createdAt    || item.publish_date || item.date || '2026-03-24',
-      createdBy:    item.createdBy    || '',
-      state:        item.state        || '',
-      status:       item.status       || 'approved',
-      mediaType:    item.mediaType    || 'None',
-      useFrame:     Boolean(item.useFrame),
+      createdAt: item.createdAt || item.publish_date || item.date || '2026-03-24',
+      createdBy: item.createdBy || '',
+      state: item.state || '',
+      status: item.status || 'approved',
+      mediaType: item.mediaType || 'None',
+      useFrame: Boolean(item.useFrame),
       frameTemplate: item.frameTemplate || '',
-      musicUrl:     item.musicUrl || '',
-      musicVolume:  item.musicVolume ?? 0.6,
+      musicUrl: item.musicUrl || '',
+      musicVolume: item.musicVolume ?? 0.6,
       muteOriginal: Boolean(item.muteOriginal),
-      images:       Array.isArray(item.images) ? item.images : [],
-      video:        item.video || null,
-      views:        Number(item.views     || 0),
-      downloads:    Number(item.downloads || 0),
+      images: Array.isArray(item.images) ? item.images : [],
+      video: item.video || null,
+      views: Number(item.views || 0),
+      downloads: Number(item.downloads || 0),
     }))
     .sort((a, b) => new Date(b.createdAt || b.publish_date || 0) - new Date(a.createdAt || a.publish_date || 0));
 };
@@ -1556,11 +1586,11 @@ const normalizeStreams = (items = []) => {
     const status = (item.status || 'upcoming').toLowerCase();
     const streamUrl = item.stream_url || item.youtube_link || '';
     return {
-      id:           item.id           || `stream-${i + 1}`,
+      id: item.id || `stream-${i + 1}`,
       stream_title: item.stream_title || 'Live Stream',
-      stream_url:   streamUrl,
-      ingest_url:   item.ingest_url || '',
-      stream_key:   item.stream_key || '',
+      stream_url: streamUrl,
+      ingest_url: item.ingest_url || '',
+      stream_key: item.stream_key || '',
       status,
     };
   });
@@ -1568,36 +1598,36 @@ const normalizeStreams = (items = []) => {
 const normalizeCertifications = (items = []) => {
   const src = Array.isArray(items) && items.length ? items : defaultCertifications;
   return src.map((item, i) => ({
-    id:               item.id || item.quiz_type_id || item.quizTypeId || `cert-${i + 1}`,
-    quiz_type_id:     item.quiz_type_id || item.quizTypeId || item.id || null,
-    quiz_title:       item.quiz_title       || item.quiz_id || `Quiz ${i + 1}`,
+    id: item.id || item.quiz_type_id || item.quizTypeId || `cert-${i + 1}`,
+    quiz_type_id: item.quiz_type_id || item.quizTypeId || item.id || null,
+    quiz_title: item.quiz_title || item.quiz_id || `Quiz ${i + 1}`,
     // ✅ FIX (root cause of "certificate not generating after pass"): quiz_type
     // pehle yahan copy hi nahi hota tha, isliye AttemptQuizScreen tak quiz.quiz_type
     // hamesha undefined pahunchta tha aur certificate ka isExamQuiz check hamesha
     // false ban jaata tha — chahe quiz asal me "exam" type ka hi kyun na ho.
-    quiz_type:        item.quiz_type        || null,
-    questions:        Array.isArray(item.questions) ? item.questions : [],
-    score:            item.score            ?? null,
-    result_type:      item.result_type      || (item.result === 'Passed' ? 'Pass' : item.result === 'Retry' ? 'Fail' : null),
+    quiz_type: item.quiz_type || null,
+    questions: Array.isArray(item.questions) ? item.questions : [],
+    score: item.score ?? null,
+    result_type: item.result_type || (item.result === 'Passed' ? 'Pass' : item.result === 'Retry' ? 'Fail' : null),
     certificate_file: item.certificate_file || null,
     local_certificate_path: item.local_certificate_path || null,
     certificate_number: item.certificate_number || null,
-    user_name:  item.user_name  || '',
-    issued_at:  item.issued_at  || item.date || null,
-    attempts:   Number(item.attempts  || 0),
-    downloads:  Number(item.downloads || 0),
+    user_name: item.user_name || '',
+    issued_at: item.issued_at || item.date || null,
+    attempts: Number(item.attempts || 0),
+    downloads: Number(item.downloads || 0),
   }));
 };
 const normalizeNotifications = (items = []) => {
   const src = Array.isArray(items) && items.length ? items : defaultNotifications;
   return src.map((item, i) => ({
-    id:      item.id      || `notif-${i + 1}`,
-    title:   item.title   || 'Notification',
+    id: item.id || `notif-${i + 1}`,
+    title: item.title || 'Notification',
     message: item.message || '',
-    date:    item.date    || '2026-03-24',
-    status:  item.status  || 'Unread',
-    type:            item.type            || '',   // 👈 NEW
-    submission_id:   item.submission_id   || '',    // 👈 NEW
+    date: item.date || '2026-03-24',
+    status: item.status || 'Unread',
+    type: item.type || '',   // 👈 NEW
+    submission_id: item.submission_id || '',    // 👈 NEW
   }));
 };
 
@@ -1619,18 +1649,18 @@ const UNLIMITED_SEAT_IDS = [];
 // ✅ NEW: admin ne is particular plan ko kis level par banaya hai (state /
 // state+district / state+district+taluka) — usi level par seat lock hogi
 const getPlanSeatScopeKey = (plan, fallbackUser = null) => {
-  const state    = String(plan?.state || fallbackUser?.state || '').trim().toLowerCase();
+  const state = String(plan?.state || fallbackUser?.state || '').trim().toLowerCase();
   const district = String(plan?.district || '').trim().toLowerCase();
-  const taluka   = String(plan?.taluka || '').trim().toLowerCase();
+  const taluka = String(plan?.taluka || '').trim().toLowerCase();
   // ✅ NEW: Village-level plans bhi ab apni location par hi lock honge
   // (pehle village tha hi nahi, isliye village-level seat kabhi kisi
   // specific village se lock nahi hoti thi)
-  const village  = String(plan?.village || '').trim().toLowerCase();
+  const village = String(plan?.village || '').trim().toLowerCase();
 
-  if (village)  return `village|${state}|${district}|${taluka}|${village}`;
-  if (taluka)   return `taluka|${state}|${district}|${taluka}`;
+  if (village) return `village|${state}|${district}|${taluka}|${village}`;
+  if (taluka) return `taluka|${state}|${district}|${taluka}`;
   if (district) return `district|${state}|${district}`;
-  if (state)    return `state|${state}`;
+  if (state) return `state|${state}`;
   return ''; // plan me koi location hi nahi -> lock mat lagao
 };
 
@@ -1681,15 +1711,15 @@ const getStateSeatAllocationsFromStorage = async () => {
 const normalizePaymentHistory = (items = []) => {
   const src = Array.isArray(items) ? items : [];
   return src.map((item, i) => ({
-    order_id:   item.order_id   || `ORD_${i + 1}`,
+    order_id: item.order_id || `ORD_${i + 1}`,
     payment_id: item.payment_id || '',
-    amount:     Number(item.amount || 0),
-    status:     item.status     || 'pending',
-    date:       item.date       || '2026-03-24',
-    plan_id:    item.plan_id    || '',
-    plan_name:  item.plan_name  || '',
-    module:     item.module     || 'role',
-    signature:  item.signature  || '',
+    amount: Number(item.amount || 0),
+    status: item.status || 'pending',
+    date: item.date || '2026-03-24',
+    plan_id: item.plan_id || '',
+    plan_name: item.plan_name || '',
+    module: item.module || 'role',
+    signature: item.signature || '',
     gateway_order_id: item.gateway_order_id || item.razorpay_order_id || '',
   }));
 };
@@ -1878,8 +1908,8 @@ const pickNum = (...vals) => {
 };
 const detectSubType = (s = {}) => {
   const t = String(s.type || s.category || s.subscription_type || s.plan_type || s.module || '').toLowerCase().trim();
-    if (t.includes('quiz') || t.includes('certif') || t.includes('exam')) return 'quiz';
-    const tn = t.replace(/[^a-z]/g, '');
+  if (t.includes('quiz') || t.includes('certif') || t.includes('exam')) return 'quiz';
+  const tn = t.replace(/[^a-z]/g, '');
   if (tn.includes('ecom')) return 'ecom';
   if (s.ecom_sub_id || s.ecom_subscription_id) return 'ecom';
   if (/^(ads?|advert\w*|adsubscription|adssubscription)$/.test(tn)) return 'ads';
@@ -1936,8 +1966,8 @@ const normalizeUser = (user = {}) => {
   // has_blue_tick isse sahi tarah compute ho sake — nahi to raw user.is_subscribed
   // missing hone par premium user ko bhi blue tick nahi milta tha.
   const isSubscribed = user.is_subscribed !== undefined
-                         ? Boolean(user.is_subscribed)
-                         : role !== 'free';
+    ? Boolean(user.is_subscribed)
+    : role !== 'free';
   const normalizedMobile = normalizeIndianMobileNumber(user.mobile || user.mobile_number || user.contact_number || '');
   const normalizedMobileNumber = normalizeIndianMobileNumber(user.mobile_number || user.mobile || user.contact_number || '');
 
@@ -1950,24 +1980,24 @@ const normalizeUser = (user = {}) => {
 
   return {
     ...user,
-    password:            undefined,
-    password_verifier:   passwordVerifier,
+    password: undefined,
+    password_verifier: passwordVerifier,
     // ✅ FIX: email hamesha lowercase save hogi
-      id: user.id ?? user.user_id ?? null,   
-     email: user.email ? user.email.trim().toLowerCase() : '',
-    name:                user.name                || '',
-    mobile:              normalizedMobile,
-    contact_number:      user.contact_number      || user.mobile_number || user.mobile || '',
-    phone_number:        user.phone_number        || '',
-    mobile_number:       normalizedMobileNumber,
-    state:               user.state               || '',
-    district:            user.district            || '',
-    taluka:              user.taluka              || '',
-    location_complete:   user.location_complete   !== undefined ? user.location_complete : false,
-    state_seat:          normalizeStateSeat(user.state_seat),
-    subscription_type:   user.subscription_type   || role || 'free',
+    id: user.id ?? user.user_id ?? null,
+    email: user.email ? user.email.trim().toLowerCase() : '',
+    name: user.name || '',
+    mobile: normalizedMobile,
+    contact_number: user.contact_number || user.mobile_number || user.mobile || '',
+    phone_number: user.phone_number || '',
+    mobile_number: normalizedMobileNumber,
+    state: user.state || '',
+    district: user.district || '',
+    taluka: user.taluka || '',
+    location_complete: user.location_complete !== undefined ? user.location_complete : false,
+    state_seat: normalizeStateSeat(user.state_seat),
+    subscription_type: user.subscription_type || role || 'free',
     role,
-    role_label:          getRoleLabel(role),
+    role_label: getRoleLabel(role),
     // ✅ FIX: raw user.role/user.is_subscribed ki jagah derived role + isSubscribed
     // pass karo, taaki premium subscription lete hi blue tick turant milna shuru ho.
     // Backend ne flag bheja ho to wahi rakho; nahi bheja to plan se compute karo
@@ -1979,54 +2009,69 @@ const normalizeUser = (user = {}) => {
         ? hasBlueTick(user)
         : hasBlueTick({ ...userNoFlag, role, is_subscribed: isSubscribed });
     })(),
-    is_subscribed:       isSubscribed,
-    village:             user.village             || '',
-    bio:                 user.bio                 || '',
-   profile_image:       user.profile_image       || '',
-    pending_phone:        user.pending_phone        ?? null,
-    pending_bio:           user.pending_bio           ?? null,
+    is_subscribed: isSubscribed,
+    village: user.village || '',
+    bio: user.bio || '',
+    profile_image: user.profile_image || '',
+    pending_phone: user.pending_phone ?? null,
+    pending_bio: user.pending_bio ?? null,
     profile_update_status: user.profile_update_status ?? null,
-    pending_profile_image:     user.pending_profile_image     ?? null,
+    pending_profile_image: user.pending_profile_image ?? null,
     pending_profile_image_url: user.pending_profile_image_url ?? null,
     profile_image_change_count: Number(user.profile_image_change_count ?? 0) || 0,
-    id_card:             user.id_card             || '',
-    appointment_letter:  user.appointment_letter  || '',
-    my_referral_code:    isSubscribed ? (user.my_referral_code || '') : '',
-    referred_by:         user.referred_by         || '',
-    referral_code_used:  user.referral_code_used  || '',
-    referral_count:      referralCount,
-    referral_qualified:  Boolean(user.referral_qualified),
+    id_card: user.id_card || '',
+    appointment_letter: user.appointment_letter || '',
+    my_referral_code: isSubscribed ? (user.my_referral_code || '') : '',
+    referred_by: user.referred_by || '',
+    referral_code_used: user.referral_code_used || '',
+    referral_count: referralCount,
+    referral_qualified: Boolean(user.referral_qualified),
     referral_qualified_at: user.referral_qualified_at || '',
     referral_bonus_paid: Boolean(user.referral_bonus_paid),
-    valid_referrals:     Array.isArray(user.valid_referrals) ? user.valid_referrals : [],
+    valid_referrals: Array.isArray(user.valid_referrals) ? user.valid_referrals : [],
     referral_bonus_milestones: Array.isArray(user.referral_bonus_milestones) ? user.referral_bonus_milestones : [],
-    followers:           normalizeEmailList(user.followers),
-    following:           normalizeEmailList(user.following),
-    rank:                calculateRank(referralCount),
-    join_date:           user.join_date           || new Date().toISOString().slice(0, 10),
+    followers: normalizeEmailList(user.followers),
+    following: normalizeEmailList(user.following),
+    rank: calculateRank(referralCount),
+    join_date: user.join_date || new Date().toISOString().slice(0, 10),
     wallet_transactions: normalizeWalletTransactions(user.wallet_transactions),
-    withdraw_requests:   normalizeWithdrawRequests(user.withdraw_requests),
-    subscription_plan:   savedPlan,
-    payment_history:     normalizePaymentHistory(user.payment_history),
-    settings:            normalizeSettings(user.settings),
-    ad_credits:          Number(user.ad_credits ?? 0),
-    ad_subscription:     user.ad_subscription || null,
-    ads:                 Array.isArray(user.ads) ? user.ads : [],
-    ecome_credits:       Number(user.ecome_credits ?? 0),
+    withdraw_requests: normalizeWithdrawRequests(user.withdraw_requests),
+    subscription_plan: savedPlan,
+    payment_history: normalizePaymentHistory(user.payment_history),
+    settings: normalizeSettings(user.settings),
+    ad_credits: Number(user.ad_credits ?? 0),
+    ad_subscription: user.ad_subscription || null,
+    ads: Array.isArray(user.ads) ? user.ads : [],
+    ecome_credits: Number(user.ecome_credits ?? 0),
     // Last-known `free_posts_remaining` from POST /news (display-only hint). null = unknown/subscriber.
-    free_news_credits:   user.free_news_credits == null ? null : Number(user.free_news_credits),
-    ecome_subscription:  user.ecome_subscription || null,
-    ecome_listings:      Array.isArray(user.ecome_listings) ? user.ecome_listings : [],
-    ecome_enquiries:     Array.isArray(user.ecome_enquiries) ? user.ecome_enquiries : [],
-    farming_listings:    Array.isArray(user.farming_listings) ? user.farming_listings : [],
-    farming_enquiries:   Array.isArray(user.farming_enquiries) ? user.farming_enquiries : [],
-    farming_purchases:   Array.isArray(user.farming_purchases) ? user.farming_purchases : [],
+    free_news_credits: user.free_news_credits == null ? null : Number(user.free_news_credits),
+    ecome_subscription: user.ecome_subscription || null,
+    ecome_listings: Array.isArray(user.ecome_listings) ? user.ecome_listings : [],
+    ecome_enquiries: Array.isArray(user.ecome_enquiries) ? user.ecome_enquiries : [],
+    farming_listings: Array.isArray(user.farming_listings) ? user.farming_listings : [],
+    farming_enquiries: Array.isArray(user.farming_enquiries) ? user.farming_enquiries : [],
+    farming_purchases: Array.isArray(user.farming_purchases) ? user.farming_purchases : [],
     farming_sell_offers: Array.isArray(user.farming_sell_offers) ? user.farming_sell_offers : [],
     farming_price_feedback: Array.isArray(user.farming_price_feedback) ? user.farming_price_feedback : [],
   };
 };
 
-// ─── Storage Helpers ──────────────────────────────────────────────────────────
+// ─── Storage Helpers & In-Memory Fast Cache ─────────────────────────────────
+
+// ✅ SPEED: In-memory cache for user records to eliminate redundant disk reads/JSON.parse (0ms)
+let _cachedUsers = null;
+let _cachedUsersTime = 0;
+let _cachedCurrentUser = null;
+let _cachedCurrentEmail = null;
+let _cachedCurrentTime = 0;
+
+const invalidateUserCache = () => {
+  _cachedUsers = null;
+  _cachedUsersTime = 0;
+  _cachedCurrentUser = null;
+  _cachedCurrentEmail = null;
+  _cachedCurrentTime = 0;
+};
 
 // ✅ FIX: getUsersFromStorage mein email normalize karo
 const hasLegacyPlainPassword = (u) =>
@@ -2034,8 +2079,11 @@ const hasLegacyPlainPassword = (u) =>
     (u.settings && typeof u.settings.password === 'string' && u.settings.password)));
 
 const getUsersFromStorage = async () => {
+  if (_cachedUsers && (Date.now() - _cachedUsersTime < 8000)) {
+    return _cachedUsers;
+  }
   purgeLegacySensitiveStorage();
-  const data  = await AsyncStorage.getItem(USERS_KEY);
+  const data = await AsyncStorage.getItem(USERS_KEY);
   const rawUsers = data ? JSON.parse(data) : [];
   const needsMigration = rawUsers.some(hasLegacyPlainPassword);
   const users = rawUsers.map((u) => normalizeUser({
@@ -2048,6 +2096,8 @@ const getUsersFromStorage = async () => {
     try { await AsyncStorage.setItem(USERS_KEY, JSON.stringify(users)); }
     catch (e) { console.warn('[UserStore] password migration write failed:', e?.message); }
   }
+  _cachedUsers = users;
+  _cachedUsersTime = Date.now();
   return users;
 };
 
@@ -2056,7 +2106,7 @@ const getUsersFromStorage = async () => {
 const getLevelFromCurrentUser = (user, currentUser, usersByEmail) => {
   if (!currentUser || !user?.email) return '-';
   if (user.email === currentUser.email) return '0';
-  let level  = 1;
+  let level = 1;
   let cursor = user.referred_by;
   const visited = new Set();
   while (cursor && !visited.has(cursor)) {
@@ -2139,7 +2189,7 @@ const recordQualifyingTransaction = async ({ buyerEmail, amount, packageType = '
   return { ok: true, credited: true };
 };
 
-  
+
 // ─── Certificate SVG Builder ──────────────────────────────────────────────────
 
 const escapeXml = (value = '') =>
@@ -2288,7 +2338,7 @@ const saveCertificateSvg = async (svgMarkup, fileName) => {
 const _followStateListeners = new Set();
 // Post / reel / ad / ecom delete hone par screens ko batane ke liye
 const _postDeletedListeners = new Set();
-const _emitPostDeleted = (payload) => { _postDeletedListeners.forEach((cb) => { try { cb(payload); } catch {} }); };
+const _emitPostDeleted = (payload) => { _postDeletedListeners.forEach((cb) => { try { cb(payload); } catch { } }); };
 // The follow-list endpoints can briefly return an older snapshot immediately
 // after a mutation. Keep successful mutations in this session so a screen
 // focus/refetch cannot undo a follow the user has just made.
@@ -2426,10 +2476,10 @@ const clearAccountMemoryCaches = () => {
   _followOverrides.clear();
   lastCreditSyncAt = 0;              // agla user turant fresh credits sync kare
   cachedBackendPlans = [];           // plans user/location ke hisaab se aate hain
-  try { clearIdCardVerification(); } catch {}
-  try { clearReferralInfo(); } catch {}
-  try { resetEngagement(); } catch {}  // pichle user ka liked/views state
-  try { resetAdsVisibility(); } catch {}  // pichle user ka ads_hidden status
+  try { clearIdCardVerification(); } catch { }
+  try { clearReferralInfo(); } catch { }
+  try { resetEngagement(); } catch { }  // pichle user ka liked/views state
+  try { resetAdsVisibility(); } catch { }  // pichle user ka ads_hidden status
 };
 
 export const UserStore = {
@@ -2501,7 +2551,7 @@ export const UserStore = {
       if (!id) return null;
       const res = await AuthAPI.getPublicProfileById(id);
       if (!res?.ok) return null;
-            const profile = res.profile || {};
+      const profile = res.profile || {};
       return {
         ...profile,
         id: profile.id ?? profile.user_id ?? null,
@@ -2552,7 +2602,7 @@ export const UserStore = {
           }
         }
       }
-    } catch {}
+    } catch { }
   },
 
   getUser: async (email) => {
@@ -2581,324 +2631,324 @@ export const UserStore = {
   hasActiveSubscription: (user) => hasActiveSubscription(user),
   hasActiveQuizSubscription: (user) => hasActiveQuizSubscription(user),
   getQuizSubscriptionRemainingCount: (user) => getQuizSubscriptionRemainingCount(user),
-hasActiveEcomSubscription: (user) => hasActiveEcomSubscription(user),
-    hasActiveAdSubscription: (user) => hasActiveAdSubscription(user),
+  hasActiveEcomSubscription: (user) => hasActiveEcomSubscription(user),
+  hasActiveAdSubscription: (user) => hasActiveAdSubscription(user),
 
   // ✅ NEW: pehle backend se sync (await) karta hai, phir fresh user deta hai
   getCurrentUserSynced: async () => {
     try { await UserStore.syncCreditSubscriptionsFromBackend({ force: true }); } catch (e) { /* ignore */ }
     return UserStore.getCurrentUser();
   },
-syncCreditSubscriptionsFromBackend: async ({ force = false } = {}) => {
-  try {
-    if (!force && Date.now() - lastCreditSyncAt < 20000) return;
-    lastCreditSyncAt = Date.now();
+  syncCreditSubscriptionsFromBackend: async ({ force = false } = {}) => {
+    try {
+      if (!force && Date.now() - lastCreditSyncAt < 20000) return;
+      lastCreditSyncAt = Date.now();
 
-    const user = await UserStore.getCurrentUser();
-    if (!user) return;
+      const user = await UserStore.getCurrentUser();
+      if (!user) return;
 
-    const [res, quizRes] = await Promise.all([
-      AuthAPI.getMySubscriptions(),
-      AuthAPI.getMyQuizSubscriptions(),
-    ]);
-    if (!res?.ok && !quizRes?.ok) {
-      console.warn('[syncCreditSubscriptions] both endpoints failed:', res?.message, quizRes?.message);
-      return;
-    }
-
-    // Backend kabhi array, kabhi {ads:[..], ecom:[..], quiz:[..]} jaisa grouped object bhejta hai —
-    // dono ko flat list me badal do, aur group ka naam 'type' bana do (agar record me type nahi hai).
-    const TYPE_KEYS = ['type', 'category', 'subscription_type', 'plan_type', 'module'];
-    const flatten = (raw, hint = null) => {
-      if (!raw) return [];
-      if (Array.isArray(raw)) return raw.flatMap((x) => flatten(x, hint));
-      if (typeof raw !== 'object') return [];
-      const isRecord = ['id', 'plan_id', 'plan_name', 'expires_at', 'status', 'payment_status', 'purchased_at']
-        .some((k) => raw[k] !== undefined);
-      if (isRecord) {
-        const hasType = TYPE_KEYS.some((k) => raw[k]);
-        return [hasType || !hint ? raw : { ...raw, type: hint }];
+      const [res, quizRes] = await Promise.all([
+        AuthAPI.getMySubscriptions(),
+        AuthAPI.getMyQuizSubscriptions(),
+      ]);
+      if (!res?.ok && !quizRes?.ok) {
+        console.warn('[syncCreditSubscriptions] both endpoints failed:', res?.message, quizRes?.message);
+        return;
       }
-      return Object.keys(raw).flatMap((k) => (
-        raw[k] && typeof raw[k] === 'object' ? flatten(raw[k], ['data', 'subscriptions', 'items'].includes(k) ? hint : k) : []
-      ));
-    };
 
-    const mainList = res?.ok ? flatten(res.subscriptions) : [];
-    const quizList = quizRes?.ok ? flatten(quizRes.subscriptions, 'quiz').map((s) => ({ ...s, type: 'quiz' })) : [];
-    const list = [...mainList, ...quizList];
-    console.log('[syncCreditSubscriptions] backend list:', JSON.stringify(list));
-
-    // ── Lenient active check: pending/failed/expired ko chhod kar baaki sab active ──
-    const isActiveSub = (s = {}) => {
-      const status = String(s.status ?? '').toLowerCase();
-      if (['expired', 'inactive', 'cancelled', 'canceled', 'failed', 'refunded', 'pending', 'created'].includes(status)) return false;
-      const ps = s.payment_status;
-      if (ps !== undefined && ps !== null && ps !== '') {
-        if (!['1', 'true', 'paid', 'success', 'captured', 'completed', 'active'].includes(String(ps).toLowerCase())) return false;
-      }
-      const exp = s.expires_at || s.expiry || s.end_date || s.expiry_date;
-      if (exp) {
-        const t = new Date(`${String(exp).slice(0, 10)}T23:59:59`).getTime();
-        if (Number.isFinite(t) && Date.now() > t) return false;
-      }
-      return true;
-    };
-
-    // har type (ads / ecom / quiz) ki sabse nayi active subscription
-    const latest = {};
-    list.filter(isActiveSub).forEach((s) => {
-      const type = detectSubType(s);
-      if (!type) return;
-      const stamp = String(s.purchased_at || s.created_at || s.start_date || '');
-      if (!latest[type] || stamp > String(latest[type].purchased_at || latest[type].created_at || latest[type].start_date || '')) latest[type] = s;
-    });
-    console.log('[syncCreditSubscriptions] detected types:', Object.keys(latest).join(',') || 'NONE');
-
-    const build = (s) => {
-      const days = pickNum(s.days, s.validity_days, s.duration_days, s.plan?.days, s.plan?.validity_days);
-      const purchasedAt = String(s.purchased_at || s.start_date || s.created_at || new Date().toISOString()).slice(0, 10);
-      const expiresAt = String(s.expires_at || s.expiry || s.end_date || s.expiry_date || '').slice(0, 10)
-        || addDaysToDateString(purchasedAt, days || CREDIT_VALIDITY_DAYS);
-      return {
-        plan_id: s.plan_id ?? s.plan?.id ?? s.id,
-        plan_name: s.plan_name || s.title || s.name || s.plan?.title || s.plan?.plan_name || 'Subscription Plan',
-        price: pickNum(s.price, s.amount, s.plan?.price) ?? 0,
-        credits: pickNum(s.credits, s.plan?.credits) ?? 0,
-        duration: `${days || CREDIT_VALIDITY_DAYS} Days`,
-        validity_days: days || CREDIT_VALIDITY_DAYS,
-        purchased_at: purchasedAt,
-        expires_at: expiresAt,
-        status: 'active',
+      // Backend kabhi array, kabhi {ads:[..], ecom:[..], quiz:[..]} jaisa grouped object bhejta hai —
+      // dono ko flat list me badal do, aur group ka naam 'type' bana do (agar record me type nahi hai).
+      const TYPE_KEYS = ['type', 'category', 'subscription_type', 'plan_type', 'module'];
+      const flatten = (raw, hint = null) => {
+        if (!raw) return [];
+        if (Array.isArray(raw)) return raw.flatMap((x) => flatten(x, hint));
+        if (typeof raw !== 'object') return [];
+        const isRecord = ['id', 'plan_id', 'plan_name', 'expires_at', 'status', 'payment_status', 'purchased_at']
+          .some((k) => raw[k] !== undefined);
+        if (isRecord) {
+          const hasType = TYPE_KEYS.some((k) => raw[k]);
+          return [hasType || !hint ? raw : { ...raw, type: hint }];
+        }
+        return Object.keys(raw).flatMap((k) => (
+          raw[k] && typeof raw[k] === 'object' ? flatten(raw[k], ['data', 'subscriptions', 'items'].includes(k) ? hint : k) : []
+        ));
       };
-    };
-    const isNew = (local, sub) => !local
-      || String(local.plan_id) !== String(sub.plan_id)
-      || String(local.purchased_at || '').slice(0, 10) !== sub.purchased_at
-      || String(local.expires_at || '').slice(0, 10) !== sub.expires_at;
 
-    const updates = {};
+      const mainList = res?.ok ? flatten(res.subscriptions) : [];
+      const quizList = quizRes?.ok ? flatten(quizRes.subscriptions, 'quiz').map((s) => ({ ...s, type: 'quiz' })) : [];
+      const list = [...mainList, ...quizList];
+      console.log('[syncCreditSubscriptions] backend list:', JSON.stringify(list));
 
-    if (latest.ads) {
-      const sub = build(latest.ads);
-      const backendCredits = pickNum(latest.ads.remaining_credits, latest.ads.credits_remaining, latest.ads.credits_left, latest.ads.ad_credits);
-      if (isNew(user.ad_subscription, sub)) {
-        updates.ad_subscription = sub;
-        updates.ad_credits = backendCredits ?? sub.credits ?? 0;
-      } else if (backendCredits !== null && backendCredits !== Number(user.ad_credits ?? 0)) {
-        updates.ad_credits = backendCredits;
-      }
-    }
+      // ── Lenient active check: pending/failed/expired ko chhod kar baaki sab active ──
+      const isActiveSub = (s = {}) => {
+        const status = String(s.status ?? '').toLowerCase();
+        if (['expired', 'inactive', 'cancelled', 'canceled', 'failed', 'refunded', 'pending', 'created'].includes(status)) return false;
+        const ps = s.payment_status;
+        if (ps !== undefined && ps !== null && ps !== '') {
+          if (!['1', 'true', 'paid', 'success', 'captured', 'completed', 'active'].includes(String(ps).toLowerCase())) return false;
+        }
+        const exp = s.expires_at || s.expiry || s.end_date || s.expiry_date;
+        if (exp) {
+          const t = new Date(`${String(exp).slice(0, 10)}T23:59:59`).getTime();
+          if (Number.isFinite(t) && Date.now() > t) return false;
+        }
+        return true;
+      };
 
-    if (latest.ecom) {
-      const sub = build(latest.ecom);
-      const backendCredits = pickNum(latest.ecom.remaining_credits, latest.ecom.credits_remaining, latest.ecom.credits_left, latest.ecom.ecome_credits);
-      if (isNew(user.ecome_subscription, sub)) {
-        updates.ecome_subscription = sub;
-        updates.ecome_credits = backendCredits ?? sub.credits ?? 0;
-      } else if (backendCredits !== null && backendCredits !== Number(user.ecome_credits ?? 0)) {
-        updates.ecome_credits = backendCredits;
-      }
-    }
+      // har type (ads / ecom / quiz) ki sabse nayi active subscription
+      const latest = {};
+      list.filter(isActiveSub).forEach((s) => {
+        const type = detectSubType(s);
+        if (!type) return;
+        const stamp = String(s.purchased_at || s.created_at || s.start_date || '');
+        if (!latest[type] || stamp > String(latest[type].purchased_at || latest[type].created_at || latest[type].start_date || '')) latest[type] = s;
+      });
+      console.log('[syncCreditSubscriptions] detected types:', Object.keys(latest).join(',') || 'NONE');
 
-    if (latest.quiz) {
-      const sub = build(latest.quiz);
-      const total = pickNum(latest.quiz.quiz_count, latest.quiz.total_count, latest.quiz.plan?.quiz_count);
-      const backendRemaining = pickNum(latest.quiz.remaining_count, latest.quiz.remaining_attempts, latest.quiz.quiz_remaining);
-      if (isNew(user.quiz_subscription_plan, sub)) {
-        updates.quiz_subscription_expiry = new Date(`${sub.expires_at}T23:59:59`).toISOString();
-        updates.quiz_subscription_plan = {
-          plan_id: sub.plan_id, plan_name: sub.plan_name, price: sub.price,
-          duration: sub.validity_days, quiz_count: total,
-          purchased_at: sub.purchased_at, expires_at: sub.expires_at,
+      const build = (s) => {
+        const days = pickNum(s.days, s.validity_days, s.duration_days, s.plan?.days, s.plan?.validity_days);
+        const purchasedAt = String(s.purchased_at || s.start_date || s.created_at || new Date().toISOString()).slice(0, 10);
+        const expiresAt = String(s.expires_at || s.expiry || s.end_date || s.expiry_date || '').slice(0, 10)
+          || addDaysToDateString(purchasedAt, days || CREDIT_VALIDITY_DAYS);
+        return {
+          plan_id: s.plan_id ?? s.plan?.id ?? s.id,
+          plan_name: s.plan_name || s.title || s.name || s.plan?.title || s.plan?.plan_name || 'Subscription Plan',
+          price: pickNum(s.price, s.amount, s.plan?.price) ?? 0,
+          credits: pickNum(s.credits, s.plan?.credits) ?? 0,
+          duration: `${days || CREDIT_VALIDITY_DAYS} Days`,
+          validity_days: days || CREDIT_VALIDITY_DAYS,
+          purchased_at: purchasedAt,
+          expires_at: expiresAt,
+          status: 'active',
         };
-        updates.quiz_subscription_total_count = total;
-        updates.quiz_subscription_remaining_count = backendRemaining ?? total;
-      } else if (backendRemaining !== null && backendRemaining !== user.quiz_subscription_remaining_count) {
-        updates.quiz_subscription_remaining_count = backendRemaining;
+      };
+      const isNew = (local, sub) => !local
+        || String(local.plan_id) !== String(sub.plan_id)
+        || String(local.purchased_at || '').slice(0, 10) !== sub.purchased_at
+        || String(local.expires_at || '').slice(0, 10) !== sub.expires_at;
+
+      const updates = {};
+
+      if (latest.ads) {
+        const sub = build(latest.ads);
+        const backendCredits = pickNum(latest.ads.remaining_credits, latest.ads.credits_remaining, latest.ads.credits_left, latest.ads.ad_credits);
+        if (isNew(user.ad_subscription, sub)) {
+          updates.ad_subscription = sub;
+          updates.ad_credits = backendCredits ?? sub.credits ?? 0;
+        } else if (backendCredits !== null && backendCredits !== Number(user.ad_credits ?? 0)) {
+          updates.ad_credits = backendCredits;
+        }
       }
+
+      if (latest.ecom) {
+        const sub = build(latest.ecom);
+        const backendCredits = pickNum(latest.ecom.remaining_credits, latest.ecom.credits_remaining, latest.ecom.credits_left, latest.ecom.ecome_credits);
+        if (isNew(user.ecome_subscription, sub)) {
+          updates.ecome_subscription = sub;
+          updates.ecome_credits = backendCredits ?? sub.credits ?? 0;
+        } else if (backendCredits !== null && backendCredits !== Number(user.ecome_credits ?? 0)) {
+          updates.ecome_credits = backendCredits;
+        }
+      }
+
+      if (latest.quiz) {
+        const sub = build(latest.quiz);
+        const total = pickNum(latest.quiz.quiz_count, latest.quiz.total_count, latest.quiz.plan?.quiz_count);
+        const backendRemaining = pickNum(latest.quiz.remaining_count, latest.quiz.remaining_attempts, latest.quiz.quiz_remaining);
+        if (isNew(user.quiz_subscription_plan, sub)) {
+          updates.quiz_subscription_expiry = new Date(`${sub.expires_at}T23:59:59`).toISOString();
+          updates.quiz_subscription_plan = {
+            plan_id: sub.plan_id, plan_name: sub.plan_name, price: sub.price,
+            duration: sub.validity_days, quiz_count: total,
+            purchased_at: sub.purchased_at, expires_at: sub.expires_at,
+          };
+          updates.quiz_subscription_total_count = total;
+          updates.quiz_subscription_remaining_count = backendRemaining ?? total;
+        } else if (backendRemaining !== null && backendRemaining !== user.quiz_subscription_remaining_count) {
+          updates.quiz_subscription_remaining_count = backendRemaining;
+        }
+      }
+
+      console.log('[syncCreditSubscriptions] updates:', JSON.stringify(updates));
+      if (Object.keys(updates).length) await UserStore.updateUser(user.email, updates);
+    } catch (err) {
+      console.warn('[syncCreditSubscriptionsFromBackend] failed:', err);
     }
+  },
 
-    console.log('[syncCreditSubscriptions] updates:', JSON.stringify(updates));
-    if (Object.keys(updates).length) await UserStore.updateUser(user.email, updates);
-  } catch (err) {
-    console.warn('[syncCreditSubscriptionsFromBackend] failed:', err);
-  }
-},
+  getMySubscriptions: async () => {
+    try {
+      const res = await AuthAPI.getMySubscriptions();
+      if (!res.ok) return { ok: false, isAuth: !!res.isAuth, items: [] };
+      const items = (res.subscriptions || []).map((s) => ({
+        id: s.id ?? s.plan_id,
+        type: s.type || s.category || s.subscription_type || 'general',
+        planName: s.plan_name || s.title || s.name || 'Subscription Plan',
+        price: s.price !== undefined ? Number(s.price) : null,
+        status: String(s.status || (Number(s.payment_status) === 1 ? 'active' : 'inactive')).toLowerCase(),
+        purchasedAt: s.purchased_at || s.created_at || null,
+        expiresAt: s.expires_at || s.expiry || null,
+      }));
+      return { ok: true, items };
+    } catch { return { ok: false, isAuth: false, items: [] }; }
+  },
 
-getMySubscriptions: async () => {
-  try {
-    const res = await AuthAPI.getMySubscriptions();
-    if (!res.ok) return { ok: false, isAuth: !!res.isAuth, items: [] };
-    const items = (res.subscriptions || []).map((s) => ({
-      id: s.id ?? s.plan_id,
-      type: s.type || s.category || s.subscription_type || 'general',
-      planName: s.plan_name || s.title || s.name || 'Subscription Plan',
-      price: s.price !== undefined ? Number(s.price) : null,
-      status: String(s.status || (Number(s.payment_status) === 1 ? 'active' : 'inactive')).toLowerCase(),
-      purchasedAt: s.purchased_at || s.created_at || null,
-      expiresAt: s.expires_at || s.expiry || null,
-    }));
-    return { ok: true, items };
-  } catch { return { ok: false, isAuth: false, items: [] }; }
-},
+  // ✅ NEW: backend se real ecom (Sell page) subscription plans fetch karta hai
+  // GET /ecom-subscriptions
+  getEcomSubscriptionPlans: async () => {
+    try {
+      const res = await AuthAPI.getEcomSubscriptions();
+      if (!res.ok || !Array.isArray(res.plans) || !res.plans.length) return [];
+      return res.plans.map((p) => {
+        const validityDays = Number(p.days ?? p.validity_days ?? p.duration_days ?? 30);
+        return {
+          id: p.id ?? p.plan_id,
+          label: p.title || p.plan_name || p.name || 'E-Commerce Plan',
+          price: Number(p.price ?? 0),
+          credits: Number(p.credits ?? p.listing_credits ?? p.listings ?? 0),
+          duration: `${validityDays} Days`,
+          validity_days: validityDays,
+        };
+      });
+    } catch { return []; }
+  },
 
-// ✅ NEW: backend se real ecom (Sell page) subscription plans fetch karta hai
-// GET /ecom-subscriptions
-getEcomSubscriptionPlans: async () => {
-  try {
-    const res = await AuthAPI.getEcomSubscriptions();
-    if (!res.ok || !Array.isArray(res.plans) || !res.plans.length) return [];
-    return res.plans.map((p) => {
-      const validityDays = Number(p.days ?? p.validity_days ?? p.duration_days ?? 30);
-      return {
-        id: p.id ?? p.plan_id,
-        label: p.title || p.plan_name || p.name || 'E-Commerce Plan',
-        price: Number(p.price ?? 0),
-        credits: Number(p.credits ?? p.listing_credits ?? p.listings ?? 0),
-               duration: `${validityDays} Days`,
-        validity_days: validityDays,
-      };
-    });
-  } catch { return []; }
-},
+  // ✅ NEW: backend se real quiz subscription plans fetch karta hai (no login needed)
+  getQuizSubscriptionPlans: async () => {
+    try {
+      const res = await AuthAPI.getQuizSubscriptionPlans();
+      if (!res.ok || !Array.isArray(res.plans)) return [];
+      return res.plans.map((p) => {
+        const days = Number(p.days ?? p.validity_days ?? p.duration_days ?? (Number(p.duration ?? p.months ?? p.validity_months ?? 1) * 30));
+        const duration = days;
+        // Backend field name abhi confirm nahi hai isliye common naming variants sab try karte hain.
+        const quizCountRaw = p.quiz_count ?? p.quizCount ?? p.attempts ?? p.no_of_quiz ?? p.total_quiz ?? p.quiz_limit;
+        const quizCount = quizCountRaw !== undefined && quizCountRaw !== null ? Number(quizCountRaw) : null; // null = unlimited/unspecified
+        return {
+          id: p.id ?? p.plan_id,
+          label: p.title || p.plan_name || p.name || `${days} Day${days > 1 ? 's' : ''}`,
+          price: Number(p.price ?? 0),
+          duration,
+          days,
+          unit: days > 1 ? 'days' : 'day',
+          perMonth: days > 0 ? Math.round((Number(p.price ?? 0) / days) * 30) : Number(p.price ?? 0),
+          quizCount,
+        };
+      });
+    } catch { return []; }
+  },
 
-// ✅ NEW: backend se real quiz subscription plans fetch karta hai (no login needed)
-getQuizSubscriptionPlans: async () => {
-  try {
-    const res = await AuthAPI.getQuizSubscriptionPlans();
-    if (!res.ok || !Array.isArray(res.plans)) return [];
-    return res.plans.map((p) => {
-      const days = Number(p.days ?? p.validity_days ?? p.duration_days ?? (Number(p.duration ?? p.months ?? p.validity_months ?? 1) * 30));
-      const duration = days;
-      // Backend field name abhi confirm nahi hai isliye common naming variants sab try karte hain.
-      const quizCountRaw = p.quiz_count ?? p.quizCount ?? p.attempts ?? p.no_of_quiz ?? p.total_quiz ?? p.quiz_limit;
-      const quizCount = quizCountRaw !== undefined && quizCountRaw !== null ? Number(quizCountRaw) : null; // null = unlimited/unspecified
-      return {
-        id: p.id ?? p.plan_id,
-        label: p.title || p.plan_name || p.name || `${days} Day${days > 1 ? 's' : ''}`,
-        price: Number(p.price ?? 0),
-        duration,
-        days,
-        unit: days > 1 ? 'days' : 'day',
-        perMonth: days > 0 ? Math.round((Number(p.price ?? 0) / days) * 30) : Number(p.price ?? 0),
-        quizCount,
-      };
-    });
-  } catch { return []; }
-},
-
-// ✅ NEW: Razorpay order create karta hai quiz subscription plan ke liye
-createQuizSubscriptionOrder: async ({ planId }) => {
-  try {
-    const orderResult = await AuthAPI.purchaseQuizSubscription({ planId });
-    if (!orderResult?.ok) return { ok: false, message: orderResult?.message || 'Unable to create order.' };
-    return { ok: true, razorpay: orderResult.razorpay };
-  } catch {
-    return { ok: false, message: 'Unable to create order.' };
-  }
-},
-
-// ✅ NEW: Razorpay payment verify + local user state update (expiry/plan/notification)
-verifyQuizPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signature, plan }) => {
-  try {
-    const user = await UserStore.getCurrentUser();
-    if (!user) return { ok: false, message: 'Please login again.' };
-
-    const verifyRes = await AuthAPI.verifyQuizSubscriptionPayment({
-      razorpay_order_id, razorpay_payment_id, razorpay_signature,
-    });
-    if (!verifyRes?.ok) {
-      return { ok: false, message: verifyRes?.message || 'Payment verification failed.' };
+  // ✅ NEW: Razorpay order create karta hai quiz subscription plan ke liye
+  createQuizSubscriptionOrder: async ({ planId }) => {
+    try {
+      const orderResult = await AuthAPI.purchaseQuizSubscription({ planId });
+      if (!orderResult?.ok) return { ok: false, message: orderResult?.message || 'Unable to create order.' };
+      return { ok: true, razorpay: orderResult.razorpay };
+    } catch {
+      return { ok: false, message: 'Unable to create order.' };
     }
-    refreshAdsVisibility().catch(() => {});   // plan badla — hide_ads dobara check
+  },
 
-       const validityDays = Number(plan?.days) || (Number(plan?.duration || 1) * 30);
-    const expiryDate = new Date();
-    expiryDate.setDate(expiryDate.getDate() + validityDays);
-    const today = new Date().toISOString().slice(0, 10);
+  // ✅ NEW: Razorpay payment verify + local user state update (expiry/plan/notification)
+  verifyQuizPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signature, plan }) => {
+    try {
+      const user = await UserStore.getCurrentUser();
+      if (!user) return { ok: false, message: 'Please login again.' };
 
-    // plan.quizCount === kitne quiz attempts is subscription me milte hain.
-    // null/undefined matlab backend ne count nahi bheja — us case me legacy/unlimited-till-expiry
-    // behaviour maintain karte hain (hasActiveQuizSubscription isko null treat karega).
-    const quizCount = (plan?.quizCount !== undefined && plan?.quizCount !== null) ? Number(plan.quizCount) : null;
+      const verifyRes = await AuthAPI.verifyQuizSubscriptionPayment({
+        razorpay_order_id, razorpay_payment_id, razorpay_signature,
+      });
+      if (!verifyRes?.ok) {
+        return { ok: false, message: verifyRes?.message || 'Payment verification failed.' };
+      }
+      refreshAdsVisibility().catch(() => { });   // plan badla — hide_ads dobara check
 
-    const notification = {
-      id: `notif-quiz-sub-${Date.now()}`,
-      title: `🎉 Quiz Subscription Activated!`,
-      message: quizCount
-        ? `${plan?.label || 'Quiz'} Subscription is now active. You can now attempt ${quizCount} quizzes.`
-        : `${plan?.label || 'Quiz'} Subscription is now active. You can now attempt quizzes.`,
-      date: today,
-      status: 'Unread',
-    };
+      const validityDays = Number(plan?.days) || (Number(plan?.duration || 1) * 30);
+      const expiryDate = new Date();
+      expiryDate.setDate(expiryDate.getDate() + validityDays);
+      const today = new Date().toISOString().slice(0, 10);
 
-        const quizPayment = {
-      order_id:   `ORD_QUIZ_${Date.now()}`,
-      payment_id: razorpay_payment_id || `PAY_QUIZ_${Date.now()}`,
-      amount:     Number(plan?.price || 0),
-      status:     'success',
-      date:       today,
-      plan_id:    plan?.id,
-      plan_name:  plan?.label,
-      module:     'quiz',
-      signature:  razorpay_signature || '',
-    };
+      // plan.quizCount === kitne quiz attempts is subscription me milte hain.
+      // null/undefined matlab backend ne count nahi bheja — us case me legacy/unlimited-till-expiry
+      // behaviour maintain karte hain (hasActiveQuizSubscription isko null treat karega).
+      const quizCount = (plan?.quizCount !== undefined && plan?.quizCount !== null) ? Number(plan.quizCount) : null;
 
-    const updatedUser = await UserStore.updateUser(user.email, {
-      quiz_subscription_expiry: expiryDate.toISOString(),
-      quiz_subscription_plan: {
+      const notification = {
+        id: `notif-quiz-sub-${Date.now()}`,
+        title: `🎉 Quiz Subscription Activated!`,
+        message: quizCount
+          ? `${plan?.label || 'Quiz'} Subscription is now active. You can now attempt ${quizCount} quizzes.`
+          : `${plan?.label || 'Quiz'} Subscription is now active. You can now attempt quizzes.`,
+        date: today,
+        status: 'Unread',
+      };
+
+      const quizPayment = {
+        order_id: `ORD_QUIZ_${Date.now()}`,
+        payment_id: razorpay_payment_id || `PAY_QUIZ_${Date.now()}`,
+        amount: Number(plan?.price || 0),
+        status: 'success',
+        date: today,
         plan_id: plan?.id,
         plan_name: plan?.label,
-        price: plan?.price,
-        duration: plan?.duration,
-        quiz_count: quizCount,
-        purchased_at: today,
-        expires_at: expiryDate.toISOString().slice(0, 10),
-      },
-      quiz_subscription_total_count: quizCount,
-      quiz_subscription_remaining_count: quizCount,
-      notifications: [notification, ...normalizeNotifications(user.notifications)],
-      payment_history: [...normalizePaymentHistory(user.payment_history), quizPayment],
-    });
-       if (!updatedUser) return { ok: false, message: 'Could not save the subscription.' };
-    await recordQualifyingTransaction({
-      buyerEmail: user.email,
-      amount: Number(plan?.price || 0),
-      packageType: 'quiz',
-      transactionId: razorpay_payment_id || `TXN-${Date.now()}`,
-      isRenewal: Boolean(user.quiz_subscription_expiry),
-    });
-    return { ok: true, user: updatedUser };
-  } catch (err) {
-    console.error('[UserStore.verifyQuizPayment] Error:', err);
-    return { ok: false, message: 'Something went wrong during verification.' };
-  }
-},
+        module: 'quiz',
+        signature: razorpay_signature || '',
+      };
 
-// ✅ NEW: har successful quiz attempt (submit) ke baad quiz-subscription ka remaining
-// count ek se decrement karta hai. Legacy users jinke paas count hi track nahi ho raha
-// (remaining_count undefined/null) unke liye kuch nahi karta — unke liye subscription
-// abhi bhi purani tarah expiry-only rehti hai.
-consumeQuizAttempt: async () => {
-  try {
-    const user = await UserStore.getCurrentUser();
-    if (!user) return { ok: false, message: 'Please login again.' };
-    const remaining = user.quiz_subscription_remaining_count;
-    if (remaining === undefined || remaining === null) return { ok: true, remaining: null };
-    const nextRemaining = Math.max(0, Number(remaining) - 1);
-    const updatedUser = await UserStore.updateUser(user.email, {
-      quiz_subscription_remaining_count: nextRemaining,
-    });
-    if (!updatedUser) return { ok: false, message: 'Unable to update quiz count.' };
-    return { ok: true, remaining: nextRemaining };
-  } catch (err) {
-    console.error('[UserStore.consumeQuizAttempt] Error:', err);
-    return { ok: false, message: 'Unable to update quiz count.' };
-  }
-},
-     hasBlueTick: (user) => hasBlueTick(user),
-   hasBlueTickFeatures: (user) => hasBlueTickFeatures(user),
+      const updatedUser = await UserStore.updateUser(user.email, {
+        quiz_subscription_expiry: expiryDate.toISOString(),
+        quiz_subscription_plan: {
+          plan_id: plan?.id,
+          plan_name: plan?.label,
+          price: plan?.price,
+          duration: plan?.duration,
+          quiz_count: quizCount,
+          purchased_at: today,
+          expires_at: expiryDate.toISOString().slice(0, 10),
+        },
+        quiz_subscription_total_count: quizCount,
+        quiz_subscription_remaining_count: quizCount,
+        notifications: [notification, ...normalizeNotifications(user.notifications)],
+        payment_history: [...normalizePaymentHistory(user.payment_history), quizPayment],
+      });
+      if (!updatedUser) return { ok: false, message: 'Could not save the subscription.' };
+      await recordQualifyingTransaction({
+        buyerEmail: user.email,
+        amount: Number(plan?.price || 0),
+        packageType: 'quiz',
+        transactionId: razorpay_payment_id || `TXN-${Date.now()}`,
+        isRenewal: Boolean(user.quiz_subscription_expiry),
+      });
+      return { ok: true, user: updatedUser };
+    } catch (err) {
+      console.error('[UserStore.verifyQuizPayment] Error:', err);
+      return { ok: false, message: 'Something went wrong during verification.' };
+    }
+  },
+
+  // ✅ NEW: har successful quiz attempt (submit) ke baad quiz-subscription ka remaining
+  // count ek se decrement karta hai. Legacy users jinke paas count hi track nahi ho raha
+  // (remaining_count undefined/null) unke liye kuch nahi karta — unke liye subscription
+  // abhi bhi purani tarah expiry-only rehti hai.
+  consumeQuizAttempt: async () => {
+    try {
+      const user = await UserStore.getCurrentUser();
+      if (!user) return { ok: false, message: 'Please login again.' };
+      const remaining = user.quiz_subscription_remaining_count;
+      if (remaining === undefined || remaining === null) return { ok: true, remaining: null };
+      const nextRemaining = Math.max(0, Number(remaining) - 1);
+      const updatedUser = await UserStore.updateUser(user.email, {
+        quiz_subscription_remaining_count: nextRemaining,
+      });
+      if (!updatedUser) return { ok: false, message: 'Unable to update quiz count.' };
+      return { ok: true, remaining: nextRemaining };
+    } catch (err) {
+      console.error('[UserStore.consumeQuizAttempt] Error:', err);
+      return { ok: false, message: 'Unable to update quiz count.' };
+    }
+  },
+  hasBlueTick: (user) => hasBlueTick(user),
+  hasBlueTickFeatures: (user) => hasBlueTickFeatures(user),
   isPremiumPlan: (plan) => isPremiumPlan(plan),
   // ✅ NEW: plan abhi active hai ya expire? (false => plan/role pill mat dikhao)
   hasActiveRolePlan: (user) => hasActiveRolePlan(user),
@@ -2909,7 +2959,7 @@ consumeQuizAttempt: async () => {
   isExpired: (value) => isExpiredValue(value),
   getRoleFromPlanId,
   getRoleLabel,
-    getSeatIdsForRoleId: (roleIdRaw) =>
+  getSeatIdsForRoleId: (roleIdRaw) =>
     String(roleIdRaw || '')
       .split(',')
       .map((id) => id.trim())
@@ -2926,18 +2976,18 @@ consumeQuizAttempt: async () => {
   getNextReferralTier,
   getReferralTiers: () => [...RANK_TIERS].reverse().filter((tier) => tier.rank !== 'Member'),
 
-        saveUser: async ({
+  saveUser: async ({
     name,
     mobile,
     email,
     password,
-    state             = '',
-    district          = '',
-    taluka            = '',
+    state = '',
+    district = '',
+    taluka = '',
     subscription_type = 'free',
     referral_code_used = null,
-    profile_image     = '',
-    bio               = '',
+    profile_image = '',
+    bio = '',
   }) => {
     try {
       // ✅ FIX: Register karte waqt email lowercase karo
@@ -2970,12 +3020,12 @@ consumeQuizAttempt: async () => {
         const parentUser = users.find(
           (u) => u.my_referral_code === referral_code_used.toUpperCase().trim()
         );
-            // Referral code ki asli validation server ne register par hi kar di hai (galat ho to 422).
+        // Referral code ki asli validation server ne register par hi kar di hai (galat ho to 422).
         // Referrer is phone ki local list me na ho to bhi registration fail nahi honi chahiye.
         if (parentUser) referred_by = parentUser.email;
       }
 
-          const newUser = normalizeUser({
+      const newUser = normalizeUser({
         name,
         mobile: normalizedMobile,
         email: normalizedEmail, // ✅ lowercase email save karo
@@ -2995,10 +3045,10 @@ consumeQuizAttempt: async () => {
         referral_count: 0,
         join_date: new Date().toISOString().slice(0, 10),
         wallet_transactions: defaultWalletTransactions,
-        withdraw_requests:   [],
-        subscription_plan:   null,
-        payment_history:     [],
-        settings:            defaultSettings,
+        withdraw_requests: [],
+        subscription_plan: null,
+        payment_history: [],
+        settings: defaultSettings,
       });
 
       const updatedUsers = [...users, newUser];
@@ -3009,7 +3059,7 @@ consumeQuizAttempt: async () => {
     }
   },
 
-  saveUserFromApi: async ({ id, name, mobile, email, password = '', state = '' }) => {
+  saveUserFromApi: async ({ id, name, mobile, email, password = '', state = '', district = '', taluka = '', village = '' }) => {
     try {
       const normalizedEmail = email ? email.trim().toLowerCase() : '';
       if (!normalizedEmail) return { ok: false, message: 'Email missing.' };
@@ -3017,11 +3067,24 @@ consumeQuizAttempt: async () => {
       const users = await getUsersFromStorage();
       const existing = users.find((u) => u.email === normalizedEmail);
 
-      // ✅ FIX: agar user pehle se hai lekin id missing hai, to yahin patch kar do
+      const hasCompleteLoc = Boolean(state && district && taluka);
+
+      // ✅ FIX: agar user pehle se hai lekin id ya location fields missing/incomplete hain, to yahin patch kar do
       if (existing) {
+        const patch = {};
         if (id && !(Number.isFinite(Number(existing.id)) && Number(existing.id) > 0)) {
-          const patched = await UserStore.updateUser(normalizedEmail, { id });
-          return { ok: true, user: patched || existing };
+          patch.id = id;
+        }
+        if (state && (!existing.state || existing.state !== state)) patch.state = state;
+        if (district && (!existing.district || existing.district !== district)) patch.district = district;
+        if (taluka && (!existing.taluka || existing.taluka !== taluka)) patch.taluka = taluka;
+        if (village && (!existing.village || existing.village !== village)) patch.village = village;
+        if ((patch.state || existing.state) && (patch.district || existing.district) && (patch.taluka || existing.taluka)) {
+          patch.location_complete = true;
+        }
+        if (Object.keys(patch).length > 0) {
+          const patched = await UserStore.updateUser(normalizedEmail, patch);
+          return { ok: true, user: patched || { ...existing, ...patch } };
         }
         return { ok: true, user: existing };
       }
@@ -3036,7 +3099,10 @@ consumeQuizAttempt: async () => {
         email: normalizedEmail,
         password,
         state,
-        location_complete: false,
+        district,
+        taluka,
+        village,
+        location_complete: hasCompleteLoc,
         role: 'free',
         is_subscribed: false,
         my_referral_code,
@@ -3058,10 +3124,10 @@ consumeQuizAttempt: async () => {
       return { ok: false, message: 'Local sync failed.' };
     }
   },
-   updateUser: async (email, updates) => {
+  updateUser: async (email, updates) => {
 
     try {
-      const data  = await AsyncStorage.getItem(USERS_KEY);
+      const data = await AsyncStorage.getItem(USERS_KEY);
       const users = data ? JSON.parse(data) : [];
       // ✅ FIX: update bhi lowercase email se match karo
       const normalizedEmail = email ? email.trim().toLowerCase() : '';
@@ -3088,16 +3154,17 @@ consumeQuizAttempt: async () => {
           my_referral_code: updates.my_referral_code || user.my_referral_code || generateUniqueReferralCode(users),
           rank: calculateRank(mergedReferralCount),
           wallet_transactions: normalizeWalletTransactions(updates.wallet_transactions !== undefined ? updates.wallet_transactions : user.wallet_transactions),
-          withdraw_requests:   normalizeWithdrawRequests(updates.withdraw_requests !== undefined ? updates.withdraw_requests : user.withdraw_requests),
-          subscription_plan:   normalizeSubscriptionPlan(updates.subscription_plan !== undefined ? updates.subscription_plan : user.subscription_plan),
-          payment_history:     normalizePaymentHistory(updates.payment_history !== undefined ? updates.payment_history : user.payment_history),
-          settings:            normalizeSettings(updates.settings !== undefined ? updates.settings : user.settings),
+          withdraw_requests: normalizeWithdrawRequests(updates.withdraw_requests !== undefined ? updates.withdraw_requests : user.withdraw_requests),
+          subscription_plan: normalizeSubscriptionPlan(updates.subscription_plan !== undefined ? updates.subscription_plan : user.subscription_plan),
+          payment_history: normalizePaymentHistory(updates.payment_history !== undefined ? updates.payment_history : user.payment_history),
+          settings: normalizeSettings(updates.settings !== undefined ? updates.settings : user.settings),
         });
         return updatedUser;
       });
 
       if (!updatedUser) return null;
       await AsyncStorage.setItem(USERS_KEY, JSON.stringify(updatedUsers));
+      invalidateUserCache();
 
       // ✅ FIX: email change hua toh session pointer (CURRENT_USER_KEY) bhi update karo,
       // warna agli baar getCurrentUser() purane email se dhoondega aur user record
@@ -3118,21 +3185,28 @@ consumeQuizAttempt: async () => {
     return { ok: false, message: 'Blue tick is included only with an active Premium Plan.' };
   },
 
-   completeLocationSetup: async (email, state, district = '', taluka = '', village = '') => {
+  completeLocationSetup: async (email, state, district = '', taluka = '', village = '', tokenOverride = null) => {
+    try {
+      // ✅ Sync location to backend /state API
+      AuthAPI.updateState({ state, district, taluka, village }, tokenOverride).catch((e) => {
+        console.warn('[UserStore.completeLocationSetup] State sync error:', e?.message || e);
+      });
+    } catch (_) { }
     return await UserStore.updateUser(email, { state, district, taluka, village, location_complete: true });
   },
 
-// ✅ FIX: setCurrentUser mein lowercase save karo
+  // ✅ FIX: setCurrentUser mein lowercase save karo
   setCurrentUser: async (email) => {
     try {
+      invalidateUserCache();
       const normalizedEmail = email ? email.trim().toLowerCase() : '';
       await AsyncStorage.setItem(CURRENT_USER_KEY, normalizedEmail);
       // ✅ FIX: login turant baad, jab token fresh hota hai, tabhi ek baar id resolve/save kar lo.
       // Isse like/dislike ke time dobara /profile hit karne ki zaroorat nahi padegi.
-      UserStore.ensureUserId().catch(() => {});
+      UserStore.ensureUserId().catch(() => { });
       // Guest likes are queued locally until a real login/token is available.
       // Sync them only after login, never while the visitor is logged out.
-      UserStore.syncGuestLikesToUser(normalizedEmail).catch(() => {});
+      UserStore.syncGuestLikesToUser(normalizedEmail).catch(() => { });
       return true;
     } catch { return false; }
   },
@@ -3140,37 +3214,43 @@ consumeQuizAttempt: async () => {
   // ✅ FIX: guest (bina-login) local likes ab exist hi nahi karte — likes
   // purely API-based hain aur login ke bina like possible nahi. Ye function
   // ab sirf backward-compatibility ke liye no-op hai.
-  syncGuestLikesToUser: async () => {},
+  syncGuestLikesToUser: async () => { },
 
   // UserStore ke andar, getCurrentUser ke paas add karo
-// ensureUserId: async () => {
-//   try {
-//     const user = await UserStore.getCurrentUser();
-//     if (!user) return null;
-//     if (Number.isFinite(Number(user.id)) && Number(user.id) > 0) return user;
+  // ensureUserId: async () => {
+  //   try {
+  //     const user = await UserStore.getCurrentUser();
+  //     if (!user) return null;
+  //     if (Number.isFinite(Number(user.id)) && Number(user.id) > 0) return user;
 
-//     // id missing hai — profile se fetch karke repair karo
-//     const profileRes = await AuthAPI.getProfile();
-//     if (profileRes.ok && profileRes.user?.id) {
-//       const updatedUser = await UserStore.updateUser(user.email, { id: profileRes.user.id });
-//       return updatedUser || user;
-//     }
-//     return user;
-//   } catch { return null; }
-// },
+  //     // id missing hai — profile se fetch karke repair karo
+  //     const profileRes = await AuthAPI.getProfile();
+  //     if (profileRes.ok && profileRes.user?.id) {
+  //       const updatedUser = await UserStore.updateUser(user.email, { id: profileRes.user.id });
+  //       return updatedUser || user;
+  //     }
+  //     return user;
+  //   } catch { return null; }
+  // },
 
   getCurrentUser: async () => {
     try {
-      UserStore.syncCreditSubscriptionsFromBackend().catch(() => {});
       const email = await AsyncStorage.getItem(CURRENT_USER_KEY);
-      if (!email) return null;
-      // ✅ FIX: stored email bhi lowercase se match karo
+      if (!email) {
+        _cachedCurrentUser = null;
+        _cachedCurrentEmail = null;
+        return null;
+      }
       const normalizedEmail = email.trim().toLowerCase();
+      // ✅ FAST: In-memory cache hit (0ms)
+      if (_cachedCurrentUser && _cachedCurrentEmail === normalizedEmail && (Date.now() - _cachedCurrentTime < 8000)) {
+        return _cachedCurrentUser;
+      }
       const users = await getUsersFromStorage();
       let found = users.find((u) => u.email === normalizedEmail) || null;
 
-         // ✅ FIX: agar local record missing hai (purana broken login), auto-repair karo
-    if (!found) {
+      // ✅ FIX: agar local record missing hai (purana broken login), auto-repair karo
+      if (!found) {
         const profileRes = await AuthAPI.getProfile();
         if (profileRes.ok && profileRes.user) {
           const apiUser = profileRes.user?.profile || profileRes.user;
@@ -3179,11 +3259,14 @@ consumeQuizAttempt: async () => {
             mobile: apiUser.mobile_no || apiUser.mobile || apiUser.phone || '',
             email: normalizedEmail,
             state: apiUser.state || '',
-              id: apiUser.id,
+            district: apiUser.district || '',
+            taluka: apiUser.taluka || '',
+            village: apiUser.village || '',
+            id: apiUser.id,
           });
-      if (syncResult.ok) {
-  found = await UserStore.syncSubscriptionFromBackend(syncResult.user);
-}
+          if (syncResult.ok) {
+            found = await UserStore.syncSubscriptionFromBackend(syncResult.user);
+          }
         }
       }
 
@@ -3209,28 +3292,31 @@ consumeQuizAttempt: async () => {
         }
       }
 
+      _cachedCurrentUser = found;
+      _cachedCurrentEmail = normalizedEmail;
+      _cachedCurrentTime = Date.now();
       return found;
     } catch { return null; }
   },
 
- ensureUserId: async () => {
-  try {
-    const user = await UserStore.getCurrentUser();
-    console.log('[ensureUserId] getCurrentUser ->', JSON.stringify(user));
-    if (!user) return null;
-    if (Number.isFinite(Number(user.id)) && Number(user.id) > 0) return user;
+  ensureUserId: async () => {
+    try {
+      const user = await UserStore.getCurrentUser();
+      console.log('[ensureUserId] getCurrentUser ->', JSON.stringify(user));
+      if (!user) return null;
+      if (Number.isFinite(Number(user.id)) && Number(user.id) > 0) return user;
 
-  const profileRes = await AuthAPI.getProfile();
-    console.log('[ensureUserId] getProfile ->', JSON.stringify(profileRes));
-    const resolvedId = profileRes.user?.profile?.id || profileRes.user?.id;
-    if (profileRes.ok && resolvedId) {
-      const updatedUser = await UserStore.updateUser(user.email, { id: resolvedId });
-      console.log('[ensureUserId] updateUser ->', JSON.stringify(updatedUser));
-      return updatedUser || user;
-    }
-    return user;
-  } catch (err) { console.log('[ensureUserId] ERROR', err); return null; }
-},
+      const profileRes = await AuthAPI.getProfile();
+      console.log('[ensureUserId] getProfile ->', JSON.stringify(profileRes));
+      const resolvedId = profileRes.user?.profile?.id || profileRes.user?.id;
+      if (profileRes.ok && resolvedId) {
+        const updatedUser = await UserStore.updateUser(user.email, { id: resolvedId });
+        console.log('[ensureUserId] updateUser ->', JSON.stringify(updatedUser));
+        return updatedUser || user;
+      }
+      return user;
+    } catch (err) { console.log('[ensureUserId] ERROR', err); return null; }
+  },
   // 🔒 Centralized logout cleanup — saare logout paths (AuthContext.logout, clearCurrentUser) yahin aate hain.
   // Kabhi throw nahi karta; dobara call karna safe hai (in-flight call share hoti hai).
   logoutCleanup: () => {
@@ -3243,15 +3329,15 @@ consumeQuizAttempt: async () => {
           unregisterDeviceToken(),
           new Promise((resolve) => { timer = setTimeout(resolve, PUSH_UNREGISTER_TIMEOUT_MS); }),
         ]);
-      } catch {}
+      } catch { }
       if (timer) clearTimeout(timer);
       // 2) auth_token + current_user_email (AsyncStorage + web localStorage/sessionStorage)
-      try { await AuthAPI.clearSession(); } catch {}
-      try { await AsyncStorage.removeItem(CURRENT_USER_KEY); } catch {}
+      try { await AuthAPI.clearSession(); } catch { }
+      try { await AsyncStorage.removeItem(CURRENT_USER_KEY); } catch { }
       // 3) account-specific caches
       clearAccountMemoryCaches();
       // 4) auth state
-      _sessionClearedListeners.forEach((cb) => { try { cb(); } catch {} });
+      _sessionClearedListeners.forEach((cb) => { try { cb(); } catch { } });
       return true;
     })().finally(() => { _logoutPromise = null; });
     return _logoutPromise;
@@ -3293,7 +3379,7 @@ consumeQuizAttempt: async () => {
     }
   },
 
-   setPendingRegistration: async (data = {}) => {
+  setPendingRegistration: async (data = {}) => {
     try {
       purgeLegacySensitiveStorage();
       const payload = {
@@ -3408,19 +3494,19 @@ consumeQuizAttempt: async () => {
 
       return {
         my_referral_code: currentUser.my_referral_code || '',
-        referral_count:   validCount,
-        total_referrals:  directReferrals.length,
+        referral_count: validCount,
+        total_referrals: directReferrals.length,
         pending_referrals: Math.max(0, directReferrals.length - validCount),
-        rank:             currentTier.rank,
-        bonus:            currentTier.bonus,
-        next_rank:        nextTier,
-        tiers:            [...RANK_TIERS].reverse().filter((tier) => tier.rank !== 'Member'),
+        rank: currentTier.rank,
+        bonus: currentTier.bonus,
+        next_rank: nextTier,
+        tiers: [...RANK_TIERS].reverse().filter((tier) => tier.rank !== 'Member'),
         direct_referrals: directReferrals.map((u) => ({
-          name:      u.name,
-          email:     u.email,
+          name: u.name,
+          email: u.email,
           join_date: u.join_date,
-          rank:      u.rank,
-          state:     u.state,
+          rank: u.rank,
+          state: u.state,
           qualified: Boolean(u.referral_qualified || u.is_subscribed),
           subscription: u.subscription_plan?.plan_name || '',
         })),
@@ -3433,13 +3519,13 @@ consumeQuizAttempt: async () => {
       const currentUser = await UserStore.getCurrentUser();
       if (!currentUser) return null;
 
-     const users        = await getUsersFromStorage();
+      const users = await getUsersFromStorage();
       const usersByEmail = new Map(users.map((u) => [u.email, u]));
 
       // ✅ FIX: sirf apna account aur wahi users dikhao jinhone tumhara referral
       // use kiya hai (referred_by === currentUser.email) — baaki sabhi app-wide
       // users pehle yahan bina filter ke aa jaate the.
-           const downlineEmails = new Set([String(currentUser.email || '').trim().toLowerCase()]);
+      const downlineEmails = new Set([String(currentUser.email || '').trim().toLowerCase()]);
       for (let i = 0; i < 5; i++) {
         users.forEach((u) => {
           const parent = String(u.referred_by || '').trim().toLowerCase();
@@ -3451,20 +3537,20 @@ consumeQuizAttempt: async () => {
       const rows = users
         .filter((user) => downlineEmails.has(String(user.email || '').trim().toLowerCase()))
         .map((user) => ({
-          user_id:       user.email,
-          name:          user.name || 'Unnamed User',
-          mobile:        user.mobile || '-',
-          state:         user.state || '-',
-          rank:          user.rank || 'Member',
-          role:          user.role || 'free',
-          role_label:    getRoleLabel(user.role || 'free'),
+          user_id: user.email,
+          name: user.name || 'Unnamed User',
+          mobile: user.mobile || '-',
+          state: user.state || '-',
+          rank: user.rank || 'Member',
+          role: user.role || 'free',
+          role_label: getRoleLabel(user.role || 'free'),
           subscription_type: user.subscription_type || user.role || 'free',
           subscription_plan: user.subscription_plan || null,
           is_subscribed: hasActiveSubscription(user),
-          referred_by:   user.referred_by || 'Direct Signup',
-          level:         getLevelFromCurrentUser(user, currentUser, usersByEmail),
-          join_date:     user.join_date || '2026-03-24',
-               commission:    Number(user.total_commission || 0),
+          referred_by: user.referred_by || 'Direct Signup',
+          level: getLevelFromCurrentUser(user, currentUser, usersByEmail),
+          join_date: user.join_date || '2026-03-24',
+          commission: Number(user.total_commission || 0),
           isCurrentUser: user.email === currentUser.email,
         }))
         .sort((a, b) => {
@@ -3473,14 +3559,14 @@ consumeQuizAttempt: async () => {
           return a.name.localeCompare(b.name);
         });
 
-        // Apni khud ki row network list / member count me nahi aani chahiye — sirf mere referred members.
-        // (Commission total me apna commission phir bhi gina jaata hai, isliye total alag nikaal rahe hain.)
+      // Apni khud ki row network list / member count me nahi aani chahiye — sirf mere referred members.
+      // (Commission total me apna commission phir bhi gina jaata hai, isliye total alag nikaal rahe hain.)
       const memberRows = rows.filter((r) => !r.isCurrentUser);
       let localCommissionTotal = rows.reduce((sum, r) => sum + (Number(r.commission) || 0), 0);
       let backendCommission = null; // server ka total (sabhi devices par same)
       const selfEmail = String(currentUser.email || '').trim().toLowerCase();
       const selfMobile = String(currentUser.mobile || currentUser.phone || '').replace(/\D/g, '').slice(-10);
-        // ✅ Backend se wo log jinhone MERA referral code use kiya (dusre device ke bhi)
+      // ✅ Backend se wo log jinhone MERA referral code use kiya (dusre device ke bhi)
       let mergedRows = memberRows;
       try {
         const refRes = await AuthAPI.getReferrals();
@@ -3492,7 +3578,7 @@ consumeQuizAttempt: async () => {
           }
           const apiUsers = Array.isArray(root.referred_users) ? root.referred_users
             : Array.isArray(root.referrals) ? root.referrals
-            : Array.isArray(root.users) ? root.users : [];
+              : Array.isArray(root.users) ? root.users : [];
           const truthy = (v) => v === true || v === 1 || v === '1' || String(v || '').toLowerCase() === 'active';
           const seen = new Set();
           if (selfEmail) seen.add(selfEmail);
@@ -3504,7 +3590,7 @@ consumeQuizAttempt: async () => {
             if (mob) seen.add(mob);
           });
           const extra = [];
-                 if (apiUsers.length) console.log('[getMyNetwork] referred user sample:', JSON.stringify(apiUsers[0]));
+          if (apiUsers.length) console.log('[getMyNetwork] referred user sample:', JSON.stringify(apiUsers[0]));
           apiUsers.forEach((raw, idx) => {
             const u = { ...(raw?.user || raw?.referred_user || raw?.member || {}), ...raw };
             const email = String(u.email || u.email_address || '').trim().toLowerCase();
@@ -3516,20 +3602,20 @@ consumeQuizAttempt: async () => {
             ).trim() || 'Unnamed User';
             const role = u.role || u.subscription_type || 'free';
             extra.push({
-              user_id:       email || `api-${u.id ?? idx}`,
-              name:          fullName,
-              mobile:        mobile || '-',
-              state:         u.state || '-',
-              rank:          u.rank || 'Member',
+              user_id: email || `api-${u.id ?? idx}`,
+              name: fullName,
+              mobile: mobile || '-',
+              state: u.state || '-',
+              rank: u.rank || 'Member',
               role,
-              role_label:    getRoleLabel(role),
+              role_label: getRoleLabel(role),
               subscription_type: u.subscription_type || role,
               subscription_plan: u.subscription_plan || null,
               is_subscribed: truthy(u.is_subscribed ?? u.subscribed ?? u.has_subscription ?? u.status),
-              referred_by:   currentUser.email,
-              level:         String(u.level || '1'),
-              join_date:     String(u.created_at || u.join_date || '').slice(0, 10) || '-',
-              commission:    Number(u.commission ?? u.total_commission ?? 0) || 0,
+              referred_by: currentUser.email,
+              level: String(u.level || '1'),
+              join_date: String(u.created_at || u.join_date || '').slice(0, 10) || '-',
+              commission: Number(u.commission ?? u.total_commission ?? 0) || 0,
               isCurrentUser: false,
             });
           });
@@ -3543,7 +3629,7 @@ consumeQuizAttempt: async () => {
 
       return {
         currentUser,
-        totalMembers:  mergedRows.length,
+        totalMembers: mergedRows.length,
         linkedMembers: mergedRows.filter((r) => r.level !== '-' && !r.isCurrentUser).length,
         rows: mergedRows,
         // Total commission: server ka total (phone/web sync) aur is device ka local total — jo bada ho wo.
@@ -3553,25 +3639,22 @@ consumeQuizAttempt: async () => {
   },
   getWalletSummary: async () => {
     try {
-      const [walletRes, txnRes] = await Promise.all([
+      // ✅ Parallelize all three calls at once for 2x faster wallet dashboard load
+      const [walletRes, txnRes, network] = await Promise.all([
         AuthAPI.getWalletApi(),
         AuthAPI.getWalletTransactionsApi({ perPage: 50 }),
+        UserStore.getMyNetwork().catch(() => null),
       ]);
       if (!walletRes.ok || !walletRes.wallet) return null;
       const w = walletRes.wallet;
       const transactions = normalizeWalletTransactions(txnRes.ok ? txnRes.transactions : []);
-      // Network tab ka "Total Commission" (sabhi levels ka) wahi total wallet me bhi dikhane ke liye
-      let expectedCommission = 0;
-      try {
-        const network = await UserStore.getMyNetwork();
-        expectedCommission = Number(network?.total_commission) || 0;
-      } catch { expectedCommission = 0; }
+      const expectedCommission = Number(network?.total_commission) || 0;
       return {
         expected_commission: expectedCommission,
         // Total Balance = wallet ka paisa + network commission (dono ka total)
         total_balance: (Number(w.withdrawable_balance) || 0) + expectedCommission,
-        total_credit:  w.total_earned || 0,
-        total_debit:   Math.max((w.total_earned || 0) - (w.withdrawable_balance || 0) - (w.pending_commission || 0), 0),
+        total_credit: w.total_earned || 0,
+        total_debit: Math.max((w.total_earned || 0) - (w.withdrawable_balance || 0) - (w.pending_commission || 0), 0),
         transactions,
         wallet: w,
       };
@@ -3586,14 +3669,19 @@ consumeQuizAttempt: async () => {
         AuthAPI.getWalletApi(),
         AuthAPI.getWalletWithdrawalsApi({ perPage: 100 }),
       ]);
-      // 100 se zyada requests ho to baaki pages bhi lao (max 10 page)
+      // ✅ Parallelize additional page fetches (up to 3 pages) instead of sequential loop
       if (withdrawalsRes.ok && withdrawalsRes.meta?.last_page > 1) {
-        const last = Math.min(Number(withdrawalsRes.meta.last_page) || 1, 10);
+        const last = Math.min(Number(withdrawalsRes.meta.last_page) || 1, 3);
+        const extraPagePromises = [];
         for (let pg = 2; pg <= last; pg += 1) {
-          const more = await AuthAPI.getWalletWithdrawalsApi({ page: pg, perPage: 100 });
-          if (!more.ok) break;
-          withdrawalsRes.requests = [...withdrawalsRes.requests, ...more.requests];
+          extraPagePromises.push(AuthAPI.getWalletWithdrawalsApi({ page: pg, perPage: 100 }));
         }
+        const extraResults = await Promise.all(extraPagePromises);
+        extraResults.forEach((more) => {
+          if (more.ok && Array.isArray(more.requests)) {
+            withdrawalsRes.requests = [...withdrawalsRes.requests, ...more.requests];
+          }
+        });
       }
       if (!walletRes.ok || !walletRes.wallet) return null;
       const wallet = walletRes.wallet;
@@ -3619,9 +3707,9 @@ consumeQuizAttempt: async () => {
     } catch { return { ok: false, message: 'Unable to cancel withdrawal request.' }; }
   },
 
-// ✅ FIX: Backend se subscription ki real truth fetch karke local storage sync karo
+  // ✅ FIX: Backend se subscription ki real truth fetch karke local storage sync karo
   // Isse "buy karne ke baad bhi subscribe maang raha hai" wala mismatch bug fix hoga
-syncRoleSubscriptionV3: async (existingUser) => {
+  syncRoleSubscriptionV3: async (existingUser) => {
     try {
       const user = existingUser || await UserStore.getCurrentUser();
       if (!user) return null;
@@ -3647,7 +3735,7 @@ syncRoleSubscriptionV3: async (existingUser) => {
       const roleList = roleRes?.ok ? toList(roleRes.subscriptions) : [];
       const allList = allRes?.ok
         ? toList(allRes.subscriptions).filter((s) =>
-            /role|member|premium/.test(String(s.type || s.category || s.subscription_type || s.plan_type || s.module || '').toLowerCase()))
+          /role|member|premium/.test(String(s.type || s.category || s.subscription_type || s.plan_type || s.module || '').toLowerCase()))
         : [];
       const subs = [...roleList, ...allList];
       console.log('[syncRoleSubscriptionV3] role list:', JSON.stringify(roleRes?.subscriptions), '| combined list:', JSON.stringify(allRes?.subscriptions));
@@ -3776,7 +3864,7 @@ syncRoleSubscriptionV3: async (existingUser) => {
         duration: `${days} Days`,
         validity_days: days,
         role: newRole,
-         role_id_raw: roleIdRaw,
+        role_id_raw: roleIdRaw,
         is_premium: Boolean(matchedPlan?.is_premium ?? nested.is_premium ?? activeSub.is_premium),
         purchased_at: purchasedAt,
         expires_at: expiresAt,
@@ -3833,7 +3921,7 @@ syncRoleSubscriptionV3: async (existingUser) => {
       const roleList = roleRes?.ok ? toList(roleRes.subscriptions) : [];
       const allList = allRes?.ok
         ? toList(allRes.subscriptions).filter((s) =>
-            /role|member|premium/.test(String(s.type || s.category || s.subscription_type || s.plan_type || s.module || '').toLowerCase()))
+          /role|member|premium/.test(String(s.type || s.category || s.subscription_type || s.plan_type || s.module || '').toLowerCase()))
         : [];
       const subs = [...roleList, ...allList];
       console.log('[syncRoleSubscriptionV2] role list:', JSON.stringify(roleRes?.subscriptions), '| combined list:', JSON.stringify(allRes?.subscriptions));
@@ -3911,8 +3999,8 @@ syncRoleSubscriptionV3: async (existingUser) => {
       const seatObj = (activeSub.seat && typeof activeSub.seat === 'object') ? activeSub.seat : null;
       const seatLoc = seatObj
         ? trimLocationToLevel(matchedPlan?.location_level || normalizeLocationLevel(seatObj.level), {
-            state: seatObj.state, district: seatObj.district, taluka: seatObj.taluka, village: seatObj.village,
-          })
+          state: seatObj.state, district: seatObj.district, taluka: seatObj.taluka, village: seatObj.village,
+        })
         : null;
       const sameSeatLoc = !seatLoc || ['state', 'district', 'taluka', 'village'].every((k) =>
         String(user.subscription_plan?.[k] || '').trim().toLowerCase() === String(seatLoc[k] || '').trim().toLowerCase());
@@ -4084,7 +4172,7 @@ syncRoleSubscriptionV3: async (existingUser) => {
         ? res.subscriptions
         : (res.subscriptions ? [res.subscriptions] : []);
 
-           const activeSub = subs.find(
+      const activeSub = subs.find(
         (s) => Number(s.payment_status) === 1 || String(s.status || '').toLowerCase() === 'active'
       );
       if (!activeSub) {
@@ -4104,12 +4192,12 @@ syncRoleSubscriptionV3: async (existingUser) => {
         return user;
       }
 
-      
+
       const localPlanId = getLocalPlanIdFromBackendId(activeSub.plan_id);
       if (!localPlanId) return user;
 
       // ✅ FIX: dummy array ki jagah cached backend plans se match karo
-    const matchedPlan = cachedBackendPlans.find((p) => p.plan_id === localPlanId) || null;
+      const matchedPlan = cachedBackendPlans.find((p) => p.plan_id === localPlanId) || null;
       const newRole = matchedPlan ? matchedPlan.role : getRoleFromPlanName(activeSub.plan_name || activeSub.name || '');
 
       const backendExpiresAt = activeSub.expires_at || activeSub.expiry || null;
@@ -4118,10 +4206,10 @@ syncRoleSubscriptionV3: async (existingUser) => {
 
       const mergedPlan = matchedPlan
         ? {
-            ...matchedPlan,
-            purchased_at: activeSub.purchased_at || activeSub.created_at || user.subscription_plan?.purchased_at || null,
-            expires_at:   activeSub.expires_at   || activeSub.expiry     || user.subscription_plan?.expires_at   || null,
-          }
+          ...matchedPlan,
+          purchased_at: activeSub.purchased_at || activeSub.created_at || user.subscription_plan?.purchased_at || null,
+          expires_at: activeSub.expires_at || activeSub.expiry || user.subscription_plan?.expires_at || null,
+        }
         : user.subscription_plan;
 
       const updatedUser = await UserStore.updateUser(user.email, {
@@ -4138,8 +4226,8 @@ syncRoleSubscriptionV3: async (existingUser) => {
     }
   },   // 👈 YE COMMA hona chahiye, semicolon ya kuch aur nahi
 
-// ✅ FIX: Ye asli getStateSeatSummary tha — pehle galti se naam badal gaya tha
-   getStateSeatSummary: async () => {
+  // ✅ FIX: Ye asli getStateSeatSummary tha — pehle galti se naam badal gaya tha
+  getStateSeatSummary: async () => {
     try {
       const user = await UserStore.getCurrentUser();
       if (!user) return null;
@@ -4192,9 +4280,9 @@ syncRoleSubscriptionV3: async (existingUser) => {
     } catch { return null; }
   },
 
-   // ✅ FAST: active plan sirf local saved user se (koi network call nahi) — screen turant dikha sake.
-   // Fresh data baad me getSubscriptionSummary() se aata hai.
-   getActivePlanQuick: async () => {
+  // ✅ FAST: active plan sirf local saved user se (koi network call nahi) — screen turant dikha sake.
+  // Fresh data baad me getSubscriptionSummary() se aata hai.
+  getActivePlanQuick: async () => {
     try {
       const user = await UserStore.getCurrentUser();
       if (!user) return null;
@@ -4202,34 +4290,34 @@ syncRoleSubscriptionV3: async (existingUser) => {
         currentUser: user,
         activePlan: UserStore.buildActivePlan(user, cachedBackendPlans),
         plans: cachedBackendPlans,
-        currentRole:      user.role || 'free',
+        currentRole: user.role || 'free',
         currentRoleLabel: getRoleLabel(user.role || 'free'),
       };
     } catch { return null; }
-   },
+  },
 
-   buildActivePlan: (user, plans = []) => {
-          if (!hasActiveSubscription(user)) return null;
-          const ap = normalizeSubscriptionPlan(user.subscription_plan);
-          if (!ap) return null;
-          const known = [...plans, ...roleLookupPlans].find((p) => String(p.plan_id) === String(ap.plan_id));
-          const roleIdRaw = user.subscription_plan?.role_id_raw || ap.role_id_raw || known?.role_id_raw || '';
-          const roleNamesStr = UserStore.getSeatRoleNameForPlanRoleId(roleIdRaw);
-          const genericName = !ap.plan_name || ap.plan_name === 'Subscription Plan';
-          return {
-            ...ap,
-            plan_name: genericName ? (known?.plan_name || ap.plan_name) : ap.plan_name,
-            price: Number(ap.price) > 0 ? ap.price : (known?.price ?? ap.price),
-            duration: ap.duration || known?.duration || '',
-            credits: Number(ap.credits ?? 0) || Number(known?.credits ?? 0),
-            features: ap.features?.length ? ap.features : (known?.features || []),
-            role_id_raw: roleIdRaw,
-            role_names: roleNamesStr ? roleNamesStr.split(', ') : [],
-          };
-   },
+  buildActivePlan: (user, plans = []) => {
+    if (!hasActiveSubscription(user)) return null;
+    const ap = normalizeSubscriptionPlan(user.subscription_plan);
+    if (!ap) return null;
+    const known = [...plans, ...roleLookupPlans].find((p) => String(p.plan_id) === String(ap.plan_id));
+    const roleIdRaw = user.subscription_plan?.role_id_raw || ap.role_id_raw || known?.role_id_raw || '';
+    const roleNamesStr = UserStore.getSeatRoleNameForPlanRoleId(roleIdRaw);
+    const genericName = !ap.plan_name || ap.plan_name === 'Subscription Plan';
+    return {
+      ...ap,
+      plan_name: genericName ? (known?.plan_name || ap.plan_name) : ap.plan_name,
+      price: Number(ap.price) > 0 ? ap.price : (known?.price ?? ap.price),
+      duration: ap.duration || known?.duration || '',
+      credits: Number(ap.credits ?? 0) || Number(known?.credits ?? 0),
+      features: ap.features?.length ? ap.features : (known?.features || []),
+      role_id_raw: roleIdRaw,
+      role_names: roleNamesStr ? roleNamesStr.split(', ') : [],
+    };
+  },
 
-   // opts.skipSync = true => backend sync chhod do (filter badalne par baar baar sync ki zaroorat nahi)
-   getSubscriptionSummary: async (loc = {}, opts = {}) => {
+  // opts.skipSync = true => backend sync chhod do (filter badalne par baar baar sync ki zaroorat nahi)
+  getSubscriptionSummary: async (loc = {}, opts = {}) => {
     // null SIRF tab jab user sach me logged-out ho. Network / server error par ab null nahi
     // aata (pehle null milte hi screen Login par bhej deti thi), balki cached data + loadFailed.
     let baseUser = null;
@@ -4238,9 +4326,9 @@ syncRoleSubscriptionV3: async (existingUser) => {
 
     const buildResult = (user, plans, extra = {}) => ({
       currentUser: user,
-      activePlan:  UserStore.buildActivePlan(user, plans),
+      activePlan: UserStore.buildActivePlan(user, plans),
       plans,
-      currentRole:      user.role || 'free',
+      currentRole: user.role || 'free',
       currentRoleLabel: getRoleLabel(user.role || 'free'),
       ...extra,
     });
@@ -4272,7 +4360,7 @@ syncRoleSubscriptionV3: async (existingUser) => {
       return buildResult(baseUser, cachedBackendPlans, { loadFailed: true, loadError: 'Unable to refresh plans.' });
     }
   },
-  
+
   getPaymentSummary: async () => {
     try {
       const user = await UserStore.getCurrentUser();
@@ -4300,89 +4388,89 @@ syncRoleSubscriptionV3: async (existingUser) => {
     } catch { return null; }
   },
 
-createPaymentOrder: async ({ plan_id, seat_state, seat_district = '', seat_taluka = '', seat_village = '', seat_role_id, plan: passedPlan = null }) => {
-  try {
-    const user = await UserStore.getCurrentUser();
-    if (!user) return { error: true, isAuth: true, message: 'Please login again.' };
+  createPaymentOrder: async ({ plan_id, seat_state, seat_district = '', seat_taluka = '', seat_village = '', seat_role_id, plan: passedPlan = null }) => {
+    try {
+      const user = await UserStore.getCurrentUser();
+      if (!user) return { error: true, isAuth: true, message: 'Please login again.' };
 
-    const backendPlanId = getBackendPlanId(plan_id);
-    if (!backendPlanId) {
-      return { error: true, message: 'This plan is not available right now. Please refresh and try again.' };
-    }
+      const backendPlanId = getBackendPlanId(plan_id);
+      if (!backendPlanId) {
+        return { error: true, message: 'This plan is not available right now. Please refresh and try again.' };
+      }
 
-    const seatMeta = getStateSeatRole(seat_role_id);
-    // ✅ Clicked plan screen se seedha aata hai (cache khaali/purana ho sakta hai) — pehle yahi use karo,
-    // warna premium plan galti se seat-lock wala plan maana ja sakta tha.
-    const planForOrder = passedPlan || cachedBackendPlans.find((p) => p.plan_id === plan_id);
-    // ✅ Full location + designation bhejte hain taaki backend seat-uniqueness check kar sake.
-    // ✅ Premium plan par seat lock nahi hota — sirf plan_id jaayega
-    // ✅ NEW: level plan par sirf level tak ki location bhejo (district plan = state+district),
-    // taaki backend ka Sold check exact usi level par ho.
-    const orderLoc = trimLocationToLevel(planForOrder?.location_level, {
-      state: seat_state, district: seat_district, taluka: seat_taluka, village: seat_village,
-    });
-    const orderResult = await AuthAPI.purchaseRoleSubscription({
-      planId: backendPlanId,
-      isPremium: isPremiumPlan(planForOrder),
-      state: orderLoc.state,
-      district: orderLoc.district,
-      taluka: orderLoc.taluka,
-      village: orderLoc.village,
-    });
-    // ✅ 409 seat_unavailable yahin ruk jaata hai — Razorpay checkout khulega hi nahi
-    if (!orderResult?.ok) {
+      const seatMeta = getStateSeatRole(seat_role_id);
+      // ✅ Clicked plan screen se seedha aata hai (cache khaali/purana ho sakta hai) — pehle yahi use karo,
+      // warna premium plan galti se seat-lock wala plan maana ja sakta tha.
+      const planForOrder = passedPlan || cachedBackendPlans.find((p) => p.plan_id === plan_id);
+      // ✅ Full location + designation bhejte hain taaki backend seat-uniqueness check kar sake.
+      // ✅ Premium plan par seat lock nahi hota — sirf plan_id jaayega
+      // ✅ NEW: level plan par sirf level tak ki location bhejo (district plan = state+district),
+      // taaki backend ka Sold check exact usi level par ho.
+      const orderLoc = trimLocationToLevel(planForOrder?.location_level, {
+        state: seat_state, district: seat_district, taluka: seat_taluka, village: seat_village,
+      });
+      const orderResult = await AuthAPI.purchaseRoleSubscription({
+        planId: backendPlanId,
+        isPremium: isPremiumPlan(planForOrder),
+        state: orderLoc.state,
+        district: orderLoc.district,
+        taluka: orderLoc.taluka,
+        village: orderLoc.village,
+      });
+      // ✅ 409 seat_unavailable yahin ruk jaata hai — Razorpay checkout khulega hi nahi
+      if (!orderResult?.ok) {
+        return {
+          error: true,
+          seatUnavailable: Boolean(orderResult?.seatUnavailable),
+          isNetwork: Boolean(orderResult?.isNetwork),
+          isAuth: Boolean(orderResult?.isAuth),
+          message: orderResult?.message || 'Unable to create order.',
+        };
+      }
+      if (!orderResult.razorpay?.order_id) {
+        return { error: true, message: 'Payment could not be started. Please try again.' };
+      }
+      const activePlan = planForOrder || defaultActiveSubscription;
+
       return {
-        error: true,
-        seatUnavailable: Boolean(orderResult?.seatUnavailable),
-        isNetwork: Boolean(orderResult?.isNetwork),
-        isAuth: Boolean(orderResult?.isAuth),
-        message: orderResult?.message || 'Unable to create order.',
+        order_id: orderResult.razorpay.order_id,
+        amount: orderResult.razorpay.amount,
+        plan_id: activePlan.plan_id,
+        plan_name: activePlan.plan_name,
+        duration: activePlan.duration,
+        role: activePlan.role || getRoleFromPlanId(activePlan.plan_id),
+        seat_state: seat_state || '',
+        seat_district: seat_district || '',
+        seat_taluka: seat_taluka || '',
+        seat_village: seat_village || '',
+        seat_role_id: seat_role_id || '',
+        razorpay: orderResult.razorpay, // { key, order_id, amount, currency }
+        seat: orderResult.seat || null, // reserved_until yahan milega (Premium par null)
       };
+    } catch (err) {
+      console.warn('[UserStore.createPaymentOrder] failed:', err?.message || err);
+      return { error: true, isNetwork: true, message: 'Unable to create order. Please check your internet connection and try again.' };
     }
-    if (!orderResult.razorpay?.order_id) {
-      return { error: true, message: 'Payment could not be started. Please try again.' };
+  },
+
+  // ✅ NEW: payment fail / cancel — reserved seat turant release karne ke liye.
+  // module 'role' -> /role-subscriptions/payment/failed
+  // baaki (ads / ecom / quiz) -> purana shared /subscriptions/payment/failed
+  markPaymentFailed: async (razorpay_order_id, error_code, error_description, module = 'shared') => {
+    try {
+      if (!razorpay_order_id) return { ok: false };
+      const payload = { razorpay_order_id, error_code, error_description };
+      if (module === 'role') return await AuthAPI.markRoleSubscriptionPaymentFailed(payload);
+      if (module === 'quiz') return await AuthAPI.markQuizSubscriptionPaymentFailed(payload);
+      return await AuthAPI.markSubscriptionPaymentFailed(payload);
+    } catch (err) {
+      console.error('[UserStore.markPaymentFailed] Error:', err);
+      return { ok: false };
     }
-    const activePlan = planForOrder || defaultActiveSubscription;
-
-    return {
-      order_id:     orderResult.razorpay.order_id,
-      amount:       orderResult.razorpay.amount,
-      plan_id:      activePlan.plan_id,
-      plan_name:    activePlan.plan_name,
-      duration:     activePlan.duration,
-      role:         activePlan.role || getRoleFromPlanId(activePlan.plan_id),
-      seat_state:   seat_state || '',
-      seat_district: seat_district || '',
-      seat_taluka:  seat_taluka || '',
-      seat_village: seat_village || '',
-      seat_role_id: seat_role_id || '',
-      razorpay:     orderResult.razorpay, // { key, order_id, amount, currency }
-      seat:         orderResult.seat || null, // reserved_until yahan milega (Premium par null)
-    };
-  } catch (err) {
-    console.warn('[UserStore.createPaymentOrder] failed:', err?.message || err);
-    return { error: true, isNetwork: true, message: 'Unable to create order. Please check your internet connection and try again.' };
-  }
-},
-
-// ✅ NEW: payment fail / cancel — reserved seat turant release karne ke liye.
-// module 'role' -> /role-subscriptions/payment/failed
-// baaki (ads / ecom / quiz) -> purana shared /subscriptions/payment/failed
-markPaymentFailed: async (razorpay_order_id, error_code, error_description, module = 'shared') => {
-  try {
-    if (!razorpay_order_id) return { ok: false };
-    const payload = { razorpay_order_id, error_code, error_description };
-    if (module === 'role') return await AuthAPI.markRoleSubscriptionPaymentFailed(payload);
-    if (module === 'quiz') return await AuthAPI.markQuizSubscriptionPaymentFailed(payload);
-    return await AuthAPI.markSubscriptionPaymentFailed(payload);
-  } catch (err) {
-    console.error('[UserStore.markPaymentFailed] Error:', err);
-    return { ok: false };
-  }
-},
+  },
 
 
-verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signature, plan_id, seat_state, seat_district = '', seat_taluka = '', seat_village = '', seat_role_id, plan: passedPlan }) => {
+  verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signature, plan_id, seat_state, seat_district = '', seat_taluka = '', seat_village = '', seat_role_id, plan: passedPlan }) => {
     try {
       const user = await UserStore.getCurrentUser();
       if (!user) return { ok: false, message: 'Please login again.' };
@@ -4391,7 +4479,7 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
       const verifyRes = await AuthAPI.verifyRoleSubscriptionPayment({
         razorpay_order_id, razorpay_payment_id, razorpay_signature,
       });
-      if (verifyRes?.ok) refreshAdsVisibility().catch(() => {});   // plan badla — hide_ads dobara check
+      if (verifyRes?.ok) refreshAdsVisibility().catch(() => { });   // plan badla — hide_ads dobara check
       if (!verifyRes?.ok) {
         // ✅ seatUnavailable aage pass karo (409) taaki screen us plan ko Sold mark kar sake.
         // isNetwork / status bhi pass karo taaki caller decide kare: retry (network/5xx) ya final fail (4xx).
@@ -4405,7 +4493,7 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
         };
       }
 
-// ✅ FIX: pehle screen se passed asli plan use karo — cache lookup pe depend
+      // ✅ FIX: pehle screen se passed asli plan use karo — cache lookup pe depend
       // mat karo (wo khaali ho sakta hai aur silently 'Basic Access' fallback deta
       // tha, jisse "premium" naam kho jaata tha aur role galat set hota tha)
       const basePlan = passedPlan
@@ -4436,11 +4524,11 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
       // kharidte waqt chuni (level tak trim karke), wahi active plan ki location banegi.
       const boughtLoc = basePlan.location_level
         ? trimLocationToLevel(basePlan.location_level, {
-            state: seat_state || verifiedSeat?.state,
-            district: seat_district || verifiedSeat?.district,
-            taluka: seat_taluka || verifiedSeat?.taluka,
-            village: seat_village || verifiedSeat?.village,
-          })
+          state: seat_state || verifiedSeat?.state,
+          district: seat_district || verifiedSeat?.district,
+          taluka: seat_taluka || verifiedSeat?.taluka,
+          village: seat_village || verifiedSeat?.village,
+        })
         : null;
       const activePlan = {
         ...basePlan,
@@ -4468,10 +4556,10 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
       });
       // ✅ NEW: plan ke role_id (1-6) ko seat me map karke automatically assign karo —
       // koi manual seat-selection modal nahi chahiye, purchase hi seat de dega
-        const allowedSeatIds = UserStore.getSeatIdsForRoleId(activePlan.role_id_raw);
-        // agar checkout ke time koi specific role/seat select kiya tha (seat_role_id), usi ko priority do,
-        // warna plan ke allowed roles me se pehla free seat use karo
-        const mappedSeatId = allowedSeatIds.includes(seat_role_id) ? seat_role_id : allowedSeatIds[0];
+      const allowedSeatIds = UserStore.getSeatIdsForRoleId(activePlan.role_id_raw);
+      // agar checkout ke time koi specific role/seat select kiya tha (seat_role_id), usi ko priority do,
+      // warna plan ke allowed roles me se pehla free seat use karo
+      const mappedSeatId = allowedSeatIds.includes(seat_role_id) ? seat_role_id : allowedSeatIds[0];
       // The backend owns the actual role+location lock. Preserve this legacy
       // local allocation only for older responses that do not return a seat.
       if (mappedSeatId && !verifiedSeat) {
@@ -4690,7 +4778,7 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
   //   }
   // },
 
- getNewsFeedSummary: async (options = {}) => {
+  getNewsFeedSummary: async (options = {}) => {
     try {
       const focusItemId = options && typeof options === 'object'
         ? (options.focusItemId ? String(options.focusItemId) : null)
@@ -4698,8 +4786,8 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
       const skipBlockedUsers = Boolean(options?.skipBlockedUsers);
       // ✅ FIX: 'all' = Home screen (GET /news, sabke posts), 'mine' (default) =
       // News Feed / Profile "My Posts" (GET /my-news, sirf apne posts)
-     // 'feeds' = GET /feeds (sirf feed/reel posts, type 2)
-     const feedType = options?.feedType === 'all' ? 'all' : options?.feedType === 'feeds' ? 'feeds' : 'mine';
+      // 'feeds' = GET /feeds (sirf feed/reel posts, type 2)
+      const feedType = options?.feedType === 'all' ? 'all' : options?.feedType === 'feeds' ? 'feeds' : 'mine';
       const feedCursor = options?.cursor || null;
       const feedContentType = options?.type === 1 || options?.type === 2 ? options.type : undefined; // 1 news, 2 reels
       const feedPerPage = options?.perPage || 10;
@@ -4730,9 +4818,9 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
           if (focusItemId) {
             try {
               singleItemRes = await AuthAPI.getNewsById(focusItemId);
-            } catch (_) {}
+            } catch (_) { }
           }
-      const apiRes = await AuthAPI.getNewsList({ per_page: feedPerPage, ...(feedContentType ? { type: feedContentType } : {}), ...(feedCursor ? { cursor: feedCursor } : {}) });
+          const apiRes = await AuthAPI.getNewsList({ per_page: feedPerPage, ...(feedContentType ? { type: feedContentType } : {}), ...(feedCursor ? { cursor: feedCursor } : {}) });
           feedPagination = apiRes.pagination || null;
           if (apiRes.ok && Array.isArray(apiRes.news)) {
             apiItems = apiRes.news;
@@ -4748,7 +4836,7 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
           }
         } else {
           // News Feed / My Posts: sirf isi user ke news, dedicated my-news routes se
-              const apiRes = focusItemId
+          const apiRes = focusItemId
             ? await AuthAPI.getMyNewsById(focusItemId)
             : await AuthAPI.getMyNews({ type: feedContentType });
           if (apiRes.ok && focusItemId) {
@@ -4772,7 +4860,7 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
       // (backend blue-tick track hi nahi karta), isliye premium user ka apna post
       // fetch hone ke baad blue tick gayab ho jaata tha. Ab apne hi posts ke liye
       // hum currentUser ka live blue-tick/premium/subscriber status use karte hain.
-           const currentUserEmailForFeed = String(currentUser?.email || '').trim().toLowerCase();
+      const currentUserEmailForFeed = String(currentUser?.email || '').trim().toLowerCase();
       const currentUserHasBlueTickForFeed = Boolean(currentUser && UserStore.hasBlueTick(currentUser));
       const currentUserIsPremiumForFeed = Boolean(currentUser && UserStore.hasPremiumAccess(currentUser));
       const currentUserIsSubscriberForFeed = Boolean(currentUser && UserStore.hasActiveSubscription(currentUser));
@@ -4848,7 +4936,7 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
       // A just-created item has already been accepted by POST /news, but the
       // list endpoint may lag behind it. Include only this user's real
       // server-created records so it appears immediately on Feed and Home.
-           const justSubmittedItems = feedCursor ? [] : normalizeUserNewsItems(currentUser?.news || [])
+      const justSubmittedItems = feedCursor ? [] : normalizeUserNewsItems(currentUser?.news || [])
         .filter((item) => !feedContentType || item.type === feedContentType);
       // A public-profile screen loads its own posts and must not make a
       // blocked-users request merely because the profile was opened.
@@ -4921,8 +5009,8 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
           const baseShares = Number(item.shares || 0);
           const baseViews = Number(item.views || 0);
 
-         next.comments = baseComments;
-         next.shares = baseShares;
+          next.comments = baseComments;
+          next.shares = baseShares;
           next.views = baseViews; // server view_count hi final hai (local SQLite views add nahi hote)
 
           // ✅ FIX: likes ab sirf backend API se aate hain — local SQLite/
@@ -4935,7 +5023,7 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
           next.bookmarked = Boolean(stat.bookmarkedByCurrentUser || legacyBookmarked);
         }
 
-             if (focusItemId && id === focusItemId) {
+        if (focusItemId && id === focusItemId) {
           // ✅ FIX: comments ab local SQLite/AsyncStorage se nahi, seedha backend /comments/{newsId} se
           next.comments_list = focusItemComments;
         } else {
@@ -4957,7 +5045,7 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
 
       return {
         currentUser,
-             items: finalItems,
+        items: finalItems,
         pagination: feedPagination,
         totalViews: finalItems.reduce((s, i) => s + (Number(i.views) || 0), 0),
         totalShares: finalItems.reduce((s, i) => s + (Number(i.shares) || 0), 0),
@@ -5026,14 +5114,14 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
         const stat = engagement?.statsByPost?.[id];
         const next = { ...item };
         if (stat) {
-  // ✅ FIX: likes/liked ab sirf backend API se (item.likes / item.liked) —
-  // local SQLite stat.likes ab merge nahi hota, double-count avoid karne ke liye.
-  next.likes = Number(item.likes || 0);
-  next.shares = Number(item.shares || 0) + Number(stat.shares || 0);
-  next.commentsCount = Number(stat.comments || 0);
-  next.liked = Boolean(item.liked);
-  next.bookmarked = Boolean(item.bookmarked || stat.bookmarkedByCurrentUser);
-}
+          // ✅ FIX: likes/liked ab sirf backend API se (item.likes / item.liked) —
+          // local SQLite stat.likes ab merge nahi hota, double-count avoid karne ke liye.
+          next.likes = Number(item.likes || 0);
+          next.shares = Number(item.shares || 0) + Number(stat.shares || 0);
+          next.commentsCount = Number(stat.comments || 0);
+          next.liked = Boolean(item.liked);
+          next.bookmarked = Boolean(item.bookmarked || stat.bookmarkedByCurrentUser);
+        }
 
         if (focusItemId && id === focusItemId) {
           const list = Array.isArray(engagement?.commentsByPost?.[focusItemId])
@@ -5064,7 +5152,7 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
     }
   },
 
-  
+
   updateNewsFeedItem: async (itemId, action, meta = {}) => {
     try {
       const postId = String(itemId || '').trim();
@@ -5205,7 +5293,7 @@ verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signatu
       }
 
 
-const db = await getEngagementDb();
+      const db = await getEngagementDb();
       if (!db) return { ok: false, message: 'SQLite not available.' };
 
       // ✅ FIX: like already backend se upar handle ho chuka hai is function ke shuru mein (dono platform ke liye)
@@ -5340,7 +5428,7 @@ const db = await getEngagementDb();
     }
   },
 
-   // ✅ NEW: cursor-based comments page (GET /comments/{newsId}) — backend order as-is
+  // ✅ NEW: cursor-based comments page (GET /comments/{newsId}) — backend order as-is
   getNewsCommentsPage: async (newsId, { cursor = null, perPage = 20 } = {}) => {
     try {
       const me = await UserStore.getCurrentUser().catch(() => null);
@@ -5407,7 +5495,7 @@ const db = await getEngagementDb();
       return { ok: true, comment: mapped, commentsCount: apiRes.commentsCount ?? null };
     } catch { return { ok: false, message: 'Unable to add comment.' }; }
   },
- // ✅ Reply -> POST /comments/{commentId}/replies  (reply ka parent hamesha top-level comment hota hai)
+  // ✅ Reply -> POST /comments/{commentId}/replies  (reply ka parent hamesha top-level comment hota hai)
   replyNewsComment: async (itemId, parentCommentId, replyText) => {
     try {
       const user = await UserStore.getCurrentUser();
@@ -5632,7 +5720,7 @@ const db = await getEngagementDb();
       const updatedUser = await UserStore.updateUser(user.email, {
         live_streams: streams.map((stream) => stream.status === 'live' ? { ...stream, status: 'ended' } : stream),
       });
- if (!updatedUser) return { ok: false, message: 'Unable to stop live stream.' };
+      if (!updatedUser) return { ok: false, message: 'Unable to stop live stream.' };
       return { ok: true };
     } catch { return { ok: false, message: 'Unable to stop live stream.' }; }
   },
@@ -5648,8 +5736,8 @@ const db = await getEngagementDb();
       return { ok: false, message: 'Unable to open YouTube authorization.' };
     }
   },
-   createYoutubeLive: async (streamTitle, privacyStatus = 'unlisted', scheduledStartTime) => {
-  const apiResult = await AuthAPI.createYoutubeLive(streamTitle, privacyStatus, scheduledStartTime);
+  createYoutubeLive: async (streamTitle, privacyStatus = 'unlisted', scheduledStartTime) => {
+    const apiResult = await AuthAPI.createYoutubeLive(streamTitle, privacyStatus, scheduledStartTime);
     if (!apiResult.ok) return apiResult;
     const currentUser = await UserStore.getCurrentUser();
     if (currentUser?.email) {
@@ -5667,17 +5755,17 @@ const db = await getEngagementDb();
       stream_key: stream_key,
     });
     if (!localResult.ok) return localResult;
-   
+
     return {
-   ok: true,
-   liveData: apiResult.data,
-   stream: localResult.stream
-}
+      ok: true,
+      liveData: apiResult.data,
+      stream: localResult.stream
+    }
   },
 
- confirmYoutubeLive: async (broadcastId) => {
-   return AuthAPI.startYoutubeBroadcast(broadcastId);
-},
+  confirmYoutubeLive: async (broadcastId) => {
+    return AuthAPI.startYoutubeBroadcast(broadcastId);
+  },
 
   endYoutubeLive: async (broadcastId) => {
     const apiResult = await AuthAPI.endYoutubeBroadcast(broadcastId);
@@ -5685,7 +5773,7 @@ const db = await getEngagementDb();
     return apiResult;
   },
 
- // Pulls the real attempt history from /quiz/history?user_id=...&quiz_type=exam —
+  // Pulls the real attempt history from /quiz/history?user_id=...&quiz_type=exam —
   // this is what "My Attempts" screen shows, independent of the practice/training/exam
   // listing APIs.
   // NOTE (updated): /quiz/history ab quiz_type field seedha bhejta hai (e.g. "exam").
@@ -5719,76 +5807,76 @@ const db = await getEngagementDb();
           const percentage = Number(item.percentage ?? 0);
           const resultType = getQuizResultTier(percentage).result_type;
           return {
-            id:                 item.attempt_id ?? `history-${i + 1}`,
-            quiz_title:         item.quiz_title || `Quiz ${i + 1}`,
+            id: item.attempt_id ?? `history-${i + 1}`,
+            quiz_title: item.quiz_title || `Quiz ${i + 1}`,
             // ✅ FIX: backend /quiz/history ab quiz_type field seedha bhejta hai
             // (e.g. "exam"/"practice"/"training") — usko priority do. typeById
             // map (3 alag listing API se banaya) ab sirf fallback hai, jab kabhi
             // history response me quiz_type na aaye.
-            quiz_type:          item.quiz_type || typeById.get(String(item.quiz_type_id)) || null,
-            score:              item.obtained_marks ?? null,
+            quiz_type: item.quiz_type || typeById.get(String(item.quiz_type_id)) || null,
+            score: item.obtained_marks ?? null,
             percentage,
-            obtained_marks:     item.obtained_marks ?? null,
-            total_marks:        item.total_marks ?? null,
-            correct_answers:    item.correct_answers ?? null,
-            wrong_answers:      item.wrong_answers ?? null,
-            total_questions:    item.total_questions ?? null,
-            result_type:        resultType,
-            certificate_file:   null,
+            obtained_marks: item.obtained_marks ?? null,
+            total_marks: item.total_marks ?? null,
+            correct_answers: item.correct_answers ?? null,
+            wrong_answers: item.wrong_answers ?? null,
+            total_questions: item.total_questions ?? null,
+            result_type: resultType,
+            certificate_file: null,
             certificate_number: null,
-            user_name:          user.name || user.email || 'Participant',
-            issued_at:          item.submitted_at || item.started_at || null,
+            user_name: user.name || user.email || 'Participant',
+            issued_at: item.submitted_at || item.started_at || null,
           };
         });
       return { currentUser: user, items };
     } catch { return null; }
   },
 
- getCertificationSummary: async (subject, testType, difficulty) => {
+  getCertificationSummary: async (subject, testType, difficulty) => {
     try {
       const user = await UserStore.ensureUserId(); // ✅ FIX: id missing ho to yahin repair kar lo
       if (!user) return null;
       const userId = user.id || user.user_id;
 
-    // If a Test Type is selected, only hit that endpoint — this also guarantees
-    // difficulty is only ever sent to the Practice endpoint (Training/Exam never receive it).
-    const [practiceRes, trainingRes, examRes, historyRes] = await Promise.all([
-  (!testType || testType === 'practice') ? AuthAPI.getPracticeQuizzes(subject, difficulty) : Promise.resolve({ ok: false, quizzes: [] }),
-  (!testType || testType === 'training') ? AuthAPI.getTrainingQuizzes(subject) : Promise.resolve({ ok: false, quizzes: [] }),
-  (!testType || testType === 'exam') ? AuthAPI.getExamQuizzes(subject) : Promise.resolve({ ok: false, quizzes: [] }),
-  AuthAPI.getQuizHistory(userId),
-]);
+      // If a Test Type is selected, only hit that endpoint — this also guarantees
+      // difficulty is only ever sent to the Practice endpoint (Training/Exam never receive it).
+      const [practiceRes, trainingRes, examRes, historyRes] = await Promise.all([
+        (!testType || testType === 'practice') ? AuthAPI.getPracticeQuizzes(subject, difficulty) : Promise.resolve({ ok: false, quizzes: [] }),
+        (!testType || testType === 'training') ? AuthAPI.getTrainingQuizzes(subject) : Promise.resolve({ ok: false, quizzes: [] }),
+        (!testType || testType === 'exam') ? AuthAPI.getExamQuizzes(subject) : Promise.resolve({ ok: false, quizzes: [] }),
+        AuthAPI.getQuizHistory(userId),
+      ]);
 
-    // If the token expired, don't fall back to locally-cached dummy data —
-    // surface it so the screen can prompt a re-login instead.
-    const authExpired = [practiceRes, trainingRes, examRes].some((r) => r?.isAuth);
-    if (authExpired) {
-      return { authExpired: true, currentUser: user, items: [], totalAttempts: 0, passedCount: 0, totalDownloads: 0 };
-    }
+      // If the token expired, don't fall back to locally-cached dummy data —
+      // surface it so the screen can prompt a re-login instead.
+      const authExpired = [practiceRes, trainingRes, examRes].some((r) => r?.isAuth);
+      if (authExpired) {
+        return { authExpired: true, currentUser: user, items: [], totalAttempts: 0, passedCount: 0, totalDownloads: 0 };
+      }
 
-    // Real DB result per quiz — /quiz/history is the actual saved-in-database source
-    // (same endpoint "My Attempts" uses). Keyed by quiz_type_id so it can be merged
-    // onto the practice/training/exam listing items (which only carry metadata, no result).
-    const historyByQuizTypeId = new Map();
-    if (historyRes?.ok && Array.isArray(historyRes.history)) {
-      historyRes.history
-        .filter((h) => h.status === 1) // 0 = started but never submitted
-        .forEach((h) => {
-          const key = String(h.quiz_type_id);
-          const prev = historyByQuizTypeId.get(key);
-          const isNewer = !prev || Number(h.attempt_id) > Number(prev.attempt_id);
-          const percentage = Number(h.percentage ?? 0);
-          historyByQuizTypeId.set(key, {
-            attempt_id:      isNewer ? h.attempt_id : prev.attempt_id,
-            score:           isNewer ? percentage : prev.score,
-            result_type:     isNewer ? getQuizResultTier(percentage).result_type : prev.result_type,
-            obtained_marks:  isNewer ? (h.obtained_marks ?? null) : prev.obtained_marks,
-            total_marks:     isNewer ? (h.total_marks ?? null) : prev.total_marks,
-            issued_at:       isNewer ? (h.submitted_at || h.started_at || null) : prev.issued_at,
-            attempts:        (prev?.attempts || 0) + 1,
+      // Real DB result per quiz — /quiz/history is the actual saved-in-database source
+      // (same endpoint "My Attempts" uses). Keyed by quiz_type_id so it can be merged
+      // onto the practice/training/exam listing items (which only carry metadata, no result).
+      const historyByQuizTypeId = new Map();
+      if (historyRes?.ok && Array.isArray(historyRes.history)) {
+        historyRes.history
+          .filter((h) => h.status === 1) // 0 = started but never submitted
+          .forEach((h) => {
+            const key = String(h.quiz_type_id);
+            const prev = historyByQuizTypeId.get(key);
+            const isNewer = !prev || Number(h.attempt_id) > Number(prev.attempt_id);
+            const percentage = Number(h.percentage ?? 0);
+            historyByQuizTypeId.set(key, {
+              attempt_id: isNewer ? h.attempt_id : prev.attempt_id,
+              score: isNewer ? percentage : prev.score,
+              result_type: isNewer ? getQuizResultTier(percentage).result_type : prev.result_type,
+              obtained_marks: isNewer ? (h.obtained_marks ?? null) : prev.obtained_marks,
+              total_marks: isNewer ? (h.total_marks ?? null) : prev.total_marks,
+              issued_at: isNewer ? (h.submitted_at || h.started_at || null) : prev.issued_at,
+              attempts: (prev?.attempts || 0) + 1,
+            });
           });
-        });
-    }
+      }
 
       // Local storage sirf non-result cheezein carry karta hai ab (jaise downloads count) —
       // asli result/score/attempts hamesha DB (history) se aate hain, kabhi local se nahi.
@@ -5801,32 +5889,32 @@ const db = await getEngagementDb();
       ].flatMap(([type, result]) => (
         result?.ok && Array.isArray(result.quizzes)
           ? result.quizzes.map((quiz) => ({
-              ...quiz,
-              quiz_type: type,
-              quiz_title: quiz.quiz_title || quiz.title || quiz.name || `${type} Quiz`,
-              questions: Array.isArray(quiz.questions) ? quiz.questions : [],
-            }))
+            ...quiz,
+            quiz_type: type,
+            quiz_title: quiz.quiz_title || quiz.title || quiz.name || `${type} Quiz`,
+            questions: Array.isArray(quiz.questions) ? quiz.questions : [],
+          }))
           : []
       ));
       // No dummy fallback: if the API genuinely has nothing (or the call failed),
       // show an empty list rather than bundled sample data.
       const items = apiItems.length
         ? normalizeCertifications(apiItems).map((item) => {
-            const hist  = historyByQuizTypeId.get(String(item.id));
-            const saved = savedById.get(String(item.id)) || {};
-            return {
-              ...item,
-              downloads: saved.downloads ?? item.downloads, // local-only field
-              ...(hist ? {
-                score:           hist.score,
-                result_type:     hist.result_type,
-                obtained_marks:  hist.obtained_marks,
-                total_marks:     hist.total_marks,
-                attempts:        hist.attempts,
-                issued_at:       hist.issued_at,
-              } : {}),
-            };
-          })
+          const hist = historyByQuizTypeId.get(String(item.id));
+          const saved = savedById.get(String(item.id)) || {};
+          return {
+            ...item,
+            downloads: saved.downloads ?? item.downloads, // local-only field
+            ...(hist ? {
+              score: hist.score,
+              result_type: hist.result_type,
+              obtained_marks: hist.obtained_marks,
+              total_marks: hist.total_marks,
+              attempts: hist.attempts,
+              issued_at: hist.issued_at,
+            } : {}),
+          };
+        })
         : [];
 
       // ✅ FIX: Top 3 cards (Attempts / Passed / Downloads) ab seedha /quiz/history (DB) se
@@ -5842,8 +5930,8 @@ const db = await getEngagementDb();
         return {
           currentUser: user,
           items,
-          totalAttempts:  submitted.length,
-          passedCount:    passedAttempts.length,
+          totalAttempts: submitted.length,
+          passedCount: passedAttempts.length,
           totalDownloads: downloadable.length,
         };
       }
@@ -5858,11 +5946,11 @@ const db = await getEngagementDb();
       let submittedItem = null;
       const items = normalizeCertifications(user.certifications).map((item) => {
         if (item.id !== certId) return item;
-        const totalQ   = item.questions.length || 1;
+        const totalQ = item.questions.length || 1;
         const answered = Object.keys(answers).length;
-        const score    = Math.min(Math.round((answered / totalQ) * 100), 100);
-         const tier     = getQuizResultTier(score);
-        const pass     = tier.passed;
+        const score = Math.min(Math.round((answered / totalQ) * 100), 100);
+        const tier = getQuizResultTier(score);
+        const pass = tier.passed;
         const issuedAt = new Date().toISOString();
         const certificateNumber = `RTI-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
         submittedItem = {
@@ -5906,16 +5994,16 @@ const db = await getEngagementDb();
       const issueDate = new Date().toLocaleDateString('en-IN');
       const certificateNumber = targetItem.certificate_number || `RTI-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
       const svgMarkup = buildCertificateSvg({
-        userName:      targetItem.user_name || user.name || 'Participant',
-        quizTitle:     targetItem.quiz_title || 'Quiz Examination',
-        score:         targetItem.score ?? 0,
-        scoreText:     getCertScoreLabel(targetItem),
-        userIdText:    getCertUserIdLabel(user, targetItem),
-        resultType:    targetItem.result_type || 'Pass',
+        userName: targetItem.user_name || user.name || 'Participant',
+        quizTitle: targetItem.quiz_title || 'Quiz Examination',
+        score: targetItem.score ?? 0,
+        scoreText: getCertScoreLabel(targetItem),
+        userIdText: getCertUserIdLabel(user, targetItem),
+        resultType: targetItem.result_type || 'Pass',
         issueDate, certificateNumber,
-        photoUri:      user.profile_image || '',
-        email:         user.email || '',
-        village:       user.village || '',
+        photoUri: user.profile_image || '',
+        email: user.email || '',
+        village: user.village || '',
         contactNumber: user.contact_number || user.mobile || '',
       });
 
@@ -5925,11 +6013,11 @@ const db = await getEngagementDb();
       const items = certifications.map((item) =>
         item.id !== certId ? item : {
           ...item,
-          certificate_file:       result.savedPath || 'downloaded',
+          certificate_file: result.savedPath || 'downloaded',
           local_certificate_path: result.savedPath,
-          certificate_number:     certificateNumber,
-          issued_at:              item.issued_at || new Date().toISOString(),
-          downloads:              item.downloads + 1,
+          certificate_number: certificateNumber,
+          issued_at: item.issued_at || new Date().toISOString(),
+          downloads: item.downloads + 1,
         }
       );
       const updatedUser = await UserStore.updateUser(user.email, { certifications: items });
@@ -5944,74 +6032,74 @@ const db = await getEngagementDb();
   // Builds and saves a certificate straight from a /quiz/history attempt item —
   // used by "My Attempts", since that history endpoint has no certificate_file of
   // its own and the attempt isn't necessarily present in local user.certifications.
-downloadCertificateForAttempt: async (item) => {
-  try {
-    const user = await UserStore.getCurrentUser();
+  downloadCertificateForAttempt: async (item) => {
+    try {
+      const user = await UserStore.getCurrentUser();
 
-    if (!user) {
-      return { ok: false, message: "Please login again." };
-    }
+      if (!user) {
+        return { ok: false, message: "Please login again." };
+      }
 
-   if (String(item.quiz_type || '').trim().toLowerCase() !== 'exam') {
+      if (String(item.quiz_type || '').trim().toLowerCase() !== 'exam') {
+        return {
+          ok: false,
+          message: "Certificate is only available for Exam type quizzes.",
+        };
+      }
+
+      // ✅ 40% se neeche Fail — certificate generate hi nahi hoga
+      const tier = getQuizResultTier(item.percentage ?? 0);
+      if (!tier.passed) {
+        return {
+          ok: false,
+          message: "Certificate is only available when you pass (40% or above).",
+        };
+      }
+
+      const issueDate = new Date().toLocaleDateString("en-IN");
+
+      const certificateNumber =
+        item.certificate_number ||
+        `RTI-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
+
+      const svgMarkup = buildCertificateSvg({
+        userName: user.name || "Participant",
+        quizTitle: item.quiz_title || "Quiz Examination",
+        score: item.percentage ?? 0,
+        scoreText: getCertScoreLabel(item),
+        userIdText: getCertUserIdLabel(user, item),
+        resultType: tier.badge_label ? `${tier.result_type} — ${tier.badge_label}` : tier.result_type,
+        issueDate,
+        certificateNumber,
+        photoUri: user.profile_image || "",
+        email: user.email || "",
+        village: user.village || "",
+        contactNumber: user.contact_number || user.mobile || "",
+      });
+
+      const result = await saveCertificateSvg(svgMarkup, `certificate-${item.attempt_id}.svg`);
+      if (!result.ok) return result;
+
+      return { ...result, certificateNumber };
+    } catch (err) {
+      console.log("Certificate Error:", err);
+      console.log("Error Message:", err?.message);
+      console.log("Error Stack:", err?.stack);
+
       return {
         ok: false,
-        message: "Certificate is only available for Exam type quizzes.",
+        message: err?.message || "Unable to download certificate.",
       };
     }
+  },
 
-    // ✅ 40% se neeche Fail — certificate generate hi nahi hoga
-    const tier = getQuizResultTier(item.percentage ?? 0);
-    if (!tier.passed) {
-      return {
-        ok: false,
-        message: "Certificate is only available when you pass (40% or above).",
-      };
-    }
-
-    const issueDate = new Date().toLocaleDateString("en-IN");
-
-    const certificateNumber =
-      item.certificate_number ||
-      `RTI-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
-
-    const svgMarkup = buildCertificateSvg({
-      userName: user.name || "Participant",
-      quizTitle: item.quiz_title || "Quiz Examination",
-      score: item.percentage ?? 0,
-      scoreText: getCertScoreLabel(item),
-      userIdText: getCertUserIdLabel(user, item),
-      resultType: tier.badge_label ? `${tier.result_type} — ${tier.badge_label}` : tier.result_type,
-      issueDate,
-      certificateNumber,
-      photoUri: user.profile_image || "",
-      email: user.email || "",
-      village: user.village || "",
-      contactNumber: user.contact_number || user.mobile || "",
-    });
-
-    const result = await saveCertificateSvg(svgMarkup, `certificate-${item.attempt_id}.svg`);
-    if (!result.ok) return result;
-
-    return { ...result, certificateNumber };
-  } catch (err) {
-    console.log("Certificate Error:", err);
-    console.log("Error Message:", err?.message);
-    console.log("Error Stack:", err?.stack);
-
-    return {
-      ok: false,
-      message: err?.message || "Unable to download certificate.",
-    };
-  }
-},
-
-// ── OLD dynamic-question version — kept for future use ──
+  // ── OLD dynamic-question version — kept for future use ──
   // submitAdLeadForm_OLD_DYNAMIC: async (ad, answers = {}) => {
   //   ... (yaha purana poora method body comment ke andar paste karke rakh dena)
   // },
 
   // ── Ad Lead Form Submissions — FIXED FIELDS version ─────────────────────
- submitAdLeadForm: async (ad, { firstName, lastName, email, contact, message } = {}) => {
+  submitAdLeadForm: async (ad, { firstName, lastName, email, contact, message } = {}) => {
     try {
       if (!ad || !ad.id) return { ok: false, message: 'Invalid advertisement.' };
 
@@ -6070,13 +6158,13 @@ downloadCertificateForAttempt: async (item) => {
       // 🔒 Naya password diya ho tabhi bhejo (normalizeUser use verifier me badal dega); settings me raw password nahi
       const updates = { settings: { language, password: '' } };
       if (password) updates.password = password;
-      const updatedUser  = await UserStore.updateUser(user.email, updates);
+      const updatedUser = await UserStore.updateUser(user.email, updates);
       if (!updatedUser) return { ok: false, message: 'Unable to update settings.' };
       return { ok: true, user: updatedUser };
     } catch { return { ok: false, message: 'Unable to update settings.' }; }
   },
 
- changeCurrentUserPassword: async ({ currentPassword, newPassword }) => {
+  changeCurrentUserPassword: async ({ currentPassword, newPassword }) => {
     try {
       const user = await UserStore.getCurrentUser();
       if (!user) return { ok: false, message: 'Please login again.' };
@@ -6093,8 +6181,8 @@ downloadCertificateForAttempt: async (item) => {
     try {
       // ✅ FIX: updatePassword bhi lowercase email se
       const normalizedEmail = email ? email.trim().toLowerCase() : '';
-      const data    = await AsyncStorage.getItem(USERS_KEY);
-      const users   = data ? JSON.parse(data) : [];
+      const data = await AsyncStorage.getItem(USERS_KEY);
+      const users = data ? JSON.parse(data) : [];
       const updated = users.map((u) => {
         const userEmail = u.email ? u.email.trim().toLowerCase() : '';
         if (userEmail !== normalizedEmail) return u;
@@ -6147,7 +6235,7 @@ downloadCertificateForAttempt: async (item) => {
   // 🔒 Offline (mobile-number) login ke liye: raw password compare nahi hota, salted verifier check hota hai
   verifyLocalPassword: (user, password) => verifyPasswordVerifier(password, user?.password_verifier),
 
-followUser: async (targetUserEmail, targetUserId) => {
+  followUser: async (targetUserEmail, targetUserId) => {
     try {
       const currentUser = await UserStore.getCurrentUser();
       if (!currentUser) return { ok: false, message: 'Please login again.' };
@@ -6163,12 +6251,36 @@ followUser: async (targetUserEmail, targetUserId) => {
       }
       if (!targetId) return { ok: false, message: 'Unable to resolve user id.' };
 
-          const apiResult = await AuthAPI.followUserApi(targetId);
+      let apiResult = await AuthAPI.followUserApi(targetId);
+      // Agar token missing/expired tha, silent re-login try karo
+      if (!apiResult.ok && (apiResult.isAuth || String(apiResult.message || '').toLowerCase().includes('logged in'))) {
+        if (currentUser.email && currentUser.password) {
+          try {
+            const relogin = await AuthAPI.login({ email: currentUser.email, password: currentUser.password });
+            if (relogin.ok) {
+              apiResult = await AuthAPI.followUserApi(targetId);
+            }
+          } catch {}
+        }
+      }
+
+      // Agar server session issue de, tab bhi local following state sync rakho taaki UI block na ho
+      if (!apiResult.ok && (apiResult.isAuth || String(apiResult.message || '').toLowerCase().includes('logged in'))) {
+        try {
+          const myFollowing = Array.isArray(currentUser.following) ? currentUser.following : [];
+          if (targetEmail && !myFollowing.includes(targetEmail)) {
+            await UserStore.updateUser(currentEmail, { following: [...myFollowing, targetEmail] });
+          }
+        } catch {}
+        _broadcastFollowChange(targetEmail, targetId, true);
+        return { ok: true, message: 'Successfully followed.', isFollowing: true };
+      }
+
       if (!apiResult.ok) return apiResult;
 
-         // ✅ FIX: success ke baad local cached currentUser.following update nahi hota tha.
+      // ✅ FIX: success ke baad local cached currentUser.following update nahi hota tha.
       try {
-         const myFollowing = Array.isArray(currentUser.following) ? currentUser.following : [];
+        const myFollowing = Array.isArray(currentUser.following) ? currentUser.following : [];
         if (targetEmail && !myFollowing.includes(targetEmail)) {
           await UserStore.updateUser(currentEmail, { following: [...myFollowing, targetEmail] });
         }
@@ -6217,7 +6329,27 @@ followUser: async (targetUserEmail, targetUserId) => {
       }
       if (!targetId) return { ok: false, message: 'Unable to resolve user id.' };
 
-             const apiResult = await AuthAPI.unfollowUserApi(targetId);
+      let apiResult = await AuthAPI.unfollowUserApi(targetId);
+      if (!apiResult.ok && (apiResult.isAuth || String(apiResult.message || '').toLowerCase().includes('logged in'))) {
+        if (currentUser.email && currentUser.password) {
+          try {
+            const relogin = await AuthAPI.login({ email: currentUser.email, password: currentUser.password });
+            if (relogin.ok) {
+              apiResult = await AuthAPI.unfollowUserApi(targetId);
+            }
+          } catch {}
+        }
+      }
+
+      if (!apiResult.ok && (apiResult.isAuth || String(apiResult.message || '').toLowerCase().includes('logged in'))) {
+        try {
+          const myFollowing = Array.isArray(currentUser.following) ? currentUser.following : [];
+          await UserStore.updateUser(currentEmail, { following: myFollowing.filter((e) => e !== targetEmail) });
+        } catch {}
+        _broadcastFollowChange(targetEmail, targetId, false);
+        return { ok: true, message: 'Successfully unfollowed.', isFollowing: false };
+      }
+
       if (!apiResult.ok) return apiResult;
 
       // ✅ FIX: followUser wala hi cache-sync fix, unfollow ke liye.
@@ -6241,7 +6373,7 @@ followUser: async (targetUserEmail, targetUserId) => {
       return { ok: false, message: 'Unable to unfollow user.' };
     }
   },
-     blockUser: async (targetUserEmail, targetUserId) => {
+  blockUser: async (targetUserEmail, targetUserId) => {
     try {
       let targetId = targetUserId ?? null;
       if (!targetId) {
@@ -6334,7 +6466,7 @@ followUser: async (targetUserEmail, targetUserId) => {
       const followersCount = normalizeEmailList(targetUser.followers).length;
       const followingCount = normalizeEmailList(targetUser.following).length;
 
-        return { isFollowing, followersCount, followingCount };
+      return { isFollowing, followersCount, followingCount };
     } catch (error) {
       console.error('getFollowStatus error:', error);
       return { isFollowing: false, followersCount: 0, followingCount: 0 };
@@ -6463,7 +6595,7 @@ followUser: async (targetUserEmail, targetUserId) => {
       return null;
     }
   },
-   saveSelectedSeat: async (seatId, plan = null) => {
+  saveSelectedSeat: async (seatId, plan = null) => {
     try {
       const user = await UserStore.getCurrentUser();
       if (!user) return { ok: false, message: 'Please login again.' };
@@ -6526,7 +6658,7 @@ followUser: async (targetUserEmail, targetUserId) => {
       return { ok: false, message: 'Unable to save seat.' };
     }
   },
- saveSubscription: async ({ plan_id, plan_name, seat_id, price, duration }) => {
+  saveSubscription: async ({ plan_id, plan_name, seat_id, price, duration }) => {
     try {
       const user = await UserStore.getCurrentUser();
       if (!user) return { ok: false, message: 'Please login again.' };
@@ -6563,7 +6695,7 @@ followUser: async (targetUserEmail, targetUserId) => {
         payment_history: [...normalizePaymentHistory(user.payment_history), newPayment],
         notifications: [...currentNotifications, roleNotification],
       });
-          if (!updatedUser) return { ok: false, message: 'Unable to save subscription.' };
+      if (!updatedUser) return { ok: false, message: 'Unable to save subscription.' };
       const wasAlreadySubscribed = Boolean(user.is_subscribed);
       await recordQualifyingTransaction({
         buyerEmail: user.email,
@@ -6573,7 +6705,7 @@ followUser: async (targetUserEmail, targetUserId) => {
         isRenewal: wasAlreadySubscribed,
       });
       // ✅ subscription change hua — ads_hidden ka latest status API se dobara lao
-      refreshAdsVisibility().catch(() => {});
+      refreshAdsVisibility().catch(() => { });
       return { ok: true, plan: activePlan, role: newRole };
     } catch (err) {
       console.error('saveSubscription error:', err);
@@ -6638,270 +6770,270 @@ followUser: async (targetUserEmail, targetUserId) => {
       };
     } catch { return null; }
   },
-  
-// ✅ NEW: Profile "My Posts" ke liye — user ke apne Advertisement posts.
-// Sources: (1) user.ads (jo My Ads screen dikhati hai) + (2) backend GET /ads-details me
-// jahan owner_id / user_id / owner_email ya redirection_url (profile/<email>) is user se match kare.
-// Har ad ko post-shape me convert karta hai; id 'ad-<id>' hoti hai taaki news ki id se na takraye.
-getMyAdPosts: async () => {
-  try {
-    const user = await UserStore.getCurrentUser();
-    if (!user) return [];
-    const myEmail = String(user.email || '').trim().toLowerCase();
-    const myId = user.id != null ? String(user.id) : '';
 
-    const byId = new Map();
-    (Array.isArray(user.ads) ? user.ads : []).forEach((ad) => {
-      if (ad?.id != null) byId.set(String(ad.id), ad);
-    });
-
+  // ✅ NEW: Profile "My Posts" ke liye — user ke apne Advertisement posts.
+  // Sources: (1) user.ads (jo My Ads screen dikhati hai) + (2) backend GET /ads-details me
+  // jahan owner_id / user_id / owner_email ya redirection_url (profile/<email>) is user se match kare.
+  // Har ad ko post-shape me convert karta hai; id 'ad-<id>' hoti hai taaki news ki id se na takraye.
+  getMyAdPosts: async () => {
     try {
-      const res = await AuthAPI.getAdsDetails();
-      if (res?.ok && Array.isArray(res.ads)) {
-        res.ads.forEach((ad) => {
-          if (ad?.id == null) return;
-          const ownerId = (ad.owner_id ?? ad.user_id) != null ? String(ad.owner_id ?? ad.user_id) : '';
-          const ownerEmail = String(ad.owner_email || '').trim().toLowerCase();
-          const m = String(ad.redirection_url || '').match(/profile\/([^/?]+)/);
-          let deepEmail = '';
-          if (m?.[1]) { try { deepEmail = decodeURIComponent(m[1]).trim().toLowerCase(); } catch { deepEmail = m[1].trim().toLowerCase(); } }
-          const isMine = (ownerId && myId && ownerId === myId)
-            || (ownerEmail && ownerEmail === myEmail)
-            || (deepEmail && deepEmail === myEmail);
-          if (isMine) byId.set(String(ad.id), { ...(byId.get(String(ad.id)) || {}), ...ad });
-        });
-      }
-    } catch (e) { /* backend fail ho to local ads hi dikhenge */ }
+      const user = await UserStore.getCurrentUser();
+      if (!user) return [];
+      const myEmail = String(user.email || '').trim().toLowerCase();
+      const myId = user.id != null ? String(user.id) : '';
 
-    return Array.from(byId.values()).map((ad) => {
-      const created = ad.created_at || ad.createdAt || ad.start_date || '';
-      const img = ad.image || ad.photo || '';
-      return {
-        id: `ad-${ad.id}`,
-        ad_id: ad.id,
-        is_ad: true,
-        post_type: 'ad',
-        title: ad.title || 'Advertisement',
-        content: ad.title || ad.description || '',
-        description: ad.description || '',
-        image: img,
-        photo: img,
-        createdAt: created,
-        created_at: created,
-        end_date: ad.end_date || '',
-        views: Number(ad.views ?? 0),
-        likes: 0,
-        comments: 0,
-      };
-    });
-  } catch (e) { console.log('[getMyAdPosts] failed:', e); return []; }
-},
+      const byId = new Map();
+      (Array.isArray(user.ads) ? user.ads : []).forEach((ad) => {
+        if (ad?.id != null) byId.set(String(ad.id), ad);
+      });
 
-// ✅ NEW: Profile "Ecom" tab ke liye — user ke apne ecom products (GET /ecom-details me se owner match).
-// Har product ko post-shape me convert karta hai; id 'ecom-<id>' hoti hai taaki news ki id se na takraye.
-getMyEcomPosts: async (target = {}) => {
-  try {
-    const me = await UserStore.getCurrentUser();
-    const email = String(target.email || me?.email || '').trim().toLowerCase();
-    const uid = String(target.id ?? me?.id ?? '').trim();
-    if (!email && !uid) return [];
-    const res = await AuthAPI.getEcomDetails();
-    if (!res?.ok || !Array.isArray(res.details)) return [];
-    return res.details
-      .filter((raw) => {
-        const owner = raw?.user || raw?.owner || {};
-        const rawUid = String(raw?.user_id ?? owner?.id ?? '').trim();
-        const rawEmail = String(owner?.email || raw?.owner_email || '').trim().toLowerCase();
-        return Boolean((uid && rawUid && rawUid === uid) || (email && rawEmail && rawEmail === email));
-      })
-      .map((raw) => {
-        const item = normalizeEcomDetail(raw);
-        const img = item.mediaItems?.[0]?.uri || '';
+      try {
+        const res = await AuthAPI.getAdsDetails();
+        if (res?.ok && Array.isArray(res.ads)) {
+          res.ads.forEach((ad) => {
+            if (ad?.id == null) return;
+            const ownerId = (ad.owner_id ?? ad.user_id) != null ? String(ad.owner_id ?? ad.user_id) : '';
+            const ownerEmail = String(ad.owner_email || '').trim().toLowerCase();
+            const m = String(ad.redirection_url || '').match(/profile\/([^/?]+)/);
+            let deepEmail = '';
+            if (m?.[1]) { try { deepEmail = decodeURIComponent(m[1]).trim().toLowerCase(); } catch { deepEmail = m[1].trim().toLowerCase(); } }
+            const isMine = (ownerId && myId && ownerId === myId)
+              || (ownerEmail && ownerEmail === myEmail)
+              || (deepEmail && deepEmail === myEmail);
+            if (isMine) byId.set(String(ad.id), { ...(byId.get(String(ad.id)) || {}), ...ad });
+          });
+        }
+      } catch (e) { /* backend fail ho to local ads hi dikhenge */ }
+
+      return Array.from(byId.values()).map((ad) => {
+        const created = ad.created_at || ad.createdAt || ad.start_date || '';
+        const img = ad.image || ad.photo || '';
         return {
-          id: `ecom-${item.id}`,
-          ecom_id: item.id,
-          is_ecom: true,
-          post_type: 'ecom',
-          title: item.title,
-          content: item.title,
-          description: item.description,
-          price: item.price,
-          in_stock: item.in_stock,
+          id: `ad-${ad.id}`,
+          ad_id: ad.id,
+          is_ad: true,
+          post_type: 'ad',
+          title: ad.title || 'Advertisement',
+          content: ad.title || ad.description || '',
+          description: ad.description || '',
           image: img,
-          images: (item.mediaItems || []).map((m) => m.uri),
-          createdAt: item.createdAt,
-          created_at: item.createdAt,
-          owner_email: item.owner_email,
-          owner_id: String(raw?.user_id ?? '').trim(),
-          createdBy: item.owner_email,
-          author_name: item.owner_name,
-          views: 0,
+          photo: img,
+          createdAt: created,
+          created_at: created,
+          end_date: ad.end_date || '',
+          views: Number(ad.views ?? 0),
           likes: 0,
           comments: 0,
         };
       });
-  } catch (e) { console.log('[getMyEcomPosts] failed:', e); return []; }
-},
+    } catch (e) { console.log('[getMyAdPosts] failed:', e); return []; }
+  },
 
-// ✅ NEW: ek hi function se kisi bhi tarah ka apna post delete karo (post / reel / ad / ecom).
-// Profile, Public Profile aur Post detail — teeno yahi use karte hain.
-deleteMyPost: async (post = {}) => {
-  try {
-    const kind = getPostKind(post);
-    let result;
-    if (kind === 'ad') {
-      const rawId = post.ad_id ?? post.adId ?? String(post.id || '').replace(/^ad-/, '');
-      result = await UserStore.deleteAd(rawId);
-    } else if (kind === 'ecom') {
-      const rawId = post.ecom_id ?? String(post.id || '').replace(/^ecom-/, '');
-      result = await UserStore.deleteEcomeListing(rawId);
-    } else {
-      result = await UserStore.deleteNewsFeedItem(post.id);
+  // ✅ NEW: Profile "Ecom" tab ke liye — user ke apne ecom products (GET /ecom-details me se owner match).
+  // Har product ko post-shape me convert karta hai; id 'ecom-<id>' hoti hai taaki news ki id se na takraye.
+  getMyEcomPosts: async (target = {}) => {
+    try {
+      const me = await UserStore.getCurrentUser();
+      const email = String(target.email || me?.email || '').trim().toLowerCase();
+      const uid = String(target.id ?? me?.id ?? '').trim();
+      if (!email && !uid) return [];
+      const res = await AuthAPI.getEcomDetails();
+      if (!res?.ok || !Array.isArray(res.details)) return [];
+      return res.details
+        .filter((raw) => {
+          const owner = raw?.user || raw?.owner || {};
+          const rawUid = String(raw?.user_id ?? owner?.id ?? '').trim();
+          const rawEmail = String(owner?.email || raw?.owner_email || '').trim().toLowerCase();
+          return Boolean((uid && rawUid && rawUid === uid) || (email && rawEmail && rawEmail === email));
+        })
+        .map((raw) => {
+          const item = normalizeEcomDetail(raw);
+          const img = item.mediaItems?.[0]?.uri || '';
+          return {
+            id: `ecom-${item.id}`,
+            ecom_id: item.id,
+            is_ecom: true,
+            post_type: 'ecom',
+            title: item.title,
+            content: item.title,
+            description: item.description,
+            price: item.price,
+            in_stock: item.in_stock,
+            image: img,
+            images: (item.mediaItems || []).map((m) => m.uri),
+            createdAt: item.createdAt,
+            created_at: item.createdAt,
+            owner_email: item.owner_email,
+            owner_id: String(raw?.user_id ?? '').trim(),
+            createdBy: item.owner_email,
+            author_name: item.owner_name,
+            views: 0,
+            likes: 0,
+            comments: 0,
+          };
+        });
+    } catch (e) { console.log('[getMyEcomPosts] failed:', e); return []; }
+  },
+
+  // ✅ NEW: ek hi function se kisi bhi tarah ka apna post delete karo (post / reel / ad / ecom).
+  // Profile, Public Profile aur Post detail — teeno yahi use karte hain.
+  deleteMyPost: async (post = {}) => {
+    try {
+      const kind = getPostKind(post);
+      let result;
+      if (kind === 'ad') {
+        const rawId = post.ad_id ?? post.adId ?? String(post.id || '').replace(/^ad-/, '');
+        result = await UserStore.deleteAd(rawId);
+      } else if (kind === 'ecom') {
+        const rawId = post.ecom_id ?? String(post.id || '').replace(/^ecom-/, '');
+        result = await UserStore.deleteEcomeListing(rawId);
+      } else {
+        result = await UserStore.deleteNewsFeedItem(post.id);
+      }
+      if (result?.ok && kind !== 'post') _emitPostDeleted({ id: String(post.id || ''), kind });
+      return result || { ok: false, message: 'Unable to delete.' };
+    } catch {
+      return { ok: false, message: 'Unable to delete.' };
     }
-    if (result?.ok && kind !== 'post') _emitPostDeleted({ id: String(post.id || ''), kind });
-    return result || { ok: false, message: 'Unable to delete.' };
-  } catch {
-    return { ok: false, message: 'Unable to delete.' };
-  }
-},
+  },
 
-getActiveAdsFeed: async (options = {}) => {
-  try {
-    // ✅ SPEED: ads API, blocked-users aur current-user teeno ek saath (pehle ek ke baad ek chalte the)
-    const [res, blockedResRaw, currentUserForAds] = await Promise.all([
-      AuthAPI.getAdsDetails(), // GET /ads-details — no login required
-      options?.skipBlockedUsers
-        ? Promise.resolve({ ok: true, list: [] })
-        : UserStore.getBlockedUsers().catch(() => ({ ok: true, list: [] })),
-      UserStore.getCurrentUser().catch(() => null),
-    ]);
-    // ✅ hide_ads (ad-free subscription) => sirf POPUP band hota hai (HomePromoPopup khud handle karta hai).
-    //    Side / center feed ads yahan se normal aate rahenge.
-    if (!res.ok || !Array.isArray(res.ads)) {
-      console.log('[ADS-DEBUG] ads-details fail/empty -> ok:', res?.ok, '| message:', res?.message, '| adsHidden:', res?.adsHidden);
-      return [];
-    }
-    console.log('[ADS-DEBUG] backend ads:', res.ads.length, '| adsHidden(popup only):', Boolean(res?.adsHidden));
+  getActiveAdsFeed: async (options = {}) => {
+    try {
+      // ✅ SPEED: ads API, blocked-users aur current-user teeno ek saath (pehle ek ke baad ek chalte the)
+      const [res, blockedResRaw, currentUserForAds] = await Promise.all([
+        AuthAPI.getAdsDetails(), // GET /ads-details — no login required
+        options?.skipBlockedUsers
+          ? Promise.resolve({ ok: true, list: [] })
+          : UserStore.getBlockedUsers().catch(() => ({ ok: true, list: [] })),
+        UserStore.getCurrentUser().catch(() => null),
+      ]);
+      // ✅ hide_ads (ad-free subscription) => sirf POPUP band hota hai (HomePromoPopup khud handle karta hai).
+      //    Side / center feed ads yahan se normal aate rahenge.
+      if (!res.ok || !Array.isArray(res.ads)) {
+        console.log('[ADS-DEBUG] ads-details fail/empty -> ok:', res?.ok, '| message:', res?.message, '| adsHidden:', res?.adsHidden);
+        return [];
+      }
+      console.log('[ADS-DEBUG] backend ads:', res.ads.length, '| adsHidden(popup only):', Boolean(res?.adsHidden));
 
-    const today = new Date().toISOString().slice(0, 10);
+      const today = new Date().toISOString().slice(0, 10);
 
-    const blockedRes = blockedResRaw;
-    const blockedEmailsForAds = new Set((blockedRes?.list || []).map((u) => u.email).filter(Boolean));
-    const blockedIdsForAds = new Set((blockedRes?.list || []).map((u) => (u.id != null ? String(u.id) : '')).filter(Boolean));
-    const currentUserEmailForAds = String(currentUserForAds?.email || '').trim().toLowerCase();
-    const currentUserHasBlueTickForAds = Boolean(currentUserForAds && hasBlueTick(currentUserForAds));
-    const isBlockedAdOwner = (ad) => {
-      const ownerEmail = String(ad?.owner_email || '').trim().toLowerCase();
-      const ownerId = (ad?.owner_id ?? ad?.user_id) != null ? String(ad.owner_id ?? ad.user_id) : '';
-      if (ownerEmail && blockedEmailsForAds.has(ownerEmail)) return true;
-      if (ownerId && blockedIdsForAds.has(ownerId)) return true;
-      return false;
-    };
+      const blockedRes = blockedResRaw;
+      const blockedEmailsForAds = new Set((blockedRes?.list || []).map((u) => u.email).filter(Boolean));
+      const blockedIdsForAds = new Set((blockedRes?.list || []).map((u) => (u.id != null ? String(u.id) : '')).filter(Boolean));
+      const currentUserEmailForAds = String(currentUserForAds?.email || '').trim().toLowerCase();
+      const currentUserHasBlueTickForAds = Boolean(currentUserForAds && hasBlueTick(currentUserForAds));
+      const isBlockedAdOwner = (ad) => {
+        const ownerEmail = String(ad?.owner_email || '').trim().toLowerCase();
+        const ownerId = (ad?.owner_id ?? ad?.user_id) != null ? String(ad.owner_id ?? ad.user_id) : '';
+        if (ownerEmail && blockedEmailsForAds.has(ownerEmail)) return true;
+        if (ownerId && blockedIdsForAds.has(ownerId)) return true;
+        return false;
+      };
 
-    return res.ads
-      .filter((ad) => Number(ad?.status ?? 1) === 1)
-      // ✅ FIX: expired ads (end_date guzar chuki) ko Home feed pe mat dikhao
-      .filter((ad) => !ad?.end_date || String(ad.end_date) >= today)
-      .filter((ad) => !isBlockedAdOwner(ad))
-      .map((ad) => {
-        // ✅ FIX: actual field "redirection_url" hai ("url" nahi), aur usi
-        // deep-link (rti-news://profile/<email>) se owner ka email nikal rahe hain
-        const redirectionUrl = ad.redirection_url || '';
-        const adOwnerObj = ad.owner || ad.user || ad.advertiser || ad.author || {};
-        let ownerEmail = ad.owner_email || adOwnerObj.email || '';
-        const profileMatch = redirectionUrl.match(/profile\/([^/?]+)/);
-        if (!ownerEmail && profileMatch?.[1]) {
-          try { ownerEmail = decodeURIComponent(profileMatch[1]); } catch { ownerEmail = profileMatch[1]; }
-        }
+      return res.ads
+        .filter((ad) => Number(ad?.status ?? 1) === 1)
+        // ✅ FIX: expired ads (end_date guzar chuki) ko Home feed pe mat dikhao
+        .filter((ad) => !ad?.end_date || String(ad.end_date) >= today)
+        .filter((ad) => !isBlockedAdOwner(ad))
+        .map((ad) => {
+          // ✅ FIX: actual field "redirection_url" hai ("url" nahi), aur usi
+          // deep-link (rti-news://profile/<email>) se owner ka email nikal rahe hain
+          const redirectionUrl = ad.redirection_url || '';
+          const adOwnerObj = ad.owner || ad.user || ad.advertiser || ad.author || {};
+          let ownerEmail = ad.owner_email || adOwnerObj.email || '';
+          const profileMatch = redirectionUrl.match(/profile\/([^/?]+)/);
+          if (!ownerEmail && profileMatch?.[1]) {
+            try { ownerEmail = decodeURIComponent(profileMatch[1]); } catch { ownerEmail = profileMatch[1]; }
+          }
 
-      const REDIRECTION_ID_TO_TYPE = { 1: 'profile', 2: 'website', 3: 'shop', 4: 'lead_form', 5: 'whatsapp' };
-        const redirectType = REDIRECTION_ID_TO_TYPE[Number(ad.redirection)]
-          || (redirectionUrl.startsWith('rti-news://profile/') ? 'profile' : (redirectionUrl ? 'external' : 'profile'));
-        const extraValues = {};
-        if (redirectType === 'website') extraValues.website_url = redirectionUrl;
-        if (redirectType === 'shop') extraValues.shop_url = redirectionUrl;
-        // ✅ FIX: ad post karte waqt number "redirection_url" (https://wa.me/91XXXXXXXXXX) me save hota hai —
-        // pehle yahan sirf owner_mobile/contact_number padha ja raha tha, isliye WhatsApp button click par kuch nahi hota tha.
-        if (redirectType === 'whatsapp') {
-          const waFromUrl = (String(redirectionUrl).match(/wa\.me\/\+?(\d+)/i) || [])[1] || '';
-          extraValues.whatsapp_number = String(waFromUrl || ad.whatsapp_number || ad.whatsapp || ad.owner_mobile || ad.contact_number || '');
-        }
+          const REDIRECTION_ID_TO_TYPE = { 1: 'profile', 2: 'website', 3: 'shop', 4: 'lead_form', 5: 'whatsapp' };
+          const redirectType = REDIRECTION_ID_TO_TYPE[Number(ad.redirection)]
+            || (redirectionUrl.startsWith('rti-news://profile/') ? 'profile' : (redirectionUrl ? 'external' : 'profile'));
+          const extraValues = {};
+          if (redirectType === 'website') extraValues.website_url = redirectionUrl;
+          if (redirectType === 'shop') extraValues.shop_url = redirectionUrl;
+          // ✅ FIX: ad post karte waqt number "redirection_url" (https://wa.me/91XXXXXXXXXX) me save hota hai —
+          // pehle yahan sirf owner_mobile/contact_number padha ja raha tha, isliye WhatsApp button click par kuch nahi hota tha.
+          if (redirectType === 'whatsapp') {
+            const waFromUrl = (String(redirectionUrl).match(/wa\.me\/\+?(\d+)/i) || [])[1] || '';
+            extraValues.whatsapp_number = String(waFromUrl || ad.whatsapp_number || ad.whatsapp || ad.owner_mobile || ad.contact_number || '');
+          }
 
-        return {
-          id: ad.id,
-          feed_id: `ad-feed-${ad.id}`,
-          title: ad.title || 'Sponsored Advertisement',
-          description: ad.description || '',
-          photo: ad.image || '',
-          image: ad.image || '',
-                    images: (() => {
-            const rawList = Array.isArray(ad.images) ? ad.images : [];
-            const urls = rawList
-              .map((x) => (typeof x === 'string' ? x : (x?.url || x?.image_url || x?.image || '')))
-              .filter(Boolean);
-            return Array.from(new Set([ad.image, ...urls].filter(Boolean)));
-          })(),
-          // ✅ video ad (media_type 2): backend `video` (ya `media`) me URL deta hai, image null hoti hai
-          video: ad.video || ad.video_url || (Number(ad.media_type) === 2 ? (ad.media || '') : ''),
-          media_type: Number(ad.media_type) || ((ad.video || ad.video_url) ? 2 : 1),
-          url: redirectionUrl,
-          redirect: redirectType,
-          extraValues,
-          state: ad.state || '',
-          district: ad.district || '',
-                owner_email: ownerEmail,
-          owner_id: ad.owner_id ?? ad.user_id ?? null,
-          // Real advertiser name: backend field -> nested owner/user object -> logged-in user (own ad) -> email id
-          owner_name: (() => {
-            const pick = (...v) => v.map((x) => String(x ?? '').trim()).find(Boolean) || '';
-            const mine = ownerEmail && currentUserEmailForAds && String(ownerEmail).trim().toLowerCase() === currentUserEmailForAds;
-            return pick(
-              ad.owner_name, ad.user_name, ad.advertiser_name, ad.author_name,
-              adOwnerObj.name, adOwnerObj.full_name, adOwnerObj.username,
-              mine ? currentUserForAds?.name : '',
-            ) || (ownerEmail ? String(ownerEmail).split('@')[0] : '') || 'Advertiser';
-          })(),
-          owner_profile_image: ad.owner_profile_image || adOwnerObj.profile_image || adOwnerObj.avatar || adOwnerObj.photo
-            || ((ownerEmail && currentUserEmailForAds && String(ownerEmail).trim().toLowerCase() === currentUserEmailForAds) ? (currentUserForAds?.profile_image || currentUserForAds?.avatar || '') : ''),
-                  owner_has_blue_tick: Boolean(
-            ad.owner_has_blue_tick ||
-            ad.has_blue_tick ||
-            hasBlueTick(ad.owner || ad.user || {}) ||
-            (ownerEmail && currentUserEmailForAds && String(ownerEmail).trim().toLowerCase() === currentUserEmailForAds && currentUserHasBlueTickForAds)
-          ),
-          owner_mobile: ad.owner_mobile || ad.contact_number || '',
-          allowCalls: ad.allowCalls !== false,
-          created_at: ad.created_at || '',
-          updated_at: ad.updated_at || '',
-        };
-      })
+          return {
+            id: ad.id,
+            feed_id: `ad-feed-${ad.id}`,
+            title: ad.title || 'Sponsored Advertisement',
+            description: ad.description || '',
+            photo: ad.image || '',
+            image: ad.image || '',
+            images: (() => {
+              const rawList = Array.isArray(ad.images) ? ad.images : [];
+              const urls = rawList
+                .map((x) => (typeof x === 'string' ? x : (x?.url || x?.image_url || x?.image || '')))
+                .filter(Boolean);
+              return Array.from(new Set([ad.image, ...urls].filter(Boolean)));
+            })(),
+            // ✅ video ad (media_type 2): backend `video` (ya `media`) me URL deta hai, image null hoti hai
+            video: ad.video || ad.video_url || (Number(ad.media_type) === 2 ? (ad.media || '') : ''),
+            media_type: Number(ad.media_type) || ((ad.video || ad.video_url) ? 2 : 1),
+            url: redirectionUrl,
+            redirect: redirectType,
+            extraValues,
+            state: ad.state || '',
+            district: ad.district || '',
+            owner_email: ownerEmail,
+            owner_id: ad.owner_id ?? ad.user_id ?? null,
+            // Real advertiser name: backend field -> nested owner/user object -> logged-in user (own ad) -> email id
+            owner_name: (() => {
+              const pick = (...v) => v.map((x) => String(x ?? '').trim()).find(Boolean) || '';
+              const mine = ownerEmail && currentUserEmailForAds && String(ownerEmail).trim().toLowerCase() === currentUserEmailForAds;
+              return pick(
+                ad.owner_name, ad.user_name, ad.advertiser_name, ad.author_name,
+                adOwnerObj.name, adOwnerObj.full_name, adOwnerObj.username,
+                mine ? currentUserForAds?.name : '',
+              ) || (ownerEmail ? String(ownerEmail).split('@')[0] : '') || 'Advertiser';
+            })(),
+            owner_profile_image: ad.owner_profile_image || adOwnerObj.profile_image || adOwnerObj.avatar || adOwnerObj.photo
+              || ((ownerEmail && currentUserEmailForAds && String(ownerEmail).trim().toLowerCase() === currentUserEmailForAds) ? (currentUserForAds?.profile_image || currentUserForAds?.avatar || '') : ''),
+            owner_has_blue_tick: Boolean(
+              ad.owner_has_blue_tick ||
+              ad.has_blue_tick ||
+              hasBlueTick(ad.owner || ad.user || {}) ||
+              (ownerEmail && currentUserEmailForAds && String(ownerEmail).trim().toLowerCase() === currentUserEmailForAds && currentUserHasBlueTickForAds)
+            ),
+            owner_mobile: ad.owner_mobile || ad.contact_number || '',
+            allowCalls: ad.allowCalls !== false,
+            created_at: ad.created_at || '',
+            updated_at: ad.updated_at || '',
+          };
+        })
         .sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
-  } catch (e) { console.log('[DEBUG getActiveAdsFeed] failed:', e); return []; }
-},
-// getAdsDetailsFeed ab isi ko point kare — same function, ek jagah se maintain hoga
-getAdsDetailsFeed: async () => UserStore.getActiveAdsFeed(),
+    } catch (e) { console.log('[DEBUG getActiveAdsFeed] failed:', e); return []; }
+  },
+  // getAdsDetailsFeed ab isi ko point kare — same function, ek jagah se maintain hoga
+  getAdsDetailsFeed: async () => UserStore.getActiveAdsFeed(),
 
-recordAdImpression: async (adsId) => {
-  if (!adsId) return { ok: false };
-  return AuthAPI.recordAdView(adsId);
-},
+  recordAdImpression: async (adsId) => {
+    if (!adsId) return { ok: false };
+    return AuthAPI.recordAdView(adsId);
+  },
 
-// News view count: news dikhne par ek baar backend ko batata hai
-recordNewsView: async (newsId) => {
-  if (!newsId) return { ok: false };
-  const res = await AuthAPI.recordNewsView(newsId);
-  if (!res?.ok) return res;
-  // POST /counts response se total view_count nikaalo (null = response me nahi aaya)
-  const c = res.counts || {};
-  const raw = c.view_count ?? c.views_count ?? c.views ?? c.total_views;
-  const n = Number(raw);
-  return { ...res, views: raw != null && raw !== '' && Number.isFinite(n) ? n : null };
-},
-
-
+  // News view count: news dikhne par ek baar backend ko batata hai
+  recordNewsView: async (newsId) => {
+    if (!newsId) return { ok: false };
+    const res = await AuthAPI.recordNewsView(newsId);
+    if (!res?.ok) return res;
+    // POST /counts response se total view_count nikaalo (null = response me nahi aaya)
+    const c = res.counts || {};
+    const raw = c.view_count ?? c.views_count ?? c.views ?? c.total_views;
+    const n = Number(raw);
+    return { ...res, views: raw != null && raw !== '' && Number.isFinite(n) ? n : null };
+  },
 
 
-createAdOrder: async ({ planId }) => {
+
+
+  createAdOrder: async ({ planId }) => {
     try {
       const orderResult = await AuthAPI.createAdSubscriptionOrder({ planId });
       if (!orderResult?.ok) return { ok: false, message: orderResult?.message };
@@ -6910,60 +7042,60 @@ createAdOrder: async ({ planId }) => {
   },
 
   verifyAdPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signature, plan }) => {
-  try {
-    const user = await UserStore.getCurrentUser();
-    if (!user) return { ok: false, message: 'Please login again.' };
+    try {
+      const user = await UserStore.getCurrentUser();
+      if (!user) return { ok: false, message: 'Please login again.' };
 
-    const verifyRes = await AuthAPI.verifySubscriptionPayment({
-      razorpay_order_id, razorpay_payment_id, razorpay_signature,
-    });
-    if (!verifyRes?.ok) return { ok: false, message: verifyRes?.message || 'Payment verification failed.' };
-    refreshAdsVisibility().catch(() => {});   // plan badla — hide_ads dobara check
+      const verifyRes = await AuthAPI.verifySubscriptionPayment({
+        razorpay_order_id, razorpay_payment_id, razorpay_signature,
+      });
+      if (!verifyRes?.ok) return { ok: false, message: verifyRes?.message || 'Payment verification failed.' };
+      refreshAdsVisibility().catch(() => { });   // plan badla — hide_ads dobara check
 
-    // ✅ FIX: verify safal hone ke baad local user record me credits actually add karo
-    const today = new Date().toISOString().slice(0, 10);
-    const currentState = getCreditExpiryState(user.ad_credits, user.ad_subscription);
-    const addedCredits = Number(plan?.credits || 0);
-    const newCredits = Number(currentState.credits || 0) + addedCredits;
-    const validDays = Number(plan?.validity_days || CREDIT_VALIDITY_DAYS);
+      // ✅ FIX: verify safal hone ke baad local user record me credits actually add karo
+      const today = new Date().toISOString().slice(0, 10);
+      const currentState = getCreditExpiryState(user.ad_credits, user.ad_subscription);
+      const addedCredits = Number(plan?.credits || 0);
+      const newCredits = Number(currentState.credits || 0) + addedCredits;
+      const validDays = Number(plan?.validity_days || CREDIT_VALIDITY_DAYS);
 
-    const adSubscription = {
-      plan_id: plan?.id,
-      plan_name: plan?.name,
-      price: Number(plan?.price || 0),
-      credits: addedCredits,
-      duration: plan?.duration || `${validDays} Days`,
-      validity_days: validDays,
-      purchased_at: today,
-      expires_at: addDaysToDateString(today, validDays),
-      status: 'active',
-    };
+      const adSubscription = {
+        plan_id: plan?.id,
+        plan_name: plan?.name,
+        price: Number(plan?.price || 0),
+        credits: addedCredits,
+        duration: plan?.duration || `${validDays} Days`,
+        validity_days: validDays,
+        purchased_at: today,
+        expires_at: addDaysToDateString(today, validDays),
+        status: 'active',
+      };
 
-     const adPayment = {
-      order_id:   `ORD_ADS_${Date.now()}`,
-      payment_id: razorpay_payment_id || `PAY_ADS_${Date.now()}`,
-      amount:     adSubscription.price,
-      status:     'success',
-      date:       today,
-      plan_id:    adSubscription.plan_id,
-      plan_name:  adSubscription.plan_name,
-      module:     'ads',
-      signature:  razorpay_signature || '',
-    };
+      const adPayment = {
+        order_id: `ORD_ADS_${Date.now()}`,
+        payment_id: razorpay_payment_id || `PAY_ADS_${Date.now()}`,
+        amount: adSubscription.price,
+        status: 'success',
+        date: today,
+        plan_id: adSubscription.plan_id,
+        plan_name: adSubscription.plan_name,
+        module: 'ads',
+        signature: razorpay_signature || '',
+      };
 
-    const updatedUser = await UserStore.updateUser(user.email, {
-      ad_credits: newCredits,
-      ad_subscription: adSubscription,
-      payment_history: [...normalizePaymentHistory(user.payment_history), adPayment],
-    });
+      const updatedUser = await UserStore.updateUser(user.email, {
+        ad_credits: newCredits,
+        ad_subscription: adSubscription,
+        payment_history: [...normalizePaymentHistory(user.payment_history), adPayment],
+      });
 
-    if (!updatedUser) return { ok: false, message: 'Could not save the credits.' };
-    return { ok: true, credits: newCredits };
-  } catch (err) {
-    console.error('[UserStore.verifyAdPayment] Error:', err);
-    return { ok: false, message: 'Verification failed.' };
-  }
-},
+      if (!updatedUser) return { ok: false, message: 'Could not save the credits.' };
+      return { ok: true, credits: newCredits };
+    } catch (err) {
+      console.error('[UserStore.verifyAdPayment] Error:', err);
+      return { ok: false, message: 'Verification failed.' };
+    }
+  },
 
   createEcomOrder: async ({ planId }) => {
     try {
@@ -6986,7 +7118,7 @@ createAdOrder: async ({ planId }) => {
         razorpay_order_id, razorpay_payment_id, razorpay_signature,
       });
       if (!verifyRes?.ok) return { ok: false, message: verifyRes?.message || 'Payment verification failed.' };
-      refreshAdsVisibility().catch(() => {});   // plan badla — hide_ads dobara check
+      refreshAdsVisibility().catch(() => { });   // plan badla — hide_ads dobara check
 
       const today = new Date().toISOString().slice(0, 10);
       const currentState = getCreditExpiryState(user.ecome_credits, user.ecome_subscription);
@@ -7006,7 +7138,7 @@ createAdOrder: async ({ planId }) => {
         status: 'active',
       };
 
-        const wasAlreadyEcomSubscribed = Boolean(user.ecome_subscription);
+      const wasAlreadyEcomSubscribed = Boolean(user.ecome_subscription);
       const updatedUser = await UserStore.updateUser(user.email, {
         ecome_credits: newCredits,
         ecome_subscription: ecomSubscription,
@@ -7054,138 +7186,138 @@ createAdOrder: async ({ planId }) => {
   //     });
 
   //          const wasAlreadyAdSubscribed = Boolean(user.ad_subscription);
-      // if (!updatedUser) return { ok: false, message: 'Unable to activate ad plan.' };
-      // await recordQualifyingTransaction({
-      //   buyerEmail: user.email,
-      //   amount: Number(price || 0),
-      //   packageType: 'ads',
-      //   transactionId: `TXN-AD-${Date.now()}`,
-      //   isRenewal: wasAlreadyAdSubscribed,
-      // });
-      // return { ok: true, credits: newCredits, plan: adSubscription };
+  // if (!updatedUser) return { ok: false, message: 'Unable to activate ad plan.' };
+  // await recordQualifyingTransaction({
+  //   buyerEmail: user.email,
+  //   amount: Number(price || 0),
+  //   packageType: 'ads',
+  //   transactionId: `TXN-AD-${Date.now()}`,
+  //   isRenewal: wasAlreadyAdSubscribed,
+  // });
+  // return { ok: true, credits: newCredits, plan: adSubscription };
   //   } catch { return { ok: false, message: 'Unable to activate ad plan.' }; }
   // },
 
-// useAdCredit ko replace karo — ab yeh POST /ads-details call karega
-useAdCredit: async (reason = 'post', adData = {}) => {
-  try {
-    const user = await UserStore.getCurrentUser();
-    if (!user) return { ok: false, message: 'Please login again.' };
+  // useAdCredit ko replace karo — ab yeh POST /ads-details call karega
+  useAdCredit: async (reason = 'post', adData = {}) => {
+    try {
+      const user = await UserStore.getCurrentUser();
+      if (!user) return { ok: false, message: 'Please login again.' };
 
-    const creditState = getCreditExpiryState(user.ad_credits, user.ad_subscription);
-    if (creditState.expired) {
-      await UserStore.updateUser(user.email, { ad_credits: 0, ad_subscription: creditState.subscription });
-      return { ok: false, code: 'CREDITS_EXPIRED', message: 'Your ad credits have expired. Please buy a new monthly plan.' };
-    }
-    const currentCredits = Number(creditState.credits ?? 0);
-    if (currentCredits <= 0) return { ok: false, message: 'No credits left. Please buy a new plan.' };
+      const creditState = getCreditExpiryState(user.ad_credits, user.ad_subscription);
+      if (creditState.expired) {
+        await UserStore.updateUser(user.email, { ad_credits: 0, ad_subscription: creditState.subscription });
+        return { ok: false, code: 'CREDITS_EXPIRED', message: 'Your ad credits have expired. Please buy a new monthly plan.' };
+      }
+      const currentCredits = Number(creditState.credits ?? 0);
+      if (currentCredits <= 0) return { ok: false, message: 'No credits left. Please buy a new plan.' };
 
-    const today = new Date().toISOString().slice(0, 10);
+      const today = new Date().toISOString().slice(0, 10);
 
-    if (reason === 'post') {
-      const redirectType = String(adData.redirection || adData.redirect || '').trim().toLowerCase();
-      const redirectUrl = redirectType === 'whatsapp'
-        ? `https://wa.me/91${String(adData.extraValues?.whatsapp_number || '').replace(/\D/g, '')}`
-        : redirectType === 'website'
-          ? String(adData.extraValues?.website_url || '').trim()
-          : redirectType === 'shop'
-            ? String(adData.extraValues?.shop_url || '').trim()
-            : redirectType === 'lead_form'
-              ? 'rti-news://lead-form'
-              : `rti-news://profile/${encodeURIComponent(user.email || '')}`;
-   const startDate = adData.startDate || new Date().toISOString().slice(0, 10);
-      // ✅ FIX: end_date ab fixed 30 din nahi jaayega — jo ad-subscription plan
-      // purchase kiya hai (uska "days"/validity_days, e.g. 20) usi ke hisaab se jayega
-      const subscriptionDays = Number(creditState.subscription?.validity_days);
-      const durationDays = subscriptionDays > 0
-        ? subscriptionDays
-        : (Number(adData.durationDays) > 0 ? Number(adData.durationDays) : 30);
-      const [sy, sm, sd] = startDate.split('-').map(Number);
-      const endDate = new Date(Date.UTC(sy, sm - 1, sd + durationDays)).toISOString().slice(0, 10);
-      // ✅ FIX: ab real backend pe ad create hoga
-      const apiRes = await AuthAPI.createAdsDetails({
+      if (reason === 'post') {
+        const redirectType = String(adData.redirection || adData.redirect || '').trim().toLowerCase();
+        const redirectUrl = redirectType === 'whatsapp'
+          ? `https://wa.me/91${String(adData.extraValues?.whatsapp_number || '').replace(/\D/g, '')}`
+          : redirectType === 'website'
+            ? String(adData.extraValues?.website_url || '').trim()
+            : redirectType === 'shop'
+              ? String(adData.extraValues?.shop_url || '').trim()
+              : redirectType === 'lead_form'
+                ? 'rti-news://lead-form'
+                : `rti-news://profile/${encodeURIComponent(user.email || '')}`;
+        const startDate = adData.startDate || new Date().toISOString().slice(0, 10);
+        // ✅ FIX: end_date ab fixed 30 din nahi jaayega — jo ad-subscription plan
+        // purchase kiya hai (uska "days"/validity_days, e.g. 20) usi ke hisaab se jayega
+        const subscriptionDays = Number(creditState.subscription?.validity_days);
+        const durationDays = subscriptionDays > 0
+          ? subscriptionDays
+          : (Number(adData.durationDays) > 0 ? Number(adData.durationDays) : 30);
+        const [sy, sm, sd] = startDate.split('-').map(Number);
+        const endDate = new Date(Date.UTC(sy, sm - 1, sd + durationDays)).toISOString().slice(0, 10);
+        // ✅ FIX: ab real backend pe ad create hoga
+        const apiRes = await AuthAPI.createAdsDetails({
+          title: adData.title || '',
+          description: adData.description || '',
+          image: adData.image || adData.photo || '',
+          images: adData.images || [],
+          video: adData.video || '',
+          url: adData.url || adData.redirectUrl || '',
+          adsSubId: adData.adsSubId || adData.ads_sub_id || 1,
+          redirection: adData.redirection || adData.redirect || adData.url || adData.redirectUrl || 'profile',
+          redirectionUrl: redirectUrl,
+          startDate,
+          endDate,
+          status: 1,
+        });
+        if (!apiRes.ok) {
+          console.warn('[UserStore.useAdCredit] createAdsDetails failed:', JSON.stringify(apiRes));
+          return { ok: false, message: apiRes.message || 'Unable to create ad on server.' };
+        }
+
+        const backendAd = apiRes.ad || {};
+        const newAd = {
+          ...adData,
+          id: backendAd.id, // ✅ ab real backend id
+          title: backendAd.title || adData.title,
+          description: backendAd.description || adData.description,
+          image: backendAd.image || adData.image,
+          // ✅ FIX: local blob:/file: uri session ke baad mar jaati hai — backend ka URL prefer karo
+          video: backendAd.video || backendAd.video_url || (Number(backendAd.media_type) === 2 ? backendAd.media : '') || adData.video,
+          media_type: Number(backendAd.media_type) || (adData.video ? 2 : 1),
+          images: (Array.isArray(backendAd.images) && backendAd.images.length) ? backendAd.images : adData.images,
+          url: backendAd.url || adData.url,
+          created_at: backendAd.created_at || today,
+          // ✅ FIX: start/end date ab local ad me save hoti hai taaki Android My Ads me dikhe
+          start_date: backendAd.start_date || startDate,
+          end_date: backendAd.end_date || endDate,
+          status: 'active',
+        };
+        const updatedAds = [newAd, ...(Array.isArray(user.ads) ? user.ads : [])];
+        const updatedUser = await UserStore.updateUser(user.email, { ad_credits: currentCredits - 1, ads: updatedAds });
+        if (!updatedUser) return { ok: false, message: 'Unable to use credit.' };
+        return { ok: true, credits: currentCredits - 1, ad: newAd };
+      }
+
+      // ── reason !== 'post' → yeh update path hai ──
+      if (!adData?.id) return { ok: false, message: 'Ad not found.' };
+      const apiRes = await AuthAPI.updateAdsDetails(adData.id, {
         title: adData.title || '',
         description: adData.description || '',
         image: adData.image || adData.photo || '',
-        images: adData.images || [],
-                video: adData.video || '',
-        url: adData.url || adData.redirectUrl || '',
-        adsSubId: adData.adsSubId || adData.ads_sub_id || 1,
-        redirection: adData.redirection || adData.redirect || adData.url || adData.redirectUrl || 'profile',
-        redirectionUrl: redirectUrl,
-        startDate,
-        endDate,
-        status: 1,
+        video: adData.video || '',
+        url: adData.url || '',
       });
-      if (!apiRes.ok) {
-        console.warn('[UserStore.useAdCredit] createAdsDetails failed:', JSON.stringify(apiRes));
-        return { ok: false, message: apiRes.message || 'Unable to create ad on server.' };
-      }
+      if (!apiRes.ok) return { ok: false, message: apiRes.message || 'Unable to update ad on server.' };
 
-      const backendAd = apiRes.ad || {};
-      const newAd = {
-        ...adData,
-        id: backendAd.id, // ✅ ab real backend id
-        title: backendAd.title || adData.title,
-        description: backendAd.description || adData.description,
-        image: backendAd.image || adData.image,
-        // ✅ FIX: local blob:/file: uri session ke baad mar jaati hai — backend ka URL prefer karo
-        video: backendAd.video || backendAd.video_url || (Number(backendAd.media_type) === 2 ? backendAd.media : '') || adData.video,
-        media_type: Number(backendAd.media_type) || (adData.video ? 2 : 1),
-        images: (Array.isArray(backendAd.images) && backendAd.images.length) ? backendAd.images : adData.images,
-        url: backendAd.url || adData.url,
-        created_at: backendAd.created_at || today,
-        // ✅ FIX: start/end date ab local ad me save hoti hai taaki Android My Ads me dikhe
-        start_date: backendAd.start_date || startDate,
-        end_date: backendAd.end_date || endDate,
-        status: 'active',
-      };
-      const updatedAds = [newAd, ...(Array.isArray(user.ads) ? user.ads : [])];
-      const updatedUser = await UserStore.updateUser(user.email, { ad_credits: currentCredits - 1, ads: updatedAds });
-      if (!updatedUser) return { ok: false, message: 'Unable to use credit.' };
-      return { ok: true, credits: currentCredits - 1, ad: newAd };
+      let updatedAd = null;
+      const updatedAds = (Array.isArray(user.ads) ? user.ads : []).map((ad) => {
+        if (ad.id !== adData.id) return ad;
+        updatedAd = { ...ad, ...adData, updated_at: today };
+        return updatedAd;
+      });
+      if (!updatedAd) return { ok: false, message: 'Ad not found.' };
+      const updatedUser = await UserStore.updateUser(user.email, { ads: updatedAds });
+      if (!updatedUser) return { ok: false, message: 'Unable to save changes.' };
+      return { ok: true, credits: currentCredits, ad: updatedAd };
+    } catch (e) {
+      console.error('[UserStore.useAdCredit] failed:', e);
+      return { ok: false, message: `Unable to use credit. (${e?.message || 'unknown error'})` };
     }
+  },
 
-    // ── reason !== 'post' → yeh update path hai ──
-    if (!adData?.id) return { ok: false, message: 'Ad not found.' };
-    const apiRes = await AuthAPI.updateAdsDetails(adData.id, {
-      title: adData.title || '',
-      description: adData.description || '',
-      image: adData.image || adData.photo || '',
-      video: adData.video || '',
-      url: adData.url || '',
-    });
-    if (!apiRes.ok) return { ok: false, message: apiRes.message || 'Unable to update ad on server.' };
-
-    let updatedAd = null;
-    const updatedAds = (Array.isArray(user.ads) ? user.ads : []).map((ad) => {
-      if (ad.id !== adData.id) return ad;
-      updatedAd = { ...ad, ...adData, updated_at: today };
-      return updatedAd;
-    });
-    if (!updatedAd) return { ok: false, message: 'Ad not found.' };
-    const updatedUser = await UserStore.updateUser(user.email, { ads: updatedAds });
-    if (!updatedUser) return { ok: false, message: 'Unable to save changes.' };
-    return { ok: true, credits: currentCredits, ad: updatedAd };
-  } catch (e) {
-    console.error('[UserStore.useAdCredit] failed:', e);
-    return { ok: false, message: `Unable to use credit. (${e?.message || 'unknown error'})` };
-  }
-},
-
-// deleteAd ko replace karo — ab DELETE /ads-details/{id} bhi call hoga
-deleteAd: async (adId) => {
-  try {
-    const user = await UserStore.getCurrentUser();
-    if (!user) return { ok: false, message: 'Please login again.' };
-    const apiRes = await AuthAPI.deleteAdsDetails(adId);
-    if (!apiRes.ok) return { ok: false, message: apiRes.message || 'Unable to delete ad on server.' };
-    const updatedAds = (Array.isArray(user.ads) ? user.ads : []).filter(ad => ad.id !== adId);
-    const updatedUser = await UserStore.updateUser(user.email, { ads: updatedAds });
-    if (!updatedUser) return { ok: false, message: 'Unable to delete ad.' };
-    return { ok: true };
-  } catch { return { ok: false, message: 'Unable to delete ad.' }; }
-},
+  // deleteAd ko replace karo — ab DELETE /ads-details/{id} bhi call hoga
+  deleteAd: async (adId) => {
+    try {
+      const user = await UserStore.getCurrentUser();
+      if (!user) return { ok: false, message: 'Please login again.' };
+      const apiRes = await AuthAPI.deleteAdsDetails(adId);
+      if (!apiRes.ok) return { ok: false, message: apiRes.message || 'Unable to delete ad on server.' };
+      const updatedAds = (Array.isArray(user.ads) ? user.ads : []).filter(ad => ad.id !== adId);
+      const updatedUser = await UserStore.updateUser(user.email, { ads: updatedAds });
+      if (!updatedUser) return { ok: false, message: 'Unable to delete ad.' };
+      return { ok: true };
+    } catch { return { ok: false, message: 'Unable to delete ad.' }; }
+  },
 
   getEcomePlans: () => ([
     { plan_id: 'ecome-starter-monthly', plan_name: 'Starter E-Commerce', price: 499, credits: 10, duration: '30 Days', validity_days: 30 },
@@ -7193,12 +7325,8 @@ deleteAd: async (adId) => {
     { plan_id: 'ecome-power-monthly', plan_name: 'Power E-Commerce', price: 1499, credits: 50, duration: '30 Days', validity_days: 30 },
   ]),
   getEcomeMarketplaceSummary: async (options = {}) => {
-    // Sync background mein chale, UI ko block na kare (Buy list ke liye)
-    if (options.includeListings !== false) {
-      UserStore.syncCreditSubscriptionsFromBackend().catch(() => {});
-    } else {
-      await UserStore.syncCreditSubscriptionsFromBackend();
-    }
+    // Sync background mein chale, UI ko block na kare
+    UserStore.syncCreditSubscriptionsFromBackend().catch(() => { });
     try {
       const includeListings = options.includeListings !== false;
       const includeEnquiries = Boolean(options.includeEnquiries);
@@ -7261,7 +7389,7 @@ deleteAd: async (adId) => {
           });
         });
       });
-// ✅ FIX: plans ab real backend /ecom-subscriptions se aayenge, dummy local getEcomePlans() sirf fallback ke liye
+      // ✅ FIX: plans ab real backend /ecom-subscriptions se aayenge, dummy local getEcomePlans() sirf fallback ke liye
       let plans = UserStore.getEcomePlans();
       try {
         // Buy list ko plans chahiye hi nahi — skip karo
@@ -7274,7 +7402,7 @@ deleteAd: async (adId) => {
             plan_name: p.plan_name ?? p.name,
             price: Number(p.price ?? 0),
             credits: Number(p.credits ?? p.listing_credits ?? 0),
-                       duration: `${Number(p.days ?? p.validity_days ?? 30)} Days`,
+            duration: `${Number(p.days ?? p.validity_days ?? 30)} Days`,
             validity_days: Number(p.days ?? p.validity_days ?? 30),
           }));
         }
@@ -7282,39 +7410,39 @@ deleteAd: async (adId) => {
         console.warn('[getEcomeMarketplaceSummary] getEcomSubscriptions failed, using local fallback:', e);
       }
 
-// ✅ FIX: listings ab real backend /ecom-details se aayengi, dummy local ecome_listings hata diya
-            let listings = [];
+      // ✅ FIX: listings ab real backend /ecom-details se aayengi, dummy local ecome_listings hata diya
+      let listings = [];
       if (includeListings) {
         try {
-        const detailsRes = await AuthAPI.getEcomDetails();
-        if (detailsRes.ok && Array.isArray(detailsRes.details)) {
-                 const blockedRes = options?.skipBlockedUsers
-            ? { ok: true, list: [] }
-            : await UserStore.getBlockedUsers();
-          const blockedEmailsForEcom = new Set((blockedRes?.list || []).map((u) => u.email).filter(Boolean));
-          const blockedIdsForEcom = new Set((blockedRes?.list || []).map((u) => (u.id != null ? String(u.id) : '')).filter(Boolean));
-          const isBlockedEcomOwner = (item) => {
-            const ownerEmail = String(item?.owner_email || '').trim().toLowerCase();
-            const ownerCreatedBy = String(item?.createdBy || '').trim().toLowerCase();
-            if (ownerEmail && blockedEmailsForEcom.has(ownerEmail)) return true;
-            if (ownerCreatedBy && (blockedEmailsForEcom.has(ownerCreatedBy) || blockedIdsForEcom.has(ownerCreatedBy))) return true;
-            return false;
-          };
-          listings = detailsRes.details
-            .map(normalizeEcomDetail)
-            // ✅ Out of Stock product list se gayab nahi hona chahiye (seller ke pages me dikhta rahe).
-            // Buy page apne level par in_stock === false wale products hata deta hai.
-            .filter((item) => item.status === undefined || item.status === null || Number(item.status) === 1 || item.in_stock === false || (currentUser && [item.owner_email, item.createdBy, item.user_id].some((v) => v && (v === String(currentUser.email || '').toLowerCase() || v === String(currentUser.id || '')))))
-            .filter((item) => !isBlockedEcomOwner(item))
-            .map((item) => ({
-              ...item,
-              sellers: Array.from(sellersByProduct.get(String(item.id))?.values?.() || []),
-              buyers: Array.from(buyersByProduct.get(String(item.id))?.values?.() || []),
-            }))
-            .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
-        }
-      } catch (e) {
-        console.warn('[getEcomeMarketplaceSummary] getEcomDetails failed:', e);
+          const detailsRes = await AuthAPI.getEcomDetails();
+          if (detailsRes.ok && Array.isArray(detailsRes.details)) {
+            const blockedRes = options?.skipBlockedUsers
+              ? { ok: true, list: [] }
+              : await UserStore.getBlockedUsers();
+            const blockedEmailsForEcom = new Set((blockedRes?.list || []).map((u) => u.email).filter(Boolean));
+            const blockedIdsForEcom = new Set((blockedRes?.list || []).map((u) => (u.id != null ? String(u.id) : '')).filter(Boolean));
+            const isBlockedEcomOwner = (item) => {
+              const ownerEmail = String(item?.owner_email || '').trim().toLowerCase();
+              const ownerCreatedBy = String(item?.createdBy || '').trim().toLowerCase();
+              if (ownerEmail && blockedEmailsForEcom.has(ownerEmail)) return true;
+              if (ownerCreatedBy && (blockedEmailsForEcom.has(ownerCreatedBy) || blockedIdsForEcom.has(ownerCreatedBy))) return true;
+              return false;
+            };
+            listings = detailsRes.details
+              .map(normalizeEcomDetail)
+              // ✅ Out of Stock product list se gayab nahi hona chahiye (seller ke pages me dikhta rahe).
+              // Buy page apne level par in_stock === false wale products hata deta hai.
+              .filter((item) => item.status === undefined || item.status === null || Number(item.status) === 1 || item.in_stock === false || (currentUser && [item.owner_email, item.createdBy, item.user_id].some((v) => v && (v === String(currentUser.email || '').toLowerCase() || v === String(currentUser.id || '')))))
+              .filter((item) => !isBlockedEcomOwner(item))
+              .map((item) => ({
+                ...item,
+                sellers: Array.from(sellersByProduct.get(String(item.id))?.values?.() || []),
+                buyers: Array.from(buyersByProduct.get(String(item.id))?.values?.() || []),
+              }))
+              .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+          }
+        } catch (e) {
+          console.warn('[getEcomeMarketplaceSummary] getEcomDetails failed:', e);
         }
       }
 
@@ -7411,16 +7539,16 @@ deleteAd: async (adId) => {
         expires_at: addDaysToDateString(today, validDays),
         status: 'active',
       };
-          const ecomPayment = {
-        order_id:   `ORD_ECOM_${Date.now()}`,
+      const ecomPayment = {
+        order_id: `ORD_ECOM_${Date.now()}`,
         payment_id: `PAY_ECOM_${Date.now()}`,
-        amount:     plan.price,
-        status:     'success',
-        date:       today,
-        plan_id:    plan.plan_id,
-        plan_name:  plan.plan_name,
-        module:     'ecom',
-        signature:  '',
+        amount: plan.price,
+        status: 'success',
+        date: today,
+        plan_id: plan.plan_id,
+        plan_name: plan.plan_name,
+        module: 'ecom',
+        signature: '',
       };
       const updatedUser = await UserStore.updateUser(user.email, {
         ecome_credits: nextCredits,
@@ -7457,7 +7585,7 @@ deleteAd: async (adId) => {
         .map((item) => ({
           uri: item.uri,
           previewUri: item.previewUri || '',
-         type: item.mimeType || 'image/jpeg',
+          type: item.mimeType || 'image/jpeg',
           name: item.name || 'image.jpg',
         }));
 
@@ -7483,7 +7611,7 @@ deleteAd: async (adId) => {
 
       const listing = normalizeEcomDetail(apiRes.detail || {});
 
-         // Listing backend pe save ho chuki hai — credit update fail ho to bhi success maano
+      // Listing backend pe save ho chuki hai — credit update fail ho to bhi success maano
       try {
         await UserStore.updateUser(user.email, { ecome_credits: currentCredits - 1 });
       } catch (e) {
@@ -7592,28 +7720,28 @@ deleteAd: async (adId) => {
     }
   },
 
- createEcomeEnquiry: async (productId, enquiryData = {}) => {
-  try {
-    const currentUser = await UserStore.getCurrentUser();
-    if (!currentUser) return { ok: false, message: 'Please login again.' };
+  createEcomeEnquiry: async (productId, enquiryData = {}) => {
+    try {
+      const currentUser = await UserStore.getCurrentUser();
+      if (!currentUser) return { ok: false, message: 'Please login again.' };
 
-   const res = await AuthAPI.createEcomEnquiry({
-      ecom_id: productId,
-      type: 'ecom',
-      message: enquiryData.message || '',
-      quantity: enquiryData.quantity || '',
-      first_name: enquiryData.firstName || '',
-      last_name: enquiryData.lastName || '',
-      email: enquiryData.email || currentUser.email,
-      contact: enquiryData.contact || currentUser.mobile || '',
-    });
+      const res = await AuthAPI.createEcomEnquiry({
+        ecom_id: productId,
+        type: 'ecom',
+        message: enquiryData.message || '',
+        quantity: enquiryData.quantity || '',
+        first_name: enquiryData.firstName || '',
+        last_name: enquiryData.lastName || '',
+        email: enquiryData.email || currentUser.email,
+        contact: enquiryData.contact || currentUser.mobile || '',
+      });
 
-    if (!res.ok) return { ok: false, message: res.message || 'Unable to send enquiry.' };
-    return { ok: true, enquiry: res.enquiry };
-  } catch {
-    return { ok: false, message: 'Unable to send enquiry.' };
-  }
-},
+      if (!res.ok) return { ok: false, message: res.message || 'Unable to send enquiry.' };
+      return { ok: true, enquiry: res.enquiry };
+    } catch {
+      return { ok: false, message: 'Unable to send enquiry.' };
+    }
+  },
 
   createFarmingPurchase: async (productId, purchaseData = {}) => {
     try {

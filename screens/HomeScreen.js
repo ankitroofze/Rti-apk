@@ -114,7 +114,8 @@ function homeStoryFromEcome(item = {}) {
     ...(Array.isArray(item.images) ? item.images : []),
     ...(Array.isArray(item.photos) ? item.photos : []),
     ...(Array.isArray(item.mediaItems) ? item.mediaItems.filter((media) => String(media?.type || 'image').toLowerCase() !== 'video').map((media) => media?.uri) : []),
-  ].map((value) => typeof value === 'string' ? value : (value?.uri || value?.url || value?.image_url || value?.image || '')).filter(Boolean)));
+  ].map((value) => typeof value === 'string' ? value : (value?.uri || value?.url || value?.image_url || value?.image || ''))
+   .filter((u) => u && typeof u === 'string' && !u.includes('picsum.photos'))));
   const image = images[0] || '';
   return {
     id: `ecome-${item.id || item.ecom_id || Date.now()}`,
@@ -173,7 +174,8 @@ function prefetchHomeImages(stories) {
 // E-commerce cards use the same 5-second, swipeable image gallery as news and ads.
 function EcomeImageGallery({ item, style }) {
   const [width, setWidth] = useState(0);
-  const images = Array.isArray(item.images) && item.images.length ? item.images : (item.image ? [item.image] : []);
+  const images = (Array.isArray(item.images) && item.images.length ? item.images : (item.image ? [item.image] : []))
+    .filter((u) => u && typeof u === 'string' && !u.includes('picsum.photos'));
   if (!images.length) return <View style={[style, ecomeRowStyles.imageFallback]}><Ionicons name="storefront-outline" size={28} color="#dc2626" /></View>;
   return (
     <View style={style} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
@@ -183,17 +185,20 @@ function EcomeImageGallery({ item, style }) {
 }
 
 const EcomeGridCard = React.memo(function EcomeGridCard({ item, navigation, style }) {
+  const { language } = useLanguage();
+  const copy = useMemo(() => getSiteCopy(language), [language]);
+  const commonCopy = copy.common;
   return (
     <TouchableOpacity style={[ecomeRowStyles.cell, style]} activeOpacity={0.88} onPress={() => navigation.navigate('FarmingBuy', { openListingId: item.ecomId ? String(item.ecomId) : undefined })}>
       <EcomeImageGallery item={item} style={ecomeRowStyles.image} />
       <View style={ecomeRowStyles.body}>
         <View style={ecomeRowStyles.topRow}>
-          <Text style={ecomeRowStyles.badge}>ECOME</Text>
+          <Text style={ecomeRowStyles.badge}>{commonCopy?.ecom || 'ECOME'}</Text>
           <Text style={ecomeRowStyles.category} numberOfLines={1}>{item.category}</Text>
         </View>
         <Text style={ecomeRowStyles.title} numberOfLines={2}>{item.title}</Text>
-        <Text style={ecomeRowStyles.price} numberOfLines={1}>{item.price ? `₹${item.price}` : 'Contact for price'}</Text>
-        {item.inStock === false ? <Text style={{ color: '#dc2626', fontSize: 11, fontWeight: '800', marginTop: 2 }}>Out of Stock</Text> : null}
+        <Text style={ecomeRowStyles.price} numberOfLines={1}>{item.price ? `₹${item.price}` : (commonCopy?.contactForPrice || 'Contact for price')}</Text>
+        {item.inStock === false ? <Text style={{ color: '#dc2626', fontSize: 11, fontWeight: '800', marginTop: 2 }}>{commonCopy?.outOfStock || 'Out of Stock'}</Text> : null}
         <View style={ecomeRowStyles.footer}>
           <Text style={ecomeRowStyles.seller} numberOfLines={1}>{item.city || item.sellerName}</Text>
           <Ionicons name="arrow-forward" size={13} color="#dc2626" />
@@ -223,6 +228,9 @@ const ECOME_CARD_W = 165;
 const ECOME_CARD_GAP = 10;
 const ECOME_SPEED = 32; // px per second — constant speed (marquee), koi ruk-ruk nahi
 function EcomeTopSection({ items = [], navigation, compact }) {
+  const { language } = useLanguage();
+  const copy = useMemo(() => getSiteCopy(language), [language]);
+  const commonCopy = copy.common;
   const scrollRef = useRef(null);
   const posRef = useRef(0);          // hamari apni float position (scrollTo integer round karta hai)
   const pausedUntilRef = useRef(0);
@@ -261,9 +269,9 @@ function EcomeTopSection({ items = [], navigation, compact }) {
   return (
     <View style={[ecomeTopStyles.wrap, compact && ecomeTopStyles.wrapCompact]}>
       <View style={ecomeTopStyles.headRow}>
-        <Text style={ecomeTopStyles.heading}>Top Ecom Products</Text>
+        <Text style={ecomeTopStyles.heading}>{commonCopy?.topEcomProducts || 'Top Ecom Products'}</Text>
         <TouchableOpacity onPress={() => navigation.navigate('FarmingBuy', { openListingId: undefined })} activeOpacity={0.7} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={ecomeTopStyles.viewAll}>View All</Text>
+          <Text style={ecomeTopStyles.viewAll}>{commonCopy?.viewAll || 'View All'}</Text>
         </TouchableOpacity>
       </View>
       <ScrollView
@@ -288,24 +296,30 @@ function EcomeTopSection({ items = [], navigation, compact }) {
 }
 
 function EcomeHomeCard({ item, navigation }) {
+  const { language } = useLanguage();
+  const copy = useMemo(() => getSiteCopy(language), [language]);
+  const commonCopy = copy.common;
   return (
     <TouchableOpacity style={ecomeStyles.card} activeOpacity={0.88} onPress={() => navigation.navigate('FarmingBuy', { openListingId: item.ecomId ? String(item.ecomId) : undefined })}>
       <EcomeImageGallery item={item} style={ecomeStyles.image} />
       <View style={ecomeStyles.body}>
-        <View style={ecomeStyles.topRow}><Text style={ecomeStyles.badge}>ECOME</Text><Text style={ecomeStyles.category}>{item.category}</Text></View>
+        <View style={ecomeStyles.topRow}><Text style={ecomeStyles.badge}>{commonCopy?.ecom || 'ECOME'}</Text><Text style={ecomeStyles.category}>{item.category}</Text></View>
         <Text style={ecomeStyles.title} numberOfLines={2}>{item.title}</Text>
         {item.description ? <Text style={ecomeStyles.description} numberOfLines={2}>{item.description}</Text> : null}
         <View style={ecomeStyles.metaRow}>
-          <Text style={ecomeStyles.price}>{item.price ? `₹${item.price}` : 'Contact for price'}</Text>
-          {item.inStock === false ? <Text style={[ecomeStyles.quantity, { color: '#dc2626' }]}>Out of Stock</Text> : null}
+          <Text style={ecomeStyles.price}>{item.price ? `₹${item.price}` : (commonCopy?.contactForPrice || 'Contact for price')}</Text>
+          {item.inStock === false ? <Text style={[ecomeStyles.quantity, { color: '#dc2626' }]}>{commonCopy?.outOfStock || 'Out of Stock'}</Text> : null}
         </View>
-        <View style={ecomeStyles.footer}><Text style={ecomeStyles.seller} numberOfLines={1}>{item.city || item.sellerName}</Text><Text style={ecomeStyles.cta}>View listing <Ionicons name="arrow-forward" size={13} /></Text></View>
+        <View style={ecomeStyles.footer}><Text style={ecomeStyles.seller} numberOfLines={1}>{item.city || item.sellerName}</Text><Text style={ecomeStyles.cta}>{commonCopy?.viewListing || 'View listing'} <Ionicons name="arrow-forward" size={13} /></Text></View>
       </View>
     </TouchableOpacity>
   );
 }
 
 function RotatingSponsoredAd({ ads = [], onClose, onPress }) {
+  const { language } = useLanguage();
+  const copy = useMemo(() => getSiteCopy(language), [language]);
+  const commonCopy = copy.common;
   const [index, setIndex] = useState(0);
   const [visible, setVisible] = useState(false);
   const dismissedRef = useRef(false);
@@ -340,7 +354,7 @@ function RotatingSponsoredAd({ ads = [], onClose, onPress }) {
           </TouchableOpacity>
           <TouchableOpacity activeOpacity={0.9} onPress={() => onPress?.(ad)}>
             <Image source={{ uri: image }} style={popupStyles.image} resizeMode="cover" />
-            <View style={popupStyles.label}><Text style={popupStyles.labelText}>SPONSORED</Text></View>
+            <View style={popupStyles.label}><Text style={popupStyles.labelText}>{commonCopy?.sponsored ? commonCopy.sponsored.toUpperCase() : 'SPONSORED'}</Text></View>
           </TouchableOpacity>
         </View>
     </View>
@@ -348,7 +362,10 @@ function RotatingSponsoredAd({ ads = [], onClose, onPress }) {
 }
 
 function TopRotatingAdSlot({ ads = [], onPress }) {
-    const { width: winW } = useWindowDimensions();
+  const { language } = useLanguage();
+  const copy = useMemo(() => getSiteCopy(language), [language]);
+  const commonCopy = copy.common;
+  const { width: winW } = useWindowDimensions();
   const [index, setIndex] = useState(0);
   useEffect(() => {
     if (ads.length < 2) return undefined;
@@ -361,13 +378,16 @@ function TopRotatingAdSlot({ ads = [], onPress }) {
   if (!image) return null;
   return (
     <TouchableOpacity style={styles.topAdSlot} activeOpacity={0.92} onPress={() => onPress?.(ad)}>
-      <Text style={styles.adCaption}>ADVERTISEMENT</Text>
+      <Text style={styles.adCaption}>{commonCopy?.advertisement ? commonCopy.advertisement.toUpperCase() : 'ADVERTISEMENT'}</Text>
 <AutoFitAdImage uri={image} maxWidth={Math.min(winW - 24, 960)} maxHeight={260} />
     </TouchableOpacity>
   );
 }
 
 function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
+  const { language } = useLanguage();
+  const copy = useMemo(() => getSiteCopy(language), [language]);
+  const commonCopy = copy.common;
   const { width: winW } = useWindowDimensions();
   const [slotWidth, setSlotWidth] = useState(0);
   const [page, setPage] = useState(0);
@@ -389,7 +409,7 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
   if (group) {
     return (
       <View style={styles.inFeedAdSlot} onLayout={handleLayout}>
-        <Text style={styles.adCaption}>ADVERTISEMENT  •  {Math.min(page + 1, group.length)}/{group.length}</Text>
+        <Text style={styles.adCaption}>{(commonCopy?.advertisement ? commonCopy.advertisement.toUpperCase() : 'ADVERTISEMENT')}  •  {Math.min(page + 1, group.length)}/{group.length}</Text>
         <View style={{ width: slideW, position: 'relative' }}>
           <ScrollView
             horizontal
@@ -461,7 +481,7 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
   if (gallery.length > 1 || hasVideo) {
     return (
       <View style={styles.inFeedAdSlot} onLayout={handleLayout}>
-        <Text style={styles.adCaption}>ADVERTISEMENT</Text>
+        <Text style={styles.adCaption}>{commonCopy?.advertisement ? commonCopy.advertisement.toUpperCase() : 'ADVERTISEMENT'}</Text>
         <View style={{ width: contentW, position: 'relative' }}>
           <MediaGallery
             images={gallery.length ? gallery : [image]}
@@ -480,7 +500,7 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
   return (
     <View style={styles.inFeedAdSlot} onLayout={handleLayout}>
       <TouchableOpacity style={{ width: '100%', alignItems: 'center' }} activeOpacity={0.92} onPress={() => onPress?.(ad)}>
-        <Text style={styles.adCaption}>ADVERTISEMENT</Text>
+        <Text style={styles.adCaption}>{commonCopy?.advertisement ? commonCopy.advertisement.toUpperCase() : 'ADVERTISEMENT'}</Text>
         <View style={{ width: contentW, position: 'relative', alignItems: 'center' }}>
           <AutoFitAdImage uri={image} maxWidth={contentW} maxHeight={420} radius={10} />
           <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={12} />
@@ -530,6 +550,9 @@ const SUBSCRIPTION_PLANS = [
 ];
 
 function SeatSelectModal({ visible, stateName, seats, selectedSeatId, onSelectSeatId, onCancel, onConfirm }) {
+  const { language } = useLanguage();
+  const copy = useMemo(() => getSiteCopy(language), [language]);
+  const commonCopy = copy.common;
   const baseSeats = Array.isArray(seats) ? seats.slice(0, 5) : [];
   const commonSeat = { id: 'seat-common', name: 'Common Seat', status: 'available' };
   const seatsToShow = [...baseSeats, commonSeat];
@@ -547,14 +570,14 @@ function SeatSelectModal({ visible, stateName, seats, selectedSeatId, onSelectSe
       >
       <View style={seatStyles.sheet}>
         <View style={seatStyles.handle} />
-        <Text style={seatStyles.title}>Select your seat</Text>
+        <Text style={seatStyles.title}>{commonCopy?.selectSeat || 'Select your seat'}</Text>
         <View style={seatStyles.stateRow}>
           <View style={seatStyles.stateDot} />
           <Text style={seatStyles.subtitle}>{stateName || '-'}</Text>
         </View>
         <View style={{ marginTop: 14, gap: 8 }}>
           {isLoadingSeats && baseSeats.length === 0 ? (
-            <Text style={seatStyles.loadingText}>Loading seats…</Text>
+            <Text style={seatStyles.loadingText}>{commonCopy?.loadingSeats || 'Loading seats…'}</Text>
           ) : null}
           {seatsToShow.map((seat, seatIdx) => {
             const isTaken = seat.status === 'taken';
@@ -603,7 +626,7 @@ function SeatSelectModal({ visible, stateName, seats, selectedSeatId, onSelectSe
         </View>
         <View style={{ marginTop: 16, flexDirection: 'row', gap: 10 }}>
           <TouchableOpacity style={seatStyles.cancelBtn} onPress={onCancel} activeOpacity={0.85}>
-            <Text style={seatStyles.cancelBtnText}>Cancel</Text>
+            <Text style={seatStyles.cancelBtnText}>{commonCopy?.cancel || 'Cancel'}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[seatStyles.confirmBtn, !selectedSeatId && seatStyles.confirmBtnDisabled]}
@@ -612,7 +635,7 @@ function SeatSelectModal({ visible, stateName, seats, selectedSeatId, onSelectSe
             disabled={!selectedSeatId || isLoadingSeats}
           >
             <Text style={[seatStyles.confirmBtnText, !selectedSeatId && seatStyles.confirmBtnTextDisabled]}>
-              Pay now
+              {commonCopy?.payNow || 'Pay now'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -672,6 +695,9 @@ const seatStyles= StyleSheet.create({
 });
 
 function SubscriptionModal({ visible, pendingPlan, onPlanPress, onClose }) {
+  const { language } = useLanguage();
+  const copy = useMemo(() => getSiteCopy(language), [language]);
+  const commonCopy = copy.common;
   if (!visible) return null;
   return (
     <View style={subStyles.overlay}>
@@ -679,8 +705,8 @@ function SubscriptionModal({ visible, pendingPlan, onPlanPress, onClose }) {
         <View style={subStyles.crownCircle}>
           <Ionicons name="star" size={22} color={PINK} />
         </View>
-        <Text style={subStyles.modalTitle}>Choose your plan</Text>
-        <Text style={subStyles.modalSubtitle}>Unlock everything with one tap</Text>
+        <Text style={subStyles.modalTitle}>{commonCopy?.choosePlan || 'Choose your plan'}</Text>
+        <Text style={subStyles.modalSubtitle}>{commonCopy?.unlockEverything || 'Unlock everything with one tap'}</Text>
         <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 380, marginTop: 16 }}>
           {SUBSCRIPTION_PLANS.map((plan) => {
             const isActive = pendingPlan?.plan_id === plan.plan_id;
@@ -715,7 +741,7 @@ function SubscriptionModal({ visible, pendingPlan, onPlanPress, onClose }) {
           })}
         </ScrollView>
         <TouchableOpacity style={subStyles.closeBtn} onPress={onClose} activeOpacity={0.8}>
-          <Text style={subStyles.closeBtnText}>Maybe later</Text>
+          <Text style={subStyles.closeBtnText}>{commonCopy?.maybeLater || 'Maybe later'}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -1444,16 +1470,16 @@ const handleOpenLeadForm = useCallback(async (story) => {
                   <>
                     <TouchableOpacity onPress={handleBackFromTrending} activeOpacity={0.8} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                       <Ionicons name="arrow-back" size={16} color="#f97316" />
-                      <Text style={{ color: '#f97316', fontWeight: '800', fontSize: 13 }}>Back to News Feed</Text>
+                      <Text style={{ color: '#f97316', fontWeight: '800', fontSize: 13 }}>{commonCopy?.backToFeed || 'Back to News Feed'}</Text>
                     </TouchableOpacity>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                       <Ionicons name="trending-up" size={20} color="#dc2626" />
-                      <Text style={{ fontSize: 18, fontWeight: '800', color: '#0f172a' }}>All News</Text>
+                      <Text style={{ fontSize: 18, fontWeight: '800', color: '#0f172a' }}>{commonCopy?.allNews || 'All News'}</Text>
                       <Text style={{ fontSize: 12, fontWeight: '600', color: '#64748b' }}>({allNewsList.length})</Text>
                     </View>
                     <View style={[styles.storyCardsStack, isMobileLayout && styles.storyCardsStackMobile]}>
                       {allNewsList.length === 0 ? (
-                        <Text style={{ color: '#64748b', fontSize: 14, paddingVertical: 24, textAlign: 'center' }}>No news available right now.</Text>
+                        <Text style={{ color: '#64748b', fontSize: 14, paddingVertical: 24, textAlign: 'center' }}>{commonCopy?.noNewsAvailable || 'No news available right now.'}</Text>
                       ) : null}
                       {allNewsList.map((story, index) => (
                         <NewsFeedCard
@@ -1480,7 +1506,7 @@ const handleOpenLeadForm = useCallback(async (story) => {
                   <>
                     <TouchableOpacity onPress={handleBackFromAds} activeOpacity={0.8} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 }}>
                       <Ionicons name="arrow-back" size={16} color="#f97316" />
-                      <Text style={{ color: '#f97316', fontWeight: '800', fontSize: 13 }}>Back to News Feed</Text>
+                      <Text style={{ color: '#f97316', fontWeight: '800', fontSize: 13 }}>{commonCopy?.backToFeed || 'Back to News Feed'}</Text>
                     </TouchableOpacity>
                     <View style={[styles.storyCardsStack, isMobileLayout && styles.storyCardsStackMobile]}>
                       {allAdsList.map((story, index) => (
@@ -1519,7 +1545,7 @@ const handleOpenLeadForm = useCallback(async (story) => {
                       </View>
                     ) : null}
                     {String(searchQuery || '').trim() && visibleStories.length === 0 ? (
-                      <Text style={{ color: '#64748b', fontSize: 15, fontWeight: '600', paddingVertical: 32, textAlign: 'center' }}>{loadingMore ? 'Searching…' : 'No results found'}</Text>
+                      <Text style={{ color: '#64748b', fontSize: 15, fontWeight: '600', paddingVertical: 32, textAlign: 'center' }}>{loadingMore ? (commonCopy?.searching || 'Searching…') : (commonCopy?.noResultsFound || 'No results found')}</Text>
                     ) : null}
                     <View style={[styles.storyCardsStack, isMobileLayout && styles.storyCardsStackMobile]}>
                       {visibleStories.map((story, index) => (

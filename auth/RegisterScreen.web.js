@@ -25,6 +25,7 @@ import { INDIAN_STATES, getDistricts, getTalukas, getVillages, getLocationIds } 
 import styles, { toastStyles, localStyles } from '../styles/RegisterStyles';
 import webStyles from '../styles/RegisterWebStyles';
 import BackTitleRow from '../components/BackTitleRow';
+import LocationDropdownModal from '../components/LocationDropdownModal';
 
 // Web-only rendition of the Register screen: illustration on the left,
 // white form panel on the right — matching the reference design.
@@ -105,6 +106,27 @@ function StepIndicator({ currentStep, totalSteps }) {
 }
 
 // ─────────────────────────────────────────────────────────────
+// Location field — upar ke inputs jaisa look + click par searchable dropdown
+// ─────────────────────────────────────────────────────────────
+function LocationField({ label, value, placeholder, icon, disabled, error, onPress }) {
+  return (
+    <View style={styles.inputGroup}>
+      <Text style={[styles.inputLabel, webStyles.darkLabel]}>{label} <Text style={styles.required}>*</Text></Text>
+      <TouchableOpacity
+        activeOpacity={disabled ? 1 : 0.8}
+        onPress={disabled ? undefined : onPress}
+        style={[styles.inputWrap, !!error && styles.inputWrapError, disabled && { opacity: 0.55 }, { cursor: disabled ? 'not-allowed' : 'pointer' }]}
+      >
+        <Ionicons name={icon} size={16} color="#AAAAAA" />
+        <Text style={[styles.input, { color: value ? '#111111' : '#CCCCCC' }]} numberOfLines={1}>{value || placeholder}</Text>
+        <Ionicons name="chevron-down" size={16} color="#AAAAAA" />
+      </TouchableOpacity>
+      {!!error && <Text style={styles.errorText}>{error}</Text>}
+    </View>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
 // Main Register Screen (web)
 // ─────────────────────────────────────────────────────────────
 export default function RegisterScreen({ navigation, route }) {
@@ -163,6 +185,7 @@ export default function RegisterScreen({ navigation, route }) {
   const talukaOptions = useMemo(() => (locState && locDistrict ? getTalukas(locState, locDistrict) : []), [locState, locDistrict]);
   const villageOptions = useMemo(() => (locState && locDistrict && locTaluka ? getVillages(locState, locDistrict, locTaluka) : []), [locState, locDistrict, locTaluka]);
   const locationComplete = Boolean(locState && locDistrict && locTaluka && locVillage);
+  const [locPicker, setLocPicker] = useState(null); // 'state' | 'district' | 'taluka' | 'village' | null
   const [submitting, setSubmitting] = useState(false);
 
   const [profileImage, setProfileImage] = useState('');
@@ -387,9 +410,22 @@ export default function RegisterScreen({ navigation, route }) {
 
       await UserStore.setCurrentUser(pending.email);
       try {
-        await UserStore.completeLocationSetup(pending.email, locState, locDistrict, locTaluka, locVillage);
+        await UserStore.completeLocationSetup(pending.email, locState, locDistrict, locTaluka, locVillage, commit.token);
         await UserStore.clearPendingRegistration();
       } catch (e) { console.warn('[register] local setup failed:', e?.message || e); }
+
+      // ✅ Backend /state API ko registration ke token ke saath link & sync karo
+      try {
+        await AuthAPI.updateState({
+          state: locState,
+          district: locDistrict,
+          taluka: locTaluka,
+          village: locVillage,
+          ...ids,
+        }, commit.token);
+      } catch (e) {
+        console.warn('[register] updateState failed:', e?.message || e);
+      }
 
       // Register complete -> Home (stack reset), login() sabse last me
       try {
@@ -406,6 +442,7 @@ export default function RegisterScreen({ navigation, route }) {
   };
 
   const handleClose = () => navigation.navigate('Home');
+  const openInfoPage = (pageKey) => { try { navigation.navigate('InfoPage', { pageKey }); } catch (_) { /* ignore */ } };
   const mobileShowError = mobileTouched && mobile.length > 0 && !mobileOk;
 
   return (
@@ -432,7 +469,6 @@ export default function RegisterScreen({ navigation, route }) {
 
             <BackTitleRow onBack={handleClose} style={{ marginTop: 8, marginBottom: 20 }} titleHeight={32}>
               <View style={{ alignItems: 'center' }}>
-              <Text style={[styles.welcomeBack, webStyles.welcomeBack]}>Create your account</Text>
               <Text style={[styles.formTitle, webStyles.formTitle]}>Register</Text>
             </View>
             </BackTitleRow>
@@ -633,78 +669,38 @@ export default function RegisterScreen({ navigation, route }) {
                     <Text style={styles.errorText}>Passwords do not match</Text>}
                 </View>
 
-                <View style={styles.inputGroup}>
-                  <Text style={[styles.inputLabel, webStyles.darkLabel]}>State <Text style={styles.required}>*</Text></Text>
-                  <select
-                    value={locState}
-                    disabled={false}
-                    onChange={(e) => handleSelectLocation('state', e.target.value)}
-                    style={{ width: '100%', height: 46, padding: '0 12px', borderRadius: 10, fontSize: 15, backgroundColor: '#fff', color: locState ? '#222' : '#888', border: fieldErrors.state ? '1px solid #ff4444' : '1px solid #E5E7EB', opacity: false ? 0.5 : 1, outline: 'none' }}
-                  >
-                    <option value="">Select state</option>
-                    {INDIAN_STATES.map((o) => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                  {!!fieldErrors.state && <Text style={styles.errorText}>{fieldErrors.state}</Text>}
-                </View>
+                <LocationField label="State" icon="map-outline" placeholder="Select state" value={locState}
+                  error={fieldErrors.state} onPress={() => setLocPicker('state')} />
+                <LocationField label="District" icon="business-outline" placeholder="Select district" value={locDistrict}
+                  disabled={!locState} error={fieldErrors.district} onPress={() => setLocPicker('district')} />
+                <LocationField label="Taluka" icon="location-outline" placeholder="Select taluka" value={locTaluka}
+                  disabled={!locDistrict} error={fieldErrors.taluka} onPress={() => setLocPicker('taluka')} />
+                <LocationField label="Village" icon="home-outline" placeholder="Select village" value={locVillage}
+                  disabled={!locTaluka} error={fieldErrors.village} onPress={() => setLocPicker('village')} />
 
-                <View style={styles.inputGroup}>
-                  <Text style={[styles.inputLabel, webStyles.darkLabel]}>District <Text style={styles.required}>*</Text></Text>
-                  <select
-                    value={locDistrict}
-                    disabled={!locState}
-                    onChange={(e) => handleSelectLocation('district', e.target.value)}
-                    style={{ width: '100%', height: 46, padding: '0 12px', borderRadius: 10, fontSize: 15, backgroundColor: '#fff', color: locDistrict ? '#222' : '#888', border: fieldErrors.district ? '1px solid #ff4444' : '1px solid #E5E7EB', opacity: !locState ? 0.5 : 1, outline: 'none' }}
+                {/* Sirf checkbox click se toggle hoga — text ya khali jagah par click se nahi */}
+                <View style={[localStyles.termsRow, { width: '100%', alignItems: 'center' }]}>
+                  <TouchableOpacity
+                    onPress={() => { setTermsAccepted(!termsAccepted); setTermsTouched(true); }}
+                    activeOpacity={0.8}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: termsAccepted }}
                   >
-                    <option value="">Select district</option>
-                    {districtOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                  {!!fieldErrors.district && <Text style={styles.errorText}>{fieldErrors.district}</Text>}
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={[styles.inputLabel, webStyles.darkLabel]}>Taluka <Text style={styles.required}>*</Text></Text>
-                  <select
-                    value={locTaluka}
-                    disabled={!locDistrict}
-                    onChange={(e) => handleSelectLocation('taluka', e.target.value)}
-                    style={{ width: '100%', height: 46, padding: '0 12px', borderRadius: 10, fontSize: 15, backgroundColor: '#fff', color: locTaluka ? '#222' : '#888', border: fieldErrors.taluka ? '1px solid #ff4444' : '1px solid #E5E7EB', opacity: !locDistrict ? 0.5 : 1, outline: 'none' }}
-                  >
-                    <option value="">Select taluka</option>
-                    {talukaOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                  {!!fieldErrors.taluka && <Text style={styles.errorText}>{fieldErrors.taluka}</Text>}
-                </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={[styles.inputLabel, webStyles.darkLabel]}>Village <Text style={styles.required}>*</Text></Text>
-                  <select
-                    value={locVillage}
-                    disabled={!locTaluka}
-                    onChange={(e) => handleSelectLocation('village', e.target.value)}
-                    style={{ width: '100%', height: 46, padding: '0 12px', borderRadius: 10, fontSize: 15, backgroundColor: '#fff', color: locVillage ? '#222' : '#888', border: fieldErrors.village ? '1px solid #ff4444' : '1px solid #E5E7EB', opacity: !locTaluka ? 0.5 : 1, outline: 'none' }}
-                  >
-                    <option value="">Select village</option>
-                    {villageOptions.map((o) => <option key={o} value={o}>{o}</option>)}
-                  </select>
-                  {!!fieldErrors.village && <Text style={styles.errorText}>{fieldErrors.village}</Text>}
-                </View>
-
-                <TouchableOpacity
-                  style={localStyles.termsRow}
-                  onPress={() => { setTermsAccepted(!termsAccepted); setTermsTouched(true); }}
-                  activeOpacity={0.8}
-                >
-                  <View style={[
-                    localStyles.checkbox,
-                    termsAccepted && localStyles.checkboxChecked,
-                    termsTouched && !termsAccepted && localStyles.checkboxError
-                  ]}>
-                    {termsAccepted && <Ionicons name="checkmark" size={13} color="#fff" />}
-                  </View>
-                  <Text style={localStyles.termsText}>
-                    I accept the <Text style={localStyles.termsLink}>Terms & Conditions</Text> and <Text style={localStyles.termsLink}>Privacy Policy</Text>
+                    <View style={[
+                      localStyles.checkbox,
+                      termsAccepted && localStyles.checkboxChecked,
+                      termsTouched && !termsAccepted && localStyles.checkboxError
+                    ]}>
+                      {termsAccepted && <Ionicons name="checkmark" size={13} color="#fff" />}
+                    </View>
+                  </TouchableOpacity>
+                  <Text style={[localStyles.termsText, { flex: 1, fontSize: 12, lineHeight: 18, whiteSpace: 'nowrap' }]}>
+                    I accept the{' '}
+                    <Text style={localStyles.termsLink} onPress={() => openInfoPage('terms')} accessibilityRole="link">Terms & Conditions</Text>
+                    {' '}and{' '}
+                    <Text style={localStyles.termsLink} onPress={() => openInfoPage('privacy')} accessibilityRole="link">Privacy Policy</Text>
                   </Text>
-                </TouchableOpacity>
+                </View>
                 {termsTouched && !termsAccepted &&
                   <Text style={[styles.errorText, { marginTop: 4, marginBottom: 6 }]}>Please accept the Terms & Conditions</Text>}
 
@@ -734,6 +730,47 @@ export default function RegisterScreen({ navigation, route }) {
 
         <Toast toast={toast} opacity={opacity} translateY={translateY} />
 
+
+        <LocationDropdownModal
+          visible={locPicker === 'state'}
+          title="Select State"
+          placeholder="Search state..."
+          emptyText="No state found"
+          items={INDIAN_STATES}
+          selected={locState}
+          onSelect={(v) => handleSelectLocation('state', v)}
+          onClose={() => setLocPicker(null)}
+        />
+        <LocationDropdownModal
+          visible={locPicker === 'district'}
+          title="Select District"
+          placeholder="Search district..."
+          emptyText="No district found"
+          items={districtOptions}
+          selected={locDistrict}
+          onSelect={(v) => handleSelectLocation('district', v)}
+          onClose={() => setLocPicker(null)}
+        />
+        <LocationDropdownModal
+          visible={locPicker === 'taluka'}
+          title="Select Taluka"
+          placeholder="Search taluka..."
+          emptyText="No taluka found"
+          items={talukaOptions}
+          selected={locTaluka}
+          onSelect={(v) => handleSelectLocation('taluka', v)}
+          onClose={() => setLocPicker(null)}
+        />
+        <LocationDropdownModal
+          visible={locPicker === 'village'}
+          title="Select Village"
+          placeholder="Search village..."
+          emptyText="No village found"
+          items={villageOptions}
+          selected={locVillage}
+          onSelect={(v) => handleSelectLocation('village', v)}
+          onClose={() => setLocPicker(null)}
+        />
         <OtpModal
           visible={otpModalVisible}
           purpose="register"

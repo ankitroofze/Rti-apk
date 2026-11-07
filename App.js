@@ -17,18 +17,70 @@ import { isMobileWebDevice } from './utils/webDevice';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
+const DEFAULT_FONT = Platform.OS === 'web' ? 'Roboto, sans-serif' : 'Roboto_400Regular';
+
 // One typography baseline for every screen. Individual bold/black styles may
 // still choose a weight, but every unstyled Text/TextInput now matches Ads.
 Text.defaultProps = Text.defaultProps || {};
-Text.defaultProps.style = [{ fontFamily: 'Roboto_400Regular' }, Text.defaultProps.style];
+Text.defaultProps.style = [{ fontFamily: DEFAULT_FONT }, Text.defaultProps.style];
 TextInput.defaultProps = TextInput.defaultProps || {};
 TextInput.defaultProps.style = [
-  { fontFamily: 'Roboto_400Regular' },
+  { fontFamily: DEFAULT_FONT },
   Platform.OS === 'web' ? { outlineStyle: 'none', outlineWidth: 0 } : null,
   TextInput.defaultProps.style,
 ];
 
 if (typeof document !== 'undefined') {
+  if (!document.getElementById('google-roboto-link')) {
+    const linkEl = document.createElement('link');
+    linkEl.id = 'google-roboto-link';
+    linkEl.rel = 'stylesheet';
+    linkEl.href = 'https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&display=swap';
+    document.head.appendChild(linkEl);
+  }
+
+  if (!document.getElementById('app-global-roboto-font')) {
+    const fontEl = document.createElement('style');
+    fontEl.id = 'app-global-roboto-font';
+    fontEl.textContent = `
+      html, body, #root, [data-reactroot], input, textarea, select, button {
+        font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      }
+
+      @font-face {
+        font-family: 'Roboto';
+        src: local('Roboto'), local('Roboto-Regular');
+        font-weight: 400;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: 'Roboto_400Regular';
+        src: local('Roboto'), local('Roboto-Regular');
+        font-weight: 400;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: 'Roboto_500Medium';
+        src: local('Roboto Medium'), local('Roboto-Medium');
+        font-weight: 500;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: 'Roboto_700Bold';
+        src: local('Roboto Bold'), local('Roboto-Bold');
+        font-weight: 700;
+        font-style: normal;
+      }
+      @font-face {
+        font-family: 'Roboto_900Black';
+        src: local('Roboto Black'), local('Roboto-Black');
+        font-weight: 900;
+        font-style: normal;
+      }
+    `;
+    document.head.appendChild(fontEl);
+  }
+
   if (!document.getElementById('app-global-textbox-focus')) {
     const styleEl = document.createElement('style');
     styleEl.id = 'app-global-textbox-focus';
@@ -106,6 +158,11 @@ const ICON_FONTS = Platform.OS === 'web'
 export default function App() {
   const [fontsLoaded, fontError] = useFonts({
     ...ICON_FONTS,
+    Roboto: Roboto_400Regular,
+    'Roboto-Regular': Roboto_400Regular,
+    'Roboto-Medium': Roboto_500Medium,
+    'Roboto-Bold': Roboto_700Bold,
+    'Roboto-Black': Roboto_900Black,
     Roboto_400Regular,
     Roboto_500Medium,
     Roboto_700Bold,

@@ -294,6 +294,29 @@ storyFollowBtnWrap: {
     fontWeight: '700',
   },
 
+  noMediaFeedWrap: {
+    width: '100%',
+    height: 220,
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  noMediaFeedCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#EDF2F7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  noMediaFeedText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+
   topStoryRibbon: {
     position: 'absolute',
     top: 74,
