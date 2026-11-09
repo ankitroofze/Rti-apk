@@ -315,17 +315,19 @@ const UserPublicProfileStyles = StyleSheet.create({
 
   // ── 3-column Post Grid ────────────────────────────────
   postGrid: {
-  flexDirection: 'row',
-  flexWrap: 'wrap',
-},
-postThumb: {
-  width: POST_THUMB_SIZE,
-  height: POST_THUMB_SIZE,
-  borderRadius: 0,
-  overflow: 'hidden',
-  backgroundColor: C.orange1,
-  margin: 0.25,
-},
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    width: '100%',
+  },
+  postThumb: {
+    width: '33.333%',
+    aspectRatio: 1,
+    borderRadius: 0,
+    overflow: 'hidden',
+    backgroundColor: C.orange1,
+    borderWidth: 0.5,
+    borderColor: '#ffffff',
+  },
   postThumbImage: {
     width: '100%',
     height: '100%',

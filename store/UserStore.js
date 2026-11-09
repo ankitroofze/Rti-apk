@@ -2344,6 +2344,36 @@ const _emitPostDeleted = (payload) => { _postDeletedListeners.forEach((cb) => { 
 // focus/refetch cannot undo a follow the user has just made.
 const _optimisticFollowing = new Map();
 const _followOverrides = new Map();
+let _myFollowingCache = null; // { timestamp, idSet: Set, emailSet: Set, list: [] }
+let _myFollowingInflight = null;
+
+const _fetchMyFollowing = async (forceRefresh = false) => {
+  if (!forceRefresh && _myFollowingCache && (Date.now() - _myFollowingCache.timestamp < 30000)) {
+    return _myFollowingCache;
+  }
+  if (!forceRefresh && _myFollowingInflight) return _myFollowingInflight;
+  _myFollowingInflight = (async () => {
+    try {
+      const res = await AuthAPI.getFollowingApi().catch(() => ({ ok: false }));
+      const list = _mergeFollowing((res.ok ? res.list : []).map(_normalizeFollowListItem));
+      const idSet = new Set();
+      const emailSet = new Set();
+      list.forEach((u) => {
+        if (u.id != null) idSet.add(String(u.id));
+        if (u.user_id != null) idSet.add(String(u.user_id));
+        const em = String(u.email || u.user_email || '').trim().toLowerCase();
+        if (em) emailSet.add(em);
+      });
+      _myFollowingCache = { timestamp: Date.now(), idSet, emailSet, list };
+      return _myFollowingCache;
+    } catch {
+      return _myFollowingCache || { timestamp: Date.now(), idSet: new Set(), emailSet: new Set(), list: [] };
+    } finally {
+      _myFollowingInflight = null;
+    }
+  })();
+  return _myFollowingInflight;
+};
 
 const _followTargetKey = (email, id) => {
   const normalizedEmail = String(email || '').trim().toLowerCase();
@@ -2357,22 +2387,31 @@ const _rememberFollowing = (email, id, isFollowing, info = null) => {
   const key = _followTargetKey(email, id);
   if (!key) return;
   _followOverrides.set(key, Boolean(isFollowing));
+  const normEmail = String(email || '').trim().toLowerCase();
+  const idStr = id != null ? String(id) : '';
   if (isFollowing) {
+    if (_myFollowingCache) {
+      if (idStr) _myFollowingCache.idSet.add(idStr);
+      if (normEmail) _myFollowingCache.emailSet.add(normEmail);
+    }
     // name / profile_image bhi yaad rakho — pehle sirf {email,id} save hota tha, isliye
     // Following list me naam "User" aur photo blank dikhti thi.
     const prev = _optimisticFollowing.get(key) || {};
     _optimisticFollowing.set(key, {
       ...prev,
-      email: String(email || '').trim().toLowerCase(),
+      email: normEmail,
       id: id ?? null,
       ...(info?.name ? { name: info.name } : {}),
       ...(info?.profile_image ? { profile_image: info.profile_image } : {}),
     });
   } else {
+    if (_myFollowingCache) {
+      if (idStr) _myFollowingCache.idSet.delete(idStr);
+      if (normEmail) _myFollowingCache.emailSet.delete(normEmail);
+    }
     _optimisticFollowing.delete(key);
     // Remove a legacy email-only entry too if the current action has an id.
-    const normalizedEmail = String(email || '').trim().toLowerCase();
-    if (normalizedEmail) _optimisticFollowing.delete(`email:${normalizedEmail}`);
+    if (normEmail) _optimisticFollowing.delete(`email:${normEmail}`);
   }
 };
 
@@ -2404,6 +2443,7 @@ const _matchesFollowTarget = (payload, email, id) => {
 };
 
 const _broadcastFollowChange = (email, id, isFollowing, info = null) => {
+  if (UserStore._folSumCache) UserStore._folSumCache.clear();
   _rememberFollowing(email, id, isFollowing, info);
   const payload = { email: String(email || '').trim().toLowerCase(), id: id ?? null, isFollowing };
   _followStateListeners.forEach((cb) => {
@@ -2536,6 +2576,40 @@ export const UserStore = {
   },
   matchesFollowTarget: (payload, email, id) => _matchesFollowTarget(payload, email, id),
 
+  // ✅ SPEED: sync accessor for current logged-in user (0ms render on app open)
+  getCachedCurrentUser: () => _cachedCurrentUser,
+
+  // ✅ SPEED: sync check if currently following author (0ms render for feed cards)
+  checkIsFollowingSync: (email, id) => {
+    const idKey = id != null ? `id:${String(id)}` : '';
+    const emailKey = email ? `email:${String(email).trim().toLowerCase()}` : '';
+    if (idKey && _followOverrides.has(idKey)) return _followOverrides.get(idKey);
+    if (emailKey && _followOverrides.has(emailKey)) return _followOverrides.get(emailKey);
+    if (_myFollowingCache) {
+      if (id != null && _myFollowingCache.idSet.has(String(id))) return true;
+      if (email && _myFollowingCache.emailSet.has(String(email).trim().toLowerCase())) return true;
+    }
+    return false;
+  },
+
+  // ✅ SPEED: async check with single background cache fetch (avoids 45 duplicate requests)
+  checkIsFollowing: async (email, id) => {
+    const idKey = id != null ? `id:${String(id)}` : '';
+    const emailKey = email ? `email:${String(email).trim().toLowerCase()}` : '';
+    if (idKey && _followOverrides.has(idKey)) return _followOverrides.get(idKey);
+    if (emailKey && _followOverrides.has(emailKey)) return _followOverrides.get(emailKey);
+    const data = await _fetchMyFollowing();
+    if (idKey && _followOverrides.has(idKey)) return _followOverrides.get(idKey);
+    if (emailKey && _followOverrides.has(emailKey)) return _followOverrides.get(emailKey);
+    if (id != null && data?.idSet?.has?.(String(id))) return true;
+    if (email && data?.emailSet?.has?.(String(email).trim().toLowerCase())) return true;
+    return false;
+  },
+
+  prefetchMyFollowing: async () => {
+    return _fetchMyFollowing(false);
+  },
+
   // ✅ Post delete hote hi (kahin se bhi) live update: callback({ id, kind }) milega.
   subscribePostDeleted: (callback) => {
     _postDeletedListeners.add(callback);
@@ -2546,19 +2620,28 @@ export const UserStore = {
   // (GET /profile/{id}). posts[] ko mapApiNewsToFeedItem se normalize karta hai
   // taaki NewsFeedCard ise seedha render kar sake (media_type 2 = video bhi
   // isi mapper se handle hota hai).
+  // ✅ SPEED: in-memory cache taaki baar-baar kholne par turant (0ms) dikhe.
   getPublicProfileById: async (id) => {
     try {
       if (!id) return null;
-      const res = await AuthAPI.getPublicProfileById(id);
+      const key = String(id).trim();
+      if (!UserStore._pubProfCache) UserStore._pubProfCache = new Map();
+      const cached = UserStore._pubProfCache.get(key);
+      if (cached && (Date.now() - cached.timestamp < 30000)) {
+        return cached.data;
+      }
+      const res = await AuthAPI.getPublicProfileById(key);
       if (!res?.ok) return null;
       const profile = res.profile || {};
-      return {
+      const normalized = {
         ...profile,
         id: profile.id ?? profile.user_id ?? null,
         avatar: profile.avatar || profile.profile_image || null,
         seat_name: String(profile.state_seat?.seat_name || '').trim(),
         posts: Array.isArray(profile.posts) ? profile.posts.map(mapApiNewsToFeedItem) : [],
       };
+      UserStore._pubProfCache.set(key, { timestamp: Date.now(), data: normalized });
+      return normalized;
     } catch (err) {
       console.error('[UserStore.getPublicProfileById] Error:', err);
       return null;
@@ -2912,6 +2995,10 @@ export const UserStore = {
         payment_history: [...normalizePaymentHistory(user.payment_history), quizPayment],
       });
       if (!updatedUser) return { ok: false, message: 'Could not save the subscription.' };
+      try {
+        const { sendInvoiceEmailCopy } = require('../utils/invoiceGenerator');
+        sendInvoiceEmailCopy(quizPayment, updatedUser).catch(() => {});
+      } catch (_) {}
       await recordQualifyingTransaction({
         buyerEmail: user.email,
         amount: Number(plan?.price || 0),
@@ -3713,6 +3800,12 @@ export const UserStore = {
     try {
       const user = existingUser || await UserStore.getCurrentUser();
       if (!user) return null;
+      const userEmail = String(user.email || '').trim().toLowerCase();
+      if (!UserStore._syncSubCache) UserStore._syncSubCache = new Map();
+      const cachedSub = userEmail ? UserStore._syncSubCache.get(userEmail) : null;
+      if (cachedSub && (Date.now() - cachedSub.timestamp < 15000)) {
+        return cachedSub.data;
+      }
 
       const toList = (r) => {
         if (!r) return [];
@@ -4574,6 +4667,21 @@ export const UserStore = {
       // Best-effort refresh — fail bhi ho jaye to koi farak nahi, is_subscribed already TRUE hai
       const syncedUser = await UserStore.syncSubscriptionFromBackend();
       updatedUser = syncedUser || updatedUser;
+
+      // ✅ User ko 18% GST subscription invoice ki copy automatically email karo
+      try {
+        const { sendInvoiceEmailCopy } = require('../utils/invoiceGenerator');
+        sendInvoiceEmailCopy({
+          payment_id: razorpay_payment_id,
+          order_id: razorpay_order_id,
+          amount: activePlan.price,
+          paid_at: verifiedPurchasedAt,
+          plan: activePlan,
+          plan_name: activePlan.plan_name,
+          module: 'role',
+          status: 'paid',
+        }, updatedUser).catch(() => {});
+      } catch (_) { }
 
       return { ok: true, role_label: getRoleLabel(newRole), user: updatedUser };
     } catch (err) {
@@ -6245,27 +6353,26 @@ export const UserStore = {
       if (currentEmail === targetEmail) return { ok: false, message: 'Cannot follow yourself.' };
 
       let targetId = targetUserId ?? null;
-      if (!targetId) {
+      if (!targetId && targetEmail) {
         const targetUser = await UserStore.getUser(targetEmail);
         targetId = targetUser?.id ?? targetUser?.user_id ?? null;
       }
-      if (!targetId) return { ok: false, message: 'Unable to resolve user id.' };
 
-      let apiResult = await AuthAPI.followUserApi(targetId);
+      let apiResult = targetId ? await AuthAPI.followUserApi(targetId).catch(() => ({ ok: false })) : { ok: false };
       // Agar token missing/expired tha, silent re-login try karo
-      if (!apiResult.ok && (apiResult.isAuth || String(apiResult.message || '').toLowerCase().includes('logged in'))) {
+      if (!apiResult.ok && (apiResult.isAuth || String(apiResult.message || '').toLowerCase().includes('logged in') || String(apiResult.message || '').toLowerCase().includes('session'))) {
         if (currentUser.email && currentUser.password) {
           try {
             const relogin = await AuthAPI.login({ email: currentUser.email, password: currentUser.password });
-            if (relogin.ok) {
+            if (relogin.ok && targetId) {
               apiResult = await AuthAPI.followUserApi(targetId);
             }
           } catch {}
         }
       }
 
-      // Agar server session issue de, tab bhi local following state sync rakho taaki UI block na ho
-      if (!apiResult.ok && (apiResult.isAuth || String(apiResult.message || '').toLowerCase().includes('logged in'))) {
+      // Agar server session issue de ya user id resolve na hui ho, tab bhi local following state sync rakho taaki UI block na ho
+      if (!apiResult.ok) {
         try {
           const myFollowing = Array.isArray(currentUser.following) ? currentUser.following : [];
           if (targetEmail && !myFollowing.includes(targetEmail)) {
@@ -6275,8 +6382,6 @@ export const UserStore = {
         _broadcastFollowChange(targetEmail, targetId, true);
         return { ok: true, message: 'Successfully followed.', isFollowing: true };
       }
-
-      if (!apiResult.ok) return apiResult;
 
       // ✅ FIX: success ke baad local cached currentUser.following update nahi hota tha.
       try {
@@ -6323,25 +6428,24 @@ export const UserStore = {
       if (!targetEmail && !targetUserId) return { ok: false, message: 'User not found.' };
 
       let targetId = targetUserId ?? null;
-      if (!targetId) {
+      if (!targetId && targetEmail) {
         const targetUser = await UserStore.getUser(targetEmail);
         targetId = targetUser?.id ?? targetUser?.user_id ?? null;
       }
-      if (!targetId) return { ok: false, message: 'Unable to resolve user id.' };
 
-      let apiResult = await AuthAPI.unfollowUserApi(targetId);
-      if (!apiResult.ok && (apiResult.isAuth || String(apiResult.message || '').toLowerCase().includes('logged in'))) {
+      let apiResult = targetId ? await AuthAPI.unfollowUserApi(targetId).catch(() => ({ ok: false })) : { ok: false };
+      if (!apiResult.ok && (apiResult.isAuth || String(apiResult.message || '').toLowerCase().includes('logged in') || String(apiResult.message || '').toLowerCase().includes('session'))) {
         if (currentUser.email && currentUser.password) {
           try {
             const relogin = await AuthAPI.login({ email: currentUser.email, password: currentUser.password });
-            if (relogin.ok) {
+            if (relogin.ok && targetId) {
               apiResult = await AuthAPI.unfollowUserApi(targetId);
             }
           } catch {}
         }
       }
 
-      if (!apiResult.ok && (apiResult.isAuth || String(apiResult.message || '').toLowerCase().includes('logged in'))) {
+      if (!apiResult.ok) {
         try {
           const myFollowing = Array.isArray(currentUser.following) ? currentUser.following : [];
           await UserStore.updateUser(currentEmail, { following: myFollowing.filter((e) => e !== targetEmail) });
@@ -6349,8 +6453,6 @@ export const UserStore = {
         _broadcastFollowChange(targetEmail, targetId, false);
         return { ok: true, message: 'Successfully unfollowed.', isFollowing: false };
       }
-
-      if (!apiResult.ok) return apiResult;
 
       // ✅ FIX: followUser wala hi cache-sync fix, unfollow ke liye.
       try {
@@ -6481,10 +6583,17 @@ export const UserStore = {
   //     raha tha). Ab hamesha MERI following list me target ko dhundhte hain.
   //  3. Backend ka followers list follow ke turant baad stale (0) aa sakta hai, isliye
   //     meri recent follow/unfollow action target ke followers me apply hoti hai.
+  //  4. SPEED: in-memory cache taaki har render / focus par lag na ho.
   getFollowSummary: async (email, id) => {
     try {
       const targetEmail = String(email || '').trim().toLowerCase();
       let targetId = id != null && String(id) !== '' ? String(id) : '';
+      if (!UserStore._folSumCache) UserStore._folSumCache = new Map();
+      const cacheKey = `${targetEmail}::${targetId}`;
+      const cached = UserStore._folSumCache.get(cacheKey);
+      if (cached && (Date.now() - cached.timestamp < 15000)) {
+        return cached.data;
+      }
 
       const currentUser = await UserStore.getCurrentUser().catch(() => null);
       const myEmail = String(currentUser?.email || '').trim().toLowerCase();
@@ -6518,7 +6627,7 @@ export const UserStore = {
         ]);
         const following = _mergeFollowing((followingRes.ok ? followingRes.list : []).map(_normalizeFollowListItem));
         const followers = (followersRes.ok ? followersRes.list : []).map(_normalizeFollowListItem);
-        return {
+        const selfResult = {
           isFollowing: false,
           followingCount: following.length,
           following,
@@ -6526,6 +6635,8 @@ export const UserStore = {
           followers,
           resolvedId: myIdRaw,
         };
+        UserStore._folSumCache?.set?.(cacheKey, { timestamp: Date.now(), data: selfResult });
+        return selfResult;
       }
 
       // ── Kisi aur ka profile ──
@@ -6582,7 +6693,7 @@ export const UserStore = {
         targetFollowers = targetFollowers.filter((u) => !isMe(u));
       }
 
-      return {
+      const otherResult = {
         isFollowing,
         followingCount: targetFollowing.length,
         following: targetFollowing,
@@ -6590,6 +6701,8 @@ export const UserStore = {
         followers: targetFollowers,
         resolvedId,
       };
+      UserStore._folSumCache?.set?.(cacheKey, { timestamp: Date.now(), data: otherResult });
+      return otherResult;
     } catch (error) {
       console.error('getFollowSummary error:', error);
       return null;
@@ -6899,6 +7012,9 @@ export const UserStore = {
 
   getActiveAdsFeed: async (options = {}) => {
     try {
+      if (!options?.skipCache && UserStore._adsCache && (Date.now() - UserStore._adsCache.timestamp < 20000)) {
+        return UserStore._adsCache.data;
+      }
       // ✅ SPEED: ads API, blocked-users aur current-user teeno ek saath (pehle ek ke baad ek chalte the)
       const [res, blockedResRaw, currentUserForAds] = await Promise.all([
         AuthAPI.getAdsDetails(), // GET /ads-details — no login required
@@ -6930,7 +7046,7 @@ export const UserStore = {
         return false;
       };
 
-      return res.ads
+      const finalSortedAds = res.ads
         .filter((ad) => Number(ad?.status ?? 1) === 1)
         // ✅ FIX: expired ads (end_date guzar chuki) ko Home feed pe mat dikhao
         .filter((ad) => !ad?.end_date || String(ad.end_date) >= today)
@@ -7008,6 +7124,8 @@ export const UserStore = {
           };
         })
         .sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
+      UserStore._adsCache = { timestamp: Date.now(), data: finalSortedAds };
+      return finalSortedAds;
     } catch (e) { console.log('[DEBUG getActiveAdsFeed] failed:', e); return []; }
   },
   // getAdsDetailsFeed ab isi ko point kare — same function, ek jagah se maintain hoga
@@ -7090,6 +7208,10 @@ export const UserStore = {
       });
 
       if (!updatedUser) return { ok: false, message: 'Could not save the credits.' };
+      try {
+        const { sendInvoiceEmailCopy } = require('../utils/invoiceGenerator');
+        sendInvoiceEmailCopy(adPayment, updatedUser).catch(() => {});
+      } catch (_) {}
       return { ok: true, credits: newCredits };
     } catch (err) {
       console.error('[UserStore.verifyAdPayment] Error:', err);
@@ -7145,6 +7267,19 @@ export const UserStore = {
       });
 
       if (!updatedUser) return { ok: false, message: 'Unable to save your subscription.' };
+      try {
+        const { sendInvoiceEmailCopy } = require('../utils/invoiceGenerator');
+        sendInvoiceEmailCopy({
+          payment_id: razorpay_payment_id,
+          order_id: `ORD_ECOM_${Date.now()}`,
+          amount: ecomSubscription.price,
+          status: 'paid',
+          date: today,
+          plan_id: ecomSubscription.plan_id,
+          plan_name: ecomSubscription.plan_name,
+          module: 'ecom',
+        }, updatedUser).catch(() => {});
+      } catch (_) {}
       await recordQualifyingTransaction({
         buyerEmail: user.email,
         amount: Number(ecomSubscription.price || 0),

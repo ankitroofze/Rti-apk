@@ -25,7 +25,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { UserStore } from '../store/UserStore';
-import { buildSubscriptionInvoiceHtml, loadInvoiceLogo, canInvoicePayment, downloadInvoicePdf, getPaymentInvoiceNo } from '../utils/invoiceGenerator';
+import { buildSubscriptionInvoiceHtml, loadInvoiceLogo, canInvoicePayment, downloadInvoicePdf, getPaymentInvoiceNo, sendInvoiceEmailCopy } from '../utils/invoiceGenerator';
 import { useToast } from '../components/ui/ToastProvider';
 import InvoiceViewerModal from '../components/InvoiceViewerModal';
 import S from '../styles/Paymenthistorystyles';
@@ -111,9 +111,24 @@ function PaymentHistoryScreen__Inner({ navigation }) {
       const user = (await UserStore.getCurrentUser()) || {};
       const logoSrc = await loadInvoiceLogo();
       const html = buildSubscriptionInvoiceHtml(txn, user, logoSrc);
-      setInvoiceView({ html, name: getPaymentInvoiceNo(txn) });
+      setInvoiceView({ html, name: getPaymentInvoiceNo(txn), txn });
     } catch (_) {
       showToast('Unable to open the invoice.', 'error');
+    } finally {
+      setInvoiceBusyId(null);
+    }
+  }, [invoiceBusyId, showToast]);
+
+  const handleEmailInvoice = useCallback(async (txn) => {
+    const key = `email-${txn.payment_id}`;
+    if (invoiceBusyId) return;
+    setInvoiceBusyId(key);
+    try {
+      const user = (await UserStore.getCurrentUser()) || {};
+      const res = await sendInvoiceEmailCopy(txn, user);
+      showToast(res.message || (res.ok ? 'Invoice sent to your email.' : 'Could not send invoice email.'), res.ok ? 'success' : 'error');
+    } catch (_) {
+      showToast('Could not send invoice email.', 'error');
     } finally {
       setInvoiceBusyId(null);
     }
@@ -129,6 +144,11 @@ function PaymentHistoryScreen__Inner({ navigation }) {
       setInvoiceBusyId(null);
     }
   }, [invoiceView, invoiceBusyId, showToast]);
+
+  const emailFromViewer = useCallback(async () => {
+    if (!invoiceView?.txn || invoiceBusyId) return;
+    return handleEmailInvoice(invoiceView.txn);
+  }, [invoiceView, invoiceBusyId, handleEmailInvoice]);
 
   const loadCurrentPlans = useCallback(async () => {
     const user = await UserStore.getCurrentUser();
@@ -439,6 +459,17 @@ function PaymentHistoryScreen__Inner({ navigation }) {
                             {invoiceBusyId === String(t.payment_id) ? 'Preparing…' : 'Download Invoice'}
                           </Text>
                         </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() => handleEmailInvoice(t)}
+                          disabled={invoiceBusyId === `email-${t.payment_id}`}
+                          activeOpacity={0.8}
+                          style={{ marginTop: 10, alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe' }}
+                        >
+                          <Feather name="mail" size={13} color="#2563eb" />
+                          <Text style={{ color: '#2563eb', fontSize: 12, fontWeight: '700' }}>
+                            {invoiceBusyId === `email-${t.payment_id}` ? 'Sending…' : 'Email Copy'}
+                          </Text>
+                        </TouchableOpacity>
                         </View>
                       ) : null}
                       {t.status === 'failed' && t.failure_description ? (
@@ -472,6 +503,8 @@ function PaymentHistoryScreen__Inner({ navigation }) {
         onClose={() => setInvoiceView(null)}
         onDownload={downloadFromViewer}
         downloading={invoiceBusyId === 'viewer'}
+        onEmail={emailFromViewer}
+        emailing={invoiceBusyId === (invoiceView?.txn ? `email-${invoiceView.txn.payment_id}` : 'emailing')}
       />
     </SafeAreaView>
   );

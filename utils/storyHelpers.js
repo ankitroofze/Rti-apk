@@ -289,7 +289,7 @@ export function ensureStoryCount(stories, { selectedMenuKey, selectedStateName }
 const _searchNorm = (v) => String(v ?? '')
   .normalize('NFC')
   .toLowerCase()
-  .replace(/[_\-]+/g, ' ')
+  .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
   .replace(/\s+/g, ' ')
   .trim();
 
@@ -302,36 +302,55 @@ export function scoreStorySearch(story, query) {
   const q = _searchNorm(query);
   if (!story || !q) return 0;
   const tokens = q.split(' ').filter(Boolean);
+  if (!tokens.length) return 0;
 
-  const personName = _searchNorm(story.author_name || story.owner_name);
+  const personName = _searchNorm(
+    story.author_name ||
+    story.author?.name ||
+    story.createdByName ||
+    story.author ||
+    story.owner_name ||
+    story.author?.author_name ||
+    ''
+  );
   const personExtra = _searchNorm([
-    story.author_seat_name, story.author_role_label, story.report_type,
-    String(story.createdBy || '').split('@')[0],
+    story.author_seat_name,
+    story.author_role_label,
+    story.report_type,
+    String(story.createdBy || story.author_email || '').split('@')[0],
   ].filter(Boolean).join(' '));
-  const title = _searchNorm(story.title);
-  const place = _searchNorm([story.state, story.district, story.taluka].filter(Boolean).join(' '));
+  const title = _searchNorm(story.title || story.tittle || story.heading || '');
+  const place = _searchNorm([story.state, story.district, story.taluka, story.city, story.village].filter(Boolean).join(' '));
   const category = _searchNorm([
     story.category,
     Array.isArray(story.menuTags) ? story.menuTags.filter((t) => t !== 'latest').join(' ') : '',
   ].filter(Boolean).join(' '));
-  const body = _searchNorm([story.description, story.excerpt].filter(Boolean).join(' '));
+  const body = _searchNorm([story.description, story.excerpt, story.content, story.news_content, story.subTitle, story.sub_title, story.body].filter(Boolean).join(' '));
 
   const haystack = `${personName} ${personExtra} ${title} ${place} ${category} ${body}`;
-  // Har typed word kahin na kahin milna chahiye (e.g. "jay mumbai" => naam + state dono)
-  if (!tokens.every((t) => haystack.includes(t))) return 0;
 
-  let score = 1;
-  if (personName.startsWith(q)) score += 100;
-  else if (personName.includes(q)) score += 70;
+  // Match check: agar saare tokens milte hain to full match; agar kam se kam 1 token milta hai to partial match
+  const matchCount = tokens.filter((t) => haystack.includes(t)).length;
+  if (matchCount === 0) return 0;
+
+  let score = matchCount * 10;
+  if (matchCount === tokens.length) score += 30; // all words matched
+
+  if (personName.startsWith(q)) score += 120;
+  else if (personName.includes(q)) score += 80;
   else if (tokens.every((t) => personName.split(' ').some((w) => w.startsWith(t)))) score += 60;
-  else if (tokens.some((t) => personName.includes(t))) score += 25;
-  if (title.startsWith(q)) score += 80;
-  else if (title.includes(q)) score += 50;
-  else if (tokens.every((t) => title.includes(t))) score += 30;
+  else if (tokens.some((t) => personName.includes(t))) score += 30;
+
+  if (title.startsWith(q)) score += 100;
+  else if (title.includes(q)) score += 70;
+  else if (tokens.every((t) => title.includes(t))) score += 40;
+  else if (tokens.some((t) => title.includes(t))) score += 20;
+
   if (place.includes(q)) score += 40;
   if (category.includes(q)) score += 35;
-  if (personExtra.includes(q)) score += 20;
-  if (body.includes(q)) score += 10;
+  if (personExtra.includes(q)) score += 25;
+  if (body.includes(q)) score += 15;
+
   return score;
 }
 

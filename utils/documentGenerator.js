@@ -21,7 +21,7 @@ import {
 // isko print/PDF HTML mein <img> tag ke andar embed kiya jaata hai.
 async function buildQrDataUri(profile) {
   try {
-    const card = await getIdCardVerification();
+    const card = await getIdCardVerification().catch(() => null);
        const payload = String(buildPageVerifyUrl(card?.qr_payload) || buildFallbackQrUrl(profile) || '').trim();
     if (!payload) return '';
 
@@ -52,7 +52,7 @@ async function buildQrDataUri(profile) {
 }
 
 export async function buildIdCardHtml(profile, { webPreview = Platform.OS === 'web' } = {}) {
-  const idCardData = await getIdCardVerification(); // /id-cards API: id_number + valid_until
+  const idCardData = (profile?.idCardData || profile?.id_card) ? (profile.idCardData || profile.id_card) : await getIdCardVerification().catch(() => null);
   const memberId = idCardData?.id_number || generateMemberId(profile.email);
   const rank = getRank(profile.referral_count || 0);
   const seatName = String(profile?.state_seat?.seat_name || profile?.author_seat_name || '').trim();
@@ -347,7 +347,7 @@ ${responsiveScript}
 
 export async function buildIdCardFrontAndBackHtml(profile, { webPreview = Platform.OS === 'web' } = {}) {
   // ── shared / front data ──
-  const idCardData = await getIdCardVerification(); // /id-cards API: id_number + valid_until
+  const idCardData = (profile?.idCardData || profile?.id_card) ? (profile.idCardData || profile.id_card) : await getIdCardVerification().catch(() => null);
   const memberId = idCardData?.id_number || generateMemberId(profile.email);
   const rank = getRank(profile.referral_count || 0);
   const seatName = String(profile?.state_seat?.seat_name || profile?.author_seat_name || '').trim();

@@ -202,7 +202,7 @@ function SponsoredHeader({ ad, navigation, commonCopy }) {
 
 export default function RightUtilityPanel({
   navigation, trendingStories = [], onOpenDetails, ads: adsProp = [], onOpenLeadForm,
-  onViewMoreAds, onBackFromAds, showingAllAds = false, firstNewsStory = null,
+  onBackFromAds, showingAllAds = false, firstNewsStory = null,
   onViewAllTrending, commonCopy, homeCopy,
 }) {
   // ✅ Ad-free subscription wale user ko bhi right-side ads dikhte hain (unka sirf POPUP band hota hai).
@@ -276,7 +276,7 @@ export default function RightUtilityPanel({
         </View>
       ) : ads.length ? (
         <View style={styles.card}>
-          <View style={[styles.cardHeaderRow, { justifyContent: 'space-between' }]}>
+          <View style={styles.cardHeaderRow}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
               <Ionicons name="megaphone" size={15} color="#e11d48" />
               <Text style={styles.cardTitle}>{commonCopy?.sponsored || 'Sponsored'}</Text>

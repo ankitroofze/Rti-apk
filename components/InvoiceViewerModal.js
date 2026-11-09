@@ -11,7 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 // WebView sirf native par (web par react-native-webview kaam nahi karta)
 const NativeWebView = Platform.OS === 'web' ? null : require('react-native-webview').WebView;
 
-export default function InvoiceViewerModal({ visible, html, title = 'Invoice', onClose, onDownload, downloading = false }) {
+export default function InvoiceViewerModal({ visible, html, title = 'Invoice', onClose, onDownload, downloading = false, onEmail, emailing = false }) {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const source = useMemo(() => ({ html: html || '' }), [html]);
@@ -24,9 +24,16 @@ export default function InvoiceViewerModal({ visible, html, title = 'Invoice', o
             <Feather name="x" size={24} color="#111827" />
           </TouchableOpacity>
           <Text style={st.title} numberOfLines={1}>{title}</Text>
-          <TouchableOpacity onPress={onDownload} disabled={downloading} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Download">
-            {downloading ? <ActivityIndicator size="small" color="#dc2626" /> : <Feather name="download" size={22} color="#dc2626" />}
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+            {onEmail ? (
+              <TouchableOpacity onPress={onEmail} disabled={emailing} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Email Copy">
+                {emailing ? <ActivityIndicator size="small" color="#2563eb" /> : <Feather name="mail" size={20} color="#2563eb" />}
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity onPress={onDownload} disabled={downloading} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} accessibilityLabel="Download">
+              {downloading ? <ActivityIndicator size="small" color="#dc2626" /> : <Feather name="download" size={22} color="#dc2626" />}
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View style={st.body}>
@@ -51,10 +58,18 @@ export default function InvoiceViewerModal({ visible, html, title = 'Invoice', o
         </View>
 
         <View style={[st.footer, { paddingBottom: Math.max(12, insets.bottom) }]}>
-          <TouchableOpacity style={[st.btn, downloading && { opacity: 0.6 }]} onPress={onDownload} disabled={downloading} activeOpacity={0.85}>
-            <Feather name="download" size={16} color="#fff" />
-            <Text style={st.btnText}>{downloading ? 'Preparing…' : 'Download PDF'}</Text>
-          </TouchableOpacity>
+          <View style={st.btnRow}>
+            {onEmail ? (
+              <TouchableOpacity style={[st.btn, st.btnMail, emailing && { opacity: 0.6 }]} onPress={onEmail} disabled={emailing} activeOpacity={0.85}>
+                {emailing ? <ActivityIndicator size="small" color="#2563eb" /> : <Feather name="mail" size={15} color="#2563eb" />}
+                <Text style={st.btnMailText}>{emailing ? 'Sending…' : 'Email Copy'}</Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity style={[st.btn, st.btnPrimary, downloading && { opacity: 0.6 }]} onPress={onDownload} disabled={downloading} activeOpacity={0.85}>
+              <Feather name="download" size={15} color="#fff" />
+              <Text style={st.btnText}>{downloading ? 'Preparing…' : 'Download PDF'}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </Modal>
@@ -67,6 +82,10 @@ const st = StyleSheet.create({
   title: { flex: 1, textAlign: 'center', fontSize: 16, fontWeight: '700', color: '#111827' },
   body: { flex: 1, backgroundColor: '#f3f4f6' },
   footer: { paddingHorizontal: 16, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#e5e7eb', backgroundColor: '#fff' },
-  btn: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#dc2626', borderRadius: 10, paddingVertical: 12 },
+  btnRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
+  btn: { flex: 1, flexDirection: 'row', gap: 7, alignItems: 'center', justifyContent: 'center', borderRadius: 10, paddingVertical: 12 },
+  btnPrimary: { backgroundColor: '#dc2626' },
+  btnMail: { backgroundColor: '#eff6ff', borderWidth: 1, borderColor: '#bfdbfe' },
   btnText: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  btnMailText: { color: '#2563eb', fontSize: 14, fontWeight: '800' },
 });

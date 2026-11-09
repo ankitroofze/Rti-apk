@@ -1631,7 +1631,10 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription,
   const [thumbnailError, setThumbnailError] = useState(false);
   const [resolvedMediaUri, setResolvedMediaUri] = useState(null);
   const [playerReady, setPlayerReady] = useState(false);
-  const [isFollowing, setIsFollowing] = useState(false);
+
+  const authorEmail = String(safePost.createdBy || safePost.created_by || '').trim().toLowerCase();
+  const authorId = safePost.author_id ?? safePost.authorId ?? null;
+  const [isFollowing, setIsFollowing] = useState(() => UserStore.checkIsFollowingSync?.(authorEmail, authorId) ?? false);
   const [followLoading, setFollowLoading] = useState(false);
   const [currentUserEmail, setCurrentUserEmail] = useState(null);
   const [currentUserHasBlueTick, setCurrentUserHasBlueTick] = useState(false);
@@ -1673,8 +1676,7 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription,
     UserStore.recordNewsView(postId).then((r) => { if (alive && r?.ok) setViewBump(1); }).catch(() => {});
     return () => { alive = false; };
   }, [isActive, postId]);
-  const authorEmail = String(safePost.createdBy || safePost.created_by || '').trim().toLowerCase();
-  const authorId     = safePost.author_id ?? safePost.authorId ?? null;
+
   const verified    = Boolean(
     safePost.verified ||
     safePost.author_has_blue_tick ||
@@ -1705,32 +1707,45 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription,
   }, [docUrl]);
 
   useEffect(() => {
+    let alive = true;
     const initializeComponent = async () => {
       try {
-        const currentUser = await UserStore.getCurrentUser();
-        if (currentUser && currentUser.email) {
-          setCurrentUserEmail(currentUser.email);
-          setCurrentUserHasBlueTick(UserStore.hasBlueTick(currentUser));
+        const cached = UserStore.getCachedCurrentUser?.();
+        const me = cached || await UserStore.getCurrentUser().catch(() => null);
+        if (!alive) return;
+        if (me && me.email) {
+          setCurrentUserEmail(me.email);
+          setCurrentUserHasBlueTick(UserStore.hasBlueTick(me));
         }
-        if (authorEmail && onFollow) {
-          const status = await UserStore.getFollowStatus(authorEmail);
-          setIsFollowing(status.isFollowing);
+        if (authorEmail || authorId != null) {
+          const isF = await UserStore.checkIsFollowing(authorEmail, authorId);
+          if (alive) setIsFollowing(Boolean(isF));
         }
       } catch (error) {
         console.error('Error initializing component:', error);
       }
     };
     initializeComponent();
-  }, [authorEmail, onFollow]);
+    return () => { alive = false; };
+  }, [authorEmail, authorId]);
+
+  useEffect(() => {
+    if (!authorEmail && authorId == null) return undefined;
+    const unsubscribe = UserStore.subscribeFollowState?.((payload) => {
+      if (UserStore.matchesFollowTarget?.(payload, authorEmail, authorId)) {
+        setIsFollowing(Boolean(payload.isFollowing));
+      }
+    });
+    return () => { unsubscribe?.(); };
+  }, [authorEmail, authorId]);
 
   const handleFollowPress = async () => {
-    if (!authorEmail) return;
-    // ✅ FAST: pehle button badlo (optimistic), API peeche chale; fail ho to wapas.
+    if (!authorEmail && authorId == null) return;
     const next = !isFollowing;
     setIsFollowing(next);
     try {
-      const currentUser = await UserStore.getCurrentUser();
-      if (currentUser && currentUser.email === authorEmail) {
+      const activeUser = currentUser || UserStore.getCachedCurrentUser?.() || await UserStore.getCurrentUser().catch(() => null);
+      if (activeUser && authorEmail && activeUser.email && String(activeUser.email).trim().toLowerCase() === authorEmail) {
         setIsFollowing(!next);
         Alert.alert('Cannot Follow', 'You cannot follow yourself.');
         return;

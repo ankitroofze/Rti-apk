@@ -44,6 +44,12 @@ const RED_HEADER_IMG = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+const withTimeout = (promise, ms = 7000, fallback = null) =>
+  Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+
 function useResolvedUri(rawUri) {
   const [resolved, setResolved] = useState(() => {
     if (!rawUri || isIdbMediaUri(rawUri)) return null;
@@ -373,8 +379,21 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     [email]
   );
 
-  const [loading, setLoading] = useState(true);
-  const [profile, setProfile] = useState(null);
+  // ✅ SPEED: route params se author mila hai to turant 0ms render karo (blank loader flash nahi)
+  const [profile, setProfile] = useState(() => {
+    if (author && typeof author === 'object') {
+      return {
+        ...author,
+        id: author.id ?? author.author_id ?? userId ?? null,
+        name: author.name || author.author_name || author.createdByName || '',
+        avatar: author.avatar || author.profile_image || author.author_profile_image || null,
+        profile_image: author.profile_image || author.author_profile_image || author.avatar || null,
+        seat_name: author.seat_name || author.author_seat_name || author.state_seat?.seat_name || '',
+      };
+    }
+    return null;
+  });
+  const [loading, setLoading] = useState(() => !(author && typeof author === 'object'));
   const [posts, setPosts] = useState([]);
   // ✅ Silent reload trigger — screen par wapas aane / app foreground / har 45 sec par bump hota hai
   const [refreshTick, setRefreshTick] = useState(0);
@@ -382,7 +401,9 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const [gridView, setGridView] = useState(true);
 
   // ── Follow states ──────────────────────────────────────────────────────────
-  const [isFollowing, setIsFollowing] = useState(false);
+  const [isFollowing, setIsFollowing] = useState(() => {
+    return UserStore.checkIsFollowingSync?.(email, userId) ?? false;
+  });
   const [followLoading, setFollowLoading] = useState(false);
   const [followStats, setFollowStats] = useState({ followers: 0, following: 0 });
  const [followLists, setFollowLists] = useState({ followers: [], following: [] });
@@ -425,9 +446,10 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   };
   const [reportVisible, setReportVisible] = useState(false);
   const [shareVisible, setShareVisible] = useState(false);
-  const [viewerEmail, setViewerEmail] = useState('');
-  const [viewerId, setViewerId] = useState('');
-  const viewerEmailRef = useRef('');
+  const cachedMe = UserStore.getCachedCurrentUser?.();
+  const [viewerEmail, setViewerEmail] = useState(() => String(cachedMe?.email || '').trim().toLowerCase());
+  const [viewerId, setViewerId] = useState(() => cachedMe?.id ?? cachedMe?.user_id ?? '');
+  const viewerEmailRef = useRef(viewerEmail);
   viewerEmailRef.current = viewerEmail;
   const [contentTab, setContentTab] = useState('post'); // 'post' | 'reel' | 'ad' | 'ecom'
 
@@ -471,62 +493,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   // plan hota hi nahi, jabki feed card ko plan /news list ke `author` object se milta hai.
   // Profile me plan na mile to usi feed data se is author ka plan utha lo.
   const [feedAuthorInfo, setFeedAuthorInfo] = useState(null);
-  useEffect(() => {
-    let alive = true;
-    const hasPlan = (o) => Boolean(o?.subscription_plan || o?.active_plan || o?.role_subscription_plan || o?.subscription);
-    const base = profile || author || {};
-    if (loading || hasPlan(base) || hasPlan(author)) { setFeedAuthorInfo(null); return undefined; }
-    (async () => {
-      try {
-        const summary = await UserStore.getNewsFeedSummary?.({ skipBlockedUsers: true });
-        const items = (Array.isArray(summary?.items) ? summary.items : []).filter((it) => it?.author_subscription_plan);
-        const idStr = String(userId ?? profile?.id ?? '').trim();
-        const mail = String(resolvedEmail || profile?.email || '').trim().toLowerCase();
-        const nm = String(base?.name || base?.author_name || '').trim().toLowerCase();
-        let hit = items.find((it) => (idStr && String(it.author_id ?? '') === idStr)
-          || (mail && String(it.createdBy || it.author_email || '').trim().toLowerCase() === mail));
-        if (!hit && !idStr && !mail && nm) hit = items.find((it) => String(it.author_name || '').trim().toLowerCase() === nm);
-        if (alive && hit) {
-          setFeedAuthorInfo({
-            plan: hit.author_subscription_plan,
-            type: hit.author_subscription_type || '',
-            isSub: Boolean(hit.author_is_subscriber || hit.author_is_premium),
-          });
-        }
-        if (typeof __DEV__ !== 'undefined' && __DEV__) {
-          console.log('[PublicProfile plan debug] profile keys:', Object.keys(profile || {}).join(','), '| feed plan found:', Boolean(hit));
-        }
-      } catch { /* ignore */ }
-    })();
-    return () => { alive = false; };
-  }, [loading, profile, author, userId, resolvedEmail]);
-
-  // ── Mobile fallback ─────────────────────────────────────────────────────────
-  // GET /profile/{id} kai baar phone nahi bhejta (ya web par alag shape me aata hai) — tab ID card
-  // me "Mo:-" gayab ho jata tha. Pehle route `author`, phir news feed ke `author_mobile` se number lo.
   const [fallbackMobile, setFallbackMobile] = useState('');
   const [downloadingDoc, setDownloadingDoc] = useState(''); // 'id-card' | 'appointment-letter' | ''
-  useEffect(() => {
-    let alive = true;
-    const direct = pickPhoneNumber(profile || {}) || pickPhoneNumber(author || {});
-    if (direct) { setFallbackMobile(direct); return undefined; }
-    if (loading) return undefined;
-    (async () => {
-      try {
-        const summary = await UserStore.getNewsFeedSummary?.({ skipBlockedUsers: true });
-        const items = Array.isArray(summary?.items) ? summary.items : [];
-        const idStr = String(userId ?? profile?.id ?? '').trim();
-        const mail = String(resolvedEmail || profile?.email || '').trim().toLowerCase();
-        const hit = items.find((it) => {
-          if (!pickPhoneNumber({ phone: it?.author_mobile })) return false;
-          return (idStr && String(it.author_id ?? '') === idStr)
-            || (mail && String(it.createdBy || it.author_email || '').trim().toLowerCase() === mail);
-        });
-        if (alive && hit) setFallbackMobile(pickPhoneNumber({ phone: hit.author_mobile }));
-      } catch { /* ignore */ }
-    })();
-    return () => { alive = false; };
-  }, [loading, profile, author, userId, resolvedEmail]);
 
   // ── Load profile + posts ────────────────────────────────────────────────────
   useEffect(() => {
@@ -534,96 +502,125 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     // refreshTick > 0 => chupchap (silent) reload: loader / blank flash nahi, purana data tab tak dikhta rahe
     const silent = refreshTick > 0;
     (async () => {
-      if (!silent) setLoading(true);
-      let user = userId
-        ? await UserStore.getPublicProfileById(userId)
-        : (resolvedEmail ? await UserStore.getUser(resolvedEmail) : null);
+      if (!silent && !profile) setLoading(true);
+
+      const targetId = userId || author?.id || author?.author_id || null;
+      const targetEmail = resolvedEmail || author?.email || author?.createdBy || null;
+
+      // ✅ SPEED: sabhi network calls Promise.allSettled se parallel chalengi (with safe 7s timeout)
+      const profilePromise = targetId
+        ? withTimeout(UserStore.getPublicProfileById(targetId), 7000)
+        : (targetEmail ? withTimeout(UserStore.getUser(targetEmail), 7000) : Promise.resolve(null));
+
+      const followPromise = (targetEmail || targetId)
+        ? withTimeout(UserStore.getFollowSummary(targetEmail, targetId), 7000)
+        : Promise.resolve(null);
+
+      const newsPromise = withTimeout(UserStore.getNewsFeedSummary({ skipBlockedUsers: true }), 7000);
+      const adsPromise = withTimeout(UserStore.getActiveAdsFeed({ skipBlockedUsers: true }), 7000);
+      const ecomPromise = withTimeout(UserStore.getMyEcomPosts({ email: targetEmail, id: targetId }), 7000);
+
+      const [userRes, followRes, newsRes, adsRes, ecomRes] = await Promise.allSettled([
+        profilePromise,
+        followPromise,
+        newsPromise,
+        adsPromise,
+        ecomPromise,
+      ]);
+
       if (!active) return;
-      if (!silent || user) setProfile(user || null);
-          try {
-        if (active && !silent) {
-          setFollowStats({
-            followers: getNumericCount(user?.followers_count ?? user?.followers ?? user?.referral_count ?? 0),
-            following: getNumericCount(user?.following_count ?? user?.following ?? 0),
+
+      let user = userRes.status === 'fulfilled' ? userRes.value : null;
+      const summary = followRes.status === 'fulfilled' ? followRes.value : null;
+      const newsFeed = newsRes.status === 'fulfilled' ? newsRes.value : null;
+      const publicAds = adsRes.status === 'fulfilled' ? (adsRes.value || []) : [];
+      const ecomPosts = ecomRes.status === 'fulfilled' ? (ecomRes.value || []) : [];
+
+      // Agar direct profile nahi mila lekin follow summary se resolvedId mila, full profile fetch karlo
+      if (!user && summary?.resolvedId) {
+        try {
+          user = await withTimeout(UserStore.getPublicProfileById(summary.resolvedId), 4000);
+        } catch { /* ignore */ }
+      }
+
+      if (!silent || user) {
+        setProfile(user || author || null);
+      }
+
+      if (active && !silent) {
+        setFollowStats({
+          followers: getNumericCount(user?.followers_count ?? user?.followers ?? user?.referral_count ?? 0),
+          following: getNumericCount(user?.following_count ?? user?.following ?? 0),
+        });
+        setFollowLists({ followers: [], following: [] });
+      }
+
+      if (active && (summary || !silent) && !(silent && followActionInFlightRef.current)) {
+        setIsFollowing(Boolean(summary?.isFollowing));
+        if (summary && summary.followersCount != null && summary.followingCount != null) {
+          setFollowLists({ followers: summary.followers || [], following: summary.following || [] });
+          setFollowStats({ followers: summary.followersCount, following: summary.followingCount });
+        }
+      }
+
+      const allNewsItems = Array.isArray(newsFeed?.items) ? newsFeed.items : [];
+      const effectiveId = String(userId ?? user?.id ?? author?.id ?? '').trim();
+      const effectiveEmail = String(resolvedEmail || user?.email || author?.email || '').trim().toLowerCase();
+      const authorName = String(user?.name || author?.name || author?.author_name || '').trim();
+      const authorNmLower = authorName.toLowerCase();
+
+      // Mobile fallback (ID card me Mo:- ke liye)
+      const directPhone = pickPhoneNumber(user || {}) || pickPhoneNumber(author || {});
+      if (directPhone) {
+        setFallbackMobile(directPhone);
+      } else {
+        const hitPhone = allNewsItems.find((it) => {
+          if (!pickPhoneNumber({ phone: it?.author_mobile })) return false;
+          return (effectiveId && String(it.author_id ?? '') === effectiveId)
+            || (effectiveEmail && String(it.createdBy || it.author_email || '').trim().toLowerCase() === effectiveEmail);
+        });
+        if (hitPhone) setFallbackMobile(pickPhoneNumber({ phone: hitPhone.author_mobile }));
+      }
+
+      // Subscription plan fallback agar profile me na ho
+      const hasPlan = (o) => Boolean(o?.subscription_plan || o?.active_plan || o?.role_subscription_plan || o?.subscription);
+      if (!hasPlan(user) && !hasPlan(author)) {
+        const planItems = allNewsItems.filter((it) => it?.author_subscription_plan);
+        let hitPlan = planItems.find((it) => (effectiveId && String(it.author_id ?? '') === effectiveId)
+          || (effectiveEmail && String(it.createdBy || it.author_email || '').trim().toLowerCase() === effectiveEmail));
+        if (!hitPlan && !effectiveId && !effectiveEmail && authorNmLower) {
+          hitPlan = planItems.find((it) => String(it.author_name || '').trim().toLowerCase() === authorNmLower);
+        }
+        if (hitPlan) {
+          setFeedAuthorInfo({
+            plan: hitPlan.author_subscription_plan,
+            type: hitPlan.author_subscription_type || '',
+            isSub: Boolean(hitPlan.author_is_subscriber || hitPlan.author_is_premium),
           });
-          setFollowLists({ followers: [], following: [] });
         }
-        // ✅ FIX: local cache / is_followed field kabhi update nahi hote follow ke baad,
-        // isliye already-followed user ke profile pe bhi "Follow" hi dikhta tha.
-        // Ab NewsFeedCard jaisa hi live check (getFollowSummary) use karo.
-            const targetIdForFollow = userId ?? user?.id ?? null;
-               const summary = (resolvedEmail || targetIdForFollow) ? await UserStore.getFollowSummary?.(resolvedEmail, targetIdForFollow) : null;
-        // silent reload me network fail (summary null) ya user ke follow-tap ke beech follow state ulta na ho
-        if (active && (summary || !silent) && !(silent && followActionInFlightRef.current)) {
-          setIsFollowing(Boolean(summary?.isFollowing));
-          // followersCount / followingCount null aaye (target ki id resolve nahi hui) to
-          // purane counts mat todo — warna count achanak 0 ho jata tha.
-          if (summary && summary.followersCount != null && summary.followingCount != null) {
-            setFollowLists({ followers: summary.followers || [], following: summary.following || [] });
-            setFollowStats({ followers: summary.followersCount, following: summary.followingCount });
-          }
-        }
-        // ✅ NEW: agar backend se is post/author ka numeric id nahi mila (author_id null tha),
-        // to follow/followers list se mile id se profile.id backfill kardo — isse Block/Report
-        // jaise actions ke liye targetId resolve ho jaayega.
-        // Dusre device par A ka local record nahi hota (ya purana hota hai) -> role/subscription
-        // missing rehta tha aur profile hamesha default dikhta tha. Isliye tier 'common' aaye
-        // ya posts na ho to server se full public profile (subscription ke saath) fetch karo.
-        const tierLooksCommon = getProfileTier({
-          ...(user || {}),
-          has_blue_tick: user ? Boolean(UserStore.hasBlueTick(user)) : false,
-        }).key === 'common';
-        // FIX: local cache purana ho sakta hai (role/blue tick badal chuka ho) — isliye HAMESHA server se fresh lo.
-        const needsFullProfile = true;
-        if (active && !userId && summary?.resolvedId && needsFullProfile) {
-          try {
-            const full = await UserStore.getPublicProfileById(summary.resolvedId);
-            if (full && active) {
-              // Purane cached blue tick / plan flags hata do, phir fresh server data lagao
-              const { has_blue_tick: _a, is_blue_tick: _b, blue_tick: _c, subscription_plan: _d, active_plan: _e, role_subscription_plan: _f, subscription: _g, subscription_type: _h, role: _i, state_seat: _j,
-                phone: _p1, mobile: _p2, mobile_number: _p3, phone_number: _p4, contact_number: _p5, contactNumber: _p6, ...cleanOld } = (user || {});
-              user = { ...cleanOld, ...full };
-              setProfile(user);
-            }
-          } catch { /* ignore */ }
-        }
-        if (active && !user?.id && summary?.resolvedId) {
-          setProfile((prev) => (prev ? { ...prev, id: summary.resolvedId } : { id: summary.resolvedId }));
-        }
-      } catch { /* ignore */ }
-        const fromProfile = [
+      }
+
+      const fromProfile = [
         ...(Array.isArray(user?.posts) ? user.posts : []),
         ...(Array.isArray(user?.news) ? user.news : []),
         ...(Array.isArray(user?.news_feed) ? user.news_feed : []),
       ];
 
-           const display = user || author || {};
-      const authorName = String(display?.name || display?.author_name || '').trim();
-      const effectiveEmail = String(resolvedEmail || user?.email || '').trim().toLowerCase();
-      const effectiveId = String(userId ?? user?.id ?? '').trim();
-
-      // userId pata ho to posts GET /profile/{id} se aa chuke hain; viewer ka /my-news yahan galat hai.
-      const summary = (!effectiveId && (resolvedEmail || authorName))
-        ? await UserStore.getNewsFeedSummary({ skipBlockedUsers: true })
-        : null;
-      const fromFeed = Array.isArray(summary?.items)
-        ? summary.items.filter((it) => {
-          const createdBy = String(it?.createdBy || '').trim().toLowerCase();
-          if (effectiveEmail && createdBy) return createdBy === effectiveEmail;
-          if (!effectiveEmail && authorName) {
-            const itemAuthor = String(it?.author_name || it?.createdByName || it?.author || '').trim();
-            return itemAuthor && itemAuthor.toLowerCase() === authorName.toLowerCase();
-          }
-          return false;
-        })
-        : [];
+      const fromFeed = allNewsItems.filter((it) => {
+        const createdBy = String(it?.createdBy || '').trim().toLowerCase();
+        if (effectiveEmail && createdBy) return createdBy === effectiveEmail;
+        if (!effectiveEmail && authorName) {
+          const itemAuthor = String(it?.author_name || it?.createdByName || it?.author || '').trim();
+          return itemAuthor && itemAuthor.toLowerCase() === authorNmLower;
+        }
+        return false;
+      });
 
       // Ads are public profile content too. Include both locally saved ads and
       // server ads so another user can see the advertiser's posts on profile.
       const localAds = Array.isArray(user?.ads)
         ? user.ads.map((ad) => ({ ...ad, owner_email: ad?.owner_email || user?.email || resolvedEmail }))
         : [];
-      const publicAds = await UserStore.getActiveAdsFeed?.({ skipBlockedUsers: true }) || [];
       const profileAds = [...localAds, ...publicAds]
         .filter((ad) => {
           const owner = String(ad?.owner_email || ad?.createdBy || '').trim().toLowerCase();
@@ -646,9 +643,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           date: ad.updated_at || ad.created_at || '',
         }));
 
-      // ✅ Ecom tab: is user ke products
-      let ecomPosts = [];
-      try { ecomPosts = await UserStore.getMyEcomPosts({ email: effectiveEmail, id: effectiveId }); } catch { ecomPosts = []; }
+      // ✅ Ecom posts were already resolved in parallel above
       // ✅ Reels tab: apni profile ho to apni reels (type 2) bhi lao
       let ownReels = [];
       try {
@@ -849,61 +844,62 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       const isWeb = Platform.OS === 'web' && typeof window !== 'undefined';
       let printWindow = null;
       if (isWeb) {
-        printWindow = window.open('', '_blank');
-        if (printWindow) {
-          try {
+        try {
+          printWindow = window.open('', '_blank');
+          if (printWindow) {
             printWindow.document.open();
-            printWindow.document.write('<!doctype html><html><head><meta charset="utf-8"/><title>Generating…</title></head><body style="font-family:Arial,sans-serif;padding:18px;color:#111827;"><h3 style="margin:0 0 8px 0;">Generating…</h3><div style="color:#6b7280;">Please wait.</div></body></html>');
+            printWindow.document.write('<!doctype html><html><head><meta charset="utf-8"/><title>Generating…</title></head><body style="font-family:Arial,sans-serif;padding:18px;color:#111827;"><h3 style="margin:0 0 8px 0;">Generating…</h3><div style="color:#6b7280;">Please wait while the document is being generated.</div></body></html>');
             printWindow.document.close();
-          } catch (_) {}
-        }
+          }
+        } catch (_) {}
       }
       const opts = { webPreview: isWeb && Boolean(printWindow) };
       const html = type === 'id-card'
         ? await buildIdCardFrontAndBackHtml(display, opts)
         : await buildAppointmentLetterHtml(display, opts);
 
-      if (isWeb && printWindow) {
-        printWindow.document.open(); printWindow.document.write(html); printWindow.document.close();
-        const start = Date.now();
-        const timer = setInterval(() => {
-          if (!printWindow || printWindow.closed) { clearInterval(timer); return; }
-          if (printWindow.__PDF_READY__) {
-            clearInterval(timer);
-            try { printWindow.focus(); printWindow.print(); } catch (_) {}
-            return;
-          }
-          if (Date.now() - start > 20000) {
-            clearInterval(timer);
-            try { printWindow.focus(); } catch (_) {}
-            showToast('PDF tab is open. Click "Download PDF" in that tab to print/save.', 'success');
-          }
-        }, 120);
-        showToast('Preparing PDF... print dialog will open.', 'success');
-        return;
-      }
-      if (isWeb && typeof document !== 'undefined') {
-        // Popup block ho gaya — hidden iframe se print dialog kholo
-        const iframe = document.createElement('iframe');
-        iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;';
-        document.body.appendChild(iframe);
-        const win = iframe.contentWindow;
-        const doc = iframe.contentDocument || win?.document;
-        if (!win || !doc) throw new Error('iframe not ready');
-        doc.open(); doc.write(html); doc.close();
-        const begin = Date.now();
-        while (Date.now() - begin < 15000) {
-          const imgs = Array.from(doc.images || []);
-          if (imgs.every((img) => img.complete)) break;
-          await new Promise((r) => setTimeout(r, 80));
+      if (isWeb) {
+        const filename = `${type === 'id-card' ? 'ID-Card' : 'Appointment-Letter'}-${safeName(display?.name || 'document')}.html`;
+        try {
+          const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+          const blobUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          setTimeout(() => {
+            try { document.body.removeChild(link); URL.revokeObjectURL(blobUrl); } catch (_) {}
+          }, 1200);
+        } catch (_) {}
+
+        if (printWindow) {
+          try {
+            printWindow.document.open();
+            printWindow.document.write(html);
+            printWindow.document.close();
+            const start = Date.now();
+            const timer = setInterval(() => {
+              if (!printWindow || printWindow.closed) { clearInterval(timer); return; }
+              if (printWindow.__PDF_READY__) {
+                clearInterval(timer);
+                try { printWindow.focus(); printWindow.print(); } catch (_) {}
+                return;
+              }
+              if (Date.now() - start > 15000) {
+                clearInterval(timer);
+                try { printWindow.focus(); } catch (_) {}
+              }
+            }, 100);
+          } catch (_) {}
         }
-        try { win.focus(); } catch (_) {}
-        win.print();
-        setTimeout(() => { try { iframe.remove(); } catch (_) {} }, 1200);
-        showToast('Print dialog opened. Choose "Save as PDF" to download.', 'success');
+        showToast('Document downloaded! You can also save as PDF from print dialog.', 'success');
         return;
       }
       const { uri } = await Print.printToFileAsync({ html, base64: false, width: 595, height: 842 });
+      const filename = `${type === 'id-card' ? 'ID-Card' : 'Appointment-Letter'}-${safeName(display?.name || 'document')}.pdf`;
+      const saved = await trySaveAndroid(uri, filename);
+      if (saved) { showToast('PDF saved successfully.', 'success'); return; }
       if (await Sharing.isAvailableAsync()) {
         await Sharing.shareAsync(uri, {
           mimeType: 'application/pdf',
@@ -919,6 +915,21 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     } finally {
       setDownloadingDoc('');
     }
+  };
+
+  const trySaveAndroid = async (uri, filename) => {
+    try {
+      if (Platform.OS !== 'android') return false;
+      const FileSystem = await import('expo-file-system/legacy');
+      const SAF = FileSystem.StorageAccessFramework;
+      if (!SAF?.requestDirectoryPermissionsAsync || !SAF?.createFileAsync) return false;
+      const permissions = await SAF.requestDirectoryPermissionsAsync();
+      if (!permissions?.granted) return false;
+      const b64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+      const dest = await SAF.createFileAsync(permissions.directoryUri, filename, 'application/pdf');
+      await FileSystem.writeAsStringAsync(dest, b64, { encoding: FileSystem.EncodingType.Base64 });
+      return true;
+    } catch (_) { return false; }
   };
   const renderDownloadBtn = (type, label) => (
     <TouchableOpacity
@@ -1354,8 +1365,17 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     }
   };
     const handleFollow = async () => {
-    // ✅ Bina login ke follow par toast
-    if (!viewerEmailRef.current) { showToast(loginMessage('follow'), 'info'); return; }
+    let curEmail = viewerEmailRef.current;
+    if (!curEmail) {
+      const activeMe = await UserStore.getCurrentUser().catch(() => null);
+      curEmail = String(activeMe?.email || '').trim().toLowerCase();
+      if (curEmail) {
+        viewerEmailRef.current = curEmail;
+        setViewerEmail(curEmail);
+        setViewerId(activeMe?.id ?? activeMe?.user_id ?? '');
+      }
+    }
+    if (!curEmail) { showToast(loginMessage('follow'), 'info'); return; }
     if (followLoading || followActionInFlightRef.current) return;
     followActionInFlightRef.current = true;
     if (resolvedEmail && resolvedEmail === viewerEmail) {
@@ -1637,7 +1657,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     menuBtn: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
     scroll: { flex: 1 },
     scrollContent: { alignItems: 'center', paddingBottom: 60 },
-    col: { width: WEB_COL_WIDTH, maxWidth: '100%', paddingHorizontal: 20 },
+    col: { width: '100%', maxWidth: 960, marginHorizontal: 'auto', paddingHorizontal: 16 },
     profileCard: { marginTop: 20, backgroundColor: '#ffffff', borderRadius: 18, borderWidth: 1, borderColor: '#e8ebf0', overflow: 'hidden', shadowColor: '#0f172a', shadowOpacity: 0.06, shadowRadius: 18, shadowOffset: { width: 0, height: 6 } },
     coverBand: { height: 110, width: '100%' },
     profileRow: { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 28, gap: 28, marginTop: -56 },
@@ -1666,8 +1686,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     tabText: { fontSize: 12, fontWeight: '600', color: '#737373', letterSpacing: 1 },
     tabTextActive: { color: '#0f172a' },
     gridToggle: { position: 'absolute', right: 0, top: 10, flexDirection: 'row', alignItems: 'center', gap: 14 },
-    grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 3, marginTop: 0 },
-    gridThumb: { width: WEB_THUMB, height: WEB_THUMB, overflow: 'hidden', backgroundColor: '#f1f5f9', position: 'relative' },
+    grid: { flexDirection: 'row', flexWrap: 'wrap', width: '100%', marginTop: 0 },
+    gridThumb: { width: '33.333%', aspectRatio: 1, overflow: 'hidden', backgroundColor: '#f1f5f9', position: 'relative', borderWidth: 1, borderColor: '#ffffff' },
     gridThumbImg: { width: '100%', height: '100%' },
     gridOverlay: { position: 'absolute', bottom: 8, left: 8, flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 3 },
     gridOverlayText: { fontSize: 11, color: '#ffffff', fontWeight: '600' },
@@ -1914,7 +1934,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                   return (
                     <TouchableOpacity
                       key={p.id || p.title}
-                      style={{ width: MOB_THUMB, height: MOB_THUMB, overflow: 'hidden', backgroundColor: '#f1f5f9', position: 'relative', margin: 0.5 }}
+                      style={{ width: '33.333%', aspectRatio: 1, overflow: 'hidden', backgroundColor: '#f1f5f9', position: 'relative', borderWidth: 0.5, borderColor: '#ffffff' }}
                       onPress={() => openPost(p)}
                       activeOpacity={0.88}
                     >

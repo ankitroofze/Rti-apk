@@ -636,8 +636,9 @@ function NewsFeedCardInner({
   const heroMeasureRef = useRef(null);
   const restartOnPlayRef = useRef(false); // scroll out se pause hua => agli baar shuru se play
 
- const [currentEmail, setCurrentEmail] = useState('');
-  const [currentUserId, setCurrentUserId] = useState(null);
+  const cachedUser = currentUser || UserStore.getCachedCurrentUser?.() || null;
+  const [currentEmail, setCurrentEmail] = useState(() => String(cachedUser?.email || '').trim().toLowerCase());
+  const [currentUserId, setCurrentUserId] = useState(() => cachedUser?.id ?? cachedUser?.user_id ?? null);
   // ✅ Details page / dusre card se aaya taza like-comment-share-view (shared store) pehle liya jaata hai
   const engInit = getEngagement(story.id);
   const engId = useRef(`card-${Math.random().toString(36).slice(2)}`).current;
@@ -671,14 +672,16 @@ function NewsFeedCardInner({
   // ✅ Web: 3-dot menu chhota dropdown ban ke button ke neeche khulta hai (bottom sheet nahi)
   const moreBtnRef = useRef(null);
   const [menuAnchor, setMenuAnchor] = useState(null);
-  const [isFollowingAuthor, setIsFollowingAuthor] = useState(false);
+  const storyAuthorEmail = String(story.author_email || story.createdBy || story.created_by || '').trim().toLowerCase();
+  const storyAuthorId = story.author_id ?? story.authorId ?? null;
+  const [isFollowingAuthor, setIsFollowingAuthor] = useState(() =>
+    UserStore.checkIsFollowingSync?.(storyAuthorEmail, storyAuthorId) ?? false
+  );
   const [followLoading, setFollowLoading] = useState(false);
   const [isBlockedNow, setIsBlockedNow] = useState(false);
   const [isDeletedLocally, setIsDeletedLocally] = useState(false);
   const followActionInFlightRef = useRef(false);  
   const inputRef = useRef(null);
-  const storyAuthorEmail = String(story.author_email || story.createdBy || story.created_by || '').trim().toLowerCase();
-  const storyAuthorId = story.author_id ?? story.authorId ?? null;
   const effectiveUserId = currentUser?.id ?? currentUser?.user_id ?? currentUserId ?? null;
   const effectiveUserEmail = String(currentUser?.email || currentEmail || '').trim().toLowerCase();
   const isOwnStory = (storyAuthorId != null && effectiveUserId != null && String(storyAuthorId) === String(effectiveUserId)) ||
@@ -855,17 +858,15 @@ function NewsFeedCardInner({
 
   useEffect(() => {
     let alive = true;
-    (async () => {
-     if (!hasFollowTarget || !currentEmail || isOwnStory) {
-        if (alive) setIsFollowingAuthor(false);
-        return;
-      }
-            const summary = await UserStore.getFollowSummary?.(storyAuthorEmail, storyAuthorId);
-      if (!alive) return;
-      setIsFollowingAuthor(Boolean(summary?.isFollowing));
-    })();
+    if (!hasFollowTarget || !effectiveUserEmail || isOwnStory) {
+      if (alive) setIsFollowingAuthor(false);
+      return;
+    }
+    UserStore.checkIsFollowing?.(storyAuthorEmail, storyAuthorId).then((isF) => {
+      if (alive) setIsFollowingAuthor(Boolean(isF));
+    }).catch(() => {});
     return () => { alive = false; };
-  }, [currentEmail, storyAuthorEmail, storyAuthorId, isOwnStory, hasFollowTarget]);
+  }, [effectiveUserEmail, storyAuthorEmail, storyAuthorId, isOwnStory, hasFollowTarget]);
   // ✅ FIX: ab is id/email ka follow status app mein kahin bhi (dusre button se)
   // change ho to yeh button bhi turant sync ho jayega, bina refetch kiye.
   useEffect(() => {
@@ -1719,7 +1720,16 @@ const handleLike = async () => {
 
   const handleToggleFollowAuthor = async (event) => {
     event?.stopPropagation?.();
-    if (!currentEmail) { showLoginToast(loginMessage('follow'), 'info'); return; }
+    let activeEmail = effectiveUserEmail;
+    if (!activeEmail) {
+      const activeUser = await UserStore.getCurrentUser().catch(() => null);
+      activeEmail = String(activeUser?.email || '').trim().toLowerCase();
+      if (activeEmail) {
+        setCurrentEmail(activeEmail);
+        setCurrentUserId(activeUser?.id ?? activeUser?.user_id ?? null);
+      }
+    }
+    if (!activeEmail) { showLoginToast(loginMessage('follow'), 'info'); return; }
     if (!hasFollowTarget || isOwnStory) return;
 
     // ✅ FAST: button turant badal jaata hai (optimistic). API peeche chalti hai,

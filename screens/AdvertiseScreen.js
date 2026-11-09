@@ -1,5 +1,5 @@
 import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
   StyleSheet, Image, Alert, Modal, Dimensions, Platform, StatusBar,
@@ -10,6 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons, MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Asset } from 'expo-asset';
 import ModuleWebHeader from '../components/Modulewebheader';
 import { HEADER_BG_IMAGE } from '../constants/subscriptionThemes';
 import { VideoView, useVideoPlayer } from 'expo-video';
@@ -19,6 +20,8 @@ import { UserStore } from '../store/UserStore';
 import { useToast } from '../components/ui/ToastProvider';
 import { useAuth } from '../contexts/AuthContext';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
+
+const ADS_TUTORIAL_VIDEO = require('../assets/frames/ads-video.mp4');
 
 // ── Design tokens — matched to source (Shuru) promotion form ───────────────────
 // Source uses: bg-primary / text-primary / border-primary (orange),
@@ -656,8 +659,18 @@ const editAd = route?.params?.editAd || null;
   const titleInputRef = useRef(null);
   const descriptionInputRef = useRef(null);
 
+  const tutorialVideoSource = useMemo(() => {
+    if (Platform.OS === 'web') {
+      try {
+        const asset = Asset.fromModule(ADS_TUTORIAL_VIDEO);
+        if (asset?.uri) return asset.uri;
+      } catch (_) { }
+    }
+    return ADS_TUTORIAL_VIDEO;
+  }, []);
+
   const tutorialPlayer = useVideoPlayer(
-    { uri: 'https://www.w3schools.com/html/mov_bbb.mp4' },
+    tutorialVideoSource,
     (player) => {
       player.loop = false;
     }
@@ -1084,7 +1097,7 @@ const editAd = route?.params?.editAd || null;
           <View style={ws.innerWrap}>
 
             <View style={[ws.tutorialCard, isWebSmall && ws.tutorialCardFull]}>
-              <VideoView player={tutorialPlayer} style={ws.tutorialVideo} nativeControls contentFit="cover" />
+              <VideoView player={tutorialPlayer} style={ws.tutorialVideo} nativeControls contentFit="contain" />
               <View style={ws.tutorialVideoTag}>
                 <Ionicons name="play-circle" size={13} color={C.primary} />
                 <Text style={ws.tutorialVideoTagText}>How to advertise — watch this</Text>
@@ -1230,7 +1243,7 @@ const editAd = route?.params?.editAd || null;
 
       <KeyboardAwareScroll ref={mobileScrollRef} style={s.scroll} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="none">
         <View style={s.videoWrapper}>
-          <VideoView player={tutorialPlayer} style={s.video} nativeControls contentFit="cover" />
+          <VideoView player={tutorialPlayer} style={s.video} nativeControls contentFit="contain" />
           <View style={s.videoTag}>
             <Ionicons name="play-circle" size={13} color={C.primary} />
             <Text style={s.videoTagText}>How to advertise — watch this</Text>

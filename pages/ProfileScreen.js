@@ -67,6 +67,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { buildIdCardFrontAndBackHtml, buildAppointmentLetterHtml } from '../utils/documentGenerator';
 
+const withTimeout = (promise, ms = 7000, fallback = null) =>
+  Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+
 // ── Web-only inline styles ─────────────────────────────────────────────────────
 const WEB_COL = 935;
 // ✅ Backend jab plan ka naam match nahi kar paata to 'Subscription Plan' placeholder aata hai —
@@ -198,8 +204,8 @@ const w = {
   
   // Glossy Active View Button
   postViewBtnActive: { backgroundColor: ORANGE, borderTopWidth: 1.5, borderTopColor: 'rgba(255, 255, 255, 0.55)', borderWidth: 1, borderColor: 'rgba(0, 0, 0, 0.08)', shadowColor: ORANGE, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 5, elevation: 3 },
-  postGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 3 },
-  postGridItem: { width: 'calc(20% - 3px)', aspectRatio: 1, overflow: 'hidden', backgroundColor: '#f1f5f9' },
+  postGrid: { flexDirection: 'row', flexWrap: 'wrap', width: '100%' },
+  postGridItem: { width: '33.333%', aspectRatio: 1, overflow: 'hidden', backgroundColor: '#f1f5f9', borderWidth: 1, borderColor: '#ffffff' },
   postGridThumb: { width: '100%', height: '100%', overflow: 'hidden', backgroundColor: '#f1f5f9' },
   postGridImage: { width: '100%', height: '100%' },
   
@@ -267,7 +273,7 @@ const w = {
   topAvatarImg: { width: 28, height: 28, borderRadius: 14 },
   
   // FIX: Make body scrollable
-  body: { flexDirection: 'row', gap: 20, padding: 20, maxWidth: 1240, width: '100%', marginHorizontal: 'auto', flex: 1 },
+  body: { flexDirection: 'column', gap: 20, padding: 20, maxWidth: 960, width: '100%', marginHorizontal: 'auto', flex: 1 },
   bodyNarrow: { flexDirection: 'column', padding: 12 },
   
       navItemText: { fontSize: 14, color: '#4b5563', fontWeight: '400', fontFamily: 'Roboto, sans-serif' },
@@ -281,8 +287,8 @@ const w = {
   upgradeBtn: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 6, alignItems: 'center' },
   upgradeBtnText: { fontSize: 13, fontWeight: '600', color: '#ffffff' },
   
-  mainCol: { flex: 1, gap: 16, minWidth: 0 },
-  rightCol: { width: 280, flexShrink: 0, gap: 16 },
+  mainCol: { width: '100%', gap: 16, minWidth: 0 },
+  rightCol: { display: 'none' },
   
   card: { backgroundColor: '#ffffff', borderRadius: 8, padding: 16, borderWidth: 1, borderColor: '#e5e7eb' },
   cardHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
@@ -301,18 +307,18 @@ const w = {
   // Mobile-web: flex:1 column me extra khali jagah bana raha tha — isliye auto height + center
   profileInfoColNarrow: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', width: '100%', alignItems: 'center', gap: 3 },
   nameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
-   nameText: { fontSize: 22, fontWeight: '400', color: '#111827', fontFamily: "'Roboto', sans-serif" },
+   nameText: { fontSize: 22, fontWeight: '700', color: '#111827', fontFamily: "'Roboto', sans-serif" },
   memberIdText: { fontSize: 13, color: '#6b7280', fontWeight: '400', fontFamily: "'Roboto', sans-serif" },
   profileBioText: { fontSize: 13, color: '#374151', marginTop: 4, lineHeight: 18, fontWeight: '400', fontFamily: "'Roboto', sans-serif" },
   locationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   locationText: { fontSize: 13, color: '#6b7280', fontWeight: '400', fontFamily: "'Roboto', sans-serif" },
   tierPill: { alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 999, borderWidth: 1, marginTop: 4 },
-  tierPillText: { fontSize: 12, fontWeight: '400', fontFamily: "'Roboto', sans-serif" },
+  tierPillText: { fontSize: 12, fontWeight: '700', fontFamily: "'Roboto', sans-serif" },
   
   statsBox: { flexDirection: 'row', gap: 28, paddingTop: 4 },
   statsBoxNarrow: { width: '100%', justifyContent: 'space-around', gap: 0, paddingTop: 0, marginTop: 2 },
   statItem: { flexDirection: 'column', alignItems: 'center' },
-  statNum: { fontSize: 18, fontWeight: '400', color: '#111827', fontFamily: "'Roboto', sans-serif" },
+  statNum: { fontSize: 18, fontWeight: '700', color: '#111827', fontFamily: "'Roboto', sans-serif" },
   statLabel: { fontSize: 13, color: '#6b7280', fontWeight: '400', fontFamily: "'Roboto', sans-serif" },
   
   actionsRow: { flexDirection: 'row', gap: 8, marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f3f4f6' },
@@ -509,11 +515,19 @@ function ProfileScreenInner({ navigation, route }) {
       referral_code: user.my_referral_code || generateReferralCode(user.email),
     }));
     setIsLoggedIn(true);
-      setInitializing(false);
+    setInitializing(false);
 
-    // ✅ SPEED FIX: pehle sab calls sequential (ek ke baad ek) thi,
-    // ab Promise.all se saath me fire hongi — total wait time sabse
-    // slow ek call jitna hoga, sabki sum nahi.
+    // ✅ OPTIMISTIC POSTS: cached local posts turant dikhao taaki initial render 0ms par ho
+    const localCachedPosts = [
+      ...(Array.isArray(user.news) ? user.news : []),
+      ...(Array.isArray(user.news_feed) ? user.news_feed : []),
+    ];
+    if (localCachedPosts.length > 0) {
+      setUserPosts((prev) => (prev.length ? prev : localCachedPosts));
+      setPostsLoaded(true);
+    }
+
+    // ✅ SPEED FIX: withTimeout ke saath parallel calls — koi call hang ho to profile nahi rukegi
     let profileRes = null;
     let syncedSubscriptionUser = null;
     let feedSummary = null;
@@ -522,14 +536,12 @@ function ProfileScreenInner({ navigation, route }) {
     let ecomPosts = [];
     try {
       [profileRes, syncedSubscriptionUser, feedSummary, followSummary, adPosts, ecomPosts] = await Promise.all([
-        AuthAPI.getProfile().catch(() => null),
-        UserStore.syncSubscriptionFromBackend(user).catch(() => null),
-        UserStore.getNewsFeedSummary?.().catch?.(() => null) ?? Promise.resolve(null),
-        UserStore.getFollowSummary(user.email).catch(() => null),
-        // ✅ Advertisement Posts bhi My Posts me dikhane ke liye
-        UserStore.getMyAdPosts().catch(() => []),
-        // ✅ Ecom tab: apne add kiye hue products (pehle yahan load hi nahi hote the)
-        UserStore.getMyEcomPosts({ email: user.email, id: user.id }).catch(() => []),
+        withTimeout(AuthAPI.getProfile().catch(() => null), 6000, null),
+        withTimeout(UserStore.syncSubscriptionFromBackend(user).catch(() => null), 6000, null),
+        withTimeout(UserStore.getNewsFeedSummary?.().catch?.(() => null) ?? Promise.resolve(null), 6000, null),
+        withTimeout(UserStore.getFollowSummary(user.email).catch(() => null), 6000, null),
+        withTimeout(UserStore.getMyAdPosts().catch(() => []), 6000, []),
+        withTimeout(UserStore.getMyEcomPosts({ email: user.email, id: user.id }).catch(() => []), 6000, []),
       ]);
     } catch {
       // best-effort — fail ho to bhi cached data already dikh chuka hai, crash nahi
@@ -854,12 +866,6 @@ function ProfileScreenInner({ navigation, route }) {
 
   const openDocumentPreview = (type) => {
     setIdCardSide('front');
-    if (!hasDocumentSubscription) {
-      showToast('ID Card and Appointment Letter are available only with the Pratinidhi subscription.', 'error');
-      return;
-    }
-    // Subscription check temporarily disabled — ID Card & Appointment Letter preview
-    // ab sabke liye khulega, sirf profile complete hona chahiye.
     if (!hasDocumentSource(savedProfile)) {
       showToast('Complete profile to generate document.', 'error');
       return;
@@ -882,18 +888,18 @@ function ProfileScreenInner({ navigation, route }) {
     showToast('Referral code copied!', 'success');
   };
 
-// Free photo change use ho chuka: proper message + "Purchase Subscription" button
-  const PHOTO_LIMIT_MESSAGE = 'Free photo change already used. Take a Role or Premium subscription to change your profile photo again.';
+  // Free photo change use ho chuka: proper message + "Purchase Subscription" button
+  const PHOTO_LIMIT_MESSAGE = 'Common users can change profile image only once for free. You have already used your 1 free photo change. To update your photo again, please purchase a subscription.';
   const promptPhotoLimit = (message) => {
     const text = message || PHOTO_LIMIT_MESSAGE;
     const goToPlans = () => navigation.navigate('Subscription Plans', { returnTo: 'Profile' });
     if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined' && window.confirm(`${text}\n\nOpen subscription plans?`)) goToPlans();
+      if (typeof window !== 'undefined' && window.confirm(`${text}\n\nOpen subscription plans to upgrade?`)) goToPlans();
       return;
     }
-    Alert.alert('Purchase Subscription', text, [
+    Alert.alert('Subscription Required', text, [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Purchase Role Subscription', onPress: goToPlans },
+      { text: 'Purchase Subscription', onPress: goToPlans },
     ]);
   };
 
@@ -930,28 +936,61 @@ const handlePickImage = async () => {
 
   const handleDownloadDocument = async (type) => {
     const profile = isEditing ? form : savedProfile;
-    if (!hasDocumentSubscription) {
-      showToast('ID Card and Appointment Letter are available only with the Pratinidhi subscription.', 'error');
-      return;
-    }
-    // Subscription check temporarily disabled — ID Card & Appointment Letter
-    // download ab sabke liye kaam karega, sirf profile complete hona chahiye.
-    if (!hasDocumentSource(profile)) { showToast('Please complete profile details first.', 'error'); return; }
+    if (!profile?.name?.trim()) { showToast('Please complete profile details first.', 'error'); return; }
     try {
       setDownloadingDoc(type);
       let printWindow = null;
       if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        printWindow = window.open('', '_blank');
-        if (printWindow) { try { printWindow.document.open(); printWindow.document.write('<!doctype html><html><head><meta charset="utf-8"/><title>Generating…</title></head><body style="font-family:Arial,sans-serif;padding:18px;color:#111827;"><h3 style="margin:0 0 8px 0;">Generating…</h3><div style="color:#6b7280;">Please wait.</div></body></html>'); printWindow.document.close(); } catch (_) {} }
+        try {
+          printWindow = window.open('', '_blank');
+          if (printWindow) {
+            printWindow.document.open();
+            printWindow.document.write('<!doctype html><html><head><meta charset="utf-8"/><title>Generating…</title></head><body style="font-family:Arial,sans-serif;padding:18px;color:#111827;"><h3 style="margin:0 0 8px 0;">Generating…</h3><div style="color:#6b7280;">Please wait while your document is being generated.</div></body></html>');
+            printWindow.document.close();
+          }
+        } catch (_) {}
       }
-      const html = type === 'id-card' ? await buildIdCardFrontAndBackHtml(profile, { webPreview: Platform.OS === 'web' && Boolean(printWindow) }) : await buildAppointmentLetterHtml(profile, { webPreview: Platform.OS === 'web' && Boolean(printWindow) });
-      if (Platform.OS === 'web' && printWindow) {
-        printWindow.document.open(); printWindow.document.write(html); printWindow.document.close();
-        try { const start = Date.now(); const timer = setInterval(() => { if (!printWindow || printWindow.closed) { clearInterval(timer); return; } const ready = Boolean(printWindow.__PDF_READY__); if (ready) { clearInterval(timer); try { printWindow.focus(); } catch (_) {} try { printWindow.print(); } catch (_) {} return; } if (Date.now() - start > 20000) { clearInterval(timer); try { printWindow.focus(); } catch (_) {} showToast('PDF tab is open. Click "Download PDF" in that tab to print/save.', 'success'); } }, 120); } catch (_) {}
-        showToast("Preparing PDF... print dialog will open.", 'success'); return;
-      }
-      if (Platform.OS === 'web' && typeof document !== 'undefined') {
-        const printViaIframe = async (htmlToPrint) => { const iframe = document.createElement('iframe'); iframe.setAttribute('title', 'pdf-print'); iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;'; document.body.appendChild(iframe); const win = iframe.contentWindow; const doc = iframe.contentDocument || win?.document; if (!win || !doc) throw new Error('iframe not ready'); doc.open(); doc.write(htmlToPrint); doc.close(); const waitForImages = async (timeoutMs = 15000) => { const start = Date.now(); while (Date.now() - start < timeoutMs) { const imgs = Array.from(doc.images || []); const allOk = imgs.every((img) => img.complete && (typeof img.naturalWidth !== 'number' || img.naturalWidth > 0)); if (allOk) return; await new Promise((r) => setTimeout(r, 80)); } }; await waitForImages(); try { win.focus(); } catch (_) {} win.print(); setTimeout(() => { try { iframe.remove(); } catch (_) {} }, 1200); }; try { await printViaIframe(html); showToast('Print dialog opened. Choose "Save as PDF" to download.', 'success'); } catch (_) { showToast('Unable to open print dialog.', 'error'); } return;
+      const html = type === 'id-card'
+        ? await buildIdCardFrontAndBackHtml(profile, { webPreview: Platform.OS === 'web' && Boolean(printWindow) })
+        : await buildAppointmentLetterHtml(profile, { webPreview: Platform.OS === 'web' && Boolean(printWindow) });
+
+      if (Platform.OS === 'web') {
+        const filename = `${type === 'id-card' ? 'ID-Card' : 'Appointment-Letter'}-${safeName(profile?.name || 'document')}.html`;
+        try {
+          const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+          const blobUrl = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = blobUrl;
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          setTimeout(() => {
+            try { document.body.removeChild(link); URL.revokeObjectURL(blobUrl); } catch (_) {}
+          }, 1200);
+        } catch (_) {}
+
+        if (printWindow) {
+          try {
+            printWindow.document.open();
+            printWindow.document.write(html);
+            printWindow.document.close();
+            const start = Date.now();
+            const timer = setInterval(() => {
+              if (!printWindow || printWindow.closed) { clearInterval(timer); return; }
+              if (printWindow.__PDF_READY__) {
+                clearInterval(timer);
+                try { printWindow.focus(); printWindow.print(); } catch (_) {}
+                return;
+              }
+              if (Date.now() - start > 15000) {
+                clearInterval(timer);
+                try { printWindow.focus(); } catch (_) {}
+              }
+            }, 100);
+          } catch (_) {}
+        }
+        showToast('Document downloaded! You can also save as PDF from print dialog.', 'success');
+        return;
       }
       const a4 = { width: 595, height: 842 };
       let uri = '';
@@ -1196,13 +1235,18 @@ const handlePickImage = async () => {
    const pillTheme = { bg: `${profileTier.accent}1F`, border: profileTier.accent, text: profileTier.accent };
   // ✅ FIX: purchased seat ka asli naam (Pratinidhi, PRO, etc.) generic tier
   // label ("Authorised Representative") se hamesha priority lega.
-   const canChangePhoto = profileTier.key !== 'common';   // Role / Premium / Verified wale hamesha photo badal sakte hain
-  // ✅ Naya (common) user: 1 baar photo FREE badal sakta hai. Uske baad Role/Premium subscription chahiye.
-  // Backend `profile_image_change_count` bheje to wahi use hota hai; na bheje to
-  // "image pehle se hai / pending hai" ko "free change use ho chuka" maana jaata hai.
+   const isSubscribedUser = Boolean(
+     UserStore.hasActiveSubscription(displayProfile)
+     || UserStore.hasActiveRolePlan(displayProfile)
+     || (profileTier && profileTier.key !== 'common')
+   );
+   const canChangePhoto = isSubscribedUser; // Role / Premium / Verified wale hamesha photo badal sakte hain
+  // ✅ Common user: sirf 1 baar photo FREE update kar sakta hai. Uske baad subscription zaroori hai.
   const photoChangeCount = Number(
     displayProfile?.profile_image_change_count
+    ?? displayProfile?.profile?.profile_image_change_count
     ?? (displayProfile?.pending_profile_image_url ? 1 : 0)
+    ?? 0
   ) || 0;
   const canPickPhoto = canChangePhoto || photoChangeCount < 1;
     const profileSeatKeyLC = String(displayProfile?.state_seat?.seat_id || '').trim().toLowerCase();
@@ -1252,21 +1296,22 @@ const handlePickImage = async () => {
                 width: 36,
                 height: 36,
                 borderRadius: 18,
-                backgroundColor: ORANGE,
+                backgroundColor: canPickPhoto ? ORANGE : '#64748b',
                 alignItems: 'center',
                 justifyContent: 'center',
                 borderWidth: 3,
                 borderColor: '#ffffff',
               }}
-              onPress={handlePickImage}
+              onPress={canPickPhoto ? handlePickImage : () => promptPhotoLimit()}
               disabled={uploading}
               activeOpacity={0.85}
+              accessibilityLabel={canPickPhoto ? 'Change photo' : 'Subscription required to change photo'}
             >
-              <Feather name="camera" size={16} color="#ffffff" />
+              <Feather name={canPickPhoto ? 'camera' : 'lock'} size={16} color="#ffffff" />
             </TouchableOpacity>
           </View>
-          <Text style={{ fontSize: 12, color: '#64748b', marginTop: 8 }}>
-            {uploading ? 'Opening...' : (canPickPhoto ? 'Tap to change photo' : 'Free photo change used')}
+          <Text style={{ fontSize: 12, color: canPickPhoto ? '#64748b' : '#dc2626', marginTop: 8, fontWeight: canPickPhoto ? '400' : '600' }}>
+            {uploading ? 'Opening...' : (canPickPhoto ? (photoChangeCount === 0 && !isSubscribedUser ? 'Tap to change photo (1 free change)' : 'Tap to change photo') : 'Free photo change used • Subscription required')}
           </Text>
         </View>
 
@@ -1392,6 +1437,28 @@ const handlePickImage = async () => {
             ) : documentPreviewType === 'appointment-letter' ? (
               <AutoAppointmentLetterPreview profile={savedProfile} />
             ) : null}
+            <TouchableOpacity
+              style={[w.downloadBtn, { maxWidth: 360, marginTop: 20 }]}
+              onPress={() => handleDownloadDocument(documentPreviewType)}
+              disabled={Boolean(downloadingDoc)}
+              activeOpacity={0.85}
+            >
+              <LinearGradient
+                colors={profileTier.gradient}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={w.downloadBtnGradient}
+              >
+                <Feather name="download" size={15} color="#ffffff" />
+                <Text style={w.downloadBtnText}>
+                  {downloadingDoc === documentPreviewType
+                    ? 'Preparing PDF…'
+                    : documentPreviewType === 'id-card'
+                    ? 'Download ID Card (PDF)'
+                    : 'Download Appointment Letter (PDF)'}
+                </Text>
+              </LinearGradient>
+            </TouchableOpacity>
           </ScrollView>
         </View>
       </View>
@@ -2045,10 +2112,7 @@ const handlePickImage = async () => {
               {renderDocumentsSection()}
             </View>
 
-           {/* Right column - Removed About Me container */}
-            <View style={w.rightCol}>
-              {/* Removed About Me card as requested */}
-            </View>
+
           </View>
           </View>
         </ScrollView>

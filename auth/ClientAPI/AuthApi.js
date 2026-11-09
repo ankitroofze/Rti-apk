@@ -1152,14 +1152,18 @@ export const AuthAPI = {
         };
       }
       if (res.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
-      // ✅ Free photo change use ho chuka ho to backend 403 + code 'photo_change_limit' bhejta hai
-      // Sirf `photo_change_limit` code (ya 402) par subscription UI; baaki 403 (WAF/permission) normal error.
-      if (res.status === 402 || json?.code === 'photo_change_limit') {
+      // ✅ Free photo change use ho chuka ho to backend 402/403/limit code bhejta hai
+      const rawErrMsg = String(json?.errors?.profile_image?.[0] || json?.message || json?.error || '').trim();
+      const isLimitErr = res.status === 402
+        || json?.code === 'photo_change_limit'
+        || (res.status === 403 && /limit|photo|image|subscription|already|once|purchase/i.test(rawErrMsg))
+        || /photo_change_limit|subscription.*required|free photo.*used|only once|already.*(changed|updated)/i.test(rawErrMsg);
+      if (isLimitErr) {
         return {
           ok: false,
           needsSubscription: true,
           code: json?.code || 'photo_change_limit',
-          message: json?.message || 'Free photo change already used. Take a Role or Premium subscription.',
+          message: rawErrMsg || 'Free photo change already used. Take a Role or Membership subscription to change your profile photo again.',
         };
       }
       return { ok: false, status: res.status, message: json?.errors?.profile_image?.[0] || json?.message || `Update failed (${res.status}).` };
@@ -1942,6 +1946,31 @@ if (status === 200 || status === 201) {
     } catch (err) {
       console.error('[AuthAPI.getPaymentHistory] Error:', err);
       return { ok: false, isNetwork: true, message: 'Network error. Please check your internet connection.' };
+    }
+  },
+
+  /**
+   * Send invoice copy to user's email
+   * POST /payment/send-invoice
+   */
+  sendInvoiceEmail: async ({ email, paymentId, invoiceNo, html, totalAmount, planName }) => {
+    try {
+      const token = await getAuthToken();
+      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+      const { status, data } = await postJSON('/payment/send-invoice', {
+        email: email ? String(email).trim().toLowerCase() : undefined,
+        payment_id: paymentId,
+        invoice_number: invoiceNo,
+        amount: totalAmount,
+        plan_name: planName,
+        html_content: html,
+      }, token);
+      if (status >= 200 && status < 300) {
+        return { ok: true, message: data?.message || 'Invoice sent to your email successfully.' };
+      }
+      return { ok: false, status, message: data?.message || 'Could not send invoice email.' };
+    } catch (err) {
+      return { ok: false, message: err?.message || 'Network error.' };
     }
   },
 

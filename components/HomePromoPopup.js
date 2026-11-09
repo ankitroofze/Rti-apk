@@ -40,38 +40,59 @@ function PromoVideoWeb({ uri, onSize, muted, onToggleMute }) {
   const elRef = useRef(null);
   const mutedRef = useRef(muted);
   mutedRef.current = muted;
-  const unlockedAtRef = useRef(0);
   // Browser kabhi-kabhi bina user-click ke awaaz wali autoplay rok deta hai.
-  // Tab video muted chalta hai aur user ke PEHLE click/touch/key par apne aap unmute ho jata hai.
+  // Tab video pehle chalta hai aur user ke PEHLE touch/click/key par turant unmute ho jata hai.
   const [blocked, setBlocked] = useState(false);
 
   useEffect(() => {
     const el = elRef.current;
-    if (el && !blocked) el.muted = Boolean(muted);
+    if (el) {
+      if (!blocked) {
+        el.muted = Boolean(muted);
+        if (!muted) el.volume = 1;
+      }
+    }
   }, [muted, blocked]);
 
   useEffect(() => {
     const el = elRef.current;
     if (!el) return undefined;
     let cleanup = () => { };
+
+    // Default intent: UNMUTED with sound (volume = 1)
     el.muted = Boolean(mutedRef.current);
-    const unlock = () => {
+    el.volume = 1;
+
+    const unmuteAndPlay = () => {
       cleanup();
-      unlockedAtRef.current = Date.now();
       setBlocked(false);
       try {
-        el.muted = Boolean(mutedRef.current);
-        el.play?.().catch(() => { });
+        if (elRef.current) {
+          elRef.current.muted = false;
+          elRef.current.volume = 1;
+          elRef.current.play?.().catch(() => { });
+        }
       } catch (_) { }
     };
+
     const onBlocked = () => {
-      if (mutedRef.current) { try { el.play?.().catch(() => { }); } catch (_) { } return; }
+      if (mutedRef.current) {
+        try { el.play?.().catch(() => { }); } catch (_) { }
+        return;
+      }
+      // Agar browser ne bina click ke initial sound block ki, to video chalu rakho
+      // aur screen par KISI BHI tap/click/touch par turant unmute kardo
       setBlocked(true);
-      try { el.muted = true; el.play?.().catch(() => { }); } catch (_) { }
-      const evts = ['pointerdown', 'touchstart', 'keydown', 'click'];
-      evts.forEach((ev) => document.addEventListener(ev, unlock, true));
-      cleanup = () => evts.forEach((ev) => document.removeEventListener(ev, unlock, true));
+      try {
+        el.muted = true;
+        el.play?.().catch(() => { });
+      } catch (_) { }
+
+      const evts = ['pointerdown', 'touchstart', 'mousedown', 'keydown', 'click', 'wheel'];
+      evts.forEach((ev) => window.addEventListener(ev, unmuteAndPlay, { capture: true, once: true }));
+      cleanup = () => evts.forEach((ev) => window.removeEventListener(ev, unmuteAndPlay, { capture: true }));
     };
+
     const pr = el.play?.();
     if (pr && pr.catch) pr.catch(onBlocked);
 
@@ -93,15 +114,23 @@ function PromoVideoWeb({ uri, onSize, muted, onToggleMute }) {
   };
 
   const shownMuted = Boolean(muted) || blocked;
-  const handleMutePress = () => {
-    // Isi click ne abhi-abhi unlock karke unmute kar diya ho to dobara mute na karo
-    if (Date.now() - unlockedAtRef.current < 600) return;
-    if (blocked) {
+  const handleMutePress = (e) => {
+    e?.stopPropagation?.();
+    const el = elRef.current;
+    if (!el) return;
+    if (shownMuted) {
+      // Unmute immediately
       setBlocked(false);
-      try { if (elRef.current) { elRef.current.muted = Boolean(mutedRef.current); elRef.current.play?.().catch(() => { }); } } catch (_) { }
-      return;
+      el.muted = false;
+      el.volume = 1;
+      el.play?.().catch(() => { });
+      if (muted) onToggleMute && onToggleMute();
+    } else {
+      // Mute
+      setBlocked(false);
+      el.muted = true;
+      if (!muted) onToggleMute && onToggleMute();
     }
-    onToggleMute && onToggleMute();
   };
 
   return (
@@ -389,7 +418,11 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
   if (!visible || !current) return null;
 
   const handlePress = () => {
-    if (!canSkip) return; // 5 sec se pehle tap redirect nahi hota
+    if (!canSkip) {
+      // 5 sec se pehle tap redirect nahi hota, par audio unmute ho jata hai
+      setAdMuted(false);
+      return;
+    }
     if (onPress) onPress(current);
     else if (current.ctaUrl) openExternalUrl(current.ctaUrl);
     close();

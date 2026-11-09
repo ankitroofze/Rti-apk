@@ -10,6 +10,7 @@ import { Platform } from 'react-native';
 import { esc, safeName } from './profileHelpers';
 import { resolveModuleImageSrc } from './imageHandling';
 import { CERT_LOGO } from '../constants/profileConstants';
+import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 
 // ⚠️ Company details for Invoice & GST Billing
 export const INVOICE_COMPANY = {
@@ -780,5 +781,37 @@ export async function downloadInvoicePdf(html, name = 'invoice') {
     return { ok: true, message: `PDF saved: ${uri.split('/').pop()}` };
   } catch (err) {
     return { ok: false, message: 'Unable to generate the invoice. Please try again.' };
+  }
+}
+
+/**
+ * Send subscription invoice copy to user's registered email
+ * @param {object} payment
+ * @param {object} user
+ * @returns {Promise<{ok: boolean, message: string}>}
+ */
+export async function sendInvoiceEmailCopy(payment = {}, user = {}) {
+  try {
+    const invNo = getPaymentInvoiceNo(payment);
+    const logoSrc = await loadInvoiceLogo().catch(() => '');
+    const html = buildSubscriptionInvoiceHtml(payment, user, logoSrc);
+    const email = user?.email || payment?.email || payment?.user_email || '';
+    if (!email) return { ok: false, message: 'User email address not found.' };
+
+    const planTitle = pick(payment, ['plan.title', 'plan.name', 'plan_name', 'plan_title']) || 'Subscription';
+    const amount = num(pick(payment, ['amount', 'total', 'paid_amount'])) || 0;
+
+    const res = await AuthAPI.sendInvoiceEmail({
+      email,
+      paymentId: payment.payment_id || payment.id,
+      invoiceNo: invNo,
+      html,
+      totalAmount: amount,
+      planName: planTitle,
+    });
+    return res.ok ? { ok: true, message: `Invoice copy sent to ${email}!` } : res;
+  } catch (err) {
+    console.warn('[sendInvoiceEmailCopy] failed:', err);
+    return { ok: false, message: err?.message || 'Could not send invoice email.' };
   }
 }

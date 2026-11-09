@@ -14,6 +14,7 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { useToast } from '../components/ui/ToastProvider';
 import AdLeadFormModal from '../components/AdLeadFormModal';
 import HomePromoPopup from '../components/HomePromoPopup';
+import SubscriptionPromoPopup from '../components/SubscriptionPromoPopup';
 import { getSiteCopy } from '../constants/siteCopy';
 // import { IS_WEB, DEMO_STORIES, FEATURED_STATE_OPTIONS } from '../constants/homeData';
 import { IS_WEB, FEATURED_STATE_OPTIONS } from '../constants/homeData';
@@ -858,7 +859,7 @@ export default function HomeScreen({ navigation, route }) {
     }).catch(() => {});
     return () => { alive = false; };
   }, []);
-  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUser, setCurrentUser] = useState(() => UserStore.getCachedCurrentUser?.() || null);
   const [userChecked, setUserChecked] = useState(false); // popup ad se pehle user/plan load ho chuka hai ya nahi
   const [leftRailHeight, setLeftRailHeight] = useState(0);
   const [rightRailHeight, setRightRailHeight] = useState(0);
@@ -1131,24 +1132,23 @@ const allStories = useMemo(() => dedupeStories([...liveStories]), [liveStories])
 
   const visibleStories = useMemo(() => {
     if (viewMode === 'states') return [];
-    let scopedStories = allStories
-      .filter((story) => storyMatchesMenu(story, selectedMenuKey))
-      .filter((story) => storyMatchesLanguage(story, language));
-    if (selectedStateName) {
-      scopedStories = scopedStories.filter((story) => String(story.state || '').toLowerCase() === selectedStateName.toLowerCase());
-    }
     const q = String(searchQuery || '').trim().toLowerCase();
     if (q) {
-      // ✅ Search: title, description, state, district, category AUR user name (author/reporter) —
-      // sab kuch search hota hai. Best match upar (naam / title se start hone wale pehle), baaki newest-first.
-      scopedStories = scopedStories
+      // ✅ Search: across all stories (regardless of menu category or state)
+      return allStories
         .filter((story) => !story.isAd && !story.isEcome)
         .map((story, order) => ({ story, order, score: scoreStorySearch(story, q) }))
         .filter((x) => x.score > 0)
         .sort((a, b) => (b.score - a.score) || (a.order - b.order))
         .map((x) => x.story);
     }
-     // Home shows only live API news; never pad the feed with dummy stories.
+    let scopedStories = allStories
+      .filter((story) => storyMatchesMenu(story, selectedMenuKey))
+      .filter((story) => storyMatchesLanguage(story, language));
+    if (selectedStateName) {
+      scopedStories = scopedStories.filter((story) => String(story.state || '').toLowerCase() === selectedStateName.toLowerCase());
+    }
+    // Home shows only live API news; never pad the feed with dummy stories.
     // ✅ Web par center feed me sirf news cards — ecom/ads ko hata do (right panel me already dikh rahe hai)
     if (IS_WEB) {
        scopedStories = scopedStories.filter((story) => !story.isEcome);
@@ -1350,15 +1350,25 @@ const handleOpenLeadForm = useCallback(async (story) => {
   // thoda compact height rakha gaya hai. ──────────────────────────────────
   const renderSearchField = viewMode === 'states' ? null : (
     <View style={[styles.sectionSearchRow, isCompactLayout && styles.sectionSearchRowCompact]}>
-           <View style={styles.sectionSearchField}>
+      <View style={styles.sectionSearchField}>
         <Ionicons name="search-outline" size={16} color="#94a3b8" />
         <TextInput
-          value={searchQuery} onChangeText={setSearchQuery}
-          placeholder={homeCopy.searchFeedPlaceholder} placeholderTextColor="#94a3b8"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder={homeCopy.searchFeedPlaceholder}
+          placeholderTextColor="#94a3b8"
           style={styles.sectionSearchInput}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="search"
         />
+        {Boolean(String(searchQuery || '').trim()) && (
+          <TouchableOpacity onPress={() => setSearchQuery('')} activeOpacity={0.7} style={{ padding: 4 }}>
+            <Ionicons name="close-circle" size={18} color="#94a3b8" />
+          </TouchableOpacity>
+        )}
       </View>
-      {(selectedStateName || selectedMenuKey !== 'all') ? (
+      {(selectedStateName || selectedMenuKey !== 'all' || searchQuery) ? (
         <TouchableOpacity
           style={styles.sectionResetButton}
           onPress={() => { setViewMode('feed'); setSelectedMenuKey('all'); setSelectedStateName(''); setSelectedDistrictName(''); setSearchQuery(''); }}
@@ -1380,7 +1390,7 @@ const handleOpenLeadForm = useCallback(async (story) => {
       isCompactLayout={isCompactLayout} commonCopy={commonCopy} homeCopy={homeCopy}
    trendingStories={allStories.filter((s) => !s.isAd)} onOpenDetails={handleOpenDetails}
       ads={allAdsList} onOpenLeadForm={handleOpenLeadForm}
-      onViewMoreAds={handleViewMoreAds} onBackFromAds={handleBackFromAds}
+      onBackFromAds={handleBackFromAds}
       onViewAllTrending={handleViewAllTrending}
       showingAllAds={showAllAds} firstNewsStory={firstNewsStory}
     />
@@ -1491,6 +1501,7 @@ const handleOpenLeadForm = useCallback(async (story) => {
                           onOpenLeadForm={handleOpenLeadForm}
                           commonCopy={commonCopy}
                           currentUser={currentUser ? {
+                            id: currentUser.id ?? currentUser.user_id ?? null,
                             name: currentUser.name,
                             avatar: currentUser.profile_image,
                             email: currentUser.email,
@@ -1518,6 +1529,7 @@ const handleOpenLeadForm = useCallback(async (story) => {
                           onOpenLeadForm={handleOpenLeadForm}
                           commonCopy={commonCopy}
                                                 currentUser={currentUser ? {
+                            id: currentUser.id ?? currentUser.user_id ?? null,
                             name: currentUser.name,
                             avatar: currentUser.profile_image,
                             email: currentUser.email,
@@ -1569,6 +1581,7 @@ const handleOpenLeadForm = useCallback(async (story) => {
   onOpenLeadForm={handleOpenLeadForm}  
   commonCopy={commonCopy}
     currentUser={currentUser ? {
+    id: currentUser.id ?? currentUser.user_id ?? null,
     name: currentUser.name,
     avatar: currentUser.profile_image,
     email: currentUser.email,
@@ -1678,7 +1691,15 @@ const handleOpenLeadForm = useCallback(async (story) => {
 />
       {/* <RotatingSponsoredAd ads={allAdsList} onPress={handleSponsoredAdPress} /> */}
 
-            {/* Popup ad: Premium / Role se band NAHI hota — sirf tab band jab user ki active subscription me `hide_ads: true` ho */}
+            {/* ── Shuru-Style Attractive Role Subscription Popup (first open) ── */}
+      <SubscriptionPromoPopup
+        navigation={navigation}
+        currentUser={currentUser}
+        selectedStateName={selectedStateName}
+        selectedDistrictName={selectedDistrictName}
+      />
+
+      {/* Popup ad: Premium / Role se band NAHI hota — sirf tab band jab user ki active subscription me `hide_ads: true` ho */}
       {(Platform.OS === 'android' || Platform.OS === 'ios' || IS_WEB) && viewMode !== 'states' && userChecked && !adsHidden ? (
         <HomePromoPopup ads={adsHidden ? [] : homePromoAds} onPress={handleSponsoredAdPress} />
       ) : null}
