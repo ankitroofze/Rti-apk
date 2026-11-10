@@ -1,6 +1,0 @@
-<!-- prepare-plesk-build.js ke web.config me, "Rule 2: StaticFiles" se PEHLE ye rule add karo
-     (ya scripts/prepare-plesk-build.js ke webConfigContent string me same rule daalo, warna har build par hat jayega) -->
-<rule name="NewsShare" stopProcessing="true">
-  <match url="^news/([0-9]+)/?$" />
-  <action type="Rewrite" url="news-share.php" appendQueryString="true" />
-</rule>

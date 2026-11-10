@@ -1,5 +1,0 @@
-        {paused && (
-          <View`r`n            style={[styles.pausedOverlay, Platform.OS === 'web' ? @{ pointerEvents = 'none' } : $null]}`r`n            {...(Platform.OS === 'web' ? @{} : @{ pointerEvents = 'none' })}`r`n          >
-            <Text style={styles.pausedIcon}>⏸</Text>
-          </View>
-        )}
