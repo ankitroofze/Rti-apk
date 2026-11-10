@@ -21,7 +21,7 @@ import { publishEngagement, reconcileServerCounts, resetEngagement } from '../ut
 import { clearIdCardVerification } from '../utils/idCardService';
 import { clearReferralInfo } from '../utils/Referralservice';
 
-const MEDIA_ORIGIN = 'https://rtiapi.roofze.in';
+const MEDIA_ORIGIN = process.env.EXPO_PUBLIC_API_ORIGIN || 'https://189.72.144.238';
 function resolveMediaUrl(path) {
   const value = String(path || '').trim();
   if (!value) return '';

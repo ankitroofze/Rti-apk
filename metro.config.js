@@ -12,10 +12,10 @@ config.server = {
     return (req, res, next) => {
       if (req.url.startsWith('/api-proxy')) {
         return createProxyMiddleware({
-          target: 'https://rtiapi.roofze.in',
+          target: process.env.EXPO_PUBLIC_API_ORIGIN || 'https://189.72.144.238',
           changeOrigin: true,
-          secure: true,
-          pathRewrite: { '^/api-proxy': '/api' },
+          secure: false,
+          pathRewrite: { '^/api-proxy': '/api/api' },
           onProxyReq: (proxyReq) => {
             proxyReq.removeHeader('transfer-encoding');
           },
@@ -28,9 +28,9 @@ config.server = {
       }
       if (req.url.startsWith('/storage-proxy')) {
         return createProxyMiddleware({
-          target: 'https://rtiapi.roofze.in',
+          target: process.env.EXPO_PUBLIC_API_ORIGIN || 'https://189.72.144.238',
           changeOrigin: true,
-          secure: true,
+          secure: false,
           pathRewrite: { '^/storage-proxy': '/storage' },
           onProxyReq: (proxyReq) => {
             proxyReq.removeHeader('transfer-encoding');

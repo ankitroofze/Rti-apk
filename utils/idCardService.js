@@ -26,7 +26,7 @@ export const getIdCardReason = () => debugInfo.reason;
 
 // Jahan verify.html host hai (public/verify.html). Agar app kisi sub-path par hai
 // to yahan add karo, jaise 'https://rtinews.in/rti-news'
-export const VERIFY_PAGE_BASE = 'https://rtiapi.roofze.in';
+export const VERIFY_PAGE_BASE = process.env.EXPO_PUBLIC_API_ORIGIN || 'https://189.72.144.238';
 
 // QR ke andar ye link jayega -> scan karne par designed verification page khulega
 // (verify.html khud API se member ka data laakar dikhata hai)

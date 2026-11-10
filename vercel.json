@@ -3,8 +3,8 @@
   "installCommand": "npm ci",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/api-proxy/:path*", "destination": "https://rtiapi.roofze.in/api/:path*" },
-    { "source": "/storage-proxy/:path*", "destination": "https://rtiapi.roofze.in/storage/:path*" },
+    { "source": "/api-proxy/:path*", "destination": "https://189.72.144.238/api/api/:path*" },
+    { "source": "/storage-proxy/:path*", "destination": "https://189.72.144.238/storage/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [

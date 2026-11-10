@@ -3,7 +3,7 @@ import { Image, Platform, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 
-const MEDIA_ORIGIN = 'https://rtiapi.roofze.in';
+const MEDIA_ORIGIN = process.env.EXPO_PUBLIC_API_ORIGIN || 'https://189.72.144.238';
 
 function normalizeUri(value) {
   const uri = String(value || '').trim();

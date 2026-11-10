@@ -32,8 +32,8 @@ const titleOf = (n = {}) => n.title || n.name || n.newspaper_name || `Newspaper 
 // Backend kabhi full URL deta hai, kabhi sirf relative path (e.g. "newspapers/thumbs/a.jpg").
 // Relative path ko storage URL bana do, warna thumbnail / PDF load nahi hote.
 const FILE_ORIGIN = (() => {
-  try { return new URL(process.env.EXPO_PUBLIC_API_URL || 'https://rtiapi.roofze.in/api').origin; }
-  catch { return 'https://rtiapi.roofze.in'; }
+  try { return new URL(process.env.EXPO_PUBLIC_API_URL || 'https://189.72.144.238/api/api').origin; }
+  catch { return 'https://189.72.144.238'; }
 })();
 const toFileUrl = (value) => {
   const v = String(value || '').trim();

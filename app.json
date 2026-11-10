@@ -62,7 +62,7 @@
       "googleServicesFile": "./google-services.json"
     },
     "web": {
-      "favicon": "./assets/images/favicon.png",
+      "favicon": "./assets/images/rti.png",
       "bundler": "metro",
       "output": "single"
     },

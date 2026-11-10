@@ -10,7 +10,7 @@ const ENV_API = process.env.EXPO_PUBLIC_API_URL;
 const ENV_ORIGIN = process.env.EXPO_PUBLIC_API_ORIGIN;
 
 // QR ka domain check isi origin se hota hai
-export const API_ORIGIN = (ENV_ORIGIN || 'https://rtiapi.roofze.in').replace(/\/+$/, '');
+export const API_ORIGIN = (ENV_ORIGIN || 'https://189.72.144.238').replace(/\/+$/, '');
 
 // Jahan public/verify.html host hai (QR scan par ye page khulta hai)
 export const VERIFY_PAGE_BASE = (process.env.EXPO_PUBLIC_VERIFY_ORIGIN || 'https://rtinews.in')
