@@ -20,6 +20,7 @@ import { UserStore } from '../store/UserStore';
 import { useToast } from '../components/ui/ToastProvider';
 import { useAuth } from '../contexts/AuthContext';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
+import { compressImage, compressVideo } from '../utils/mediaCompressor';
 
 const ADS_TUTORIAL_VIDEO = require('../assets/frames/ads-video.mp4');
 
@@ -772,9 +773,9 @@ const editAd = route?.params?.editAd || null;
 
       if (videos.length) {
         const v = videos[0];
-        const size = v.fileSize || v.file?.size || 0;
-        if (size && size > MAX_VIDEO_MB * 1024 * 1024) {
-          Alert.alert('Video too large', `Please choose a video under ${MAX_VIDEO_MB} MB.`);
+        const vComp = await compressVideo(v, { maxSizeBytes: MAX_VIDEO_MB * 1024 * 1024 });
+        if (!vComp.ok) {
+          Alert.alert('Video too large', vComp.message || `Please choose a video under ${MAX_VIDEO_MB} MB.`);
           return;
         }
         // ek ad me ya video ya photo (backend media_type 1/2) — video chuna to photos hata do
@@ -783,8 +784,15 @@ const editAd = route?.params?.editAd || null;
         setExtraPhotos([]);
       } else if (images.length) {
         setAdVideo(null);
-        setPhoto(images[0].uri);
-        setExtraPhotos(images.slice(1, 5).map((x) => x.uri));
+        const compMain = await compressImage(images[0].uri, { maxWidth: 1280, maxHeight: 1280, quality: 0.7 });
+        setPhoto(compMain?.uri || images[0].uri);
+        const compExtras = await Promise.all(
+          images.slice(1, 5).map(async (x) => {
+            const c = await compressImage(x.uri, { maxWidth: 1280, maxHeight: 1280, quality: 0.7 }).catch(() => null);
+            return c?.uri || x.uri;
+          })
+        );
+        setExtraPhotos(compExtras);
       }
       setTimeout(() => {
         (Platform.OS === 'web' ? webScrollRef : mobileScrollRef).current?.scrollTo({ y: 360, animated: true });
@@ -811,8 +819,15 @@ const editAd = route?.params?.editAd || null;
       });
       if (result.canceled || !result.assets?.length) return;
       setAdVideo(null); // ek ad me ya photo ya video
-      setPhoto(result.assets[0].uri);
-      setExtraPhotos(result.assets.slice(1, 5).map((a) => a.uri));
+      const compMain = await compressImage(result.assets[0].uri, { maxWidth: 1280, maxHeight: 1280, quality: 0.7 });
+      setPhoto(compMain?.uri || result.assets[0].uri);
+      const compExtras = await Promise.all(
+        result.assets.slice(1, 5).map(async (a) => {
+          const c = await compressImage(a.uri, { maxWidth: 1280, maxHeight: 1280, quality: 0.7 }).catch(() => null);
+          return c?.uri || a.uri;
+        })
+      );
+      setExtraPhotos(compExtras);
       setTimeout(() => {
         (Platform.OS === 'web' ? webScrollRef : mobileScrollRef).current?.scrollTo({ y: 360, animated: true });
         titleInputRef.current?.focus();

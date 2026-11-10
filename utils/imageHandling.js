@@ -83,16 +83,5 @@ export async function resolveModuleImageSrc(moduleRef, mimeType = 'image/jpeg') 
   }
 }
 
-// Image Compression for Web
-export const compressImageToBase64 = (uri) => new Promise((res, rej) => {
-  const img = new window.Image();
-  img.crossOrigin = 'anonymous';
-  img.onload = () => {
-    const c = document.createElement('canvas');
-    c.width = c.height = 200;
-    c.getContext('2d').drawImage(img, 0, 0, 200, 200);
-    res(c.toDataURL('image/jpeg', 0.5));
-  };
-  img.onerror = rej;
-  img.src = uri;
-});
+// Image Compression (Universal cross-platform Web & Native)
+export { compressImageToBase64, compressImage, compressImagesBatch, compressVideo, compressFile } from './mediaCompressor';

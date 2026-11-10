@@ -23,6 +23,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { compressImage } from '../utils/mediaCompressor';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { UserStore } from '../store/UserStore';
 import * as ToastKit from '../components/ui/ToastProvider';
@@ -243,8 +244,18 @@ function useSellForm(navigation, editListing) {
     if (result.canceled) return;
     const items = await getMediaItemsFromPickerResult(result);
     if (!items.length) return;
+    const compressedItems = await Promise.all(
+      items.map(async (item) => {
+        try {
+          const comp = await compressImage(item.uri, { maxWidth: 1280, maxHeight: 1280, quality: 0.7 });
+          return { ...item, uri: comp.uri || item.uri };
+        } catch {
+          return item;
+        }
+      })
+    );
     setMediaItems((prev) => {
-      const next = [...prev, ...items].slice(0, 5);
+      const next = [...prev, ...compressedItems].slice(0, 5);
       setMediaUri(next[0]?.uri || '');
       setMediaType(next[0]?.type || '');
       setTimeout(() => whatSellingInputRef.current?.focus(), 180);

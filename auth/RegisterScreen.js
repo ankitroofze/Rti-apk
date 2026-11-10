@@ -342,12 +342,8 @@ export default function RegisterScreen({ navigation, route }) {
           return;
         }
         const uri = asset.uri || '';
-        if (typeof document !== 'undefined' && uri) {
-          try { setProfileImage(await compressImageToBase64(uri)); }
-          catch { setProfileImage(uri); }
-        } else {
-          setProfileImage(uri);
-        }
+        try { setProfileImage(await compressImageToBase64(uri)); }
+        catch { setProfileImage(uri); }
       }
     } catch {
       showToast('Unable to pick image.', 'error');

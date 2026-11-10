@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
+import { compressImage } from '../utils/mediaCompressor';
 import { Ionicons, Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -70,7 +71,10 @@ export default function NewsCameraModal({
     try {
       setBusy(true);
       const photo = await cameraRef.current.takePictureAsync({ quality: 0.7, skipProcessing: false });
-      if (photo?.uri) onCapture?.({ type: 'photo', uri: photo.uri });
+      if (photo?.uri) {
+        const comp = await compressImage(photo.uri, { maxWidth: 1280, maxHeight: 1280, quality: 0.7 }).catch(() => null);
+        onCapture?.({ type: 'photo', uri: comp?.uri || photo.uri });
+      }
     } catch (e) {
       console.warn('takePicture failed', e);
     } finally {
@@ -117,9 +121,14 @@ export default function NewsCameraModal({
       });
       if (!res.canceled && res.assets?.[0]) {
         const a = res.assets[0];
+        let finalUri = a.uri;
+        if (a.type !== 'video') {
+          const comp = await compressImage(a.uri, { maxWidth: 1280, maxHeight: 1280, quality: 0.7 }).catch(() => null);
+          if (comp?.uri) finalUri = comp.uri;
+        }
         onCapture?.({
           type: a.type === 'video' ? 'video' : 'photo',
-          uri: a.uri,
+          uri: finalUri,
           durationMs: a.duration,
         });
       }

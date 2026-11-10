@@ -43,6 +43,7 @@ if (Platform.OS !== 'web') {
 }
 import VideoPreview from '../components/VideoPreview';
 import NewsCameraModal from '../components/NewsCameraModal';
+import { compressImage, compressVideo } from '../utils/mediaCompressor';
 import VideoAudioEditorModal from '../components/VideoAudioEditorModal';
 import NewsLimitModal from '../components/NewsLimitModal';
 import WebRichEditor from '../components/WebRichEditor';
@@ -755,11 +756,12 @@ const admin = user.role === 'admin';
             showToast(IMG_TYPE_MSG, 'error', { title: IMG_TYPE_TITLE });
             continue;
           }
-          if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) {
-            showToast(`Image ${i + 1} is too large (max 10MB). Skipping.`, 'warning');
-            continue;
+          try {
+            const comp = await compressImage(asset.uri, { maxWidth: 1280, maxHeight: 1280, quality: 0.7 });
+            processedImages.push(comp?.uri || asset.uri);
+          } catch {
+            processedImages.push(asset.uri);
           }
-          processedImages.push(asset.uri);
         }
 
         if (processedImages.length > 0) {
@@ -796,8 +798,9 @@ const admin = user.role === 'admin';
           return;
         }
 
-        if (asset.size && asset.size > MAX_VIDEO_BYTES) {
-          showToast(VIDEO_TOO_LARGE_MSG, 'error');
+        const vComp = await compressVideo(asset);
+        if (!vComp.ok) {
+          showToast(vComp.message || VIDEO_TOO_LARGE_MSG, 'error');
           return;
         }
 
@@ -832,8 +835,9 @@ const admin = user.role === 'admin';
       if (!nativeResult.canceled && nativeResult.assets?.[0]) {
         const asset = nativeResult.assets[0];
 
-        if (asset.fileSize && asset.fileSize > MAX_VIDEO_BYTES) {
-          showToast(VIDEO_TOO_LARGE_MSG, 'error');
+        const vComp = await compressVideo(asset);
+        if (!vComp.ok) {
+          showToast(vComp.message || VIDEO_TOO_LARGE_MSG, 'error');
           return;
         }
 

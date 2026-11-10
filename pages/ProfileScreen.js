@@ -919,11 +919,9 @@ const handlePickImage = async () => {
         if (asset.fileSize && asset.fileSize > MAX_IMAGE_SIZE) { showToast('Image is too large (max 5MB).', 'error'); setUploading(false); return; }
         let uri = asset.uri || '';
         
-        // LOCAL PREVIEW (existing code, unchanged)
-        if (typeof document !== 'undefined' && uri) {
-          try { const dataUri = await compressImageToBase64(uri); handleChange('profile_image', dataUri); }
-          catch { handleChange('profile_image', uri); }
-        } else { handleChange('profile_image', uri); }
+        // LOCAL PREVIEW (Universal compression)
+        try { const dataUri = await compressImageToBase64(uri); handleChange('profile_image', dataUri); }
+        catch { handleChange('profile_image', uri); }
 
              // STAGE ONLY — koi API hit nahi yahan. Actual upload Save button (handleSave) par hoga.
         pendingImageUriRef.current = uri;

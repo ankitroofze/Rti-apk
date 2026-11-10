@@ -28,6 +28,7 @@ import { safePause, safePlay, safeSetMuted } from '../utils/videoPlayerSafe';
 import { useGlobalMuted, getGlobalMuted, setGlobalMuted } from '../utils/Globalmutestore';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
 import { getAdRedirectMeta, openAdRedirect } from '../utils/adRedirect';
+import { compressImage, compressVideo } from '../utils/mediaCompressor';
 import { getEngagement, subscribeEngagement } from '../utils/newsEngagementStore';
 import useLiveRefresh from '../utils/useLiveRefresh';
 import { useAuth } from '../contexts/AuthContext';
@@ -928,10 +929,21 @@ function UploadModal({ visible, onClose, onPost }) {
       if (result.canceled || !result.assets?.[0]?.uri) return;
       const asset = result.assets[0];
       const isVideo = asset.type === 'video' || String(asset.mimeType || '').startsWith('video/');
-      setMediaType(isVideo ? 'Video' : 'Image');
-      setMediaUri(asset.uri);
+      if (!isVideo) {
+        const comp = await compressImage(asset.uri, { maxWidth: 1280, maxHeight: 1280, quality: 0.7 });
+        setMediaType('Image');
+        setMediaUri(comp?.uri || asset.uri);
+      } else {
+        const vComp = await compressVideo(asset);
+        if (!vComp.ok) {
+          Alert.alert('Video too large', vComp.message || 'Please select a video under 10 MB.');
+          return;
+        }
+        setMediaType('Video');
+        setMediaUri(asset.uri);
+        openEditorForVideo();
+      }
       setAudioMix(null);
-      if (isVideo) openEditorForVideo();
     } catch {
       Alert.alert('Upload failed', 'Unable to select this media.');
     } finally {
