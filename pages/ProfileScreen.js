@@ -501,9 +501,17 @@ function ProfileScreenInner({ navigation, route }) {
 
     const cachedRawImage = user.profile_image || '';
     const cachedSafeImage = cachedRawImage.startsWith('blob:') ? '' : cachedRawImage;
+    let initialEditCount = Number(user.profile_edit_count ?? 0) || 0;
+    try {
+      const storedCount = await AsyncStorage.getItem(`@profile_edit_count_${(user.email || '').trim().toLowerCase()}`);
+      if (storedCount && Number(storedCount) > initialEditCount) {
+        initialEditCount = Number(storedCount);
+      }
+    } catch (_) {}
     const initialProfileData = {
       ...user,
       profile_image: cachedSafeImage,
+      profile_edit_count: initialEditCount,
       referral_code: user.my_referral_code || generateReferralCode(user.email),
     };
     setSavedProfile(initialProfileData);
@@ -578,6 +586,7 @@ function ProfileScreenInner({ navigation, route }) {
         pending_profile_image: apiUser.pending_profile_image ?? null,
         pending_profile_image_url: apiUser.pending_profile_image_url ?? null,
         profile_image_change_count: Number(apiUser.profile_image_change_count ?? apiUser.profile?.profile_image_change_count ?? user.profile_image_change_count ?? 0) || 0,
+        profile_edit_count: Number(apiUser.profile_edit_count ?? apiUser.profile?.profile_edit_count ?? user.profile_edit_count ?? (user.profile_update_status !== null && user.profile_update_status !== undefined ? 1 : 0)) || 0,
         state: apiUser.state || user.state,
         district: apiUser.district || user.district,
         taluka: apiUser.taluka || user.taluka,
@@ -752,12 +761,52 @@ function ProfileScreenInner({ navigation, route }) {
     }
   };
 
+  // ── Derived Profile Properties & Edit Permissions ────────────────
+  const displayProfile = isEditing ? form : savedProfile;
+  const profileSeatId = String(displayProfile?.state_seat?.seat_id || '').trim();
+  const displayHasBlueTick = Boolean(isLoggedIn && UserStore.hasBlueTick(displayProfile));
+  const hasPremiumSubscription = Boolean(isLoggedIn && UserStore.hasPremiumAccess(displayProfile));
+  const profileTier = isLoggedIn
+    ? getProfileTier({ ...displayProfile, has_blue_tick: displayHasBlueTick })
+    : PROFILE_TIERS.common;
+  const isYellowTier = Boolean(isLoggedIn && ['premium', 'verified'].includes(profileTier.key));
+  const menuActiveColor = (profileTier.gradientDark && profileTier.gradientDark[1]) || profileTier.accent;
+  const pillTheme = { bg: `${profileTier.accent}1F`, border: profileTier.accent, text: profileTier.accent };
+
+  const isSubscribedUser = Boolean(
+    UserStore.hasActiveSubscription(displayProfile)
+    || UserStore.hasActiveRolePlan(displayProfile)
+    || (profileTier && profileTier.key !== 'common')
+  );
+
+  // ✅ Common user: 1st time profile edit/add bilkul FREE kar sakta hai.
+  // 2nd time onwards subscription zaroori hai.
+  // Subscribed / Role / Verified users hamesha edit kar sakte hain.
+  const profileEditCount = Number(
+    displayProfile?.profile_edit_count
+    ?? displayProfile?.profile?.profile_edit_count
+    ?? (displayProfile?.profile_update_status !== null && displayProfile?.profile_update_status !== undefined ? 1 : 0)
+    ?? (displayProfile?.pending_bio || displayProfile?.pending_phone ? 1 : 0)
+    ?? 0
+  ) || 0;
+  const canEditProfile = isSubscribedUser || profileEditCount < 1;
+
+  const canChangePhoto = isSubscribedUser; // Role / Premium / Verified wale hamesha photo badal sakte hain
+  // ✅ Common user: sirf 1 baar photo FREE update kar sakta hai. Uske baad subscription zaroori hai.
+  const photoChangeCount = Number(
+    displayProfile?.profile_image_change_count
+    ?? displayProfile?.profile?.profile_image_change_count
+    ?? (displayProfile?.pending_profile_image_url ? 1 : 0)
+    ?? 0
+  ) || 0;
+  const canPickPhoto = canChangePhoto || photoChangeCount < 1;
+
   const openEdit = () => {
-    // Common user (koi subscription / role / blue tick nahi) profile edit nahi kar sakta —
-    // sabhi Edit entry points (Edit Profile button, camera badge, saved-profile card)
-    // isi function se guzarte hain, isliye gate yahin lagaya hai.
-    if (profileTier.key === 'common') {
+    // 1st time common user bhi profile add/edit kar sakta hai.
+    // 2nd time onwards common user bina subscription ke edit nahi kar sakta.
+    if (!canEditProfile) {
       showToast('Profile editing is available only after purchasing a subscription.', 'error', { title: 'Subscription required' });
+      navigation?.navigate?.('Subscription Plans', { returnTo: 'Profile' });
       return;
     }
     // One state transition is shared by the web and native render branches.
@@ -1013,7 +1062,14 @@ const handlePickImage = async () => {
   };
 
     const handleSave = async () => {
-    if (!requirePremium(savedProfile, UserStore.hasActiveSubscription, showToast, navigation, 'Profile')) return;
+    // Subscribed users can always save.
+    // Common user (unsubscribed) can save 1st time (profileEditCount < 1).
+    // 2nd time onwards subscription is required.
+    if (!canEditProfile) {
+      showToast('Profile editing is available only after purchasing a subscription.', 'error', { title: 'Subscription required' });
+      navigation?.navigate?.('Subscription Plans', { returnTo: 'Profile' });
+      return;
+    }
     const nextBio = String(form.bio || '').trim();
     const nextContactRaw = String(form.contact_number || '').trim();
     const nextContactDigits = nextContactRaw.replace(/\D/g, '');
@@ -1114,6 +1170,8 @@ const handlePickImage = async () => {
       .join(' ')
       .trim();
 
+    const nextEditCount = Number(savedProfile.profile_edit_count || profileEditCount || 0) + 1;
+
     const updated = await UserStore.updateUser(savedProfile.account_email || savedProfile.email, {
       // Naam/email approval ke bina hi turant apply hote hain (pending nahi) —
       // isliye backend response (ya fallback me humne jo bheja tha) seedha save karo.
@@ -1121,10 +1179,18 @@ const handlePickImage = async () => {
       email: profile.email || changedFields.email || savedProfile.email,
       pending_phone: profile.pending_phone ?? savedProfile.pending_phone ?? null,
       pending_bio: profile.pending_bio ?? savedProfile.pending_bio ?? null,
-      profile_update_status: profile.profile_update_status ?? savedProfile.profile_update_status ?? null,
+      profile_update_status: profile.profile_update_status ?? savedProfile.profile_update_status ?? 1,
+      profile_edit_count: nextEditCount,
       ...imageUpdatePayload,
     });
     if (!updated) { showToast('Error saving request locally.', 'error'); return; }
+
+    try {
+      const emailKey = (savedProfile.account_email || savedProfile.email || '').trim().toLowerCase();
+      if (emailKey) {
+        await AsyncStorage.setItem(`@profile_edit_count_${emailKey}`, String(nextEditCount));
+      }
+    } catch (_) {}
 
     pendingImageUriRef.current = null; // NEW: save ke baad clear
     setSavedProfile(updated); setForm(updated); setIsEditing(false);
@@ -1200,23 +1266,6 @@ const handlePickImage = async () => {
       </View>
     );
   };
-   const displayProfile = isEditing ? form : savedProfile;
-  const profileSeatId = String(displayProfile?.state_seat?.seat_id || '').trim();
-  const displayHasBlueTick = Boolean(isLoggedIn && UserStore.hasBlueTick(displayProfile));
-  // TEMP DEBUG: tick kyu nahi aa raha — confirm hone ke baad ye line hata dena
-  console.log('[TICK-DEBUG]', JSON.stringify({ plan: displayProfile?.subscription_plan, is_subscribed: displayProfile?.is_subscribed, subscription_type: displayProfile?.subscription_type, role: displayProfile?.role, tick: displayHasBlueTick, referral: displayProfile?.referral_code }));
-  const hasPremiumSubscription = Boolean(isLoggedIn && UserStore.hasPremiumAccess(displayProfile));
-  // Premium + Verified tier ka header yellow hai -> white text dikhta nahi, isliye wahan black text/icons
-  const isYellowTier = Boolean(isLoggedIn && ['premium', 'verified'].includes(getProfileTier({ ...displayProfile, has_blue_tick: UserStore.hasBlueTick(displayProfile) }).key));
-  // Role Based Profile Look — 6-tier color theme (Common/Premium/Verified/
-  // Representative/Executive/Chief). Subscription ya seat change hote he
-  // pillTheme aur profileTier dono automatically naye role ke color me update
-  // ho jaate hain, kyunki ye displayProfile se hi derive ho rahe hain.
-  const profileTier = isLoggedIn
-    ? getProfileTier({ ...displayProfile, has_blue_tick: displayHasBlueTick })
-    : PROFILE_TIERS.common;
-   // Edit Profile button (gradientDark) ka main shade = menu ka active color
-   const menuActiveColor = (profileTier.gradientDark && profileTier.gradientDark[1]) || profileTier.accent;
   // Settings > "Update account and profile details" se aaye to seedha Edit Profile form khule.
   // Profile load hone ke baad (initializing false) ek hi baar chalega, phir param clear.
   useEffect(() => {
@@ -1224,23 +1273,6 @@ const handlePickImage = async () => {
     navigation.setParams?.({ openEdit: undefined });
     openEdit();
   }, [route?.params?.openEdit, initializing, isLoggedIn]);
-   const pillTheme = { bg: `${profileTier.accent}1F`, border: profileTier.accent, text: profileTier.accent };
-  // ✅ FIX: purchased seat ka asli naam (Pratinidhi, PRO, etc.) generic tier
-  // label ("Authorised Representative") se hamesha priority lega.
-   const isSubscribedUser = Boolean(
-     UserStore.hasActiveSubscription(displayProfile)
-     || UserStore.hasActiveRolePlan(displayProfile)
-     || (profileTier && profileTier.key !== 'common')
-   );
-   const canChangePhoto = isSubscribedUser; // Role / Premium / Verified wale hamesha photo badal sakte hain
-  // ✅ Common user: sirf 1 baar photo FREE update kar sakta hai. Uske baad subscription zaroori hai.
-  const photoChangeCount = Number(
-    displayProfile?.profile_image_change_count
-    ?? displayProfile?.profile?.profile_image_change_count
-    ?? (displayProfile?.pending_profile_image_url ? 1 : 0)
-    ?? 0
-  ) || 0;
-  const canPickPhoto = canChangePhoto || photoChangeCount < 1;
     const profileSeatKeyLC = String(displayProfile?.state_seat?.seat_id || '').trim().toLowerCase();
   const purchasedRoleLabel = Array.isArray(displayProfile?.subscription_plan?.role_names)
     ? displayProfile.subscription_plan.role_names.filter(Boolean).join(', ')
@@ -1310,7 +1342,11 @@ const handlePickImage = async () => {
         <View style={ProfileStyles.sectionHeaderRow}>
           <View style={{ flex: 1 }}>
             <Text style={ProfileStyles.sectionHeading}>Edit Profile</Text>
-            <Text style={ProfileStyles.sectionSubtitle}>Update your basic details.</Text>
+            <Text style={ProfileStyles.sectionSubtitle}>
+              {!isSubscribedUser && profileEditCount === 0
+                ? 'First-time profile setup is free. Subsequent updates require a subscription.'
+                : 'Update your basic details.'}
+            </Text>
             {successMessage ? <Text style={ProfileStyles.successText}>{successMessage}</Text> : null}
           </View>
         </View>

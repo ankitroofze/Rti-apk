@@ -2020,6 +2020,7 @@ const normalizeUser = (user = {}) => {
     pending_profile_image: user.pending_profile_image ?? null,
     pending_profile_image_url: user.pending_profile_image_url ?? null,
     profile_image_change_count: Number(user.profile_image_change_count ?? 0) || 0,
+    profile_edit_count: Number(user.profile_edit_count ?? 0) || 0,
     id_card: user.id_card || '',
     appointment_letter: user.appointment_letter || '',
     my_referral_code: isSubscribed ? (user.my_referral_code || '') : '',
