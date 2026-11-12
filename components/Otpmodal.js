@@ -22,6 +22,7 @@ export default function OtpModal({ visible, email, onClose, onVerified, purpose 
   const verifyOtp = isRegister ? AuthAPI.verifyRegisterOTP : AuthAPI.verifyForgotOTP;
   const requestOtp = isRegister ? AuthAPI.requestRegisterOTP : AuthAPI.requestForgotOTP;
   const [digits, setDigits] = useState(emptyDigits);
+  const [focusedIndex, setFocusedIndex] = useState(0);
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [resendTimer, setResendTimer] = useState(RESEND_SECONDS);
@@ -29,20 +30,64 @@ export default function OtpModal({ visible, email, onClose, onVerified, purpose 
   const [info, setInfo] = useState('');
   const inputRefs = useRef([]);
 
-  // Popup khulte hi sab reset + 30s resend timer start
+  // Distribute any numeric string (e.g. from paste or fast typing) across boxes
+  const applyOtpString = (rawString, startIndex = 0) => {
+    const clean = String(rawString || '').replace(/[^0-9]/g, '');
+    if (!clean) return;
+
+    setDigits((prev) => {
+      const next = [...prev];
+      // If a full or multi-digit OTP is pasted, fill from 0
+      const start = clean.length >= OTP_LENGTH ? 0 : startIndex;
+      for (let i = 0; i < clean.length && (start + i) < OTP_LENGTH; i++) {
+        next[start + i] = clean[i];
+      }
+      return next;
+    });
+    setError('');
+
+    const start = clean.length >= OTP_LENGTH ? 0 : startIndex;
+    const nextTarget = Math.min(start + clean.length, OTP_LENGTH - 1);
+    setTimeout(() => {
+      inputRefs.current[nextTarget]?.focus();
+    }, 30);
+  };
+
+  // Popup khulte hi sab reset + 30s resend timer start + focus box 0
   useEffect(() => {
     if (!visible) return undefined;
     setDigits(emptyDigits());
+    setFocusedIndex(0);
     setError('');
     setInfo('');
     setLoading(false);
     setResendTimer(RESEND_SECONDS);
-    const focusId = setTimeout(() => inputRefs.current[0]?.focus(), 300);
+    const focusId = setTimeout(() => inputRefs.current[0]?.focus(), 250);
     const tickId = setInterval(() => setResendTimer((prev) => (prev > 0 ? prev - 1 : 0)), 1000);
     return () => {
       clearTimeout(focusId);
       clearInterval(tickId);
     };
+  }, [visible]);
+
+  // Web native paste listener (Ctrl+V anywhere in modal)
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !visible) return undefined;
+    const handleGlobalPaste = (e) => {
+      const pasted = (e.clipboardData || (typeof window !== 'undefined' && window.clipboardData))?.getData('text') || '';
+      const clean = pasted.replace(/[^0-9]/g, '').slice(0, OTP_LENGTH);
+      if (clean) {
+        e.preventDefault();
+        applyOtpString(clean, 0);
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('paste', handleGlobalPaste);
+      return () => {
+        window.removeEventListener('paste', handleGlobalPaste);
+      };
+    }
+    return undefined;
   }, [visible]);
 
   // Android back button: pehle popup band ho, screen pichhe na jaaye
@@ -56,24 +101,72 @@ export default function OtpModal({ visible, email, onClose, onVerified, purpose 
   }, [visible, onClose]);
 
   const handleDigitChange = (text, index) => {
-    const clean = text.replace(/[^0-9]/g, '').slice(-1);
+    const raw = String(text || '');
+    const clean = raw.replace(/[^0-9]/g, '');
+
+    // Case 1: Multi-digit entered (paste or rapid typing)
+    if (clean.length > 1) {
+      // Check if user was replacing an existing digit (e.g. box had "5" and user typed "9" -> "59")
+      if (clean.length === 2 && digits[index] && clean[0] === digits[index]) {
+        const newDigit = clean[1];
+        setDigits((prev) => {
+          const next = [...prev];
+          next[index] = newDigit;
+          return next;
+        });
+        setError('');
+        if (index < OTP_LENGTH - 1) {
+          setTimeout(() => inputRefs.current[index + 1]?.focus(), 20);
+        }
+        return;
+      }
+      applyOtpString(clean, index);
+      return;
+    }
+
+    // Case 2: Single digit or cleared
+    const digit = clean.slice(-1);
     setDigits((prev) => {
       const next = [...prev];
-      next[index] = clean;
+      next[index] = digit;
       return next;
     });
     setError('');
-    if (clean && index < OTP_LENGTH - 1) inputRefs.current[index + 1]?.focus();
+
+    if (digit && index < OTP_LENGTH - 1) {
+      setTimeout(() => {
+        inputRefs.current[index + 1]?.focus();
+      }, 20);
+    }
   };
 
   const handleKeyPress = ({ nativeEvent }, index) => {
-    if (nativeEvent.key === 'Backspace' && !digits[index] && index > 0) {
+    const key = nativeEvent?.key;
+    if (key === 'Backspace') {
+      if (!digits[index] && index > 0) {
+        setDigits((prev) => {
+          const next = [...prev];
+          next[index - 1] = '';
+          return next;
+        });
+        setTimeout(() => {
+          inputRefs.current[index - 1]?.focus();
+        }, 10);
+      } else {
+        setDigits((prev) => {
+          const next = [...prev];
+          next[index] = '';
+          return next;
+        });
+      }
+    } else if (key === 'ArrowLeft' && index > 0) {
       inputRefs.current[index - 1]?.focus();
+    } else if (key === 'ArrowRight' && index < OTP_LENGTH - 1) {
+      inputRefs.current[index + 1]?.focus();
     }
   };
 
   const otp = digits.join('');
-
 
   const handleVerify = async () => {
     if (otp.length < OTP_LENGTH || loading) return;
@@ -119,23 +212,41 @@ export default function OtpModal({ visible, email, onClose, onVerified, purpose 
         <Text style={otpStyles.sentTo}>📧 {email}</Text>
         <Text style={[otpStyles.subtitle, local.validText]}>Valid for {OTP_VALID_MINUTES} minutes</Text>
 
-
-
         <View style={[otpStyles.digitRow, local.digitRow]}>
-          {digits.map((digit, index) => (
-            <TextInput
-              key={index}
-              ref={(ref) => { inputRefs.current[index] = ref; }}
-              style={[otpStyles.digitBox, local.digitBox, digit ? otpStyles.digitBoxFilled : null]}
-              value={digit}
-              onChangeText={(text) => handleDigitChange(text, index)}
-              onKeyPress={(event) => handleKeyPress(event, index)}
-              onSubmitEditing={handleVerify}
-              keyboardType="number-pad"
-              maxLength={1}
-              selectTextOnFocus
-            />
-          ))}
+          {digits.map((digit, index) => {
+            const isFilled = Boolean(digit);
+            const isCurrentFocus = focusedIndex === index;
+
+            return (
+              <View
+                key={index}
+                style={[
+                  otpStyles.digitBox,
+                  local.digitBoxWrap,
+                  isFilled && otpStyles.digitBoxFilled,
+                  isCurrentFocus && !isFilled && local.digitBoxFocused,
+                ]}
+              >
+                <TextInput
+                  ref={(ref) => { inputRefs.current[index] = ref; }}
+                  style={[
+                    local.innerInput,
+                    isFilled ? { color: '#ffffff' } : { color: '#111111' },
+                  ]}
+                  value={digit}
+                  onChangeText={(text) => handleDigitChange(text, index)}
+                  onKeyPress={(event) => handleKeyPress(event, index)}
+                  onFocus={() => setFocusedIndex(index)}
+                  onSubmitEditing={handleVerify}
+                  keyboardType="number-pad"
+                  inputMode="numeric"
+                  maxLength={6}
+                  autoComplete="one-time-code"
+                  textContentType="oneTimeCode"
+                />
+              </View>
+            );
+          })}
         </View>
 
         {error ? <Text style={local.errorText}>{error}</Text> : null}
@@ -178,12 +289,31 @@ export default function OtpModal({ visible, email, onClose, onVerified, purpose 
 }
 
 const local = StyleSheet.create({
-
   validText: { marginBottom: 16 },
-  // chhoti screen par 6 boxes fit ho jaayein
   digitRow: { gap: 8, width: '100%', justifyContent: 'center' },
-  digitBox: {
-    flexShrink: 1, minWidth: 0,
+  digitBoxWrap: {
+    padding: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  digitBoxFocused: {
+    borderColor: '#e8732a',
+    backgroundColor: '#ffffff',
+    borderWidth: 2,
+    ...(Platform.OS === 'web' ? {
+      boxShadow: '0 0 0 3px rgba(232, 115, 42, 0.15)',
+    } : {}),
+  },
+  innerInput: {
+    width: '100%',
+    height: '100%',
+    fontSize: 22,
+    fontWeight: '800',
+    textAlign: 'center',
+    padding: 0,
+    margin: 0,
+    backgroundColor: 'transparent',
     ...(Platform.OS === 'web' ? { outlineStyle: 'none' } : null),
   },
   errorText: { color: '#e8732a', fontSize: 12, fontWeight: '600', textAlign: 'center', marginTop: -10, marginBottom: 12 },
