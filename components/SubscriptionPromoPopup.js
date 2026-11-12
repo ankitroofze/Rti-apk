@@ -1,14 +1,14 @@
 // components/SubscriptionPromoPopup.js
 // ─────────────────────────────────────────────────────────────────
-// Attractive Shuru-Style Subscription / Role Membership Popup Modal
-// Displays role subscription plans according to user's location.
-// Includes a prominent cancel / cross (X) icon at the top to dismiss.
+// Professional, Clean Role Membership Popup Modal
+// Displays official press role subscription plans with location context.
+// All images properly cover their containers with no background bleed.
+// Typography unified with Roboto throughout.
 // ─────────────────────────────────────────────────────────────────
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
-  Image,
   ImageBackground,
   Modal,
   Platform,
@@ -26,9 +26,13 @@ import { UserStore } from '../store/UserStore';
 import { getCardTheme, HEADER_BG_IMAGE } from '../constants/subscriptionThemes';
 
 const IS_WEB = Platform.OS === 'web';
-const { width: WIN_W, height: WIN_H } = Dimensions.get('window');
+const { height: WIN_H } = Dimensions.get('window');
 
-// Session storage key / memory flag taaki ek hi session me user ko baar-baar na sataye
+const ROBOTO_REGULAR = IS_WEB ? "'Roboto', sans-serif" : 'Roboto_400Regular';
+const ROBOTO_MEDIUM  = IS_WEB ? "'Roboto', sans-serif" : 'Roboto_500Medium';
+const ROBOTO_BOLD    = IS_WEB ? "'Roboto', sans-serif" : 'Roboto_700Bold';
+const ROBOTO_BLACK   = IS_WEB ? "'Roboto', sans-serif" : 'Roboto_900Black';
+
 let sessionDismissed = false;
 const SESSION_DISMISS_KEY = '@subscription_promo_dismissed_v1';
 
@@ -46,7 +50,6 @@ export default function SubscriptionPromoPopup({
   const [plans, setPlans] = useState([]);
   const [userLocationLabel, setUserLocationLabel] = useState('');
 
-  // Determine user's location
   const userState = useMemo(() => {
     return selectedStateName
       || currentUser?.state
@@ -61,11 +64,9 @@ export default function SubscriptionPromoPopup({
       || '';
   }, [selectedDistrictName, currentUser]);
 
-  // Check whether to show the popup
   useEffect(() => {
     let alive = true;
     (async () => {
-      // 1. Agar user already subscribed hai, popup nahi dikhana
       const isSubscribed = Boolean(
         UserStore.hasActiveSubscription?.(currentUser)
         || UserStore.hasActiveRolePlan?.(currentUser)
@@ -73,11 +74,9 @@ export default function SubscriptionPromoPopup({
       );
       if (isSubscribed) return;
 
-      // 2. Check session dismissal
       if (sessionDismissed) return;
       try {
         const dismissedAt = await AsyncStorage.getItem(SESSION_DISMISS_KEY);
-        // 4 ghante ka cooldown taaki user refresh kare to turant wapas spam na ho
         if (dismissedAt && Date.now() - Number(dismissedAt) < 4 * 60 * 60 * 1000) {
           sessionDismissed = true;
           return;
@@ -86,11 +85,9 @@ export default function SubscriptionPromoPopup({
 
       if (!alive) return;
 
-      // Location label
       const loc = [userDistrict, userState].filter(Boolean).join(', ') || 'All India';
       setUserLocationLabel(loc);
 
-      // Load plans according to location
       setLoading(true);
       try {
         const summary = await UserStore.getSubscriptionSummary?.({
@@ -99,11 +96,9 @@ export default function SubscriptionPromoPopup({
         }, { skipSync: true });
 
         const rawPlans = Array.isArray(summary?.plans) ? summary.plans : [];
-        // Filter out sold/inactive plans and show top 3-4 attractive role plans
         const available = rawPlans.filter((p) => !p?.is_sold && Number(p?.price) > 0);
         if (alive) {
           setPlans(available.slice(0, 4));
-          // Agar plans mile to popup dikhao
           if (available.length > 0) {
             setVisible(true);
           }
@@ -152,83 +147,85 @@ export default function SubscriptionPromoPopup({
     >
       <View style={st.backdrop}>
         <View style={st.cardContainer}>
-          {/* ── Banner Header (Shuru Style) ── */}
-          <ImageBackground
-            source={HEADER_BG_IMAGE}
-            style={st.bannerHeader}
-            imageStyle={st.bannerHeaderImg}
-            resizeMode="cover"
-          >
-            {/* Prominent Cancel / Cross (X) icon at top right */}
-            <TouchableOpacity
-              style={st.cancelBtn}
-              onPress={handleDismiss}
-              activeOpacity={0.8}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-              accessibilityLabel="Close subscription popup"
+          {/* ── Banner Header ── */}
+          <View style={st.bannerHeaderWrap}>
+            <ImageBackground
+              source={HEADER_BG_IMAGE}
+              style={st.bannerHeader}
+              imageStyle={st.bannerHeaderImg}
+              resizeMode="cover"
             >
-              <Ionicons name="close" size={22} color="#ffffff" />
-            </TouchableOpacity>
+              {/* Close Button */}
+              <TouchableOpacity
+                style={st.cancelBtn}
+                onPress={handleDismiss}
+                activeOpacity={0.8}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                accessibilityLabel="Close subscription popup"
+              >
+                <Ionicons name="close" size={20} color="#ffffff" />
+              </TouchableOpacity>
 
-            {/* Crown / Shield Pill */}
-            <View style={st.badgePill}>
-              <MaterialCommunityIcons name="crown" size={14} color="#fef08a" />
-              <Text style={st.badgePillText}>OFFICIAL JOURNALIST &amp; ROLES</Text>
-            </View>
+              {/* Pill Badge */}
+              <View style={st.badgePill}>
+                <MaterialCommunityIcons name="crown" size={13} color="#fef08a" />
+                <Text style={st.badgePillText}>OFFICIAL JOURNALIST ROLES</Text>
+              </View>
 
-            <Text style={st.bannerTitle}>Join RTI India News Network</Text>
-            <Text style={st.bannerSub}>Get your Official Press ID Card &amp; Appointment Letter</Text>
+              <Text style={st.bannerTitle}>Join RTI India News Network</Text>
+              <Text style={st.bannerSub}>Get your Official Press ID Card &amp; Appointment Letter</Text>
 
-            {/* Location Tag */}
-            <View style={st.locTag}>
-              <Ionicons name="location-sharp" size={12} color="#fbbf24" />
-              <Text style={st.locTagText} numberOfLines={1}>
-                Roles available for: <Text style={{ fontWeight: '800' }}>{userLocationLabel}</Text>
-              </Text>
-            </View>
-          </ImageBackground>
+              {/* Location Badge */}
+              <View style={st.locTag}>
+                <Ionicons name="location-sharp" size={11} color="#fcd34d" />
+                <Text style={st.locTagText} numberOfLines={1}>
+                  {userLocationLabel}
+                </Text>
+              </View>
+            </ImageBackground>
+          </View>
 
-          {/* ── 4 Key Perks (Shuru Style highlight pills) ── */}
+          {/* ── 4 Key Perks ── */}
           <View style={st.perksGrid}>
             <View style={st.perkItem}>
               <View style={[st.perkIconWrap, { backgroundColor: '#fee2e2' }]}>
-                <Ionicons name="card-outline" size={16} color="#dc2626" />
+                <Ionicons name="card" size={15} color="#dc2626" />
               </View>
               <Text style={st.perkText}>Press ID Card</Text>
             </View>
             <View style={st.perkItem}>
               <View style={[st.perkIconWrap, { backgroundColor: '#fef3c7' }]}>
-                <Ionicons name="document-text-outline" size={16} color="#d97706" />
+                <Ionicons name="document-text" size={15} color="#d97706" />
               </View>
-              <Text style={st.perkText}>Letter of Appt.</Text>
+              <Text style={st.perkText}>Appt. Letter</Text>
             </View>
             <View style={st.perkItem}>
               <View style={[st.perkIconWrap, { backgroundColor: '#dbeafe' }]}>
-                <Ionicons name="checkmark-circle-outline" size={16} color="#2563eb" />
+                <Ionicons name="checkmark-circle" size={15} color="#2563eb" />
               </View>
-              <Text style={st.perkText}>Blue Tick Badge</Text>
+              <Text style={st.perkText}>Blue Tick</Text>
             </View>
             <View style={st.perkItem}>
               <View style={[st.perkIconWrap, { backgroundColor: '#dcfce7' }]}>
-                <Ionicons name="megaphone-outline" size={16} color="#16a34a" />
+                <Ionicons name="megaphone" size={15} color="#16a34a" />
               </View>
-              <Text style={st.perkText}>Publish News</Text>
+              <Text style={st.perkText}>Publish Rights</Text>
             </View>
           </View>
 
-          {/* ── Role Plans List ── */}
+          {/* ── Role Plans Scrollable List ── */}
           <ScrollView
             style={st.plansScroll}
             contentContainerStyle={st.plansContent}
             showsVerticalScrollIndicator={false}
           >
             {loading ? (
-              <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+              <View style={st.loadingBox}>
                 <ActivityIndicator size="large" color="#dc2626" />
                 <Text style={st.loadingText}>Loading role plans…</Text>
               </View>
             ) : plans.length === 0 ? (
-              <View style={{ paddingVertical: 30, alignItems: 'center' }}>
+              <View style={st.emptyBox}>
                 <Text style={st.emptyText}>Tap below to explore all available role plans.</Text>
               </View>
             ) : (
@@ -238,12 +235,12 @@ export default function SubscriptionPromoPopup({
                   <TouchableOpacity
                     key={String(plan.plan_id || idx)}
                     style={st.planCardOuter}
-                    activeOpacity={0.9}
+                    activeOpacity={0.92}
                     onPress={() => handleSelectPlan(plan)}
                   >
                     <ImageBackground
                       source={theme.image}
-                      style={st.planCardInner}
+                      style={[st.planCardInner, { backgroundColor: theme.bgColor || '#6b21a8' }]}
                       imageStyle={st.planCardImg}
                       resizeMode="cover"
                     >
@@ -267,7 +264,7 @@ export default function SubscriptionPromoPopup({
                         </View>
                       </View>
 
-                      {/* Benefits bullets */}
+                      {/* Benefits */}
                       <View style={st.featuresBox}>
                         <View style={st.featureItem}>
                           <Feather name="check" size={13} color={theme.checkColor} />
@@ -283,7 +280,7 @@ export default function SubscriptionPromoPopup({
                         </View>
                       </View>
 
-                      {/* Select Button */}
+                      {/* Action Button */}
                       <View style={st.selectBtnRow}>
                         <View style={st.selectBtn}>
                           <Text style={st.selectBtnText}>Activate Role</Text>
@@ -297,12 +294,12 @@ export default function SubscriptionPromoPopup({
             )}
           </ScrollView>
 
-          {/* ── Footer Actions ── */}
+          {/* ── Footer ── */}
           <View style={st.footer}>
             <TouchableOpacity
               style={st.exploreBtn}
               onPress={handleExploreAll}
-              activeOpacity={0.85}
+              activeOpacity={0.88}
             >
               <Text style={st.exploreBtnText}>Explore All Roles &amp; Seats</Text>
               <Feather name="chevron-right" size={16} color="#ffffff" />
@@ -313,7 +310,7 @@ export default function SubscriptionPromoPopup({
               onPress={handleDismiss}
               activeOpacity={0.7}
             >
-              <Text style={st.skipBtnText}>Continue to News Feed (Free)</Text>
+              <Text style={st.skipBtnText}>Continue to News Feed</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -325,42 +322,60 @@ export default function SubscriptionPromoPopup({
 const st = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(15,23,42,0.65)',
+    backgroundColor: 'rgba(15, 23, 42, 0.7)',
     justifyContent: 'center',
     alignItems: 'center',
     padding: IS_WEB ? 20 : 12,
   },
   cardContainer: {
     width: '100%',
-    maxWidth: IS_WEB ? 500 : 420,
-    maxHeight: Math.min(740, WIN_H * 0.92),
+    maxWidth: IS_WEB ? 460 : 400,
+    maxHeight: Math.min(720, WIN_H * 0.92),
     backgroundColor: '#ffffff',
-    borderRadius: 22,
+    borderRadius: 24,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 16 },
     shadowOpacity: 0.35,
-    shadowRadius: 24,
+    shadowRadius: 28,
     elevation: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  bannerHeaderWrap: {
+    width: '100%',
+    overflow: 'hidden',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    backgroundColor: '#991b1b',
   },
   bannerHeader: {
+    width: '100%',
     paddingHorizontal: 20,
     paddingTop: 18,
     paddingBottom: 16,
     position: 'relative',
     backgroundColor: '#991b1b',
+    overflow: 'hidden',
   },
   bannerHeaderImg: {
-    opacity: 0.95,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+    opacity: 0.92,
   },
   cancelBtn: {
     position: 'absolute',
     top: 14,
     right: 14,
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(0,0,0,0.4)',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 10,
@@ -370,7 +385,7 @@ const st = StyleSheet.create({
     alignItems: 'center',
     gap: 5,
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
     borderRadius: 100,
     paddingHorizontal: 10,
     paddingVertical: 3,
@@ -380,41 +395,47 @@ const st = StyleSheet.create({
     color: '#fef08a',
     fontSize: 10,
     fontWeight: '800',
-    letterSpacing: 0.5,
+    letterSpacing: 0.6,
+    fontFamily: ROBOTO_BOLD,
   },
   bannerTitle: {
     color: '#ffffff',
     fontSize: 19,
     fontWeight: '900',
-    letterSpacing: -0.3,
+    letterSpacing: -0.2,
+    fontFamily: ROBOTO_BLACK,
+    paddingRight: 36,
   },
   bannerSub: {
-    color: 'rgba(255,255,255,0.92)',
-    fontSize: 12.5,
+    color: 'rgba(255, 255, 255, 0.92)',
+    fontSize: 12,
     fontWeight: '500',
-    marginTop: 2,
+    marginTop: 3,
+    fontFamily: ROBOTO_MEDIUM,
   },
   locTag: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
     marginTop: 10,
-    backgroundColor: 'rgba(0,0,0,0.28)',
+    backgroundColor: 'rgba(0, 0, 0, 0.28)',
     alignSelf: 'flex-start',
-    paddingHorizontal: 9,
+    paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
   },
   locTagText: {
     color: '#ffffff',
     fontSize: 11,
+    fontWeight: '700',
+    fontFamily: ROBOTO_BOLD,
   },
   perksGrid: {
     flexDirection: 'row',
     justifyContent: 'space-around',
     paddingVertical: 12,
-    paddingHorizontal: 10,
-    backgroundColor: '#f8fafc',
+    paddingHorizontal: 8,
+    backgroundColor: '#ffffff',
     borderBottomWidth: 1,
     borderBottomColor: '#f1f5f9',
   },
@@ -435,17 +456,20 @@ const st = StyleSheet.create({
     fontWeight: '700',
     color: '#334155',
     textAlign: 'center',
+    fontFamily: ROBOTO_BOLD,
   },
   plansScroll: {
     flex: 1,
-    maxHeight: 320,
+    maxHeight: 330,
+    backgroundColor: '#f8fafc',
   },
   plansContent: {
-    padding: 16,
+    padding: 14,
     gap: 12,
   },
   planCardOuter: {
-    borderRadius: 14,
+    width: '100%',
+    borderRadius: 16,
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
@@ -454,11 +478,21 @@ const st = StyleSheet.create({
     elevation: 4,
   },
   planCardInner: {
+    width: '100%',
     padding: 14,
-    borderRadius: 14,
+    borderRadius: 16,
+    overflow: 'hidden',
+    position: 'relative',
   },
   planCardImg: {
-    borderRadius: 14,
+    borderRadius: 16,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
   },
   planTopRow: {
     flexDirection: 'row',
@@ -467,7 +501,7 @@ const st = StyleSheet.create({
   },
   planRoleBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(255,255,255,0.22)',
+    backgroundColor: 'rgba(255, 255, 255, 0.24)',
     paddingHorizontal: 7,
     paddingVertical: 2,
     borderRadius: 4,
@@ -478,14 +512,17 @@ const st = StyleSheet.create({
     fontSize: 9.5,
     fontWeight: '800',
     letterSpacing: 0.5,
+    fontFamily: ROBOTO_BOLD,
   },
   planName: {
     fontSize: 16,
-    fontWeight: '800',
+    fontWeight: '900',
+    fontFamily: ROBOTO_BLACK,
   },
   planDuration: {
     fontSize: 11,
     marginTop: 2,
+    fontFamily: ROBOTO_MEDIUM,
   },
   planPriceBox: {
     alignItems: 'flex-end',
@@ -493,11 +530,13 @@ const st = StyleSheet.create({
   planPrice: {
     fontSize: 22,
     fontWeight: '900',
+    fontFamily: ROBOTO_BLACK,
   },
   planOrigPrice: {
     fontSize: 12,
     textDecorationLine: 'line-through',
     marginTop: 1,
+    fontFamily: ROBOTO_REGULAR,
   },
   featuresBox: {
     marginTop: 8,
@@ -511,6 +550,7 @@ const st = StyleSheet.create({
   featureText: {
     fontSize: 11.5,
     fontWeight: '600',
+    fontFamily: ROBOTO_MEDIUM,
   },
   selectBtnRow: {
     marginTop: 12,
@@ -534,6 +574,7 @@ const st = StyleSheet.create({
     color: '#b91c1c',
     fontSize: 12,
     fontWeight: '800',
+    fontFamily: ROBOTO_BOLD,
   },
   footer: {
     paddingHorizontal: 16,
@@ -557,6 +598,7 @@ const st = StyleSheet.create({
     color: '#ffffff',
     fontSize: 14,
     fontWeight: '800',
+    fontFamily: ROBOTO_BOLD,
   },
   skipBtn: {
     alignItems: 'center',
@@ -566,16 +608,26 @@ const st = StyleSheet.create({
     color: '#64748b',
     fontSize: 12,
     fontWeight: '600',
+    fontFamily: ROBOTO_MEDIUM,
+  },
+  loadingBox: {
+    paddingVertical: 40,
+    alignItems: 'center',
   },
   loadingText: {
     color: '#64748b',
     fontSize: 13,
     marginTop: 10,
+    fontFamily: ROBOTO_REGULAR,
+  },
+  emptyBox: {
+    paddingVertical: 30,
+    alignItems: 'center',
   },
   emptyText: {
     color: '#64748b',
     fontSize: 13,
     textAlign: 'center',
+    fontFamily: ROBOTO_REGULAR,
   },
 });
-

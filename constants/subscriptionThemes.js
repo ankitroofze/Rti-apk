@@ -14,11 +14,11 @@
 import { Platform } from 'react-native';
 
 export const SUBSCRIPTION_CARD_THEMES = [
-  { key: 'purple', image: require('../assets/images/profile-purple.png'), textColor: '#ffffff', mutedColor: 'rgba(255,255,255,0.85)', checkColor: '#ffffff' },
-  { key: 'red',    image: require('../assets/images/profile-red.png'),    textColor: '#ffffff', mutedColor: 'rgba(255,255,255,0.85)', checkColor: '#ffffff' },
-  { key: 'orange', image: require('../assets/images/profile-orange.png'), textColor: '#ffffff', mutedColor: 'rgba(255,255,255,0.85)', checkColor: '#ffffff' },
-  { key: 'blue',   image: require('../assets/images/profile-blue.png'),   textColor: '#ffffff', mutedColor: 'rgba(255,255,255,0.85)', checkColor: '#ffffff' },
-  { key: 'green',  image: require('../assets/images/profile-green.png'),  textColor: '#ffffff', mutedColor: 'rgba(255,255,255,0.85)', checkColor: '#ffffff' },
+  { key: 'purple', image: require('../assets/images/profile-purple.png'), bgColor: '#6b21a8', textColor: '#ffffff', mutedColor: 'rgba(255,255,255,0.85)', checkColor: '#ffffff' },
+  { key: 'red',    image: require('../assets/images/profile-red.png'),    bgColor: '#991b1b', textColor: '#ffffff', mutedColor: 'rgba(255,255,255,0.85)', checkColor: '#ffffff' },
+  { key: 'orange', image: require('../assets/images/profile-orange.png'), bgColor: '#c2410c', textColor: '#ffffff', mutedColor: 'rgba(255,255,255,0.85)', checkColor: '#ffffff' },
+  { key: 'blue',   image: require('../assets/images/profile-blue.png'),   bgColor: '#1e40af', textColor: '#ffffff', mutedColor: 'rgba(255,255,255,0.85)', checkColor: '#ffffff' },
+  { key: 'green',  image: require('../assets/images/profile-green.png'),  bgColor: '#15803d', textColor: '#ffffff', mutedColor: 'rgba(255,255,255,0.85)', checkColor: '#ffffff' },
 ];
 
 // ✅ Har module screen (Wallet, Withdraw, My Network, Live Streaming,
