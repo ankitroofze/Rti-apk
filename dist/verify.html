@@ -109,7 +109,7 @@
 (function () {
   // Pehle isi website ka proxy (CORS se bachne ke liye), fir direct API
   var API_CANDIDATES = function (id) {
-   return ['https://rtiapi.roofze.in/api/profile/' + id, '/api-proxy/profile/' + id];
+    return ['https://189.72.144.238/api/api/profile/' + id, '/api-proxy/profile/' + id];
   };
   var app = document.getElementById('app');
 
@@ -257,7 +257,7 @@
 
   // ───────── ID CARD VERIFICATION (QR se: verify.html?token=XXXX) ─────────
   var CARD_API = function (t) {
-    return ['https://rtiapi.roofze.in/api/id-cards/verify/' + t, '/api-proxy/id-cards/verify/' + t];
+    return ['https://189.72.144.238/api/api/id-cards/verify/' + t, '/api-proxy/id-cards/verify/' + t];
   };
   var STATUS_UI = {
     active:    { c: '#15803d', bg: '#ecfdf5', ic: '\u2714', t: 'Valid ID Card' },

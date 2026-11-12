@@ -111,15 +111,18 @@ export default function LeftEcomSidebar({ navigation, stories = [], onOpenDetail
     <View style={styles.sidebarShell}>
       {/* ── Trending Topics ── */}
       <SectionCard title={commonCopy?.trendingTopics || 'Trending Topics'} icon="flame">
-        {(trendingTopics.length ? trendingTopics : [
-          'Lok Sabha Election 2024', 'NEET UG Result 2024', 'Monsoon Update India',
-          'Indian Economy Growth', 'India vs Bangladesh T20',
-        ]).map((topic, i, arr) => (
-          <TouchableOpacity key={i} style={[styles.trendRow, i === arr.length - 1 && { borderBottomWidth: 0 }]} activeOpacity={0.75} onPress={() => onOpenDetails?.({ title: topic })}>
-            <Ionicons name="trending-up" size={18} color="#ad1010" />
-            <Text style={styles.trendText} numberOfLines={1}>{topic}</Text>
-          </TouchableOpacity>
-        ))}
+        {trendingTopics.length > 0 ? (
+          trendingTopics.map((topic, i, arr) => (
+            <TouchableOpacity key={i} style={[styles.trendRow, i === arr.length - 1 && { borderBottomWidth: 0 }]} activeOpacity={0.75} onPress={() => onOpenDetails?.({ title: topic })}>
+              <Ionicons name="trending-up" size={18} color="#ad1010" />
+              <Text style={styles.trendText} numberOfLines={1}>{topic}</Text>
+            </TouchableOpacity>
+          ))
+        ) : (
+          <View style={{ paddingVertical: 14, alignItems: 'center' }}>
+            <Text style={{ fontSize: 12, color: '#94a3b8' }}>{commonCopy?.noNews || 'No trending topics right now'}</Text>
+          </View>
+        )}
       </SectionCard>
 
       {/* ── E-Commerce ── */}

@@ -3398,8 +3398,17 @@ image: item.image || null,
             removeClippedSubviews={false}
             onEndReached={() => loadMoreFeedRef.current?.()}
             onEndReachedThreshold={0.5}
+            ListEmptyComponent={
+              <View style={{ flex: 1, minHeight: cardHeight || 400, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+                <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: 'rgba(255, 255, 255, 0.08)', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+                  <Ionicons name="videocam-outline" size={32} color="#94a3b8" />
+                </View>
+                <Text style={{ color: '#ffffff', fontSize: 18, fontWeight: '700', marginBottom: 6 }}>No Feeds Available</Text>
+                <Text style={{ color: '#94a3b8', fontSize: 13, textAlign: 'center', maxWidth: 280 }}>Check back later or explore other sections</Text>
+              </View>
+            }
             style={{ flex: 1 }}
-            contentContainerStyle={{ flexGrow: 0 }}
+            contentContainerStyle={{ flexGrow: 1 }}
           />
         </View>
       </View>

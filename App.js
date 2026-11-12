@@ -140,18 +140,13 @@ if (__DEV__) {
 
 // ✅ SPEED: Android/iOS par icon fonts (Ionicons, FontAwesome, ...) app.json ke
 // "expo-font" plugin se APK ke andar hi embedded hain — unhe runtime par dobara
-// load karke splash rokne ki zarurat nahi. Sirf web par ye TTF files chahiye.
+// load karke splash rokne ki zarurat nahi.
+// Web par sirf CRITICAL icon fonts (Ionicons + Feather) ko startup me load karo,
+// baaki secondary fonts background me load hote hain bina render roke.
 const ICON_FONTS = Platform.OS === 'web'
   ? {
-      'Ionicons':               require('./public/fonts/Ionicons.ttf'),
-      'MaterialIcons':          require('./public/fonts/MaterialIcons.ttf'),
-      'FontAwesome':            require('./public/fonts/FontAwesome.ttf'),
-      'FontAwesome5_Regular':   require('./public/fonts/FontAwesome5_Regular.ttf'),
-      'FontAwesome5_Solid':     require('./public/fonts/FontAwesome5_Solid.ttf'),
-      'FontAwesome5_Brands':    require('./public/fonts/FontAwesome5_Brands.ttf'),
-      'MaterialCommunityIcons': require('./public/fonts/MaterialCommunityIcons.ttf'),
-      'AntDesign':              require('./public/fonts/AntDesign.ttf'),
-      'Feather':                require('./public/fonts/Feather.ttf'),
+      'Ionicons': require('./public/fonts/Ionicons.ttf'),
+      'Feather':  require('./public/fonts/Feather.ttf'),
     }
   : {};
 
@@ -174,6 +169,25 @@ export default function App() {
       SplashScreen.hideAsync();
     }
   }, [fontsLoaded, fontError]);
+
+  // ✅ Non-blocking background loader for secondary icon fonts on web
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const timer = setTimeout(() => {
+      import('expo-font').then((Font) => {
+        Font.loadAsync({
+          'MaterialIcons':          require('./public/fonts/MaterialIcons.ttf'),
+          'FontAwesome':            require('./public/fonts/FontAwesome.ttf'),
+          'FontAwesome5_Regular':   require('./public/fonts/FontAwesome5_Regular.ttf'),
+          'FontAwesome5_Solid':     require('./public/fonts/FontAwesome5_Solid.ttf'),
+          'FontAwesome5_Brands':    require('./public/fonts/FontAwesome5_Brands.ttf'),
+          'MaterialCommunityIcons': require('./public/fonts/MaterialCommunityIcons.ttf'),
+          'AntDesign':              require('./public/fonts/AntDesign.ttf'),
+        }).catch(() => {});
+      }).catch(() => {});
+    }, 400);
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     if (Platform.OS !== 'android') return; // expo-navigation-bar sirf Android par kaam karta hai

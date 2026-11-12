@@ -862,6 +862,13 @@ export default function HomeScreen({ navigation, route }) {
   const feedFreshRef = useRef(false); // fresh API data aa chuka ho to cache usko overwrite na kare
   useEffect(() => {
     let alive = true;
+    // Cold load fallback: ensure feedReady turns true within 1.2s max so user
+    // immediately sees the UI / empty state instead of prolonged spinning
+    const safetyTimer = setTimeout(() => {
+      if (!alive) return;
+      setFeedReady((ready) => (!ready ? true : ready));
+    }, 1200);
+
     // Memory cache mein na ho to storage se load karo (0ms fallback)
     if (!_memoryHomeFeedStories || !_memoryHomeFeedStories.length) {
       AsyncStorage.getItem(HOME_FEED_CACHE_KEY).then((raw) => {
@@ -884,7 +891,7 @@ export default function HomeScreen({ navigation, route }) {
       setActiveAds(adStories);
     }).catch(() => {});
 
-    return () => { alive = false; };
+    return () => { alive = false; clearTimeout(safetyTimer); };
   }, []);
   const [currentUser, setCurrentUser] = useState(() => UserStore.getCachedCurrentUser?.() || null);
   const [userChecked, setUserChecked] = useState(false); // popup ad se pehle user/plan load ho chuka hai ya nahi
@@ -1610,6 +1617,19 @@ const handleOpenLeadForm = useCallback(async (story) => {
                     {String(searchQuery || '').trim() && visibleStories.length === 0 ? (
                       <Text style={{ color: '#64748b', fontSize: 15, fontWeight: '600', paddingVertical: 32, textAlign: 'center' }}>{loadingMore ? (commonCopy?.searching || 'Searching…') : (commonCopy?.noResultsFound || 'No results found')}</Text>
                     ) : null}
+                    {feedReady && !String(searchQuery || '').trim() && visibleStories.length === 0 ? (
+                      <View style={styles.emptyFeedBox}>
+                        <View style={styles.emptyFeedIconWrap}>
+                          <Ionicons name="newspaper-outline" size={32} color="#dc2626" />
+                        </View>
+                        <Text style={styles.emptyFeedTitle}>
+                          {commonCopy?.noNews || 'No News Found'}
+                        </Text>
+                        <Text style={styles.emptyFeedSubtitle}>
+                          {commonCopy?.noNewsAvailable || 'No news stories available right now. Please check back later.'}
+                        </Text>
+                      </View>
+                    ) : null}
                     <View style={[styles.storyCardsStack, isMobileLayout && styles.storyCardsStackMobile]}>
                       {visibleStories.map((story, index) => (
                         <React.Fragment key={`story-${story.id || 'item'}-${index}`}>
@@ -1894,6 +1914,47 @@ const styles = StyleSheet.create({
   sectionResetButtonText: { color: '#f97316', fontSize: 12, fontWeight: '800', fontFamily: Platform.OS === 'ios' ? 'Roboto_900Black' : 'Roboto' },
   storyCardsStack: { gap: 12 },
   storyCardsStackMobile: { gap: 0 },
+  emptyFeedBox: {
+    minHeight: 240,
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+    marginVertical: 14,
+    marginHorizontal: IS_WEB ? 0 : 12,
+    ...Platform.select({
+      web: { boxShadow: '0 2px 10px rgba(15, 23, 42, 0.04)' },
+      default: { elevation: 2, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 6 },
+    }),
+  },
+  emptyFeedIconWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#fef2f2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  emptyFeedTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#1e293b',
+    marginBottom: 6,
+    textAlign: 'center',
+    fontFamily: IS_WEB ? "'Roboto', sans-serif" : 'Roboto_700Bold',
+  },
+  emptyFeedSubtitle: {
+    fontSize: 13,
+    color: '#64748b',
+    textAlign: 'center',
+    maxWidth: 320,
+    lineHeight: 18,
+    fontFamily: IS_WEB ? "'Roboto', sans-serif" : 'Roboto_400Regular',
+  },
 });
 
 const ecomeRowStyles = StyleSheet.create({
