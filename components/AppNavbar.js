@@ -458,7 +458,7 @@ function NavbarBrand({ onPressHome, compact }) {
   return (
     <TouchableOpacity style={styles.brandLink} onPress={onPressHome} activeOpacity={0.88}>
       <Image
-        source={require('../assets/images/certificate_logo.jpg')}
+        source={require('../assets/images/rti.png')}
         style={[styles.brandLogo, compact && styles.brandLogoCompact]}
         resizeMode="contain"
       />
@@ -832,19 +832,19 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   brandLogo: {
-    width: 74,
-    height: 74,
-    borderRadius: 37,
+    width: 86,
+    height: 86,
+    borderRadius: 43,
     borderWidth: 2,
     borderColor: '#fff',
-    transform: [{ scale: 1.28 }],
+    transform: [{ scale: 1.35 }],
   },
   // Mobile header logo — made noticeably bigger, no border around it
   brandLogoCompact: {
-    width: IS_WEB ? 36 : 46,
-    height: IS_WEB ? 36 : 46,
-    borderRadius: IS_WEB ? 18 : 23,
-    transform: [{ scale: 1 }],
+    width: IS_WEB ? 44 : 50,
+    height: IS_WEB ? 44 : 50,
+    borderRadius: IS_WEB ? 22 : 25,
+    transform: [{ scale: 1.1 }],
   },
   desktopNavLinksRow: {
     flex: 1,

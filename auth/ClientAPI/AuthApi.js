@@ -3446,12 +3446,16 @@ export const AuthAPI = {
     try {
       // Optional token: logged-in user ke liye backend mutual-block filter lagata hai, guest ke liye public rehta hai
       const token = await getAuthToken();
-      const { status, data } = await getJSON('/ecom-details', token);
+      let res = await getJSON('/ecom-details', token);
+      if (res.status === 401 && token) {
+        // Token format mismatch / session issue par guest request fallback karo taaki marketplace blank na ho
+        res = await getJSON('/ecom-details', null);
+      }
+      const { status, data } = res;
       if (status === 200 || status === 201) {
         const rawList = Array.isArray(data) ? data : (data?.data || data?.ecom_details || data?.details || []);
         return { ok: true, details: rawList };
       }
-      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
       return { ok: false, message: data?.message || `Server error (${status}).` };
     } catch (err) {
       console.error('[AuthAPI.getEcomDetails] Error:', err);

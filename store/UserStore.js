@@ -841,6 +841,7 @@ const normalizeEcomDetail = (raw = {}) => {
     start_date: raw.start_date || '',
     end_date: raw.end_date || '',
     status: raw.status !== undefined && raw.status !== null ? Number(raw.status) : 1,
+    is_deleted: Boolean(raw.is_deleted === 1 || raw.is_deleted === '1' || raw.is_deleted === true || raw.deleted_at),
     image: primaryImage,
     images: cleanImages,
     mediaItems: cleanImages.map((uri) => ({
@@ -6953,6 +6954,7 @@ export const UserStore = {
       const res = await AuthAPI.getEcomDetails();
       if (!res?.ok || !Array.isArray(res.details)) return [];
       return res.details
+        .filter((raw) => !(raw.is_deleted === 1 || raw.is_deleted === '1' || raw.is_deleted === true || raw.deleted_at))
         .filter((raw) => {
           const owner = raw?.user || raw?.owner || {};
           const rawUid = String(raw?.user_id ?? owner?.id ?? '').trim();
@@ -7564,7 +7566,9 @@ export const UserStore = {
               return false;
             };
             listings = detailsRes.details
+              .filter((raw) => !(raw.is_deleted === 1 || raw.is_deleted === '1' || raw.is_deleted === true || raw.deleted_at))
               .map(normalizeEcomDetail)
+              .filter((item) => !item.is_deleted)
               // ✅ Out of Stock product list se gayab nahi hona chahiye (seller ke pages me dikhta rahe).
               // Buy page apne level par in_stock === false wale products hata deta hai.
               .filter((item) => item.status === undefined || item.status === null || Number(item.status) === 1 || item.in_stock === false || (currentUser && [item.owner_email, item.createdBy, item.user_id].some((v) => v && (v === String(currentUser.email || '').toLowerCase() || v === String(currentUser.id || '')))))

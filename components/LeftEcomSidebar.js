@@ -28,6 +28,7 @@ function SectionCard({ title, icon, children, action }) {
 export default function LeftEcomSidebar({ navigation, stories = [], onOpenDetails, commonCopy }) {
   const trendingTopics = useMemo(() => {
     return [...stories]
+      .filter((s) => !s?.isAd && !s?.isEcome)
       .sort((a, b) => (Number(b?.views) || 0) - (Number(a?.views) || 0))
       .slice(0, 5)
       .map((s) => s.title)
@@ -59,7 +60,9 @@ export default function LeftEcomSidebar({ navigation, stories = [], onOpenDetail
 
     // 1. Direct real backend listings from getEcomeMarketplaceSummary
     if (Array.isArray(ecomListings) && ecomListings.length > 0) {
-      return ecomListings.slice(0, 3).map((p) => {
+      return ecomListings
+        .filter((p) => !p.is_deleted && Number(p.is_deleted || 0) !== 1)
+        .slice(0, 3).map((p) => {
         const rawImg = p.image || p.mediaItems?.[0]?.uri || (Array.isArray(p.images) ? p.images[0] : '') || '';
         const safeImg = isCleanImage(rawImg) ? rawImg.trim() : '';
         return {
@@ -76,7 +79,7 @@ export default function LeftEcomSidebar({ navigation, stories = [], onOpenDetail
 
     // 2. Real ecom stories passed from HomeScreen feed
     const realFromStories = (Array.isArray(stories) ? stories : [])
-      .filter((s) => s.isEcome && !String(s.id).startsWith('demo-'));
+      .filter((s) => s.isEcome && !String(s.id).startsWith('demo-') && !s.is_deleted && Number(s.is_deleted || 0) !== 1);
     if (realFromStories.length > 0) {
       return realFromStories.slice(0, 3).map((p) => {
         const rawImg = p.image || (Array.isArray(p.images) ? p.images[0] : '') || '';

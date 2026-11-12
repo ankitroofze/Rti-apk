@@ -110,6 +110,7 @@ function interleaveAdStories(stories = [], ads = []) {
   return [...mixed, ...ads.slice(adIndex)];
 }
 function homeStoryFromEcome(item = {}) {
+  if (!item || item.is_deleted || item.is_deleted === 1 || item.is_deleted === '1') return null;
   const images = Array.from(new Set([
     item.image,
     ...(Array.isArray(item.images) ? item.images : []),
@@ -137,16 +138,17 @@ function homeStoryFromEcome(item = {}) {
 
 function interleaveHomeStories(news = [], ads = [], ecomeListings = []) {
   const combined = interleaveAdStories(news, ads);
-  if (!ecomeListings.length) return combined;
+  const validEcom = (Array.isArray(ecomeListings) ? ecomeListings : []).filter(Boolean);
+  if (!validEcom.length) return combined;
   const result = [];
   let ecomeIndex = 0;
   combined.forEach((item, index) => {
     result.push(item);
-   if ((index + 1) % 4 === 0) {
-      for (let n = 0; n < 2 && ecomeIndex < ecomeListings.length; n += 1) result.push(ecomeListings[ecomeIndex++]);
+    if ((index + 1) % 4 === 0) {
+      for (let n = 0; n < 2 && ecomeIndex < validEcom.length; n += 1) result.push(validEcom[ecomeIndex++]);
     }
   });
-  return [...result, ...ecomeListings.slice(ecomeIndex)];
+  return [...result, ...validEcom.slice(ecomeIndex)];
 }
 
 // ✅ SPEED: Home feed ka last-successful snapshot phone me save hota hai. App khulte hi
@@ -162,7 +164,7 @@ AsyncStorage.getItem(HOME_FEED_CACHE_KEY).then((raw) => {
   try {
     const cached = JSON.parse(raw);
     if (Array.isArray(cached?.stories) && cached.stories.length) {
-      _memoryHomeFeedStories = cached.stories.filter((st) => !st?.isAd);
+      _memoryHomeFeedStories = cached.stories.filter((st) => !st?.isAd && !st?.isEcome);
     }
     if (Array.isArray(cached?.ads) && cached.ads.length) {
       _memoryHomeFeedAds = cached.ads;
@@ -866,7 +868,7 @@ export default function HomeScreen({ navigation, route }) {
         if (!alive || feedFreshRef.current || !raw) return;
         const cached = JSON.parse(raw);
         if (!Array.isArray(cached?.stories) || !cached.stories.length) return;
-        const pureStories = cached.stories.filter((st) => !st?.isAd);
+        const pureStories = cached.stories.filter((st) => !st?.isAd && !st?.isEcome);
         _memoryHomeFeedStories = pureStories;
         setLiveStories(pureStories);
         setFeedReady(true);
@@ -1437,7 +1439,7 @@ const handleOpenLeadForm = useCallback(async (story) => {
       locationOptions={utilityLocationOptions}
       onSelectState={handleStateSelection} onSelectDistrict={handleDistrictSelection}
       isCompactLayout={isCompactLayout} commonCopy={commonCopy} homeCopy={homeCopy}
-   trendingStories={allStories.filter((s) => !s.isAd)} onOpenDetails={handleOpenDetails}
+      trendingStories={allStories.filter((s) => !s.isAd && !s.isEcome)} onOpenDetails={handleOpenDetails}
       ads={allAdsList} onOpenLeadForm={handleOpenLeadForm}
       onBackFromAds={handleBackFromAds}
       onViewAllTrending={handleViewAllTrending}
@@ -1498,7 +1500,7 @@ const handleOpenLeadForm = useCallback(async (story) => {
               {IS_WEB ? (
                 <LeftEcomSidebar
                   navigation={navigation}
-                stories={allStories.filter((s) => !s.isAd)}
+                  stories={allStories.filter((s) => !s.isAd && !s.isEcome)}
                   onOpenDetails={handleOpenDetails}
                   commonCopy={commonCopy}
                 />

@@ -239,6 +239,7 @@ export default function RightUtilityPanel({
 
   const latestUpdates = useMemo(() => {
     return [...trendingStories]
+      .filter((s) => !s?.isAd && !s?.isEcome)
       .sort((a, b) => new Date(b?.date || 0) - new Date(a?.date || 0))
       .slice(0, 5); // exactly 5 — aadha/chhupa 6th item ka bhram na ho
   }, [trendingStories]);
@@ -305,16 +306,22 @@ export default function RightUtilityPanel({
           </View>
           <TouchableOpacity onPress={() => (onViewAllTrending ? onViewAllTrending() : navigation?.navigate?.('Home', { showAllTrending: true, showAllTrendingTs: Date.now() }))}><Text style={styles.viewMoreText}>{commonCopy?.viewAll || 'See All'} <Ionicons name="arrow-forward" size={12} /></Text></TouchableOpacity>
         </View>
-        {(latestUpdates.length ? latestUpdates : []).map((story, i) => (
-          <TouchableOpacity key={story.id || i} style={[styles.updateRow, i === latestUpdates.length - 1 && styles.updateRowLast]} activeOpacity={0.8} onPress={() => onOpenDetails?.(story)}>
-            <TrendingThumb story={story} index={i} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.updateCategory}>{String(story.category || 'India')}</Text>
-              <Text style={styles.updateTitle} numberOfLines={3}>{story.title}</Text>
-              <View style={styles.updateMeta}><Ionicons name="flame" size={13} color="#ef4444" /><Text style={styles.updateTime}>{story.publishedAgo || 'Recently'}</Text><Ionicons name="eye-outline" size={13} color="#94a3b8" /><Text style={styles.updateTime}>{Number(story.views || 0).toLocaleString()} {commonCopy?.views || 'views'}</Text></View>
-            </View>
-          </TouchableOpacity>
-        ))}
+        {latestUpdates.length > 0 ? (
+          latestUpdates.map((story, i) => (
+            <TouchableOpacity key={story.id || i} style={[styles.updateRow, i === latestUpdates.length - 1 && styles.updateRowLast]} activeOpacity={0.8} onPress={() => onOpenDetails?.(story)}>
+              <TrendingThumb story={story} index={i} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.updateCategory}>{String(story.category || 'India')}</Text>
+                <Text style={styles.updateTitle} numberOfLines={3}>{story.title}</Text>
+                <View style={styles.updateMeta}><Ionicons name="flame" size={13} color="#ef4444" /><Text style={styles.updateTime}>{story.publishedAgo || 'Recently'}</Text><Ionicons name="eye-outline" size={13} color="#94a3b8" /><Text style={styles.updateTime}>{Number(story.views || 0).toLocaleString()} {commonCopy?.views || 'views'}</Text></View>
+              </View>
+            </TouchableOpacity>
+          ))
+        ) : (
+          <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+            <Text style={{ fontSize: 13, color: '#94a3b8' }}>{commonCopy?.noNews || 'No trending news right now'}</Text>
+          </View>
+        )}
       </View>
 
           {/* ── India Chief Editor profile card ── */}
