@@ -1,9 +1,9 @@
 // ClientAPI/AuthApi.js
 // ─────────────────────────────────────────────────────────
 // RTI News — Auth API Client
-// Native (iOS/Android): direct hit -> https://rtiapi.roofze.in/api
+// Native (iOS/Android): direct hit -> https://189.72.144.238/api/api
 // Web: relative path -> /api-proxy (dev-server / production reverse-proxy
-//      forwards this to https://rtiapi.roofze.in/api, avoiding CORS)
+//      forwards this to https://189.72.144.238/api/api, avoiding CORS)
 // ─────────────────────────────────────────────────────────
 
 import AsyncStorage from '@react-native-async-storage/async-storage';

@@ -14,7 +14,7 @@
 error_reporting(0);
 ini_set('display_errors', '0');
 
-$API   = 'https://rtiapi.roofze.in/api';
+$API   = 'https://189.72.144.238/api/api';
 $SITE  = 'https://rtinews.in';
 $index = __DIR__ . '/index.html';
 

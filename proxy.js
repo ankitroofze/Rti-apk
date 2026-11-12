@@ -3,7 +3,7 @@ const httpProxy = require('http-proxy');
 
 const proxy = httpProxy.createProxyServer({});
 const PORT = 8082;
-const TARGET = 'https://rtiapi.roofze.in';
+const TARGET = process.env.EXPO_PUBLIC_API_ORIGIN || 'https://189.72.144.238';
 
 http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');

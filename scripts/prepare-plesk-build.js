@@ -156,14 +156,14 @@ fs.writeFileSync(path.join(outDir, 'web.config'), webConfigContent, 'utf8');
 const apiProxyContent = `<?php
 /**
  * RTI News - API Reverse Proxy for Windows Plesk (IIS)
- * Handles /api-proxy/* requests and forwards them to https://rtiapi.roofze.in/api/*
+ * Handles /api-proxy/* requests and forwards them to https://189.72.144.238/api/api/*
  * Solves CORS issues seamlessly without requiring IIS ARR server configuration.
  */
 
 error_reporting(0);
 ini_set('display_errors', '0');
 
-$TARGET_BASE = 'https://rtiapi.roofze.in/api';
+$TARGET_BASE = 'https://189.72.144.238/api/api';
 
 // CORS headers
 header("Access-Control-Allow-Origin: *");
@@ -352,8 +352,8 @@ fs.writeFileSync(path.join(outDir, 'api-proxy.php'), apiProxyContent, 'utf8');
 
 // 4b. Write storage-proxy.php
 const storageProxyContent = apiProxyContent.replace(
-  "\\$TARGET_BASE = 'https://rtiapi.roofze.in/api';",
-  "\\$TARGET_BASE = 'https://rtiapi.roofze.in/storage';"
+  "\\$TARGET_BASE = 'https://189.72.144.238/api/api';",
+  "\\$TARGET_BASE = 'https://189.72.144.238/storage';"
 ).replace(
   "preg_match('#^/api-proxy(?:/(.*))?\\$#i'",
   "preg_match('#^/storage-proxy(?:/(.*))?\\$#i'"

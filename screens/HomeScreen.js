@@ -942,7 +942,8 @@ export default function HomeScreen({ navigation, route }) {
       setLiveStories(firstPageStories);
       if (!loadMore) {
         feedFreshRef.current = true;
-        if (pageStories.length) { persistHomeFeedCache(firstPageStories, adStoriesRef.current); prefetchHomeImages(firstPageStories); }
+        persistHomeFeedCache(firstPageStories, adStoriesRef.current);
+        if (firstPageStories.length) prefetchHomeImages(firstPageStories);
       }
 
       // ecom aate hi feed dobara banao (news/ads pehle hi dikh chuke hain)
@@ -954,7 +955,7 @@ export default function HomeScreen({ navigation, route }) {
           const mixedNow = [...newsNow, ...groupAdStories(adStoriesRef.current)].sort(sortByNewest);
           const withEcome = interleaveHomeStories(mixedNow, [], ecomeStoriesRef.current);
           setLiveStories(withEcome);
-          if (newsNow.length) persistHomeFeedCache(withEcome, adStoriesRef.current);
+          persistHomeFeedCache(withEcome, adStoriesRef.current);
         }).catch(() => {});
       }
     } catch {

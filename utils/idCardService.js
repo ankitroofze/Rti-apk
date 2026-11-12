@@ -5,7 +5,7 @@
 //  • QR ka design hamesha frontend mein banta hai (IdCardQr component).
 //  • Backend ka `qr_payload` / `verification_url` mile to wahi use hota hai.
 //  • Na mile to buildFallbackQrUrl() se public API URL banta hai:
-//      https://rtiapi.roofze.in/api/profile/{user_id}
+//      https://189.72.144.238/api/api/profile/{user_id}
 //    Phone se scan karne par us API ka response khulta hai.
 //
 // Flow: GET /id-cards -> (card nahi hai to) POST /id-cards { subscription_id }

@@ -1,8 +1,8 @@
 // constants/idCardVerifyConfig.js
 // BASE_URL environment se aata hai (hardcode nahi).
 // .env me ye 2 values rakho (optional, na ho to neeche ke default chalenge):
-//   EXPO_PUBLIC_API_URL=https://rtiapi.roofze.in/api
-//   EXPO_PUBLIC_API_ORIGIN=https://rtiapi.roofze.in
+//   EXPO_PUBLIC_API_URL=https://189.72.144.238/api/api
+//   EXPO_PUBLIC_API_ORIGIN=https://189.72.144.238
 //   EXPO_PUBLIC_VERIFY_ORIGIN=https://<jahan public/verify.html host hai>
 import { Platform } from 'react-native';
 
@@ -30,7 +30,7 @@ export const BASE_URL = Platform.OS === 'web'
 const VERIFY_PATH_RE = /\/id-cards\/verify\/([A-Za-z0-9]+)\/?(?:[?#].*)?$/;
 export const extractVerifyToken = (raw) => {
   const text = String(raw || '').trim();
-  // `${API_ORIGIN}/` se start hona zaroori (rtiapi.roofze.in.evil.com jaise tricks reject)
+  // `${API_ORIGIN}/` se start hona zaroori (attacker fake origin jaise tricks reject)
   if (text.toLowerCase().startsWith(`${API_ORIGIN.toLowerCase()}/`)) {
     const m = text.match(VERIFY_PATH_RE);
     if (m) return m[1];
