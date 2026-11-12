@@ -507,45 +507,36 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       const targetId = userId || author?.id || author?.author_id || null;
       const targetEmail = resolvedEmail || author?.email || author?.createdBy || null;
 
-      // ✅ SPEED: sabhi network calls Promise.allSettled se parallel chalengi (with safe 7s timeout)
+      // ✅ SPEED: Priority 1 — Fetch critical profile and follow state first!
       const profilePromise = targetId
-        ? withTimeout(UserStore.getPublicProfileById(targetId), 7000)
-        : (targetEmail ? withTimeout(UserStore.getUser(targetEmail), 7000) : Promise.resolve(null));
+        ? withTimeout(UserStore.getPublicProfileById(targetId), 4000)
+        : (targetEmail ? withTimeout(UserStore.getUser(targetEmail), 4000) : Promise.resolve(null));
 
       const followPromise = (targetEmail || targetId)
-        ? withTimeout(UserStore.getFollowSummary(targetEmail, targetId), 7000)
+        ? withTimeout(UserStore.getFollowSummary(targetEmail, targetId), 4000)
         : Promise.resolve(null);
 
-      const newsPromise = withTimeout(UserStore.getNewsFeedSummary({ skipBlockedUsers: true }), 7000);
-      const adsPromise = withTimeout(UserStore.getActiveAdsFeed({ skipBlockedUsers: true }), 7000);
-      const ecomPromise = withTimeout(UserStore.getMyEcomPosts({ email: targetEmail, id: targetId }), 7000);
-
-      const [userRes, followRes, newsRes, adsRes, ecomRes] = await Promise.allSettled([
+      const [userRes, followRes] = await Promise.allSettled([
         profilePromise,
         followPromise,
-        newsPromise,
-        adsPromise,
-        ecomPromise,
       ]);
 
       if (!active) return;
 
       let user = userRes.status === 'fulfilled' ? userRes.value : null;
       const summary = followRes.status === 'fulfilled' ? followRes.value : null;
-      const newsFeed = newsRes.status === 'fulfilled' ? newsRes.value : null;
-      const publicAds = adsRes.status === 'fulfilled' ? (adsRes.value || []) : [];
-      const ecomPosts = ecomRes.status === 'fulfilled' ? (ecomRes.value || []) : [];
 
       // Agar direct profile nahi mila lekin follow summary se resolvedId mila, full profile fetch karlo
       if (!user && summary?.resolvedId) {
         try {
-          user = await withTimeout(UserStore.getPublicProfileById(summary.resolvedId), 4000);
+          user = await withTimeout(UserStore.getPublicProfileById(summary.resolvedId), 3000);
         } catch { /* ignore */ }
       }
 
       if (!silent || user) {
         setProfile(user || author || null);
       }
+      setLoading(false); // ✅ Profile header, name, avatar visible in < 300ms!
 
       if (active && !silent) {
         setFollowStats({
@@ -562,6 +553,19 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           setFollowStats({ followers: summary.followersCount, following: summary.followingCount });
         }
       }
+
+      // ✅ SPEED: Priority 2 — Deferred fetch for news posts, ads & ecom
+      const [newsRes, adsRes, ecomRes] = await Promise.allSettled([
+        withTimeout(UserStore.getNewsFeedSummary({ skipBlockedUsers: true }), 5000),
+        withTimeout(UserStore.getActiveAdsFeed({ skipBlockedUsers: true }), 5000),
+        withTimeout(UserStore.getMyEcomPosts({ email: targetEmail, id: targetId }), 5000),
+      ]);
+
+      if (!active) return;
+
+      const newsFeed = newsRes.status === 'fulfilled' ? newsRes.value : null;
+      const publicAds = adsRes.status === 'fulfilled' ? (adsRes.value || []) : [];
+      const ecomPosts = ecomRes.status === 'fulfilled' ? (ecomRes.value || []) : [];
 
       const allNewsItems = Array.isArray(newsFeed?.items) ? newsFeed.items : [];
       const effectiveId = String(userId ?? user?.id ?? author?.id ?? '').trim();

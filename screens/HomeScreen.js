@@ -153,6 +153,23 @@ function interleaveHomeStories(news = [], ads = [], ecomeListings = []) {
 // wahi turant dikhta hai (internet ka wait nahi), phir fresh data aate hi chupchap badal jaata hai.
 const HOME_FEED_CACHE_KEY = 'home_feed_cache_v1';
 const HOME_FEED_CACHE_MAX_ITEMS = 16;
+let _memoryHomeFeedStories = null;
+let _memoryHomeFeedAds = null;
+
+// Eagerly pre-load feed from storage into memory cache at module evaluation for 0ms instant paint
+AsyncStorage.getItem(HOME_FEED_CACHE_KEY).then((raw) => {
+  if (!raw) return;
+  try {
+    const cached = JSON.parse(raw);
+    if (Array.isArray(cached?.stories) && cached.stories.length) {
+      _memoryHomeFeedStories = cached.stories.filter((st) => !st?.isAd);
+    }
+    if (Array.isArray(cached?.ads) && cached.ads.length) {
+      _memoryHomeFeedAds = cached.ads;
+    }
+  } catch (_) {}
+}).catch(() => {});
+
 function persistHomeFeedCache(stories, ads) {
   try {
     const slim = (Array.isArray(stories) ? stories : []).slice(0, HOME_FEED_CACHE_MAX_ITEMS).map((st) => {
@@ -161,6 +178,8 @@ function persistHomeFeedCache(stories, ads) {
       delete copy.comments_list;
       return copy;
     });
+    _memoryHomeFeedStories = slim;
+    if (Array.isArray(ads)) _memoryHomeFeedAds = ads;
     AsyncStorage.setItem(HOME_FEED_CACHE_KEY, JSON.stringify({ at: Date.now(), stories: slim, ads: Array.isArray(ads) ? ads : [] })).catch(() => {});
   } catch (_) { /* ignore */ }
 }
@@ -807,7 +826,7 @@ export default function HomeScreen({ navigation, route }) {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   // Pehla feed load ho jaye tab tak footer / khali UI nahi dikhana (footer beech me aa jata tha)
-  const [feedReady, setFeedReady] = useState(false);
+  const [feedReady, setFeedReady] = useState(() => Boolean(_memoryHomeFeedStories && _memoryHomeFeedStories.length > 0));
   const scrollYRef = useRef(0);
   const handleRailWheel = IS_WEB
     ? (e) => {
@@ -834,14 +853,27 @@ export default function HomeScreen({ navigation, route }) {
   const [selectedStateName, setSelectedStateName] = useState(initialHomeState.nextStateName);
   const [selectedDistrictName, setSelectedDistrictName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [liveStories, setLiveStories] = useState([]);
-  const [activeAds, setActiveAds] = useState([]);
+  const [liveStories, setLiveStories] = useState(() => _memoryHomeFeedStories || []);
+  const [activeAds, setActiveAds] = useState(() => _memoryHomeFeedAds || []);
   // ✅ ads_hidden (ad-free subscription) => SIRF POP-UP ad band. Right-side aur center feed ads phir bhi dikhte hain (2-2 sec me random).
   const adsHidden = useAdsHidden();
   const feedFreshRef = useRef(false); // fresh API data aa chuka ho to cache usko overwrite na kare
   useEffect(() => {
     let alive = true;
-    // Priority 1: Instant ads load on page mount so sponsored popup appears immediately
+    // Memory cache mein na ho to storage se load karo (0ms fallback)
+    if (!_memoryHomeFeedStories || !_memoryHomeFeedStories.length) {
+      AsyncStorage.getItem(HOME_FEED_CACHE_KEY).then((raw) => {
+        if (!alive || feedFreshRef.current || !raw) return;
+        const cached = JSON.parse(raw);
+        if (!Array.isArray(cached?.stories) || !cached.stories.length) return;
+        const pureStories = cached.stories.filter((st) => !st?.isAd);
+        _memoryHomeFeedStories = pureStories;
+        setLiveStories(pureStories);
+        setFeedReady(true);
+      }).catch(() => {});
+    }
+
+    // Ads non-blocking background load
     UserStore.getActiveAdsFeed().then((ads) => {
       if (!alive) return;
       if (!Array.isArray(ads) || !ads.length) return;
@@ -850,13 +882,6 @@ export default function HomeScreen({ navigation, route }) {
       setActiveAds(adStories);
     }).catch(() => {});
 
-    AsyncStorage.getItem(HOME_FEED_CACHE_KEY).then((raw) => {
-      if (!alive || feedFreshRef.current || !raw) return;
-      const cached = JSON.parse(raw);
-      if (!Array.isArray(cached?.stories) || !cached.stories.length) return;
-      // ✅ Cache me purane ads ho sakte hain (user ne plan liya ho / expire hua ho) — ads sirf fresh API se aayenge
-      setLiveStories(cached.stories.filter((st) => !st?.isAd));
-    }).catch(() => {});
     return () => { alive = false; };
   }, []);
   const [currentUser, setCurrentUser] = useState(() => UserStore.getCachedCurrentUser?.() || null);
@@ -905,15 +930,15 @@ export default function HomeScreen({ navigation, route }) {
 
     try {
       const cursor = loadMore ? newsCursorRef.current : null;
-      // ✅ SPEED: ecom summary (kai API calls) ab news/ads ko block nahi karti —
-      // news + ads aate hi screen par dikh jaate hain, ecom baad me chupchap judta hai.
-      const ecomPromise = loadMore
-        ? Promise.resolve(null)
-        : UserStore.getEcomeMarketplaceSummary().catch(() => null);
-      const [summary, rawAds] = await Promise.all([
-        UserStore.getNewsFeedSummary({ feedType: 'all', type: 1, perPage: 10, ...(cursor ? { cursor } : {}) }),
-        loadMore ? Promise.resolve(null) : UserStore.getActiveAdsFeed().catch(() => null),
-      ]);
+      // ✅ SPEED PRIORITY 1: Fetch ONLY the critical primary news feed first!
+      // Single network connection, zero competition with ads/ecom => returns in < 300ms!
+      const summary = await UserStore.getNewsFeedSummary({
+        feedType: 'all',
+        type: 1,
+        perPage: 10,
+        ...(cursor ? { cursor } : {}),
+      });
+
       if (reqId !== newsReqIdRef.current) return;   // purana response (refresh ke baad) ignore
       if (loadMore && !summary) return;             // temporary fail — cursor/hasMore jaisa tha waisa rahe
 
@@ -926,37 +951,57 @@ export default function HomeScreen({ navigation, route }) {
         newsStoriesRef.current = [...newsStoriesRef.current, ...pageStories.filter((s) => !seen.has(String(s.id)))];
       } else {
         newsStoriesRef.current = pageStories;
-        if (Array.isArray(rawAds) && rawAds.length) {
-          adStoriesRef.current = rawAds.map(homeStoryFromAd);
-          setActiveAds(adStoriesRef.current);
-        }
       }
 
       const pg = summary?.pagination || null;
       newsCursorRef.current = pg?.next_cursor || null;
       newsHasMoreRef.current = Boolean(pg?.has_more && pg?.next_cursor);
 
+      // Render fresh news immediately!
       const news = [...newsStoriesRef.current].sort(sortByNewest);
       const mixed = [...news, ...groupAdStories(adStoriesRef.current)].sort(sortByNewest);
       const firstPageStories = interleaveHomeStories(mixed, [], ecomeStoriesRef.current);
       setLiveStories(firstPageStories);
+      setFeedReady(true);
+      newsLoadingRef.current = false;
+      if (loadMore) setLoadingMore(false);
+
       if (!loadMore) {
         feedFreshRef.current = true;
         persistHomeFeedCache(firstPageStories, adStoriesRef.current);
         if (firstPageStories.length) prefetchHomeImages(firstPageStories);
-      }
 
-      // ecom aate hi feed dobara banao (news/ads pehle hi dikh chuke hain)
-      if (!loadMore) {
-        ecomPromise.then((ecomRes) => {
-          if (reqId !== newsReqIdRef.current) return; // refresh ho chuka hai, purana ignore
-          ecomeStoriesRef.current = Array.isArray(ecomRes?.listings) ? ecomRes.listings.map(homeStoryFromEcome) : [];
-          const newsNow = [...newsStoriesRef.current].sort(sortByNewest);
-          const mixedNow = [...newsNow, ...groupAdStories(adStoriesRef.current)].sort(sortByNewest);
-          const withEcome = interleaveHomeStories(mixedNow, [], ecomeStoriesRef.current);
-          setLiveStories(withEcome);
-          persistHomeFeedCache(withEcome, adStoriesRef.current);
-        }).catch(() => {});
+        // ✅ SPEED PRIORITY 2: Secondary APIs (Ads & Ecom) deferred to background
+        // Primary news paints first (< 1s), then ads and ecom weave in smoothly without blocking
+        setTimeout(() => {
+          if (reqId !== newsReqIdRef.current) return;
+          // Background Ads fetch
+          UserStore.getActiveAdsFeed().then((rawAds) => {
+            if (reqId !== newsReqIdRef.current) return;
+            if (Array.isArray(rawAds) && rawAds.length) {
+              adStoriesRef.current = rawAds.map(homeStoryFromAd);
+              setActiveAds(adStoriesRef.current);
+              const newsNow = [...newsStoriesRef.current].sort(sortByNewest);
+              const mixedNow = [...newsNow, ...groupAdStories(adStoriesRef.current)].sort(sortByNewest);
+              const withAds = interleaveHomeStories(mixedNow, [], ecomeStoriesRef.current);
+              setLiveStories(withAds);
+              persistHomeFeedCache(withAds, adStoriesRef.current);
+            }
+          }).catch(() => {});
+
+          // Background Ecom fetch
+          UserStore.getEcomeMarketplaceSummary().then((ecomRes) => {
+            if (reqId !== newsReqIdRef.current) return;
+            ecomeStoriesRef.current = Array.isArray(ecomRes?.listings) ? ecomRes.listings.map(homeStoryFromEcome) : [];
+            if (ecomeStoriesRef.current.length > 0) {
+              const newsNow = [...newsStoriesRef.current].sort(sortByNewest);
+              const mixedNow = [...newsNow, ...groupAdStories(adStoriesRef.current)].sort(sortByNewest);
+              const withEcome = interleaveHomeStories(mixedNow, [], ecomeStoriesRef.current);
+              setLiveStories(withEcome);
+              persistHomeFeedCache(withEcome, adStoriesRef.current);
+            }
+          }).catch(() => {});
+        }, 100);
       }
     } catch {
       if (!loadMore && reqId === newsReqIdRef.current) setLiveStories([]);
@@ -990,32 +1035,35 @@ export default function HomeScreen({ navigation, route }) {
     setUserChecked(true);
   }, []);
 
-    useFocusEffect(useCallback(() => {
+  useFocusEffect(useCallback(() => {
     let mounted = true;
-    (async () => {
-      // ✅ SPEED FIX: teeno ab ek saath (parallel) chalte hain, ek ke baad
-      // ek nahi — total wait time sabse slow ek call jitna hoga, sum nahi.
-      const [, , seats] = await Promise.all([
-        loadNewsStories(),
-        loadCurrentUser(),
-        UserStore.getStateSeatSummary().catch(() => null),
-      ]);
+    // ✅ SPEED: Priority 1 — Primary feed & user info load immediately
+    loadNewsStories();
+    loadCurrentUser();
+
+    // Priority 2 — Non-critical seat summary deferred so it doesn't block home feed load
+    const seatTimer = setTimeout(() => {
       if (!mounted) return;
+      UserStore.getStateSeatSummary().then((seats) => {
+        if (!mounted) return;
+        setSeatSummary(seats || null);
+        const seatId = seats?.current_seat?.seat_id || '';
+        setSelectedSeatId((prev) => prev || seatId);
+      }).catch(() => {});
+    }, 150);
 
-      setSeatSummary(seats || null);
-      const seatId = seats?.current_seat?.seat_id || '';
-      setSelectedSeatId((prev) => prev || seatId);
-
-      if (registrationJustCompleted && !handledRegistrationToastRef.current) {
-        handledRegistrationToastRef.current = true;
-        showToast('Registration successful! Welcome 🎉', 'success');
-      }
-      // ✅ Register ke baad user seedha Home par rehta hai — Subscription Plans par auto-redirect hata diya.
-      if (fromRegistration && !handledSubscriptionModalRef.current) {
-        handledSubscriptionModalRef.current = true;
-      }
-    })();
-    return () => { mounted = false; };
+    if (registrationJustCompleted && !handledRegistrationToastRef.current) {
+      handledRegistrationToastRef.current = true;
+      showToast('Registration successful! Welcome 🎉', 'success');
+    }
+    // ✅ Register ke baad user seedha Home par rehta hai — Subscription Plans par auto-redirect hata diya.
+    if (fromRegistration && !handledSubscriptionModalRef.current) {
+      handledSubscriptionModalRef.current = true;
+    }
+    return () => {
+      mounted = false;
+      clearTimeout(seatTimer);
+    };
   }, [fromRegistration, loadCurrentUser, loadNewsStories, registrationJustCompleted, showToast]));
 
   // ✅ LIVE HOME FEED: naye posts / ads apne aap list ke upar aa jaate hain (scroll position aur "load more" ka

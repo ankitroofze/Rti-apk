@@ -90,16 +90,21 @@ const readResponseBody = async (response, context) => {
 
 // ── High-Performance In-Memory Cache for GET Requests ─────────────
 const _apiGetCache = new Map();
-const API_CACHE_TTL_MS = 15000; // 15s in-memory cache for speed
+const _inFlightGets = new Map();
+const API_CACHE_TTL_MS = 20000; // 20s in-memory cache for ultra-fast screen transitions
 const NO_CACHE_PATTERNS = ['/verify-otp', '/orders/verify', '/logout'];
 
 const clearApiGetCache = (pattern = null) => {
   if (!pattern) {
     _apiGetCache.clear();
+    _inFlightGets.clear();
     return;
   }
   for (const k of _apiGetCache.keys()) {
     if (k.includes(pattern)) _apiGetCache.delete(k);
+  }
+  for (const k of _inFlightGets.keys()) {
+    if (k.includes(pattern)) _inFlightGets.delete(k);
   }
 };
 
@@ -112,7 +117,7 @@ const fetchWithDebug = async (endpoint, options = {}, debugBody = null, customTi
   const tokenHeader = options.headers?.Authorization || '';
   const cacheKey = `${endpoint}::${tokenHeader}`;
 
-  // ✅ SPEED: Return instantly from in-memory cache if available (0ms)
+  // ✅ SPEED 1: Return instantly from in-memory cache if available (0ms)
   if (isGet && !shouldSkipCache) {
     const cached = _apiGetCache.get(cacheKey);
     if (cached && (Date.now() - cached.timestamp < (options.cacheTtlMs || API_CACHE_TTL_MS))) {
@@ -120,94 +125,111 @@ const fetchWithDebug = async (endpoint, options = {}, debugBody = null, customTi
     }
   }
 
-  const url = `${BASE_URL}${endpoint}`;
-  const startedAt = Date.now();
-  const effectiveTimeoutMs = customTimeoutMs || REQUEST_TIMEOUT_MS;
-  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-  const timeoutId = controller
-    ? setTimeout(() => controller.abort(), effectiveTimeoutMs)
-    : null;
-  const context = {
-    url,
-    method: options.method || 'GET',
-    platform: Platform.OS,
-    timeoutMs: effectiveTimeoutMs,
-  };
+  // ✅ SPEED 2: In-flight deduplication — if exact same GET is already pending, join that promise!
+  if (isGet && !shouldSkipCache && _inFlightGets.has(cacheKey)) {
+    return _inFlightGets.get(cacheKey);
+  }
 
-  if (__DEV__) console.log('[AuthAPI] Request:', {
-    ...context,
-    headers: redactHeaders(options.headers),
-  });
-
-  try {
-    const noCacheOptions = isGet
-      ? {
-        ...options,
-        cache: 'no-store',
-        headers: { ...(options.headers || {}), 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
-      }
-      : options;
-    const response = await fetch(url, {
-      ...noCacheOptions,
-      signal: controller?.signal,
-    });
-    const data = await readResponseBody(response, context);
-    const result = {
-      status: response.status,
-      ok: response.ok,
-      contentType: response.headers?.get?.('content-type'),
-      durationMs: Date.now() - startedAt,
-      data,
+  const executeRequest = async () => {
+    const url = `${BASE_URL}${endpoint}`;
+    const startedAt = Date.now();
+    const effectiveTimeoutMs = customTimeoutMs || (isGet ? 12000 : REQUEST_TIMEOUT_MS);
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timeoutId = controller
+      ? setTimeout(() => controller.abort(), effectiveTimeoutMs)
+      : null;
+    const context = {
+      url,
+      method: options.method || 'GET',
+      platform: Platform.OS,
+      timeoutMs: effectiveTimeoutMs,
     };
 
-    if (__DEV__) console.log('[AuthAPI] Response:', {
+    if (__DEV__) console.log('[AuthAPI] Request:', {
       ...context,
-      status: result.status,
-      ok: result.ok,
-      contentType: result.contentType,
-      durationMs: result.durationMs,
+      headers: redactHeaders(options.headers),
     });
 
-    if (isGet && result.ok && result.status === 200 && !shouldSkipCache) {
-      _apiGetCache.set(cacheKey, { timestamp: Date.now(), result });
-    } else if (!isGet && result.ok) {
-      // ✅ Invalidate related cached GET responses on mutation
-      if (endpoint.includes('/news') || endpoint.includes('/like') || endpoint.includes('/comment')) {
-        clearApiGetCache('/news');
-        clearApiGetCache('/my-news');
-        clearApiGetCache('/feeds');
+    try {
+      const fetchHeaders = { ...(options.headers || {}) };
+      if (shouldSkipCache) {
+        fetchHeaders['Cache-Control'] = 'no-cache';
+        fetchHeaders['Pragma'] = 'no-cache';
       }
-      if (endpoint.includes('/follow') || endpoint.includes('/unfollow') || endpoint.includes('/profile') || endpoint.includes('/users')) {
-        clearApiGetCache('/profile');
-        clearApiGetCache('/users');
-        clearApiGetCache('/follow');
+      const fetchOptions = {
+        ...options,
+        headers: fetchHeaders,
+        ...(shouldSkipCache ? { cache: 'no-store' } : {}),
+        signal: controller?.signal,
+      };
+      const response = await fetch(url, fetchOptions);
+      const data = await readResponseBody(response, context);
+      const result = {
+        status: response.status,
+        ok: response.ok,
+        contentType: response.headers?.get?.('content-type'),
+        durationMs: Date.now() - startedAt,
+        data,
+      };
+
+      if (__DEV__) console.log('[AuthAPI] Response:', {
+        ...context,
+        status: result.status,
+        ok: result.ok,
+        contentType: result.contentType,
+        durationMs: result.durationMs,
+      });
+
+      if (isGet && result.ok && (result.status === 200 || result.status === 201) && !shouldSkipCache) {
+        _apiGetCache.set(cacheKey, { timestamp: Date.now(), result });
+      } else if (!isGet && result.ok) {
+        // ✅ Invalidate related cached GET responses on mutation
+        if (endpoint.includes('/news') || endpoint.includes('/like') || endpoint.includes('/comment')) {
+          clearApiGetCache('/news');
+          clearApiGetCache('/my-news');
+          clearApiGetCache('/feeds');
+        }
+        if (endpoint.includes('/follow') || endpoint.includes('/unfollow') || endpoint.includes('/profile') || endpoint.includes('/users')) {
+          clearApiGetCache('/profile');
+          clearApiGetCache('/users');
+          clearApiGetCache('/follow');
+        }
+        if (endpoint.includes('/wallet') || endpoint.includes('/orders') || endpoint.includes('/withdraw')) {
+          clearApiGetCache('/wallet');
+          clearApiGetCache('/subscription');
+        }
+        if (endpoint.includes('/ecom')) {
+          clearApiGetCache('/ecom');
+        }
+        if (endpoint.includes('/ads')) {
+          clearApiGetCache('/ads');
+        }
       }
-      if (endpoint.includes('/wallet') || endpoint.includes('/orders') || endpoint.includes('/withdraw')) {
-        clearApiGetCache('/wallet');
-        clearApiGetCache('/subscription');
-      }
-      if (endpoint.includes('/ecom')) {
-        clearApiGetCache('/ecom');
-      }
-      if (endpoint.includes('/ads')) {
-        clearApiGetCache('/ads');
-      }
+
+      return result;
+    } catch (err) {
+      const isTimeout = err?.name === 'AbortError';
+      const logFn = isTimeout ? console.warn : console.error;
+      logFn('[AuthAPI] Fetch failed:', {
+        ...context,
+        durationMs: Date.now() - startedAt,
+        isTimeout,
+        error: serializeError(err),
+      });
+      throw err;
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+      if (isGet) _inFlightGets.delete(cacheKey);
     }
+  };
 
-    return result;
-  } catch (err) {
-    const isTimeout = err?.name === 'AbortError';
-    const logFn = isTimeout ? console.warn : console.error;
-    logFn('[AuthAPI] Fetch failed:', {
-      ...context,
-      durationMs: Date.now() - startedAt,
-      isTimeout,
-      error: serializeError(err),
-    });
-    throw err;
-  } finally {
-    if (timeoutId) clearTimeout(timeoutId);
+  if (isGet && !shouldSkipCache) {
+    const promise = executeRequest();
+    _inFlightGets.set(cacheKey, promise);
+    return promise;
   }
+
+  return executeRequest();
 };
 
 const getAuthToken = async () => {

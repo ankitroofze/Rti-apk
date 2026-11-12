@@ -494,60 +494,68 @@ function ProfileScreenInner({ navigation, route }) {
       return;
     }
 
-    // ✅ OPTIMISTIC PAINT: cached local user turant dikhado, taaki
-    // tab switch pe screen khaali/purani na dikhe. Loading sirf pehli
-    // baar (jab savedProfile abhi tak khaali hai) dikhega.
-       const isFirstLoad = !savedProfileRef.current || !savedProfileRef.current.email;
-    if (isFirstLoad) setLoading(true);
+    // ✅ OPTIMISTIC PAINT: cached local user turant dikhado taaki screen 0ms par khule.
+    // Loading sirf tab dikhana jab device storage me bilkul koi user na ho.
+    const hasLocalUser = Boolean(user && user.email);
+    if (!hasLocalUser) setLoading(true);
 
     const cachedRawImage = user.profile_image || '';
     const cachedSafeImage = cachedRawImage.startsWith('blob:') ? '' : cachedRawImage;
-    setSavedProfile((prev) => ({
-      ...prev,
+    const initialProfileData = {
       ...user,
       profile_image: cachedSafeImage,
       referral_code: user.my_referral_code || generateReferralCode(user.email),
-    }));
-    setForm((prev) => ({
-      ...prev,
-      ...user,
-      profile_image: cachedSafeImage,
-      referral_code: user.my_referral_code || generateReferralCode(user.email),
-    }));
+    };
+    setSavedProfile(initialProfileData);
+    setForm(initialProfileData);
     setIsLoggedIn(true);
     setInitializing(false);
+    if (hasLocalUser) setLoading(false); // ✅ User already cached -> NEVER block with spinner!
 
     // ✅ OPTIMISTIC POSTS: cached local posts turant dikhao taaki initial render 0ms par ho
-    const localCachedPosts = [
+    const ownLocalPosts = [
       ...(Array.isArray(user.news) ? user.news : []),
       ...(Array.isArray(user.news_feed) ? user.news_feed : []),
     ];
-    if (localCachedPosts.length > 0) {
-      setUserPosts((prev) => (prev.length ? prev : localCachedPosts));
+    if (ownLocalPosts.length > 0) {
+      setUserPosts(ownLocalPosts);
       setPostsLoaded(true);
+      setProfileStats((prev) => ({ ...prev, posts: ownLocalPosts.length }));
     }
 
-    // ✅ SPEED FIX: withTimeout ke saath parallel calls — koi call hang ho to profile nahi rukegi
+    // Helper: Build merged & sorted posts with engagement
+    let currentFeedPosts = [];
+    let currentAdPosts = [];
+    let currentEcomPosts = [];
+
+    const rebuildAndSetPosts = () => {
+      const allPosts = [...currentFeedPosts, ...ownLocalPosts, ...currentAdPosts, ...currentEcomPosts];
+      const seenIds = new Set();
+      const postTs = (item) => Date.parse(item?.createdAt || item?.created_at || item?.date || '') || 0;
+      const merged = allPosts.filter((item) => {
+        const key = item?.id ? String(item.id) : null;
+        if (!key) return true;
+        if (seenIds.has(key)) return false;
+        seenIds.add(key);
+        return true;
+      }).sort((a, b) => postTs(b) - postTs(a))
+        .map((item) => {
+          const eng = item?.is_ecom ? null : getEngagement(item?.id);
+          return eng ? defaultApplyEngagement(item, eng, user.email) : item;
+        });
+
+      setUserPosts(merged);
+      setPostsLoaded(true);
+      setProfileStats((prev) => ({ ...prev, posts: seenIds.size || merged.length }));
+    };
+
+    // ── PRIORITY 1 (< 1 sec): Critical Profile Fetch ─────────────────
+    // Sirf AuthAPI.getProfile() hit karo — server par koi traffic competition nahi hoga,
+    // response 150-250ms me aakar UI turant sync ho jayegi.
     let profileRes = null;
-    let syncedSubscriptionUser = null;
-    let feedSummary = null;
-    let followSummary = null;
-    let adPosts = [];
-    let ecomPosts = [];
     try {
-      [profileRes, syncedSubscriptionUser, feedSummary, followSummary, adPosts, ecomPosts] = await Promise.all([
-        withTimeout(AuthAPI.getProfile().catch(() => null), 6000, null),
-        withTimeout(UserStore.syncSubscriptionFromBackend(user).catch(() => null), 6000, null),
-        withTimeout(UserStore.getNewsFeedSummary?.().catch?.(() => null) ?? Promise.resolve(null), 6000, null),
-        withTimeout(UserStore.getFollowSummary(user.email).catch(() => null), 6000, null),
-        withTimeout(UserStore.getMyAdPosts().catch(() => []), 6000, []),
-        withTimeout(UserStore.getMyEcomPosts({ email: user.email, id: user.id }).catch(() => []), 6000, []),
-      ]);
-    } catch {
-      // best-effort — fail ho to bhi cached data already dikh chuka hai, crash nahi
-    }
-
-    if (syncedSubscriptionUser) user = syncedSubscriptionUser;
+      profileRes = await withTimeout(AuthAPI.getProfile().catch(() => null), 4000, null);
+    } catch { /* best-effort */ }
 
     if (profileRes?.ok && profileRes.user) {
       const apiUser = profileRes.user?.profile || profileRes.user;
@@ -572,98 +580,84 @@ function ProfileScreenInner({ navigation, route }) {
         profile_image_change_count: Number(apiUser.profile_image_change_count ?? apiUser.profile?.profile_image_change_count ?? user.profile_image_change_count ?? 0) || 0,
         state: apiUser.state || user.state,
         district: apiUser.district || user.district,
-       taluka: apiUser.taluka || user.taluka, village: apiUser.village || user.village || '',
+        taluka: apiUser.taluka || user.taluka,
+        village: apiUser.village || user.village || '',
         my_referral_code: apiUser.referral_code || user.my_referral_code,
       });
       if (synced) user = synced;
+      const rawImg = user.profile_image || '';
+      const safeImg = rawImg.startsWith('blob:') ? '' : rawImg;
+      const rCode = user.my_referral_code || generateReferralCode(user.email);
+      const updatedProfile = { ...user, profile_image: safeImg, referral_code: rCode };
+      setSavedProfile(updatedProfile);
+      setForm(updatedProfile);
     }
+    setLoading(false);
 
-    const rawImage = user.profile_image || '';
-    const safeImage = rawImage.startsWith('blob:') ? '' : rawImage;
-    const refCode = user.my_referral_code || generateReferralCode(user.email);
-    if (rawImage.startsWith('blob:')) {
-      await UserStore.updateUser(user.email, { profile_image: '' });
-    }
-
-    // getNewsFeedSummary() defaults to the authenticated user's `/my-news`
-    // endpoint. Android/iOS API objects don't always include `createdBy`, so
-    // filtering by that web-only field used to make the native post count 0.
-    const ownFeedPosts = Array.isArray(feedSummary?.items) ? feedSummary.items : [];
-
-    // ✅ FIX (apni profile par Premium dikhta nahi tha): server ka /profile aur /my-subscriptions kai baar active
-    // plan nahi bhejte (subscription_plan: null, has_blue_tick: false), jabki posts ke author data me plan aata hai
-    // (isi se doosron ko "Premium User" dikhta hai). Local plan na ho to wahi plan apni profile par bhi lagao.
+    // ── PRIORITY 2: Follow Summary & User Posts in Parallel ──────────
     try {
+      const [followSummary, feedSummary] = await Promise.all([
+        withTimeout(UserStore.getFollowSummary(user.email).catch(() => null), 4000, null),
+        withTimeout(UserStore.getNewsFeedSummary?.().catch?.(() => null) ?? Promise.resolve(null), 4000, null),
+      ]);
+
+      if (revisionAtStart === followRevisionRef.current && followSummary) {
+        if (followSummary.followersCount != null && followSummary.followingCount != null) {
+          setProfileStats((prev) => ({
+            ...prev,
+            followers: Number(followSummary.followersCount),
+            following: Number(followSummary.followingCount),
+          }));
+          setFollowLists({
+            followers: Array.isArray(followSummary.followers) ? followSummary.followers : [],
+            following: Array.isArray(followSummary.following) ? followSummary.following : [],
+          });
+        }
+      }
+
+      currentFeedPosts = Array.isArray(feedSummary?.items) ? feedSummary.items : [];
+      rebuildAndSetPosts();
+
+      // Check author subscription plan from posts
       const planNow = user?.subscription_plan;
       const localActive = Boolean(planNow) && UserStore.hasActiveSubscription(user);
-      if (!localActive) {
-        const withPlan = ownFeedPosts.find((it) => it?.author_subscription_plan && typeof it.author_subscription_plan === 'object');
+      if (!localActive && currentFeedPosts.length > 0) {
+        const withPlan = currentFeedPosts.find((it) => it?.author_subscription_plan && typeof it.author_subscription_plan === 'object');
         const feedPlan = withPlan?.author_subscription_plan || null;
         const feedSaysPremium = Boolean(withPlan?.author_is_premium) || Boolean(feedPlan && UserStore.hasPremiumAccess({ subscription_plan: feedPlan }));
         if (feedPlan && feedSaysPremium && UserStore.hasActiveSubscription({ subscription_plan: feedPlan })) {
-          const merged = await UserStore.updateUser(user.email, {
-            // plan_name na aaye to bhi "Premium Plan" maana jaye (plan_id / plan_name ke bina plan save nahi hota)
+          UserStore.updateUser(user.email, {
             subscription_plan: { plan_name: 'Premium Plan', ...feedPlan },
             subscription_type: 'premium',
             is_subscribed: true,
-          });
-          if (merged) user = merged;
+          }).then((merged) => {
+            if (merged) {
+              setSavedProfile((prev) => ({ ...prev, ...merged }));
+              setForm((prev) => ({ ...prev, ...merged }));
+            }
+          }).catch(() => {});
         }
       }
-    } catch { /* best-effort — profile phir bhi khulegi */ }
-    const ownLocalPosts = [
-      ...(Array.isArray(user.news) ? user.news : []),
-      ...(Array.isArray(user.news_feed) ? user.news_feed : []),
-    ];
-    const ownAdPosts = Array.isArray(adPosts) ? adPosts : [];
-    const ownEcomPosts = Array.isArray(ecomPosts) ? ecomPosts : [];
-    const allPosts = [...ownFeedPosts, ...ownLocalPosts, ...ownAdPosts];
-    const mergedPostKeys = new Set(allPosts.map((item, index) =>
-      String(item?.id || `fallback-${index}`)
-    ));
+    } catch { /* best effort */ }
 
-    const seenIds = new Set();
-    const postTs = (item) => Date.parse(item?.createdAt || item?.created_at || item?.date || '') || 0;
-    const userPostsData = [...ownFeedPosts, ...ownLocalPosts, ...ownAdPosts, ...ownEcomPosts].filter(item => {
-      const key = item?.id ? String(item.id) : null;
-      if (!key) return true;
-      if (seenIds.has(key)) return false;
-      seenIds.add(key);
-      return true;
-    }).sort((a, b) => postTs(b) - postTs(a)) // newest first (news + ads ek saath)
-      // ✅ card / details / feed par abhi badla hua like-comment count yahan bhi dikhe (server ke purane count se upar)
-      .map((item) => { const eng = item?.is_ecom ? null : getEngagement(item?.id); return eng ? defaultApplyEngagement(item, eng, user.email) : item; });
-    setUserPosts(userPostsData);
-
-    if (revisionAtStart === followRevisionRef.current) {
-      // FIX: follow API fail/null aaye to counts 0 mat karo — purane counts rakho.
-      if (followSummary && followSummary.followersCount != null && followSummary.followingCount != null) {
-        setProfileStats({
-          posts: mergedPostKeys.size,
-          followers: Number(followSummary.followersCount),
-          following: Number(followSummary.followingCount),
-        });
-        setFollowLists({
-          followers: Array.isArray(followSummary.followers) ? followSummary.followers : [],
-          following: Array.isArray(followSummary.following) ? followSummary.following : [],
-        });
-      } else {
-        setProfileStats((prev) => ({ ...prev, posts: mergedPostKeys.size }));
-      }
-    } else {
-      setProfileStats((prev) => ({ ...prev, posts: mergedPostKeys.size }));
-    }
-
-    const profileData = {
-      ...user,
-      profile_image: safeImage,
-      referral_code: refCode,
-    };
-    setSavedProfile(profileData);
-    setForm(profileData);
-    setIsLoggedIn(true);
-    setLoading(false);
-    setPostsLoaded(true);
+    // ── PRIORITY 3: Deferred Secondary Data (Ads, Ecom, Subscription Sync) ──
+    setTimeout(() => {
+      Promise.all([
+        withTimeout(UserStore.getMyAdPosts().catch(() => []), 4000, []),
+        withTimeout(UserStore.getMyEcomPosts({ email: user.email, id: user.id }).catch(() => []), 4000, []),
+        withTimeout(UserStore.syncSubscriptionFromBackend(user).catch(() => null), 4000, null),
+      ]).then(([adPosts, ecomPosts, syncedSubUser]) => {
+        if (syncedSubUser) {
+          user = syncedSubUser;
+          setSavedProfile((prev) => ({ ...prev, ...syncedSubUser }));
+        }
+        currentAdPosts = Array.isArray(adPosts) ? adPosts : [];
+        currentEcomPosts = Array.isArray(ecomPosts) ? ecomPosts : [];
+        if (currentAdPosts.length > 0 || currentEcomPosts.length > 0) {
+          rebuildAndSetPosts();
+        }
+      }).catch(() => {});
+    }, 80);
   }, [navigation, showToast]);
 
    useFocusEffect(useCallback(() => {
