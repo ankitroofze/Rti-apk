@@ -26,8 +26,8 @@ export function toCorsSafeMediaUrl(url) {
   if (Platform.OS !== 'web') return url;
   const s = String(url || '').trim();
   if (!s) return s;
-  if (/^https?:\/\/rtiapi\.roofze\.in\/storage\//i.test(s)) {
-    return s.replace(/^https?:\/\/rtiapi\.roofze\.in\/storage\//i, '/storage-proxy/');
+  if (/^https?:\/\/(?:rtiapi\.roofze\.in|189\.72\.144\.238)(?::\d+)?\/storage\//i.test(s)) {
+    return s.replace(/^https?:\/\/(?:rtiapi\.roofze\.in|189\.72\.144\.238)(?::\d+)?\/storage\//i, '/storage-proxy/');
   }
   return s;
 }
@@ -71,14 +71,16 @@ const OUT_H = 720;   // app me media box 16:9 hota hai — download bhi wahi dik
 
 const loadImage = (src) => new Promise((res, rej) => {
   const img = new window.Image();
-  img.crossOrigin = 'anonymous';
+  if (/^https?:/i.test(src)) {
+    img.crossOrigin = 'anonymous';
+  }
   img.onload = () => res(img);
-  img.onerror = () => rej(new Error('Failed to load frame image.'));
+  img.onerror = () => rej(new Error(`Failed to load frame image (${src})`));
   img.src = src;
 });
 
-function resolveFrameAssetUri(asset) {
-  if (!asset) return '';
+function resolveFrameAssetUri(asset, templateFile = '') {
+  if (!asset) return templateFile ? `/assets/frames/${String(templateFile).replace(/\.png$/i, '')}.png` : '';
   if (typeof asset === 'string') return asset;
   if (typeof asset === 'object') {
     if (typeof asset.default === 'string') return asset.default;
@@ -86,19 +88,35 @@ function resolveFrameAssetUri(asset) {
     if (typeof asset.uri === 'string') return asset.uri;
   }
   try {
+    // eslint-disable-next-line global-require
+    const { getAssetByID } = require('react-native-web/dist/cjs/modules/AssetRegistry');
+    const a = getAssetByID(asset);
+    if (a) {
+      const scale = a.scales && a.scales.length ? a.scales[0] : 1;
+      const suffix = scale !== 1 ? `@${scale}x` : '';
+      return `${a.httpServerLocation}/${a.name}${suffix}.${a.type}`;
+    }
+  } catch (_) {}
+  try {
     if (typeof RNImage?.resolveAssetSource === 'function') {
       const src = RNImage.resolveAssetSource(asset);
       if (src?.uri) return src.uri;
     }
   } catch (_) {}
+  if (templateFile) {
+    return `/assets/frames/${String(templateFile).replace(/\.png$/i, '')}.png`;
+  }
   return '';
 }
 
 // NewsFrameOverlay ke bands jaisa hi: text, color, speed — canvas par draw karne ke liye ready
 async function prepareFrame(ctx, frame) {
   const tpl = getFrameTemplate(frame.templateId);
-  const src = resolveFrameAssetUri(tpl.asset);
+  let src = resolveFrameAssetUri(tpl.asset, tpl.file);
   if (!src) throw new Error('Frame image not found.');
+  if (typeof window !== 'undefined' && !/^(https?:|data:|blob:|\/)/i.test(src)) {
+    src = `/${src}`;
+  }
   const img = await loadImage(src);
   const bannerH = Math.round(OUT_W / tpl.aspect);
   const title = squash(frame.title);

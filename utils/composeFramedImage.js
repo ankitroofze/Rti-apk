@@ -14,14 +14,16 @@ const squash = (t) => String(t || '').replace(/\s+/g, ' ').trim();
 
 const loadImage = (src) => new Promise((res, rej) => {
   const img = new window.Image();
-  img.crossOrigin = 'anonymous';
+  if (/^https?:/i.test(src)) {
+    img.crossOrigin = 'anonymous';
+  }
   img.onload = () => res(img);
-  img.onerror = () => rej(new Error('Failed to load image.'));
+  img.onerror = () => rej(new Error(`Failed to load image (${src})`));
   img.src = src;
 });
 
-function resolveFrameAssetUri(asset) {
-  if (!asset) return '';
+function resolveFrameAssetUri(asset, templateFile = '') {
+  if (!asset) return templateFile ? `/assets/frames/${String(templateFile).replace(/\.png$/i, '')}.png` : '';
   if (typeof asset === 'string') return asset;
   if (typeof asset === 'object') {
     if (typeof asset.default === 'string') return asset.default;
@@ -29,11 +31,24 @@ function resolveFrameAssetUri(asset) {
     if (typeof asset.uri === 'string') return asset.uri;
   }
   try {
+    // eslint-disable-next-line global-require
+    const { getAssetByID } = require('react-native-web/dist/cjs/modules/AssetRegistry');
+    const a = getAssetByID(asset);
+    if (a) {
+      const scale = a.scales && a.scales.length ? a.scales[0] : 1;
+      const suffix = scale !== 1 ? `@${scale}x` : '';
+      return `${a.httpServerLocation}/${a.name}${suffix}.${a.type}`;
+    }
+  } catch (_) {}
+  try {
     if (typeof RNImage?.resolveAssetSource === 'function') {
       const src = RNImage.resolveAssetSource(asset);
       if (src?.uri) return src.uri;
     }
   } catch (_) {}
+  if (templateFile) {
+    return `/assets/frames/${String(templateFile).replace(/\.png$/i, '')}.png`;
+  }
   return '';
 }
 
@@ -57,10 +72,15 @@ export async function composeFramedImageWeb(imageSrc, frame) {
     }
     // same-origin blob (warna canvas "tainted" ho jaata hai)
     if (!/^(blob:|data:)/i.test(src)) {
-      const r = await fetch(src, { mode: 'cors', cache: 'no-store' });
-      if (!r.ok) throw new Error(`Image fetch failed (${r.status})`);
-      src = URL.createObjectURL(await r.blob());
-      toRevoke.push(src);
+      try {
+        const r = await fetch(src, { mode: 'cors', cache: 'no-store' });
+        if (r.ok) {
+          src = URL.createObjectURL(await r.blob());
+          toRevoke.push(src);
+        }
+      } catch (err) {
+        console.warn('[composeFramedImageWeb] fetch blob fallback to direct src:', err);
+      }
     }
     const img = await loadImage(src);
 
@@ -77,8 +97,11 @@ export async function composeFramedImageWeb(imageSrc, frame) {
 
     if (frame) {
       const tpl = getFrameTemplate(frame.templateId);
-      const fsrc = resolveFrameAssetUri(tpl.asset);
+      let fsrc = resolveFrameAssetUri(tpl.asset, tpl.file);
       if (!fsrc) throw new Error('Frame image not found.');
+      if (typeof window !== 'undefined' && !/^(https?:|data:|blob:|\/)/i.test(fsrc)) {
+        fsrc = `/${fsrc}`;
+      }
       const fimg = await loadImage(fsrc);
       const bannerH = Math.round(OUT_W / tpl.aspect);
       ctx.drawImage(fimg, 0, OUT_H - bannerH, OUT_W, bannerH);
