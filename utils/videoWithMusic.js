@@ -146,9 +146,10 @@ function drawFrame(ctx, fr, t) {
   ctx.drawImage(fr.img, 0, OUT_H - fr.bannerH, OUT_W, fr.bannerH);
   fr.bands.forEach((x) => {
     if (!x.text || !x.unitW) return;
-    const sp = (x.b.speed || 40) * (OUT_W / 640);              // display width ~640px ki speed ke barabar
-    const intro = (x.bw + x.unitW) / sp;                        // pehle right edge se andar aata hai
-    const off = t < intro ? x.bw - sp * t : -(((t - intro) * sp) % x.unitW);
+    const sp = (x.b.speed || 45) * (OUT_W / 640);              // display width ~640px ki speed ke barabar
+    // Continuous leftward marquee starting immediately at frame 0 (no blank intro delay)
+    const shift = (sp * t) % x.unitW;
+    const off = -shift;
     ctx.save();
     ctx.beginPath();
     ctx.rect(x.x, x.y, x.bw, x.bh);
@@ -172,6 +173,7 @@ async function composeOnWeb(videoSrc, { musicSrc, voiceSrc, musicVolume, muteOri
   const toRevoke = [];
   let ctx = null;
   let raf = 0;
+  let paintTimer = null;
   try {
     let vSrc = toCorsSafeMediaUrl(videoSrc);
     if (isIdbMediaUri(vSrc)) {
@@ -278,7 +280,7 @@ async function composeOnWeb(videoSrc, { musicSrc, voiceSrc, musicVolume, muteOri
       const c2d = canvas.getContext('2d');
       const fr = await prepareFrame(c2d, frame);
       let t0 = 0;
-      const paint = () => {
+      const render = () => {
         c2d.fillStyle = '#000';
         c2d.fillRect(0, 0, OUT_W, OUT_H);
         const vw = video.videoWidth || OUT_W;
@@ -287,10 +289,20 @@ async function composeOnWeb(videoSrc, { musicSrc, voiceSrc, musicVolume, muteOri
         const dw = vw * s;
         const dh = vh * s;
         try { c2d.drawImage(video, (OUT_W - dw) / 2, (OUT_H - dh) / 2, dw, dh); } catch (_) { /* ignore */ }
-        drawFrame(c2d, fr, (performance.now() - t0) / 1000);
-        raf = requestAnimationFrame(paint);
+        const curTime = (video && Number.isFinite(video.currentTime) && video.currentTime > 0)
+          ? video.currentTime
+          : Math.max(0, (performance.now() - t0) / 1000);
+        drawFrame(c2d, fr, curTime);
       };
-      startDraw = () => { t0 = performance.now(); paint(); };
+      const loop = () => {
+        render();
+        raf = requestAnimationFrame(loop);
+      };
+      startDraw = () => {
+        t0 = performance.now();
+        loop();
+        paintTimer = setInterval(render, 1000 / 30);
+      };
       videoTracks = canvas.captureStream(30).getVideoTracks();
     } else {
       const cap = video.captureStream ? video.captureStream() : (video.mozCaptureStream ? video.mozCaptureStream() : null);
@@ -331,9 +343,146 @@ async function composeOnWeb(videoSrc, { musicSrc, voiceSrc, musicVolume, muteOri
     const blob = new Blob(chunks, { type: outType });
     return { uri: URL.createObjectURL(blob), ext: outType.includes('mp4') ? 'mp4' : 'webm', blob };
   } finally {
+    if (paintTimer) clearInterval(paintTimer);
     if (raf) cancelAnimationFrame(raf);
     try { if (ctx) ctx.close(); } catch (_) { /* ignore */ }
     toRevoke.forEach((u) => { try { URL.revokeObjectURL(u); } catch (_) { /* ignore */ } });
+  }
+}
+
+// Image ko breaking-news frame aur chalta hua text (aur music/voice agar ho) ke sath ek 6-second MP4 Video Reel banata hai
+export async function composeFramedImageAsVideoWeb(imageSrc, { frame, musicUrl = '', voiceUri = null, musicVolume = 0.6, duration = 6 } = {}) {
+  const AC = typeof window !== 'undefined' ? (window.AudioContext || window.webkitAudioContext) : null;
+  if (!AC || typeof MediaRecorder === 'undefined') throw new Error('Video export is not supported in this browser.');
+  const toRevoke = [];
+  let ctx = null;
+  let raf = 0;
+  let paintTimer = null;
+  try {
+    let src = toCorsSafeMediaUrl(String(imageSrc || ''));
+    if (!src) throw new Error('Image missing.');
+    if (isIdbMediaUri(src)) {
+      src = await resolveIdbMediaUriToObjectUrl(src);
+      if (!src) throw new Error('Media not available');
+      toRevoke.push(src);
+    }
+    if (!/^(blob:|data:)/i.test(src)) {
+      try {
+        const r = await fetch(src, { mode: 'cors', cache: 'no-store' });
+        if (r.ok) {
+          src = URL.createObjectURL(await r.blob());
+          toRevoke.push(src);
+        }
+      } catch (_) {}
+    }
+    const img = await loadImage(src);
+
+    ctx = new AC();
+    try { await ctx.resume(); } catch (_) {}
+    const dest = ctx.createMediaStreamDestination();
+
+    let mSrc = null;
+    if (musicUrl) {
+      try {
+        const mResolved = await resolveMusicUrl(musicUrl);
+        if (mResolved) {
+          const mr = await fetch(toCorsSafeMediaUrl(mResolved), { mode: 'cors', cache: 'no-store' });
+          if (mr.ok) {
+            const buf = await mr.arrayBuffer();
+            const musicBuf = await ctx.decodeAudioData(buf);
+            mSrc = ctx.createBufferSource();
+            mSrc.buffer = musicBuf;
+            mSrc.loop = true;
+            const g = ctx.createGain();
+            g.gain.value = clamp01(musicVolume);
+            mSrc.connect(g);
+            g.connect(dest);
+          }
+        }
+      } catch (err) {
+        console.warn('[composeFramedImageAsVideoWeb] music decode error:', err);
+      }
+    }
+
+    let vSrc = null;
+    if (voiceUri) {
+      try {
+        const vr = await fetch(toCorsSafeMediaUrl(voiceUri), { mode: 'cors', cache: 'no-store' });
+        if (vr.ok) {
+          const vbuf = await vr.arrayBuffer();
+          const voiceBuf = await ctx.decodeAudioData(vbuf);
+          vSrc = ctx.createBufferSource();
+          vSrc.buffer = voiceBuf;
+          const vg = ctx.createGain();
+          vg.gain.value = 1.0;
+          vSrc.connect(vg);
+          vg.connect(dest);
+        }
+      } catch (err) {
+        console.warn('[composeFramedImageAsVideoWeb] voice decode error:', err);
+      }
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = OUT_W;
+    canvas.height = OUT_H;
+    const c2d = canvas.getContext('2d');
+    const fr = frame ? await prepareFrame(c2d, frame) : null;
+
+    let t0 = 0;
+    const render = () => {
+      c2d.fillStyle = '#0f172a';
+      c2d.fillRect(0, 0, OUT_W, OUT_H);
+      const s = Math.min(OUT_W / img.width, OUT_H / img.height);
+      const dw = img.width * s;
+      const dh = img.height * s;
+      try { c2d.drawImage(img, (OUT_W - dw) / 2, (OUT_H - dh) / 2, dw, dh); } catch (_) {}
+      const curTime = Math.max(0, (performance.now() - t0) / 1000);
+      if (fr) drawFrame(c2d, fr, curTime);
+    };
+
+    const loop = () => {
+      render();
+      raf = requestAnimationFrame(loop);
+    };
+
+    const videoTracks = canvas.captureStream(30).getVideoTracks();
+    const audioTracks = dest.stream.getAudioTracks();
+    const stream = new MediaStream([...videoTracks, ...audioTracks]);
+
+    const mimes = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+    const mime = mimes.find((m) => { try { return MediaRecorder.isTypeSupported(m); } catch (_) { return false; } }) || '';
+    const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 4000000 } : undefined);
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    const stopped = new Promise((res, rej) => {
+      rec.onstop = res;
+      rec.onerror = (e) => rej(e?.error || new Error('Recorder error'));
+    });
+
+    rec.start(500);
+    if (mSrc) mSrc.start(0);
+    if (vSrc) vSrc.start(0);
+    t0 = performance.now();
+    loop();
+    paintTimer = setInterval(render, 1000 / 30);
+
+    const runDur = Math.max(4, Math.min(duration || 6, 15));
+    await new Promise((r) => setTimeout(r, runDur * 1000));
+    try { if (mSrc) mSrc.stop(); } catch (_) {}
+    try { if (vSrc) vSrc.stop(); } catch (_) {}
+    if (rec.state !== 'inactive') rec.stop();
+    await stopped;
+
+    if (!chunks.length) throw new Error('Video generation failed.');
+    const outType = String(rec.mimeType || mime || 'video/webm').split(';')[0];
+    const blob = new Blob(chunks, { type: outType });
+    return { uri: URL.createObjectURL(blob), ext: outType.includes('mp4') ? 'mp4' : 'webm', blob };
+  } finally {
+    if (paintTimer) clearInterval(paintTimer);
+    if (raf) cancelAnimationFrame(raf);
+    try { if (ctx) ctx.close(); } catch (_) {}
+    toRevoke.forEach((u) => { try { URL.revokeObjectURL(u); } catch (_) {} });
   }
 }
 

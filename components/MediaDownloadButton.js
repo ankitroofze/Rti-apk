@@ -61,15 +61,16 @@ export function MediaDownloadButton({ uri, type = 'image', size = 34, style, mus
     try { e?.stopPropagation?.(); } catch (_) { /* ignore */ }
     if (busy || !uri) return;
     setBusy(true);
-    if ((type === 'video' && (frame || musicUrl || voiceUri)) || (type === 'image' && frame)) {
-      notify('Preparing download with frame & sound…');
+    const hasSound = Boolean(musicUrl || voiceUri);
+    if ((type === 'video' && (frame || hasSound)) || (type === 'image' && frame)) {
+      notify(hasSound || type === 'video' ? 'Preparing download with frame & sound…' : 'Preparing download with frame…');
     }
     if (type === 'image' && frame && Platform.OS !== 'web' && /^(https?:|file:|content:)/i.test(String(uri))) {
       doneRef.current = false;
       setJob({ uri: String(uri), frame });             // FramedExportView render -> onLoad me capture
       return;
     }
-    const res = await downloadMedia(uri, { type, musicUrl, musicVolume, muteOriginal, voiceUri, frame });   // video: frame + music merge, image(web): frame canvas
+    const res = await downloadMedia(uri, { type, musicUrl, musicVolume, muteOriginal, voiceUri, frame, asVideo: Boolean(hasSound) });   // video: frame + music merge, image(web): frame canvas
     finish(res);
   }, [busy, uri, type, musicUrl, musicVolume, muteOriginal, voiceUri, frame, finish]);
 

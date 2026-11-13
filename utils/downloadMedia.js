@@ -10,7 +10,7 @@ import { Platform } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from './webMediaStore';
-import { getVideoWithMusic, needsVideoMerge, toCorsSafeMediaUrl } from './videoWithMusic';
+import { getVideoWithMusic, needsVideoMerge, toCorsSafeMediaUrl, composeFramedImageAsVideoWeb } from './videoWithMusic';
 import { composeFramedImageWeb } from './composeFramedImage';
 
 const IMG_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'avif'];
@@ -164,13 +164,14 @@ async function downloadNative(url, type) {
 
 // type: 'image' | 'video'. Hamesha { ok, message } return karta hai (throw nahi karta).
 // Video ke saath `musicUrl` (backend music_url) / `voiceUri` / `frame` diya ho to wo video me merge hokar hi download hota hai.
-export async function downloadMedia(url, { type = 'image', musicUrl = '', voiceUri = null, musicVolume = 0.6, muteOriginal = false, frame = null } = {}) {
+export async function downloadMedia(url, { type = 'image', musicUrl = '', voiceUri = null, musicVolume = 0.6, muteOriginal = false, frame = null, asVideo = false } = {}) {
   const src = String(url || '').trim();
   if (!src) return { ok: false, message: 'Nothing to download.' };
   try {
     let target = src;
     let extra = {};
     let warn = '';
+    let outType = type;
     if (type === 'video' && needsVideoMerge({ musicUrl, voiceUri, frame })) {
       const m = await getVideoWithMusic(src, { musicUrl, voiceUri, musicVolume, muteOriginal, frame });
       if (m.merged) {
@@ -180,16 +181,35 @@ export async function downloadMedia(url, { type = 'image', musicUrl = '', voiceU
         warn = `Could not add frame or audio${m.error ? ` (${m.error})` : ''}. Original video was saved.`;
       }
     } else if (type === 'image' && frame && Platform.OS === 'web') {
-      // WEB image: frame + title ko canvas par jodkar ek JPG (native par ye MediaDownloadButton me capture se hota hai)
-      try {
-        const c = await composeFramedImageWeb(src, frame);
-        target = c.uri;
-        extra = { ext: c.ext, owned: true };
-      } catch (err) {
-        warn = `Could not apply frame${err?.message ? ` (${err.message})` : ''}. Original image was saved.`;
+      if (musicUrl || voiceUri || asVideo) {
+        // Image + Frame + Music/Voice ya user ne video reel chahi -> 6-second MP4 Video Reel with scrolling ticker
+        try {
+          const v = await composeFramedImageAsVideoWeb(src, { frame, musicUrl, voiceUri, musicVolume, duration: 6 });
+          target = v.uri;
+          extra = { ext: v.ext, owned: true };
+          outType = 'video';
+        } catch (err) {
+          console.warn('[downloadMedia] image video reel fallback to static JPG:', err);
+          try {
+            const c = await composeFramedImageWeb(src, frame);
+            target = c.uri;
+            extra = { ext: c.ext, owned: true };
+          } catch (err2) {
+            warn = `Could not apply frame (${err2?.message || err?.message}). Original image was saved.`;
+          }
+        }
+      } else {
+        // WEB image: frame + title ko canvas par jodkar ek JPG (native par ye MediaDownloadButton me capture se hota hai)
+        try {
+          const c = await composeFramedImageWeb(src, frame);
+          target = c.uri;
+          extra = { ext: c.ext, owned: true };
+        } catch (err) {
+          warn = `Could not apply frame${err?.message ? ` (${err.message})` : ''}. Original image was saved.`;
+        }
       }
     }
-    const res = Platform.OS === 'web' ? await downloadWeb(target, type, extra) : await downloadNative(target, type);
+    const res = Platform.OS === 'web' ? await downloadWeb(target, outType, extra) : await downloadNative(target, outType);
     return warn ? { ...res, message: [res.message, warn].filter(Boolean).join(' ') } : res;
   } catch (e) {
     return { ok: false, message: e?.message || 'Download failed. Please try again.' };
