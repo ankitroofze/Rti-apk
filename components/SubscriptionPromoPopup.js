@@ -24,6 +24,7 @@ import { useIsFocused } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { UserStore } from '../store/UserStore';
 import { getCardTheme, HEADER_BG_IMAGE } from '../constants/subscriptionThemes';
+import { openWithSidebar } from '../utils/useQuickMenuRedirect';
 
 const IS_WEB = Platform.OS === 'web';
 const { height: WIN_H } = Dimensions.get('window');
@@ -122,7 +123,7 @@ export default function SubscriptionPromoPopup({
 
   const handleSelectPlan = useCallback((plan) => {
     handleDismiss();
-    navigation?.navigate?.('Subscription Plans', {
+    openWithSidebar(navigation, 'Subscription Plans', {
       returnTo: 'Home',
       preselectedPlanId: plan?.plan_id,
       selectedPlanId: plan?.plan_id,
@@ -132,7 +133,7 @@ export default function SubscriptionPromoPopup({
 
   const handleExploreAll = useCallback(() => {
     handleDismiss();
-    navigation?.navigate?.('Subscription Plans', { returnTo: 'Home' });
+    openWithSidebar(navigation, 'Subscription Plans', { returnTo: 'Home' });
   }, [handleDismiss, navigation]);
 
   if (!visible || !isFocused) return null;

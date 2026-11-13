@@ -807,7 +807,7 @@ const syncFeed = useCallback(async (focusItemId = null, { silent = false } = {})
         frame: imgFrame,
         getNativeImageFile: kind === 'image' && imgFrame ? () => captureFramedImage(mediaUrl, imgFrame) : undefined,
       });
-      if (r.needsPaste) showToast('News link copy ho gaya hai — caption me paste kar do.', 'info');
+      if (r.needsPaste) showToast('News link copied — paste it into your post caption.', 'info');
       if (!r.shared) return;
     } catch { showToast('Share failed.', 'error'); return; }
     const result = await UserStore.updateNewsFeedItem(item.id, 'share');
@@ -1713,7 +1713,7 @@ const handleLike = async (item) => {
                     )}
                   </View>
                 ) : null}
-                {item.video && item.useFrame && !item.frameMerged ? (
+                {item.video && item.useFrame ? (
                   <FramedBox item={item}>
                     <VideoPreview uri={typeof item.video === 'string' ? item.video : item.video?.uri} style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' }} contentFit="contain" />
                   </FramedBox>

@@ -557,12 +557,17 @@ function ProfileScreenInner({ navigation, route }) {
       setProfileStats((prev) => ({ ...prev, posts: seenIds.size || merged.length }));
     };
 
-    // ── PRIORITY 1 (< 1 sec): Critical Profile Fetch ─────────────────
-    // Sirf AuthAPI.getProfile() hit karo — server par koi traffic competition nahi hoga,
-    // response 150-250ms me aakar UI turant sync ho jayegi.
+    // ── PRIORITY 1 & 2 (Fast Parallel Fetch): Profile + Follow + Feed Posts ──
+    // Sabhi primary requests parallel me bhejte hain taaki profile instant load ho (bina UI glitch ke)
     let profileRes = null;
+    let followSummary = null;
+    let feedSummary = null;
     try {
-      profileRes = await withTimeout(AuthAPI.getProfile().catch(() => null), 4000, null);
+      [profileRes, followSummary, feedSummary] = await Promise.all([
+        withTimeout(AuthAPI.getProfile().catch(() => null), 4000, null),
+        withTimeout(UserStore.getFollowSummary(user.email).catch(() => null), 4000, null),
+        withTimeout(UserStore.getNewsFeedSummary?.().catch?.(() => null) ?? Promise.resolve(null), 4000, null),
+      ]);
     } catch { /* best-effort */ }
 
     if (profileRes?.ok && profileRes.user) {
@@ -603,29 +608,22 @@ function ProfileScreenInner({ navigation, route }) {
     }
     setLoading(false);
 
-    // ── PRIORITY 2: Follow Summary & User Posts in Parallel ──────────
-    try {
-      const [followSummary, feedSummary] = await Promise.all([
-        withTimeout(UserStore.getFollowSummary(user.email).catch(() => null), 4000, null),
-        withTimeout(UserStore.getNewsFeedSummary?.().catch?.(() => null) ?? Promise.resolve(null), 4000, null),
-      ]);
-
-      if (revisionAtStart === followRevisionRef.current && followSummary) {
-        if (followSummary.followersCount != null && followSummary.followingCount != null) {
-          setProfileStats((prev) => ({
-            ...prev,
-            followers: Number(followSummary.followersCount),
-            following: Number(followSummary.followingCount),
-          }));
-          setFollowLists({
-            followers: Array.isArray(followSummary.followers) ? followSummary.followers : [],
-            following: Array.isArray(followSummary.following) ? followSummary.following : [],
-          });
-        }
+    if (revisionAtStart === followRevisionRef.current && followSummary) {
+      if (followSummary.followersCount != null && followSummary.followingCount != null) {
+        setProfileStats((prev) => ({
+          ...prev,
+          followers: Number(followSummary.followersCount),
+          following: Number(followSummary.followingCount),
+        }));
+        setFollowLists({
+          followers: Array.isArray(followSummary.followers) ? followSummary.followers : [],
+          following: Array.isArray(followSummary.following) ? followSummary.following : [],
+        });
       }
+    }
 
-      currentFeedPosts = Array.isArray(feedSummary?.items) ? feedSummary.items : [];
-      rebuildAndSetPosts();
+    currentFeedPosts = Array.isArray(feedSummary?.items) ? feedSummary.items : [];
+    rebuildAndSetPosts();
 
       // Check author subscription plan from posts
       const planNow = user?.subscription_plan;
@@ -647,7 +645,6 @@ function ProfileScreenInner({ navigation, route }) {
           }).catch(() => {});
         }
       }
-    } catch { /* best effort */ }
 
     // ── PRIORITY 3: Deferred Secondary Data (Ads, Ecom, Subscription Sync) ──
     setTimeout(() => {

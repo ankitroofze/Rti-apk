@@ -12,7 +12,7 @@ import { downloadMedia } from '../utils/downloadMedia';
 import FramedExportView from './FramedExportView';
 import { useToast } from './ui/ToastProvider';
 
-export function MediaDownloadButton({ uri, type = 'image', size = 34, style, musicUrl = '', musicVolume = 0.6, muteOriginal = false, frame = null }) {
+export function MediaDownloadButton({ uri, type = 'image', size = 34, style, musicUrl = '', musicVolume = 0.6, muteOriginal = false, voiceUri = null, frame = null }) {
   const [busy, setBusy] = useState(false);
   const [job, setJob] = useState(null);              // native image + frame: { uri, frame }
   const captureRefView = useRef(null);
@@ -42,7 +42,7 @@ export function MediaDownloadButton({ uri, type = 'image', size = 34, style, mus
       const res = await downloadMedia(out, { type: 'image' });
       finish(res);
     } catch (_) {
-      await rawImageFallback('Frame add nahi ho paaya. Original image save hui.');
+      await rawImageFallback('Could not apply frame. Original image was saved.');
     }
   }, [finish, rawImageFallback]);
 
@@ -61,7 +61,7 @@ export function MediaDownloadButton({ uri, type = 'image', size = 34, style, mus
     try { e?.stopPropagation?.(); } catch (_) { /* ignore */ }
     if (busy || !uri) return;
     setBusy(true);
-    if ((type === 'video' && (frame || musicUrl)) || (type === 'image' && frame)) {
+    if ((type === 'video' && (frame || musicUrl || voiceUri)) || (type === 'image' && frame)) {
       notify('Preparing download with frame & sound…');
     }
     if (type === 'image' && frame && Platform.OS !== 'web' && /^(https?:|file:|content:)/i.test(String(uri))) {
@@ -69,9 +69,9 @@ export function MediaDownloadButton({ uri, type = 'image', size = 34, style, mus
       setJob({ uri: String(uri), frame });             // FramedExportView render -> onLoad me capture
       return;
     }
-    const res = await downloadMedia(uri, { type, musicUrl, musicVolume, muteOriginal, frame });   // video: frame + music merge, image(web): frame canvas
+    const res = await downloadMedia(uri, { type, musicUrl, musicVolume, muteOriginal, voiceUri, frame });   // video: frame + music merge, image(web): frame canvas
     finish(res);
-  }, [busy, uri, type, musicUrl, musicVolume, muteOriginal, frame, finish]);
+  }, [busy, uri, type, musicUrl, musicVolume, muteOriginal, voiceUri, frame, finish]);
 
   if (!uri) return null;
 

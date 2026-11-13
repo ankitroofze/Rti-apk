@@ -1500,12 +1500,13 @@ export default function NewsDetailsScreen({ route, navigation }) {
                       images={[]}
                       video={effectiveVideoUri}
                       musicUrl={article.musicUrl}
+                      voiceUri={article.voiceUri || article.voice_url || null}
                       musicVolume={article.musicVolume}
                       muteOriginal={article.muteOriginal}
                       width={Math.max(1, heroWrapWidth || Math.min(responsiveWidth - (isCompactLayout ? 32 : 64), 668))}
                       maxHeight={heroFrameHeight}
                       // frame overlay ho to seek bar / controls banner ke UPAR rahein, neeche chhupein nahi
-                      bannerH={article.useFrame && !article.frameMerged && heroWrapWidth > 0 ? getLowerBannerHeight(getFrameTemplate(article.frameTemplate), heroWrapWidth) : 0}
+                      bannerH={article.useFrame && heroWrapWidth > 0 ? getLowerBannerHeight(getFrameTemplate(article.frameTemplate), heroWrapWidth) : 0}
                       // download me frame + music dono judein
                       frame={frameOptsFromStory(article)}
                       downloadable
@@ -1563,8 +1564,8 @@ export default function NewsDetailsScreen({ route, navigation }) {
                     </View>
                   )}
                   {framedCaptureHost}
-                  {/* Frame: image par hamesha; video par tabhi jab server ne merge nahi kiya (frameMerged = false) */}
-                  {article.useFrame && !isFilePost && heroWrapWidth > 0 && !(canPlayVideo && article.frameMerged) && (canPlayVideo || Boolean(heroImageSource?.uri)) ? (
+                  {/* Frame: image par hamesha; video par tab jab user ne useFrame choose kiya ho */}
+                  {article.useFrame && !isFilePost && heroWrapWidth > 0 && (canPlayVideo || Boolean(heroImageSource?.uri)) ? (
                     <NewsFrameOverlay
                       width={heroWrapWidth}
                       height={(!canPlayVideo && article.images.length > 1) ? heroFrameHeight + 26 : heroFrameHeight}

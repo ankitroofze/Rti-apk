@@ -450,7 +450,7 @@ function VideoSlide(props) {
 }
 
 // images = [url, url...], video = 'url' (optional). Swipe + auto-slide (Android, iOS, web)
-export default function MediaGallery({ images = [], video = '', width, maxHeight = 420, onPressImage, radius = 0, fit = 'contain', adAutoPlay = false, downloadable = false, musicUrl = '', musicVolume = 0.6, muteOriginal = false, bannerH = 0, frame = null }) {
+export default function MediaGallery({ images = [], video = '', width, maxHeight = 420, onPressImage, radius = 0, fit = 'contain', adAutoPlay = false, downloadable = false, musicUrl = '', voiceUri = null, musicVolume = 0.6, muteOriginal = false, bannerH = 0, frame = null }) {
   const [page, setPage] = useState(0);
   const [failedUris, setFailedUris] = useState([]);
   const scrollRef = useRef(null);
@@ -594,7 +594,7 @@ export default function MediaGallery({ images = [], video = '', width, maxHeight
             pointerEvents="box-none"
             style={{ position: 'absolute', top: count > 1 ? 46 : 10, right: 10, zIndex: 8, elevation: 8 }}
           >
-            <MediaDownloadButton uri={currentSlide.uri} type={currentSlide.type} size={32} musicUrl={currentSlide.type === 'video' ? musicUrl : ''} musicVolume={musicVolume} muteOriginal={muteOriginal} frame={frame} />
+            <MediaDownloadButton uri={currentSlide.uri} type={currentSlide.type} size={32} musicUrl={currentSlide.type === 'video' ? musicUrl : ''} voiceUri={currentSlide.type === 'video' ? voiceUri : null} musicVolume={musicVolume} muteOriginal={muteOriginal} frame={frame} />
           </View>
         ) : null}
 

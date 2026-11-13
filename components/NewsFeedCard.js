@@ -990,8 +990,7 @@ function NewsFeedCardInner({
     .filter((u) => isValidImageUrl(u) && !String(u).includes('picsum.photos'));
   const hasImageGallery = galleryImages.length > 1;
   // ✅ Breaking-news red frame: sirf tab jab user ne news add karte time frame select kiya ho
-  // Video par frame backend ne final MP4 me merge kar diya hai (`frameMerged`) — dobara overlay karne se double frame dikhta hai.
-  const framed = Boolean(story.useFrame) && !story.frameMerged && !isAdStory && !isFileAttachment && (canPlayVideo || Boolean(safeImage));
+  const framed = Boolean(story.useFrame) && !isAdStory && !isFileAttachment && (canPlayVideo || Boolean(safeImage));
   // Kaunsa template (glossy / bar / banner) — backend `frame_template`; purani news => default template
   const frameTpl = getFrameTemplate(story.frameTemplate);
   const frameWin = getFrameWindow(frameTpl);
@@ -2096,7 +2095,7 @@ const handleLike = async () => {
           {/* ⬇ Download: news ki video / image (gallery me MediaGallery ka apna button hai) */}
           {!isAdStory && !isFileAttachment && !(hasImageGallery && mediaWidth) && (canPlayVideo || isValidImageUrl(effectiveImageUri)) ? (
             <View pointerEvents="box-none" style={{ position: 'absolute', top: canPlayVideo ? 52 : 10, right: 10, zIndex: 20, elevation: 20 }}>
-              <MediaDownloadButton uri={canPlayVideo ? effectiveVideoUri : effectiveImageUri} type={canPlayVideo ? 'video' : 'image'} size={32} musicUrl={canPlayVideo ? story.musicUrl : ''} musicVolume={story.musicVolume} muteOriginal={story.muteOriginal} frame={exportOptsFromStory(story).frame} />
+              <MediaDownloadButton uri={canPlayVideo ? effectiveVideoUri : effectiveImageUri} type={canPlayVideo ? 'video' : 'image'} size={32} musicUrl={canPlayVideo ? story.musicUrl : ''} musicVolume={story.musicVolume} muteOriginal={story.muteOriginal} voiceUri={story.voiceUri || story.voice_url || null} frame={exportOptsFromStory(story).frame} />
             </View>
           ) : null}
           {/* ✅ Frame select hai => red frame + scrolling title/description; warna purana logo + ticker */}

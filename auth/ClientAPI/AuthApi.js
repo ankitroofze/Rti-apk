@@ -2041,8 +2041,8 @@ export const AuthAPI = {
       formData.append('use_frame', useFrame ? '1' : '0');
       // assets/frames wala exact file name (e.g. 'frame-glossy2.png') save hoga, id ('glossy2') ya label nahi
       formData.append('frame_template', useFrame ? getFrameTemplateName(frameTemplate || 'glossy2') : '');
-      // ✅ frame_merged: 1 = frame lag gaya (true), 0 = frame nahi (false) — hamesha 0/1 hi bhejna hai
-      formData.append('frame_merged', toBinaryFlag(frameMerged === undefined ? useFrame : frameMerged));
+      // ✅ frame_merged: 1 = frame pehle se video me burned hai, 0 = raw video (client overlay karega)
+      formData.append('frame_merged', toBinaryFlag(frameMerged === undefined ? false : frameMerged));
 
       if (mediaUri) {
         if (Platform.OS === 'web') {
@@ -2680,8 +2680,8 @@ export const AuthAPI = {
       if (!keepsExistingVideo) {
         formData.append('use_frame', useFrame ? '1' : '0');
         formData.append('frame_template', useFrame ? getFrameTemplateName(frameTemplate || 'glossy2') : '');
-        // ✅ frame_merged: 1 = frame lag gaya (true), 0 = frame nahi (false)
-        formData.append('frame_merged', toBinaryFlag(frameMerged === undefined ? useFrame : frameMerged));
+        // ✅ frame_merged: 1 = frame pehle se video me burned hai, 0 = raw video (client overlay karega)
+        formData.append('frame_merged', toBinaryFlag(frameMerged === undefined ? false : frameMerged));
       }
 
       if (mediaUri) {

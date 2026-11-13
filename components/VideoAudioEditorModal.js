@@ -14,6 +14,7 @@
 // native uses expo-audio.
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Modal, View, Text, TouchableOpacity, FlatList, StyleSheet, StatusBar, Alert, Platform,
   useWindowDimensions, Animated,
 } from 'react-native';
@@ -28,6 +29,7 @@ import { MUSIC_LIBRARY, resolveSong } from '../constants/musicLibrary';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 import NewsFrameOverlay from './NewsFrameOverlay';
 import { getFrameTemplate } from '../constants/frameTemplates';
+import { downloadMedia } from '../utils/downloadMedia';
 
 const IS_WEB = Platform.OS === 'web';
 const VOLUMES = [0.3, 0.6, 1.0];
@@ -46,6 +48,7 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
   const [voiceMime, setVoiceMime] = useState(initial?.voiceMime || null);
   const [muteOriginal, setMuteOriginal] = useState(initial?.muteOriginal ?? true); // mute_original: 1 = video ki original awaaz band
   const [recording, setRecording] = useState(false);
+  const [saving, setSaving] = useState(false);
   // Video stage (panel ke upar ka area) ka size — video + frame isi me device ke hisaab se fit hote hain
   const [stage, setStage] = useState({ w: 0, h: 0 });
   // Smooth playback guard: video kabhi tez / aage na bhaage (music / voice lagne ke baad bhi)
@@ -362,6 +365,39 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
     });
   };
 
+  const handleSave = async () => {
+    if (!videoUri || saving || recording) return;
+    setSaving(true);
+    try {
+      let m = music;
+      if (m && !m.url) { try { m = await getResolved(m); } catch { m = null; } }
+      const frameOpts = frameTemplate ? {
+        templateId: frameTemplate,
+        title: title || 'RTI NEWS',
+        description: description || '',
+      } : null;
+
+      const res = await downloadMedia(videoUri, {
+        type: 'video',
+        musicUrl: m?.url || m?.file || '',
+        musicVolume: clamp01(musicVolume),
+        muteOriginal: Boolean(muteOriginal),
+        voiceUri: voiceUri || null,
+        frame: frameOpts,
+      });
+
+      if (res?.ok) {
+        Alert.alert('Success', res.message || (Platform.OS === 'web' ? 'Video downloaded successfully!' : 'Video saved to Gallery!'));
+      } else {
+        Alert.alert('Error', res?.message || 'Could not save video.');
+      }
+    } catch (err) {
+      Alert.alert('Error', err?.message || 'Failed to save video.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const close = () => {
     if (recording) {
       if (IS_WEB) { try { webRec.current.mr?.stop(); webRec.current.stream?.getTracks?.().forEach((t) => t.stop()); } catch {} }
@@ -457,12 +493,24 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
               <Ionicons name="close" size={26} color="#fff" />
             </TouchableOpacity>
             <View style={s.badge}>
-              <Feather name="volume-x" size={13} color="#fff" />
-              <Text style={s.badgeText}>Original sound muted</Text>
+              <Feather name={muteOriginal ? 'volume-x' : 'volume-2'} size={13} color="#fff" />
+              <Text style={s.badgeText}>{muteOriginal ? 'Original sound muted' : 'Original sound on'}</Text>
             </View>
-            <TouchableOpacity onPress={finish} style={[s.doneBtn, recording && { opacity: 0.4 }]} disabled={recording}>
-              <Text style={s.doneText}>Done</Text>
-            </TouchableOpacity>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <TouchableOpacity onPress={handleSave} style={[s.saveBtn, (recording || saving) && { opacity: 0.5 }]} disabled={recording || saving}>
+                {saving ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Feather name="download" size={14} color="#fff" />
+                    <Text style={s.saveBtnText}>Save</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity onPress={finish} style={[s.doneBtn, recording && { opacity: 0.4 }]} disabled={recording}>
+                <Text style={s.doneText}>Done</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <View style={[s.progressTrack, { top: insets.top + 52 }]} pointerEvents="none">
             <Animated.View style={[s.progressFill, { width: progressAnim.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) }]} />
@@ -558,6 +606,8 @@ const s = StyleSheet.create({
   topBtn: { padding: 6 },
   badge: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: 'rgba(0,0,0,0.6)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14 },
   badgeText: { color: '#fff', fontSize: 11, fontWeight: '700' },
+  saveBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#059669', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 18 },
+  saveBtnText: { color: '#fff', fontWeight: '800', fontSize: 13 },
   doneBtn: { backgroundColor: '#ea580c', paddingHorizontal: 20, paddingVertical: 8, borderRadius: 18 },
   doneText: { color: '#fff', fontWeight: '800', fontSize: 14 },
 

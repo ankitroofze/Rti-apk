@@ -1,5 +1,6 @@
 import { smartGoBack } from '../utils/smartBack';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
+import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ScrollView,
@@ -127,6 +128,10 @@ function LocationFilterDropdown({ label, value, options, onChange, placeholder =
 // Main Screen — Platform.OS check here only
 // ─────────────────────────────────────────────
 export default function SubscriptionPlansScreen({ navigation, route }) {
+  // Desktop web par ye page bina sidebar ke na khule — QuickMenu shell me redirect
+  const redirectingToSidebar = useQuickMenuRedirect(navigation, 'Subscription Plans', route?.params);
+  if (redirectingToSidebar) return null;
+
   const { width: windowWidth } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
   const isCompactWeb = isWeb && windowWidth <= 1024;
@@ -674,10 +679,6 @@ const handleBuyPlan = (plan) => {
             onChange={setFilterVillage}
           />
         </View>
-
-            {loadError ? (
-          <Text style={[S.loadingText, { color: '#b91c1c', marginBottom: 10 }]}>{loadError}</Text>
-        ) : null}
 
             {!loading && subscriptionData.plans.length > filteredPlans.length ? (
           <Text style={[S.loadingText, { marginBottom: 10, paddingVertical: 0, fontSize: 11.5, lineHeight: 16 }]}>

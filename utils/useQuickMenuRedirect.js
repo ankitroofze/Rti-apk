@@ -19,8 +19,11 @@ export function useQuickMenuRedirect(navigation, screenName, params) {
   return shouldRedirect;
 }
 
-// Navbar / header se: desktop web par sidebar wale shell me kholo, baaki jagah normal screen.
-export function openWithSidebar(navigation, screenName) {
-  if (isDesktopWeb()) navigation?.navigate?.('QuickMenu', { initialScreen: screenName, ts: Date.now() });
-  else navigation?.navigate?.(screenName);
+// Navbar / header / popup se: desktop web par sidebar wale shell me kholo, baaki jagah normal screen.
+export function openWithSidebar(navigation, screenName, params) {
+  if (isDesktopWeb()) {
+    navigation?.navigate?.('QuickMenu', { initialScreen: screenName, ts: Date.now(), ...(params ? { screenParams: params } : null) });
+  } else {
+    navigation?.navigate?.(screenName, params);
+  }
 }

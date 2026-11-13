@@ -32,10 +32,9 @@ export function toCorsSafeMediaUrl(url) {
   return s;
 }
 
-// story => frame options. Frame tabhi burn hota hai jab user ne frame chuna ho aur backend ne pehle se merge na kiya ho.
+// story => frame options. Frame burn ke liye frame data return karta hai jab bhi useFrame active ho.
 export function frameOptsFromStory(story) {
   if (!story || !story.useFrame) return null;
-  if (story.frameMerged) return null;
   return {
     templateId: story.frameTemplate || 'glossy2',
     title: story.title || '',
@@ -43,7 +42,7 @@ export function frameOptsFromStory(story) {
   };
 }
 
-// Image par frame: image news me frame hamesha dikhta hai (frameMerged sirf video ke liye hota hai) — download / share ke liye
+// Image par frame: image news me frame hamesha dikhta hai — download / share ke liye
 export function imageFrameOptsFromStory(story) {
   if (!story || !story.useFrame) return null;
   return {
@@ -53,17 +52,18 @@ export function imageFrameOptsFromStory(story) {
   };
 }
 
-// story => { musicUrl, musicVolume, muteOriginal, frame } (download / share ko ek hi object me dene ke liye)
+// story => { musicUrl, musicVolume, muteOriginal, voiceUri, frame } (download / share ko ek hi object me dene ke liye)
 export function exportOptsFromStory(story) {
   return {
     musicUrl: story?.musicUrl || story?.music_url || '',
     musicVolume: story?.musicVolume ?? story?.music_volume ?? 0.6,
     muteOriginal: Boolean(story?.muteOriginal),
+    voiceUri: story?.voiceUri || story?.voice_url || null,
     frame: frameOptsFromStory(story) || imageFrameOptsFromStory(story),
   };
 }
 
-export const needsVideoMerge = (opts) => Boolean(opts && (hasMusic(opts.musicUrl) || opts.frame));
+export const needsVideoMerge = (opts) => Boolean(opts && (hasMusic(opts.musicUrl) || opts.voiceUri || opts.frame));
 
 // ───────────────────────── WEB ─────────────────────────
 const OUT_W = 1280;
@@ -73,15 +73,32 @@ const loadImage = (src) => new Promise((res, rej) => {
   const img = new window.Image();
   img.crossOrigin = 'anonymous';
   img.onload = () => res(img);
-  img.onerror = () => rej(new Error('Frame image load nahi hui.'));
+  img.onerror = () => rej(new Error('Failed to load frame image.'));
   img.src = src;
 });
+
+function resolveFrameAssetUri(asset) {
+  if (!asset) return '';
+  if (typeof asset === 'string') return asset;
+  if (typeof asset === 'object') {
+    if (typeof asset.default === 'string') return asset.default;
+    if (asset.default?.uri) return asset.default.uri;
+    if (typeof asset.uri === 'string') return asset.uri;
+  }
+  try {
+    if (typeof RNImage?.resolveAssetSource === 'function') {
+      const src = RNImage.resolveAssetSource(asset);
+      if (src?.uri) return src.uri;
+    }
+  } catch (_) {}
+  return '';
+}
 
 // NewsFrameOverlay ke bands jaisa hi: text, color, speed — canvas par draw karne ke liye ready
 async function prepareFrame(ctx, frame) {
   const tpl = getFrameTemplate(frame.templateId);
-  const src = RNImage.resolveAssetSource(tpl.asset)?.uri;
-  if (!src) throw new Error('Frame image nahi mili.');
+  const src = resolveFrameAssetUri(tpl.asset);
+  if (!src) throw new Error('Frame image not found.');
   const img = await loadImage(src);
   const bannerH = Math.round(OUT_W / tpl.aspect);
   const title = squash(frame.title);
@@ -131,9 +148,9 @@ function drawFrame(ctx, fr, t) {
   });
 }
 
-async function composeOnWeb(videoSrc, { musicSrc, musicVolume, muteOriginal, frame }) {
+async function composeOnWeb(videoSrc, { musicSrc, voiceSrc, musicVolume, muteOriginal, frame }) {
   const AC = typeof window !== 'undefined' ? (window.AudioContext || window.webkitAudioContext) : null;
-  if (!AC || typeof MediaRecorder === 'undefined') throw new Error('Is browser me video export available nahi hai.');
+  if (!AC || typeof MediaRecorder === 'undefined') throw new Error('Video export is not supported in this browser.');
   const toRevoke = [];
   let ctx = null;
   let raf = 0;
@@ -158,14 +175,36 @@ async function composeOnWeb(videoSrc, { musicSrc, musicVolume, muteOriginal, fra
 
     let music = null;
     if (musicSrc) {
-      const mUrl = toCorsSafeMediaUrl(musicSrc);
-      const mr = await fetch(mUrl, { mode: 'cors', cache: 'no-store' });
-      if (!mr.ok) throw new Error(`Music fetch failed (${mr.status})`);
-      const buf = await mr.arrayBuffer();
-      music = await new Promise((res, rej) => {
-        const p = ctx.decodeAudioData(buf, res, rej);
-        if (p && p.catch) p.catch(rej);
-      });
+      try {
+        const mUrl = toCorsSafeMediaUrl(musicSrc);
+        const mr = await fetch(mUrl, { mode: 'cors', cache: 'no-store' });
+        if (mr.ok) {
+          const buf = await mr.arrayBuffer();
+          music = await new Promise((res, rej) => {
+            const p = ctx.decodeAudioData(buf, res, rej);
+            if (p && p.catch) p.catch(rej);
+          });
+        }
+      } catch (err) {
+        console.warn('[composeOnWeb] music decode error:', err);
+      }
+    }
+
+    let voice = null;
+    if (voiceSrc) {
+      try {
+        const vUrl = toCorsSafeMediaUrl(voiceSrc);
+        const vr = await fetch(vUrl, { mode: 'cors', cache: 'no-store' });
+        if (vr.ok) {
+          const vbuf = await vr.arrayBuffer();
+          voice = await new Promise((res, rej) => {
+            const p = ctx.decodeAudioData(vbuf, res, rej);
+            if (p && p.catch) p.catch(rej);
+          });
+        }
+      } catch (err) {
+        console.warn('[composeOnWeb] voice decode error:', err);
+      }
     }
 
     const video = document.createElement('video');
@@ -175,10 +214,10 @@ async function composeOnWeb(videoSrc, { musicSrc, musicVolume, muteOriginal, fra
     video.src = videoBlobUrl;
     await new Promise((res, rej) => {
       video.onloadedmetadata = res;
-      video.onerror = () => rej(new Error('Video load nahi ho paaya.'));
+      video.onerror = () => rej(new Error('Failed to load video.'));
     });
 
-    // ── audio graph: (video ki awaaz) + music => ek stream ──
+    // ── audio graph: (video ki awaaz) + music + voice => ek stream ──
     const dest = ctx.createMediaStreamDestination();
     if (muteOriginal) {
       video.muted = true;
@@ -199,6 +238,16 @@ async function composeOnWeb(videoSrc, { musicSrc, musicVolume, muteOriginal, fra
       g.gain.value = clamp01(musicVolume);
       mSrc.connect(g);
       g.connect(dest);
+    }
+    let vSrcNode = null;
+    if (voice) {
+      vSrcNode = ctx.createBufferSource();
+      vSrcNode.buffer = voice;
+      vSrcNode.loop = false;
+      const vg = ctx.createGain();
+      vg.gain.value = 1.0;
+      vSrcNode.connect(vg);
+      vg.connect(dest);
     }
 
     // ── video track: frame ho to canvas (video + banner + scrolling text), warna video ki apni track ──
@@ -227,7 +276,7 @@ async function composeOnWeb(videoSrc, { musicSrc, musicVolume, muteOriginal, fra
       videoTracks = canvas.captureStream(30).getVideoTracks();
     } else {
       const cap = video.captureStream ? video.captureStream() : (video.mozCaptureStream ? video.mozCaptureStream() : null);
-      if (!cap) throw new Error('Browser video.captureStream support nahi karta.');
+      if (!cap) throw new Error('Browser does not support video.captureStream.');
       videoTracks = cap.getVideoTracks();
     }
     const stream = new MediaStream([...videoTracks, ...dest.stream.getAudioTracks()]);
@@ -244,6 +293,7 @@ async function composeOnWeb(videoSrc, { musicSrc, musicVolume, muteOriginal, fra
 
     rec.start(500);
     if (mSrc) mSrc.start(0);
+    if (vSrcNode) vSrcNode.start(0);
     await video.play();
     startDraw();
     const dur = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 600;
@@ -253,6 +303,7 @@ async function composeOnWeb(videoSrc, { musicSrc, musicVolume, muteOriginal, fra
     });
     await new Promise((r) => setTimeout(r, 250));   // aakhri frames flush
     try { if (mSrc) mSrc.stop(); } catch (_) { /* ignore */ }
+    try { if (vSrcNode) vSrcNode.stop(); } catch (_) { /* ignore */ }
     try { video.pause(); } catch (_) { /* ignore */ }
     if (rec.state !== 'inactive') rec.stop();
     await stopped;
@@ -271,31 +322,31 @@ async function composeOnWeb(videoSrc, { musicSrc, musicVolume, muteOriginal, fra
 // ───────────────────────── PUBLIC ─────────────────────────
 /**
  * @param {string} videoUri   remote https / file:// / blob: video
- * @param {{musicUrl?:string, musicVolume?:number, muteOriginal?:boolean, frame?:{templateId?:string,title?:string,description?:string}|null}} opts
+ * @param {{musicUrl?:string, voiceUri?:string|null, musicVolume?:number, muteOriginal?:boolean, frame?:{templateId?:string,title?:string,description?:string}|null}} opts
  */
 export async function getVideoWithMusic(videoUri, opts = {}) {
-  const { musicUrl = '', musicVolume = 0.6, muteOriginal = false, frame = null } = opts || {};
+  const { musicUrl = '', voiceUri = null, musicVolume = 0.6, muteOriginal = false, frame = null } = opts || {};
   const base = { uri: videoUri, merged: false, ext: null, error: null, owned: false, blob: null };
   if (!videoUri) return { ...base, error: 'Video missing.' };
-  if (!hasMusic(musicUrl) && !frame) return base;          // na music, na frame => original hi sahi
+  if (!hasMusic(musicUrl) && !voiceUri && !frame) return base;          // na music, na voice, na frame => original hi sahi
   try {
     let music = null;
     if (hasMusic(musicUrl)) {
       music = await resolveMusicUrl(musicUrl);
-      if (!music) return { ...base, error: 'Music file app me nahi mili.' };
+      if (!music) return { ...base, error: 'Music file not found in app.' };
     }
 
     if (Platform.OS === 'web') {
-      const out = await composeOnWeb(String(videoUri), { musicSrc: music, musicVolume, muteOriginal, frame });
+      const out = await composeOnWeb(String(videoUri), { musicSrc: music, voiceSrc: voiceUri, musicVolume, muteOriginal, frame });
       return { uri: out.uri, merged: true, ext: out.ext, error: null, owned: true, blob: out.blob };
     }
 
-    if (!music) return base;                                // native par akela frame burn nahi hota (backend merge karta hai)
-    const merged = await mergeAudioOnDevice({ videoUri, musicUrl: music, musicVolume, muteOriginal });
-    if (!merged) return { ...base, error: getLastMergeError() || 'Music merge nahi ho paaya.' };
+    if (!music && !voiceUri) return base;
+    const merged = await mergeAudioOnDevice({ videoUri, voiceUri, musicUrl: music, musicVolume, muteOriginal });
+    if (!merged) return { ...base, error: getLastMergeError() || 'Failed to merge audio.' };
     return { uri: merged, merged: true, ext: 'mp4', error: null, owned: false, blob: null };
   } catch (e) {
-    return { ...base, error: e?.message || 'Video taiyaar nahi ho paayi.' };
+    return { ...base, error: e?.message || 'Failed to prepare video.' };
   }
 }
 

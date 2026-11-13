@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Image,
   ImageBackground,
@@ -43,6 +44,7 @@ if (Platform.OS !== 'web') {
 }
 import VideoPreview from '../components/VideoPreview';
 import NewsCameraModal from '../components/NewsCameraModal';
+import { downloadMedia } from '../utils/downloadMedia';
 import { compressImage, compressVideo } from '../utils/mediaCompressor';
 import VideoAudioEditorModal from '../components/VideoAudioEditorModal';
 import NewsLimitModal from '../components/NewsLimitModal';
@@ -444,6 +446,41 @@ export default function AddNewsScreen({ navigation, route }) {
   const [cameraMode, setCameraMode] = useState('photo');
   const [audioEditorVisible, setAudioEditorVisible] = useState(false);
   const [audioMix, setAudioMix] = useState(null); // { music, musicId, musicUrl, musicVolume, voiceUri, muteOriginal }
+  const [downloadingVideo, setDownloadingVideo] = useState(false);
+
+  const handleDownloadVideo = async () => {
+    if (!video || downloadingVideo) return;
+    setDownloadingVideo(true);
+    showToast('Preparing video with frame & audio…', 'info');
+    try {
+      const plainTitle = htmlToPlain(titleHtmlRef.current || title) || 'RTI NEWS';
+      const plainDesc = htmlToPlain(descriptionHtmlRef.current || descriptionText) || '';
+      const frameOpts = useFrame ? {
+        templateId: frameTemplate || 'glossy2',
+        title: plainTitle,
+        description: plainDesc,
+      } : null;
+
+      const res = await downloadMedia(video, {
+        type: 'video',
+        musicUrl: audioMix?.musicUrl || audioMix?.music?.file || '',
+        musicVolume: audioMix?.musicVolume ?? 0.6,
+        muteOriginal: Boolean(audioMix?.muteOriginal),
+        voiceUri: audioMix?.voiceUri || null,
+        frame: frameOpts,
+      });
+
+      if (res?.ok) {
+        showToast(res.message || (Platform.OS === 'web' ? 'Video downloaded successfully!' : 'Video saved to Gallery!'), 'success');
+      } else {
+        showToast(res?.message || 'Could not save video.', 'error');
+      }
+    } catch (err) {
+      showToast(err?.message || 'Failed to save video.', 'error');
+    } finally {
+      setDownloadingVideo(false);
+    }
+  };
 
   const videoOriginalUriRef = useRef(null);
   const titleEditorRef = useRef(null);
@@ -1229,14 +1266,32 @@ console.log("Platform:", Platform.OS);
         </View>
       ) : null}
       {video ? (
-        <TouchableOpacity
-          onPress={pickVideo}
-          activeOpacity={0.85}
-          style={{ alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, backgroundColor: '#111827' }}
-        >
-          <Feather name="repeat" size={12} color="#fff" />
-          <Text style={T.changeOverlayText}>Change Video</Text>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+          <TouchableOpacity
+            onPress={pickVideo}
+            activeOpacity={0.85}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, backgroundColor: '#111827' }}
+          >
+            <Feather name="repeat" size={13} color="#fff" />
+            <Text style={T.changeOverlayText}>Change Video</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={handleDownloadVideo}
+            disabled={downloadingVideo}
+            activeOpacity={0.85}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 7, borderRadius: 16, backgroundColor: downloadingVideo ? '#047857' : '#059669' }}
+          >
+            {downloadingVideo ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Feather name="download" size={13} color="#fff" />
+            )}
+            <Text style={{ color: '#fff', fontSize: 12, fontWeight: '700' }}>
+              {downloadingVideo ? 'Saving Video…' : 'Save to Gallery'}
+            </Text>
+          </TouchableOpacity>
+        </View>
       ) : null}
       {video ? (
         <TouchableOpacity style={T.audioEditBtn} onPress={() => setAudioEditorVisible(true)} activeOpacity={0.85}>

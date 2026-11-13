@@ -16,9 +16,26 @@ const loadImage = (src) => new Promise((res, rej) => {
   const img = new window.Image();
   img.crossOrigin = 'anonymous';
   img.onload = () => res(img);
-  img.onerror = () => rej(new Error('Image load nahi hui.'));
+  img.onerror = () => rej(new Error('Failed to load image.'));
   img.src = src;
 });
+
+function resolveFrameAssetUri(asset) {
+  if (!asset) return '';
+  if (typeof asset === 'string') return asset;
+  if (typeof asset === 'object') {
+    if (typeof asset.default === 'string') return asset.default;
+    if (asset.default?.uri) return asset.default.uri;
+    if (typeof asset.uri === 'string') return asset.uri;
+  }
+  try {
+    if (typeof RNImage?.resolveAssetSource === 'function') {
+      const src = RNImage.resolveAssetSource(asset);
+      if (src?.uri) return src.uri;
+    }
+  } catch (_) {}
+  return '';
+}
 
 // text ko band ki width me fit karo (static image me scroll nahi hota, isliye "…" lagta hai)
 function fitText(ctx, text, maxW) {
@@ -60,8 +77,8 @@ export async function composeFramedImageWeb(imageSrc, frame) {
 
     if (frame) {
       const tpl = getFrameTemplate(frame.templateId);
-      const fsrc = RNImage.resolveAssetSource(tpl.asset)?.uri;
-      if (!fsrc) throw new Error('Frame image nahi mili.');
+      const fsrc = resolveFrameAssetUri(tpl.asset);
+      if (!fsrc) throw new Error('Frame image not found.');
       const fimg = await loadImage(fsrc);
       const bannerH = Math.round(OUT_W / tpl.aspect);
       ctx.drawImage(fimg, 0, OUT_H - bannerH, OUT_W, bannerH);

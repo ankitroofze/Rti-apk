@@ -163,23 +163,21 @@ async function downloadNative(url, type) {
 }
 
 // type: 'image' | 'video'. Hamesha { ok, message } return karta hai (throw nahi karta).
-// Video ke saath `musicUrl` (backend music_url) / `frame` diya ho to wo video me merge hokar hi download hota hai.
-export async function downloadMedia(url, { type = 'image', musicUrl = '', musicVolume = 0.6, muteOriginal = false, frame = null } = {}) {
+// Video ke saath `musicUrl` (backend music_url) / `voiceUri` / `frame` diya ho to wo video me merge hokar hi download hota hai.
+export async function downloadMedia(url, { type = 'image', musicUrl = '', voiceUri = null, musicVolume = 0.6, muteOriginal = false, frame = null } = {}) {
   const src = String(url || '').trim();
   if (!src) return { ok: false, message: 'Nothing to download.' };
   try {
     let target = src;
     let extra = {};
     let warn = '';
-    if (type === 'video' && needsVideoMerge({ musicUrl, frame })) {
-      const m = await getVideoWithMusic(src, { musicUrl, musicVolume, muteOriginal, frame });
+    if (type === 'video' && needsVideoMerge({ musicUrl, voiceUri, frame })) {
+      const m = await getVideoWithMusic(src, { musicUrl, voiceUri, musicVolume, muteOriginal, frame });
       if (m.merged) {
         target = m.uri;
         extra = { ext: m.ext, owned: m.owned };
-        // native par music judta hai, par frame video me tabhi aata hai jab backend ne pehle merge kiya ho
-        if (frame && Platform.OS !== 'web') warn = 'Video music ke saath save hui (frame is device par video me nahi judta).';
       } else {
-        warn = `Frame / music add nahi ho paaya${m.error ? ` (${m.error})` : ''}. Original video save hui.`;
+        warn = `Could not add frame or audio${m.error ? ` (${m.error})` : ''}. Original video was saved.`;
       }
     } else if (type === 'image' && frame && Platform.OS === 'web') {
       // WEB image: frame + title ko canvas par jodkar ek JPG (native par ye MediaDownloadButton me capture se hota hai)
@@ -188,7 +186,7 @@ export async function downloadMedia(url, { type = 'image', musicUrl = '', musicV
         target = c.uri;
         extra = { ext: c.ext, owned: true };
       } catch (err) {
-        warn = `Frame add nahi ho paaya${err?.message ? ` (${err.message})` : ''}. Original image save hui.`;
+        warn = `Could not apply frame${err?.message ? ` (${err.message})` : ''}. Original image was saved.`;
       }
     }
     const res = Platform.OS === 'web' ? await downloadWeb(target, type, extra) : await downloadNative(target, type);

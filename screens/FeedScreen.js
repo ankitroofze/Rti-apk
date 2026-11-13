@@ -10,7 +10,7 @@ import {
 import styles from './FeedScreenStyles';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { VideoView, useVideoPlayer } from 'expo-video';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, Feather } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { useAudioPlayer } from 'expo-audio';
@@ -32,6 +32,7 @@ import { compressImage, compressVideo } from '../utils/mediaCompressor';
 import { getEngagement, subscribeEngagement } from '../utils/newsEngagementStore';
 import useLiveRefresh from '../utils/useLiveRefresh';
 import { useAuth } from '../contexts/AuthContext';
+import { downloadMedia } from '../utils/downloadMedia';
 
 const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 const MOBILE_BREAKPOINT = 900;
@@ -971,6 +972,8 @@ function UploadModal({ visible, onClose, onPost }) {
           visible={audioEditorVisible}
           videoUri={mediaType === 'Video' ? mediaUri : null}
           initial={audioMix}
+          title={headline}
+          description={caption}
           onClose={() => setAudioEditorVisible(false)}
           onDone={(mix) => {
             setAudioMix(mix.musicId || mix.voiceUri ? mix : null);
@@ -1411,7 +1414,7 @@ function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditC
 // Action Column
 // Look: Instagram Reels jaisa — sirf icon + count, peeche koi black circle/shadow nahi.
 // Neeche 3 dots (⋮) button: usme Views count + Upload date/time dikhta hai.
-function ActionColumn({ post, onLike, onComment, onShare, onBookmark, onDescription, onMore, scaleAnim, isMobileLayout, bottomInset = 0 }) {
+function ActionColumn({ post, onLike, onComment, onShare, onDownload, onBookmark, onDescription, onMore, scaleAnim, isMobileLayout, bottomInset = 0 }) {
   const formatCount = (n) =>
     n >= 1_000_000 ? (n / 1_000_000).toFixed(1) + 'M' :
     n >= 1_000 ? (n / 1_000).toFixed(1) + 'K' : String(n);
@@ -1462,6 +1465,15 @@ function ActionColumn({ post, onLike, onComment, onShare, onBookmark, onDescript
         <Text style={countStyle}>{shareCount}</Text>
         {!isMobileLayout ? <Text style={labelStyle}>Share</Text> : null}
       </TouchableOpacity>
+
+      {post.video ? (
+        <TouchableOpacity style={btn} onPress={() => onDownload?.(post)} activeOpacity={0.75}>
+          <View style={iconWrap}>
+            <Feather name="download" size={iconSz - 4} color="#fff" />
+          </View>
+          {!isMobileLayout ? <Text style={labelStyle}>Save</Text> : null}
+        </TouchableOpacity>
+      ) : null}
 
       {/* 3 dots — Views count + Upload date/time yahan se dikhte hain */}
       {!post.isAd ? (
@@ -1631,7 +1643,7 @@ function LocalVoiceOver({ voiceUri, musicUrl, musicVolume = 0.6, playing }) {
 }
 
 // Reel Card
-function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDescription, onProfilePress, onAdPress, onFollow, onVerifyComments, isActive, isNear = true, bottomInset = 0, cardWidth, cardHeight, isMobileLayout }) {
+function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, onDescription, onProfilePress, onAdPress, onFollow, onVerifyComments, isActive, isNear = true, bottomInset = 0, cardWidth, cardHeight, isMobileLayout }) {
   const safePost = post || {};
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const flashAnim = useRef(new Animated.Value(0)).current; // resume par center me pause icon flash
@@ -2178,6 +2190,7 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
         <ActionColumn
           post={{ ...safePost, likes: Number(safePost.likes || 0), shares, comments, commentsCount: shownCommentsCount, commentsPending, views: Number(safePost.views || 0) + viewBump }}
           onLike={handleLikePress} onComment={onComment} onShare={onShare}
+          onDownload={onDownload}
           onBookmark={onBookmark} onDescription={onDescription}
           onMore={() => setInfoVisible(true)}
           scaleAnim={scaleAnim} isMobileLayout={true} bottomInset={bottomInset}
@@ -2808,6 +2821,36 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     setSharePost(id);
   }, []);
 
+  const [downloadingReelId, setDownloadingReelId] = useState(null);
+  const handleDownloadReel = useCallback(async (post) => {
+    if (!post?.video || downloadingReelId) return;
+    setDownloadingReelId(post.id);
+    Alert.alert('Download', 'Preparing video with frame & audio…');
+    try {
+      const res = await downloadMedia(post.video, {
+        type: 'video',
+        musicUrl: post.musicUrl || post.localMusicUrl || '',
+        musicVolume: post.musicVolume ?? post.localMusicVolume ?? 0.6,
+        muteOriginal: Boolean(post.muteOriginal ?? post.localMuteOriginal),
+        voiceUri: post.localVoiceUri || post.voiceUri || post.voice_url || null,
+        frame: post.useFrame ? {
+          templateId: post.frameTemplate || 'glossy2',
+          title: post.headline || post.title || '',
+          description: post.caption || post.description || '',
+        } : null,
+      });
+      if (res?.ok) {
+        Alert.alert('Success', res.message || (Platform.OS === 'web' ? 'Video downloaded successfully!' : 'Video saved to Gallery!'));
+      } else {
+        Alert.alert('Error', res?.message || 'Download failed.');
+      }
+    } catch (e) {
+      Alert.alert('Error', e?.message || 'Download failed.');
+    } finally {
+      setDownloadingReelId(null);
+    }
+  }, [downloadingReelId]);
+
   const handleDescription = useCallback(async (id) => {
     setDescPost(id);
     await syncPostComments(id);
@@ -3331,6 +3374,7 @@ image: item.image || null,
                 onBookmark={handleBookmark}
                 onComment={handleComment}
                 onShare={handleShare}
+                onDownload={handleDownloadReel}
                 onDescription={handleDescription}
                 onVerifyComments={handleVerifyComments}
                           onProfilePress={(postData) =>

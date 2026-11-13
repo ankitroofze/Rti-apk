@@ -680,9 +680,8 @@ function QuickMenuWeb({ navigation, route }) {
 
   React.useEffect(() => {
     if (typeof document === 'undefined') return;
-    // Profile open ho to profile-owner ki exact tier artwork sidebar me bhi
-    // dikhe. Baaki sab modules par normal profile-red artwork return hota hai.
-    const activeAsset = activeScreen === 'Profile' ? profileTier?.bgImage : _redAsset;
+    // Sidebar hamesha brand red background me rehta hai taaki kisi bhi screen (jaise Profile) par glitch/white na ho
+    const activeAsset = _redAsset;
     const uri = typeof activeAsset === 'string'
       ? activeAsset
        : (typeof Image.resolveAssetSource === 'function'
@@ -690,12 +689,12 @@ function QuickMenuWeb({ navigation, route }) {
           : (activeAsset?.uri || activeAsset?.default || SIDEBAR_RED_URI));
     const bg = uri ? `url("${uri}")` : '#9d0410';
     document.documentElement.style.setProperty('--qm-sidebar-bg', bg);
-  }, [activeScreen, profileTier]);
+  }, []);
   const [isMobileWeb, setIsMobileWeb] = React.useState(() => {
     return Platform.OS === 'web' && typeof window !== 'undefined' && window.innerWidth <= 760;
   });
-  // Profile open + user ki tier yellow artwork (Premium / Verified) => sidebar par black text
-  const isYellowSidebar = activeScreen === 'Profile' && profileTier?.bgImage === PROFILE_BG_YELLOW;
+  // Sidebar hamesha crisp red brand theme me rehta hai
+  const isYellowSidebar = false;
   const activeModule = WEB_MODULES.find((item) => item.screen === activeScreen) || WEB_MODULES[0];
   const ActiveComponent = activeModule.component || ProfileScreen;
 
