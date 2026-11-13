@@ -1,5 +1,6 @@
 import { SIDEBAR_MENU_ITEMS, STATE_LABELS, FALLBACK_DISTRICT_MAP } from '../constants/homeData';
 import { Platform } from 'react-native';
+import { normalizeFrameTemplateId } from '../constants/frameTemplates';
 
 export function stripHtml(value) {
   return String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -118,13 +119,14 @@ export function normalizeStoryItem(item, index = 0) {
     video: item.video || null,
     file: item.file || null,
     mediaType: item.mediaType || (item.video ? 'Video' : (item.file ? 'File' : (storyImage ? 'Image' : 'None'))),
-    // Frame / template (Home, All Feed, Details sab jagah same dikhe) — pehle ye fields yahin drop ho jaate the
-    useFrame: Boolean(item.useFrame),
-    frameTemplate: item.frameTemplate || '',
-    frameMerged: Boolean(item.frameMerged),
-    musicUrl: String(item.musicUrl || item.music_url || '').trim(),
-    musicVolume: item.musicVolume ?? item.music_volume ?? 0.6,
+    // Frame / template (Home, All Feed, Details sab jagah same dikhe) — backend snake_case aur camelCase dono support
+    useFrame: [1, '1', true, 'true'].includes(item.use_frame ?? item.useFrame),
+    frameTemplate: normalizeFrameTemplateId(item.frame_template ?? item.frameTemplate ?? '') || (item.use_frame ? 'glossy2' : ''),
+    frameMerged: [1, '1', true, 'true'].includes(item.frame_merged ?? item.frameMerged ?? item.is_frame_merged),
+    musicUrl: String(item.music_url ?? item.musicUrl ?? '').trim(),
+    musicVolume: Number.isFinite(Number(item.music_volume ?? item.musicVolume)) ? Number(item.music_volume ?? item.musicVolume) : 0.6,
     muteOriginal: Boolean(item.muteOriginal) || [1, '1', true, 'true'].includes(item.mute_original),
+    voiceUri: item.voice_url || item.voice || item.voiceUri || null,
     date: item.date || '05 May 2026',
     createdAt: item.createdAt || item.created_at || item.date || '',
     publishedAgo: item.publishedAgo || 'Updated recently',

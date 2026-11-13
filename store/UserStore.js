@@ -1224,6 +1224,7 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
     muteOriginal: [1, '1', true, 'true'].includes(apiItem.mute_original ?? apiItem.muteOriginal),
     // Video par frame tabhi merged maana jayega jab backend explicitly `frame_merged: 1` bheje; backend raw video rakhta hai isliye default false hai.
     frameMerged: [1, '1', true, 'true'].includes(apiItem.frame_merged ?? apiItem.is_frame_merged),
+    voiceUri: apiItem.voice_url ? resolveMediaUrl(apiItem.voice_url) : (apiItem.voice ? resolveMediaUrl(apiItem.voice) : (apiItem.voiceUri || null)),
     mediaType,
     media: mediaType === 'Image' ? undefined : mediaUrl,
     images: mediaType === 'Image' ? collectedImages : [],
