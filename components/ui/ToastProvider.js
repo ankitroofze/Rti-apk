@@ -12,7 +12,7 @@ const ToastContext = createContext({
 // App ke 200+ jagah se showToast(msg, 'error') aata hai (validation, permission, normal flow ke messages bhi) —
 // un sab ko yahin ek jagah se neutral "Notice" bana diya, taaki kisi file me kuch badalna na pade.
 const GENERIC_ERROR_TITLES = /^\s*(error|errors|oops!?|failed|failure|something went wrong)\s*$/i;
-const normalizeToastType = (type) => (type === 'success' ? 'success' : 'info');
+const normalizeToastType = (type) => (type === 'success' ? 'success' : type === 'error' ? 'error' : 'info');
 const cleanToastMessage = (message) => {
   const text = typeof message === 'string' ? message : (message?.message ? String(message.message) : String(message ?? ''));
   // "Error: xyz" / "Error - xyz" jaise prefix hata do, sirf kaam ki baat dikhao
@@ -74,63 +74,116 @@ export function ToastProvider({ children }) {
   const showPopup = useCallback((message, type = 'info', options = {}) => {
     const {
       title,
+      buttons,
       primaryLabel,
       onPrimaryPress,
       secondaryLabel,
       onSecondaryPress,
+      isDestructive,
     } = options || {};
 
     setPopup({
       message,
       type,
       title,
+      buttons,
       primaryLabel,
       onPrimaryPress,
       secondaryLabel,
       onSecondaryPress,
+      isDestructive,
     });
   }, []);
 
-  // ✅ App me koi bhi Alert.alert(...) / window.alert(...) ab system alert nahi dikhata —
-  // sab isi existing popup (showPopup) me aata hai. Alert ke 1–2 buttons popup ke buttons ban jaate hain;
-  // 3+ buttons wale alerts (popup me jagah nahi) purane tareeke se hi chalte hain.
+  // ✅ App me koi bhi Alert.alert(...) / window.alert(...) ab system alert nahi dikhata:
+  // - Informational messages (0 or 1 button): Auto-dismissing floating TOAST dikhate hain (non-blocking).
+  // - Confirmation alerts (2+ buttons / cancel + action): Custom POPUP dialog dikhate hain.
   useEffect(() => {
     const origNative = Alert.alert;
     const origWindow = typeof window !== 'undefined' ? window.alert : null;
+    const origConfirm = typeof window !== 'undefined' ? window.confirm : null;
 
     Alert.alert = function patchedAlert(title, message, buttons, options) {
       const list = Array.isArray(buttons) ? buttons.filter(Boolean) : [];
-      if (list.length > 2) return origNative.call(Alert, title, message, buttons, options);
       const t = String(title ?? '').trim();
       const m = message != null ? String(message).trim() : '';
       const body = cleanToastMessage(m || t);
       const popupTitle = m && !GENERIC_ERROR_TITLES.test(t) ? t : '';
-      const primary = list.length === 1 ? list[0] : (list.find((x) => x.style !== 'cancel') || list[1]);
-      const secondary = list.length === 2 ? list.find((x) => x !== primary) : null;
+
+      // Check if this is a confirmation alert: 2+ buttons OR explicit cancel choice
+      const isConfirmation = list.length >= 2 || (list.length === 1 && list[0]?.style === 'cancel');
+
+      if (!isConfirmation) {
+        // ✅ USER REQUEST: "agar koi massage hai to oo toast"
+        const full = `${t} ${m}`.toLowerCase();
+        let toastType = 'info';
+        if (/success|saved|done|copied|published|approved|created|updated/i.test(full)) {
+          toastType = 'success';
+        } else if (/error|failed|failure|invalid|wrong|cannot|unable|denied|required/i.test(full)) {
+          toastType = 'error';
+        }
+
+        showToast(body, toastType, { title: popupTitle || undefined });
+
+        // Agar single button me callback ho (e.g. navigation.goBack()), smoothly trigger karo
+        if (list.length === 1 && typeof list[0]?.onPress === 'function') {
+          setTimeout(() => {
+            try { list[0].onPress(); } catch (err) { console.warn('[patchedAlert] onPress error:', err); }
+          }, 250);
+        }
+        return undefined;
+      }
+
+      // ✅ USER REQUEST: "ya confirmation alert hai to oo mujhe pop me dikhna chiye"
+      const primary = list.find((x) => x.style === 'destructive') || list.find((x) => x.style !== 'cancel') || list[list.length - 1];
+      const secondary = list.find((x) => x !== primary) || null;
+      const isDestructive = primary?.style === 'destructive' || /delete|remove|clear|reset|block/i.test(primary?.text || '');
+
       showPopup(body, 'info', {
-        title: popupTitle || undefined,
-        primaryLabel: primary?.text,
+        title: popupTitle || 'Confirm',
+        buttons: list.length > 2 ? list : undefined,
+        primaryLabel: primary?.text || 'OK',
         onPrimaryPress: primary?.onPress,
-        secondaryLabel: secondary?.text,
+        secondaryLabel: secondary?.text || 'Cancel',
         onSecondaryPress: secondary?.onPress,
+        isDestructive,
       });
       return undefined;
     };
 
     if (origWindow) {
-      window.alert = (msg) => { showPopup(cleanToastMessage(msg), 'info'); };
+      window.alert = (msg) => {
+        showToast(cleanToastMessage(msg), 'info');
+      };
+    }
+
+    if (typeof window !== 'undefined') {
+      window.confirm = (msg) => {
+        Alert.alert('Confirm', cleanToastMessage(msg), [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'OK' },
+        ]);
+        return false;
+      };
     }
 
     return () => {
       Alert.alert = origNative;
       if (origWindow) window.alert = origWindow;
+      if (origConfirm && typeof window !== 'undefined') window.confirm = origConfirm;
     };
-  }, [showPopup]);
+  }, [showPopup, showToast]);
 
-    const value = useMemo(
+  const value = useMemo(
     () => ({ showToast, showPopup, hidePopup, showLoader, hideLoader }),
     [hidePopup, showPopup, showToast, showLoader, hideLoader]
   );
+
+  const dismissPopup = useCallback(() => {
+    const cancelAction = popup?.onSecondaryPress || popup?.onCancel;
+    hidePopup();
+    try { cancelAction?.(); } catch (_) {}
+  }, [hidePopup, popup]);
 
   return (
     <ToastContext.Provider value={value}>
@@ -141,43 +194,76 @@ export function ToastProvider({ children }) {
           visible
           transparent
           animationType="fade"
-          onRequestClose={hidePopup}
+          onRequestClose={dismissPopup}
           statusBarTranslucent
         >
-          <Pressable style={styles.popupBackdrop} onPress={hidePopup} />
+          <Pressable style={styles.popupBackdrop} onPress={dismissPopup} />
           <View
             style={[styles.popupContainer, Platform.OS === 'web' ? styles.pointerEventsBoxNone : null]}
             {...(Platform.OS === 'web' ? {} : { pointerEvents: 'box-none' })}
           >
             <View style={[styles.popupCard, styles[popup.type] || styles.info]}>
               <Text style={styles.popupTitle}>
-                {popup.title || (popup.type === 'success' ? 'Success' : popup.type === 'error' ? 'Oops!' : 'Notice')}
+                {popup.title || (popup.type === 'success' ? 'Success' : popup.type === 'error' ? 'Notice' : 'Confirm')}
               </Text>
               <Text style={styles.popupMessage}>{popup.message}</Text>
 
-              <View style={styles.popupActions}>
-                {popup.secondaryLabel ? (
+              {Array.isArray(popup.buttons) && popup.buttons.length > 0 ? (
+                <View style={styles.popupActions}>
+                  {popup.buttons.map((btn, idx) => {
+                    const isCancel = btn.style === 'cancel' || /cancel|no/i.test(btn.text || '');
+                    const isDest = btn.style === 'destructive' || /delete|remove|clear|reset|block/i.test(btn.text || '');
+                    return (
+                      <Pressable
+                        key={btn.text || idx}
+                        style={[
+                          styles.popupBtn,
+                          isCancel ? styles.popupBtnSecondary : isDest ? styles.popupBtnDestructive : styles.popupBtnPrimary,
+                        ]}
+                        onPress={() => {
+                          hidePopup();
+                          try { btn.onPress?.(); } catch (err) { console.warn(err); }
+                        }}
+                      >
+                        <Text
+                          style={[
+                            isCancel ? styles.popupBtnSecondaryText : styles.popupBtnPrimaryText,
+                          ]}
+                        >
+                          {btn.text || 'OK'}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ) : (
+                <View style={styles.popupActions}>
+                  {popup.secondaryLabel ? (
+                    <Pressable
+                      style={[styles.popupBtn, styles.popupBtnSecondary]}
+                      onPress={() => {
+                        hidePopup();
+                        try { popup.onSecondaryPress?.(); } catch (err) { console.warn(err); }
+                      }}
+                    >
+                      <Text style={styles.popupBtnSecondaryText}>{popup.secondaryLabel}</Text>
+                    </Pressable>
+                  ) : null}
+
                   <Pressable
-                    style={[styles.popupBtn, styles.popupBtnSecondary]}
+                    style={[
+                      styles.popupBtn,
+                      popup.isDestructive ? styles.popupBtnDestructive : styles.popupBtnPrimary,
+                    ]}
                     onPress={() => {
                       hidePopup();
-                      popup.onSecondaryPress?.();
+                      try { popup.onPrimaryPress?.(); } catch (err) { console.warn(err); }
                     }}
                   >
-                    <Text style={styles.popupBtnSecondaryText}>{popup.secondaryLabel}</Text>
+                    <Text style={styles.popupBtnPrimaryText}>{popup.primaryLabel || 'OK'}</Text>
                   </Pressable>
-                ) : null}
-
-                <Pressable
-                  style={[styles.popupBtn, styles.popupBtnPrimary]}
-                  onPress={() => {
-                    hidePopup();
-                    popup.onPrimaryPress?.();
-                  }}
-                >
-                  <Text style={styles.popupBtnPrimaryText}>{popup.primaryLabel || 'OK'}</Text>
-                </Pressable>
-              </View>
+                </View>
+              )}
             </View>
           </View>
         </Modal>
@@ -341,6 +427,17 @@ const styles = StyleSheet.create({
     fontWeight: '600', // ✅ Weight 600
     letterSpacing: 0.3,
     fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto', // ✅ Roboto font
+  },
+  popupBtnDestructive: {
+    backgroundColor: '#dc2626',
+    borderColor: '#dc2626',
+  },
+  popupBtnDestructiveText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto',
   },
   toast: {
     width: '100%',

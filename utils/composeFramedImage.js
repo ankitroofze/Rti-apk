@@ -4,6 +4,7 @@
 // Hamesha { uri, blob, ext } return karta hai ya throw karta hai (caller fallback karega).
 import { Image as RNImage } from 'react-native';
 import { getFrameTemplate } from '../constants/frameTemplates';
+import { FRAME_DATA_URIS } from '../constants/frameBase64';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from './webMediaStore';
 import { toCorsSafeMediaUrl } from './videoWithMusic';
 
@@ -97,16 +98,68 @@ export async function composeFramedImageWeb(imageSrc, frame) {
 
     if (frame) {
       const tpl = getFrameTemplate(frame.templateId);
-      let fsrc = resolveFrameAssetUri(tpl.asset, tpl.file);
-      if (!fsrc) throw new Error('Frame image not found.');
-      if (typeof window !== 'undefined' && !/^(https?:|data:|blob:|\/)/i.test(fsrc)) {
-        fsrc = `/${fsrc}`;
-      }
-      const fimg = await loadImage(fsrc);
-      const bannerH = Math.round(OUT_W / tpl.aspect);
-      ctx.drawImage(fimg, 0, OUT_H - bannerH, OUT_W, bannerH);
+      const bannerH = Math.round(OUT_W / (tpl?.aspect || (1080 / 135)));
+      const y0 = OUT_H - bannerH;
 
-      const title = squash(frame.title);
+      let fimg = null;
+      // 1. Instant base64 data URI first (0ms load, NO network request, NO CORS, NO 404)
+      const b64 = (FRAME_DATA_URIS && (FRAME_DATA_URIS[tpl?.id] || FRAME_DATA_URIS.glossy2)) || null;
+      if (b64) {
+        try {
+          fimg = await loadImage(b64);
+        } catch (_) {}
+      }
+
+      if (!fimg) {
+        const candidateUris = [
+          resolveFrameAssetUri(tpl?.asset, tpl?.file),
+          tpl?.file ? `/assets/frames/${String(tpl.file).replace(/\.png$/i, '')}.png` : '',
+          tpl?.file ? `./assets/frames/${String(tpl.file).replace(/\.png$/i, '')}.png` : '',
+          tpl?.file ? `/assets/frames/${tpl.file}` : '',
+        ].filter(Boolean);
+
+        for (let fsrc of candidateUris) {
+          try {
+            if (typeof window !== 'undefined' && !/^(https?:|data:|blob:|\/)/i.test(fsrc)) {
+              fsrc = `/${fsrc}`;
+            }
+            fimg = await loadImage(fsrc);
+            if (fimg) break;
+          } catch (_) {}
+        }
+      }
+
+      if (fimg) {
+        ctx.drawImage(fimg, 0, y0, OUT_W, bannerH);
+      } else {
+        // Vector Breaking News lower-third banner fallback:
+        const grad = ctx.createLinearGradient(0, y0, OUT_W, y0 + bannerH);
+        grad.addColorStop(0, '#7f1d1d');
+        grad.addColorStop(0.5, '#991b1b');
+        grad.addColorStop(1, '#b91c1c');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, y0, OUT_W, bannerH);
+
+        ctx.fillStyle = '#fbbf24';
+        ctx.fillRect(0, y0, OUT_W, 4);
+
+        const badgeW = Math.round(OUT_W * 0.22);
+        ctx.fillStyle = '#eab308';
+        ctx.beginPath();
+        ctx.moveTo(0, y0);
+        ctx.lineTo(badgeW, y0);
+        ctx.lineTo(badgeW - 20, y0 + bannerH);
+        ctx.lineTo(0, y0 + bannerH);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.font = '900 28px Roboto, sans-serif';
+        ctx.fillStyle = '#000000';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('BREAKING', 18, y0 + bannerH / 2);
+      }
+
+      const title = squash(frame.title) || 'RTI NEWS';
       const desc = squash(frame.description);
       for (const b of tpl.bands || []) {
         let text = '';

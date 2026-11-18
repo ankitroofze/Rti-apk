@@ -16,6 +16,7 @@ import { shareNewsPackage } from '../utils/shareNews';
 import useFramedImageCapture from '../components/useFramedImageCapture';
 import ProfileAvatar from '../components/ProfileAvatar';
 import VideoPreview from '../components/VideoPreview';
+import SocialShareModal from '../components/SocialShareModal';
 import VerifiedBadge from '../components/VerifiedBadge';
 import { useToast } from '../components/ui/ToastProvider';
 import { UserStore } from '../store/UserStore';
@@ -620,8 +621,10 @@ export default function NewsFeedScreen({ navigation }) {
     totalShares: 0,
   });
   const [adFeedItems, setAdFeedItems] = useState([]);
+  const [shareModalVisible, setShareModalVisible] = useState(false);
+  const [selectedShareItem, setSelectedShareItem] = useState(null);
 
-  const moduleName = 'News Feed';
+  const moduleName = 'My News';
   const insets = useSafeAreaInsets();
   const stateOptions = ['All', ...INDIAN_STATES];
 
@@ -787,12 +790,35 @@ const syncFeed = useCallback(async (focusItemId = null, { silent = false } = {})
 
   const { capture: captureFramedImage, host: framedCaptureHost } = useFramedImageCapture();
 
-  // Media (video / image — frame + music ke saath) + title + news link, ek hi share me
-  const handleShare = async (item) => {
+  // Media (video / image — frame + music ke saath) + title + news link, SocialShareModal se share
+  const handleShare = (item) => {
+    if (!item) return;
+    setSelectedShareItem(item);
+    setShareModalVisible(true);
+  };
+
+  const handleShareSuccess = async () => {
+    if (!selectedShareItem?.id) return;
+    const itemId = String(selectedShareItem.id);
+    setNewsData((prev) => ({
+      ...prev,
+      items: (prev.items || []).map((entry) =>
+        String(entry.id) === itemId ? { ...entry, shares: Number(entry.shares || 0) + 1 } : entry
+      ),
+    }));
     try {
+      await UserStore.updateNewsFeedItem(itemId, 'share');
+    } catch {}
+  };
+
+  const handleShareMediaPackage = async () => {
+    if (!selectedShareItem) return;
+    try {
+      const item = selectedShareItem;
       const newsLink = item.url ? String(item.url) : `https://rtinews.in/news/${encodeURIComponent(item.id || item.title || 'story')}`;
-      const itemVideoUri = typeof item.video === 'string' ? item.video : item.video?.uri;
-      const itemImage = String(item.image || item.images?.[0] || '').trim();
+      const itemVideoUri = (typeof item.video === 'string' ? item.video : item.video?.uri)
+        || (item.mediaType === 'Video' || item.mediaType === 2 || Number(item.media_type) === 2 ? (item.media || item.media_url || item.video_url) : null);
+      const itemImage = String(item.images?.[0] || item.image || (item.mediaType === 'Image' ? (item.media || item.media_url) : '') || '').trim();
       const kind = itemVideoUri ? 'video' : (/^https?:/i.test(itemImage) ? 'image' : 'none');
       const mediaUrl = kind === 'video' ? itemVideoUri : (kind === 'image' ? itemImage : '');
       const brandedVideo = item.branded_video || item.brandedVideo;
@@ -807,12 +833,11 @@ const syncFeed = useCallback(async (focusItemId = null, { silent = false } = {})
         frame: imgFrame,
         getNativeImageFile: kind === 'image' && imgFrame ? () => captureFramedImage(mediaUrl, imgFrame) : undefined,
       });
-      if (r.needsPaste) showToast('News link copied — paste it into your post caption.', 'info');
-      if (!r.shared) return;
-    } catch { showToast('Share failed.', 'error'); return; }
-    const result = await UserStore.updateNewsFeedItem(item.id, 'share');
-    if (!result.ok) { showToast(result.message, 'error'); return; }
-    loadNewsFeed();
+      if (r?.shared) await handleShareSuccess();
+      if (r?.needsPaste) showToast('News link copied — paste it into your post caption.', 'info');
+    } catch {
+      showToast('Share failed.', 'error');
+    }
   };
 
   const handleOpenFile = async (file) => {
@@ -894,15 +919,6 @@ const handleLike = async (item) => {
   };
 
   const handleDelete = async (item) => {
-    if (Platform.OS === 'web') {
-      const confirmed = typeof globalThis.confirm === 'function'
-        ? globalThis.confirm('Are you sure you want to delete this news item? This action cannot be undone.')
-        : true;
-      if (!confirmed) return;
-      await runDeleteNewsItem(item);
-      return;
-    }
-
     Alert.alert(
       'Delete News',
       'Are you sure you want to delete this news item? This action cannot be undone.',
@@ -1686,42 +1702,57 @@ const handleLike = async (item) => {
                   </View>
                 )}
 
-                {item.images?.length && item.useFrame ? (
-                  <FramedBox item={item}>
-                    {(w, h) => (item.images.length === 1 ? (
-                      <ResolvedImage uri={item.images[0]} style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' }} resizeMode="contain" />
-                    ) : (
-                      <MediaGallery images={item.images} width={w || Math.max(220, Math.min(windowWidth - 42, 720))} maxHeight={h || 420} />
-                    ))}
-                  </FramedBox>
-                ) : item.images?.length ? (
-                  <View
-                    style={styles.mediaPreviewWrap}
-                    onLayout={(e) => {
-                      const w = Math.round(e.nativeEvent.layout.width);
-                      if (w && w !== feedMediaWidth) setFeedMediaWidth(w);
-                    }}
-                  >
-                    {item.images.length === 1 ? (
-                      <ResolvedImage uri={item.images[0]} style={styles.mediaSingleImage} resizeMode="contain" />
-                    ) : (
-                      <MediaGallery
-                        images={item.images}
-                        width={feedMediaWidth || Math.max(220, Math.min(windowWidth - 42, 720))}
-                        maxHeight={420}
-                      />
-                    )}
-                  </View>
-                ) : null}
-                {item.video && item.useFrame ? (
-                  <FramedBox item={item}>
-                    <VideoPreview uri={typeof item.video === 'string' ? item.video : item.video?.uri} style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' }} contentFit="contain" />
-                  </FramedBox>
-                ) : item.video ? (
-                  <View style={styles.videoPreviewWrap}>
-                    <VideoPreview uri={typeof item.video === 'string' ? item.video : item.video?.uri} style={styles.videoPreview} contentFit="cover" />
-                  </View>
-                ) : null}
+                {(() => {
+                  const itemVideoUri = (typeof item.video === 'string' ? item.video : item.video?.uri)
+                    || (item.mediaType === 'Video' || item.mediaType === 2 || Number(item.media_type) === 2 ? (item.media || item.media_url || item.video_url) : null);
+                  if (itemVideoUri) {
+                    if (item.useFrame) {
+                      return (
+                        <FramedBox item={item}>
+                          <VideoPreview uri={itemVideoUri} style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' }} contentFit="contain" />
+                        </FramedBox>
+                      );
+                    }
+                    return (
+                      <View style={styles.videoPreviewWrap}>
+                        <VideoPreview uri={itemVideoUri} style={styles.videoPreview} contentFit="contain" />
+                      </View>
+                    );
+                  }
+                  if (item.images?.length && item.useFrame) {
+                    return (
+                      <FramedBox item={item}>
+                        {(w, h) => (item.images.length === 1 ? (
+                          <ResolvedImage uri={item.images[0]} style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' }} resizeMode="contain" />
+                        ) : (
+                          <MediaGallery images={item.images} width={w || Math.max(220, Math.min(windowWidth - 42, 720))} maxHeight={h || 420} />
+                        ))}
+                      </FramedBox>
+                    );
+                  }
+                  if (item.images?.length) {
+                    return (
+                      <View
+                        style={styles.mediaPreviewWrap}
+                        onLayout={(e) => {
+                          const w = Math.round(e.nativeEvent.layout.width);
+                          if (w && w !== feedMediaWidth) setFeedMediaWidth(w);
+                        }}
+                      >
+                        {item.images.length === 1 ? (
+                          <ResolvedImage uri={item.images[0]} style={styles.mediaSingleImage} resizeMode="contain" />
+                        ) : (
+                          <MediaGallery
+                            images={item.images}
+                            width={feedMediaWidth || Math.max(220, Math.min(windowWidth - 42, 720))}
+                            maxHeight={420}
+                          />
+                        )}
+                      </View>
+                    );
+                  }
+                  return null;
+                })()}
 
                 {item.file ? (
                   <View style={styles.fileInfoBox}>
@@ -1755,7 +1786,7 @@ const handleLike = async (item) => {
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.actionIconButton} onPress={() => handleShare(item)}>
                     <Feather name="share-2" size={15} color={C.textSub} />
-                    <Text style={styles.actionIconText}>{item.shares}</Text>
+                    <Text style={styles.actionIconText}>{item.shares != null ? item.shares : 0}</Text>
                   </TouchableOpacity>
                          </View>
                 {renderCommentsPanel(item)}
@@ -1790,6 +1821,29 @@ const handleLike = async (item) => {
         onUpdate={loadNewsFeed}
         showToast={showToast}
       />
+
+      {selectedShareItem ? (
+        <SocialShareModal
+          visible={shareModalVisible}
+          onClose={() => {
+            setShareModalVisible(false);
+            setSelectedShareItem(null);
+          }}
+          title={selectedShareItem.title || ''}
+          description={selectedShareItem.description || selectedShareItem.subtitle || ''}
+          url={selectedShareItem.url ? String(selectedShareItem.url) : `https://rtinews.in/news/${encodeURIComponent(selectedShareItem.id || 'story')}`}
+          language={language}
+          onShareSuccess={handleShareSuccess}
+          mediaKind={
+            (selectedShareItem.video || selectedShareItem.mediaType === 'Video' || Number(selectedShareItem.media_type) === 2)
+              ? 'video'
+              : (selectedShareItem.images?.[0] || selectedShareItem.image)
+                ? 'image'
+                : ''
+          }
+          onShareMedia={handleShareMediaPackage}
+        />
+      ) : null}
 
 
         </View>

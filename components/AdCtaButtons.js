@@ -19,8 +19,6 @@ export default function AdCtaButtons({ ad, onOpenLeadForm, style }) {
       const waUrl = buildWhatsappUrl(ad);
       if (waUrl) {
         openExternalUrl(waUrl);
-      } else if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        window.alert('This advertiser has not added a WhatsApp number yet.');
       } else {
         Alert.alert('WhatsApp', 'This advertiser has not added a WhatsApp number yet.');
       }

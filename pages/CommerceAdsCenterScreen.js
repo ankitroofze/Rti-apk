@@ -1,4 +1,4 @@
-﻿import React, { useCallback, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -26,9 +26,7 @@ import ModuleWebHeader from '../components/Modulewebheader';
 import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 
 const notify = (title, message) => {
-  if (typeof alert !== 'undefined') {
-    alert(`${title}\n${message}`);
-  }
+  Alert.alert(title, message);
 };
 
 const StatCard = ({ icon, label, value, color, onPress, cardWidth }) => (
@@ -62,10 +60,6 @@ const ActionButton = ({ icon, label, onPress, color, cardWidth }) => (
 );
 
 const confirmDelete = (title, message, onYes) => {
-  if (Platform.OS === 'web') {
-    if (globalThis.confirm?.(message)) onYes();
-    return;
-  }
   Alert.alert(title, message, [
     { text: 'Cancel', style: 'cancel' },
     { text: 'Delete', style: 'destructive', onPress: onYes },

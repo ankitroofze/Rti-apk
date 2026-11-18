@@ -14,16 +14,14 @@ export default function ControlledVideo({ uri, style, maxHeight = 420 }) {
   const limitH = box.h > 0 ? Math.min(box.h, maxHeight) : maxHeight;
   return (
     <View
-      style={[{ width: '100%', backgroundColor: '#000', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }, style]}
+      style={[{ width: '100%', minHeight: 180, backgroundColor: '#000', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }, style]}
       onLayout={(e) => {
         const w = Math.round(e.nativeEvent.layout.width);
         const h = Math.round(e.nativeEvent.layout.height);
         if (w !== box.w || h !== box.h) setBox({ w, h });
       }}
     >
-      {box.w > 0 ? (
-        <MediaGallery key={uri} images={[]} video={uri} width={box.w} maxHeight={limitH} />
-      ) : null}
+      <MediaGallery key={uri} images={[]} video={uri} width={box.w || 360} maxHeight={limitH} />
     </View>
   );
 }

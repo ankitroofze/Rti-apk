@@ -626,7 +626,8 @@ function NewsFeedCardInner({
 }) {
   const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const { isLoggedIn } = useAuth();
-  const { showToast: showLoginToast, showPopup } = useToast();
+  const { showToast, showPopup } = useToast();
+  const showLoginToast = showToast;
   const isScreenFocused = useIsFocused();
   const cardRef = useRef(null);
   const likeInFlightRef = useRef(false);
@@ -1019,11 +1020,11 @@ function NewsFeedCardInner({
   };
   const postLink = useMemo(() => {
     if (story.url) return String(story.url);
-    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.origin) {
-      return `${window.location.origin}/news/${encodeURIComponent(story.id || story.title || 'story')}`;
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location?.hostname && !/^(localhost|127\.0\.0\.1|\d+\.\d+\.\d+\.\d+)$/.test(window.location.hostname)) {
+      return `${window.location.origin}/news/${encodeURIComponent(story.id || 'story')}`;
     }
-    return `https://rtinews.in/news/${encodeURIComponent(story.id || story.title || 'story')}`;
-  }, [story.id, story.title, story.url]);
+    return `https://rtinews.in/news/${encodeURIComponent(story.id || 'story')}`;
+  }, [story.id, story.url]);
 
   // ✅ Single image (news + ads): poori image apne asli ratio me dikhe — crop / zoom nahi
   const singleFitImage = !framed && !canPlayVideo && !isFileAttachment && !hasImageGallery && Boolean(safeImage);
@@ -1218,13 +1219,9 @@ function NewsFeedCardInner({
 
   const showLoginRequired = useCallback(() => {
     try {
-      if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.alert === 'function') {
-        window.alert('Please login to continue.');
-        return;
-      }
-      Alert.alert('Login required', 'Please login to continue.');
+      showToast('Please login to continue.', 'info');
     } catch {}
-  }, []);
+  }, [showToast]);
 
   const goToLogin = useCallback(() => {
     try {
@@ -1277,7 +1274,7 @@ const handleLike = async () => {
       setLikesCount(prevCount);
       lastOwnLikeActionAtRef.current = 0;
       if (result?.isAuth) goToLogin();
-      else Alert.alert(prevLiked ? 'Unlike' : 'Like', result?.message || 'Unable to update like. Please try again.');
+      else showToast(result?.message || 'Unable to update like. Please try again.', 'error');
       return;
     }
 
@@ -1347,7 +1344,7 @@ const handleLike = async () => {
       const result = await UserStore.addNewsComment(story.id, trimmed, { isAd: isAdStory });
       if (!result?.ok) {
         if (result?.isAuth) goToLogin();
-        else Alert.alert('Comment', result?.message || 'Unable to add comment.');
+        else showToast(result?.message || 'Unable to add comment.', 'error');
         return;
       }
       const newComment = { ...toCardComment(result.comment || {}), replies: [] };
@@ -1379,7 +1376,7 @@ const handleLike = async () => {
       if (!result?.ok) {
         if (result?.isAuth) goToLogin();
         else if (result?.notFound) await loadComments({ reset: true });
-        else Alert.alert('Edit', result?.message || 'Unable to edit comment.');
+        else showToast(result?.message || 'Unable to edit comment.', 'error');
         return;
       }
       setLocalComments((prev) =>
@@ -1408,9 +1405,10 @@ const handleLike = async () => {
       }
       if (!result?.ok) {
         if (result?.isAuth) goToLogin();
-        else Alert.alert('Delete', result?.message || 'Unable to delete comment.');
+        else showToast(result?.message || 'Unable to delete comment.', 'error');
         return;
       }
+      showToast('Comment deleted successfully.', 'success');
       if (String(commentId).startsWith('rpl-')) {
         // reply delete: sirf replies_count badalta hai, news ka comments_count nahi
         setLocalComments((prev) =>
@@ -1463,7 +1461,7 @@ const handleLike = async () => {
       if (!result?.ok) {
         if (result?.isAuth) goToLogin();
         else if (result?.notFound) await loadComments({ reset: true });
-        else Alert.alert('Reply', result?.message || 'Unable to add reply.');
+        else showToast(result?.message || 'Unable to add reply.', 'error');
         return;
       }
       // sirf replies_count badhao — news ka comments_count reply par nahi badalta
@@ -1535,7 +1533,7 @@ const handleLike = async () => {
       setSharesCount(nextShares);   // backend ka count
       publishEngagement(story.id, { shares: nextShares }, engId);
     } else if (res?.rateLimited) {
-      Alert.alert('Share', 'Please try again later.');
+      showToast('Please try again later.', 'info');
     }
   };
 
@@ -1641,7 +1639,11 @@ const handleLike = async () => {
     }
     setShowActionMenu(true);
   };
-  const showActionResult = (title, message) => { try { Alert.alert(title, message); } catch {} };
+  const showActionResult = (title, message) => {
+    try {
+      showToast(message || title, 'info');
+    } catch {}
+  };
 
   // Report post: pehle menu band, phir ReportModal (reason dropdown) kholo
   const handleReport = () => {
@@ -1657,21 +1659,21 @@ const handleLike = async () => {
   };
 
   const handleDeleteStory = async () => {
+    const confirmed = await new Promise((resolve) => {
+      showPopup(
+        'Are you sure you want to delete this post? This cannot be undone.',
+        'warning',
+        {
+          title: 'Delete Post',
+          primaryLabel: 'Delete',
+          primaryVariant: 'danger',
+          onPrimaryPress: () => resolve(true),
+          secondaryLabel: 'Cancel',
+          onSecondaryPress: () => resolve(false),
+        }
+      );
+    });
     closeActionMenu();
-    const confirmed = Platform.OS === 'web'
-      ? (typeof window !== 'undefined' && typeof window.confirm === 'function'
-          ? window.confirm('Are you sure you want to delete this post? This cannot be undone.')
-          : true)
-      : await new Promise((resolve) => {
-          Alert.alert(
-            'Delete Post',
-            'Are you sure you want to delete this post? This cannot be undone.',
-            [
-              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-              { text: 'Delete', style: 'destructive', onPress: () => resolve(true) },
-            ]
-          );
-        });
     if (!confirmed) return;
     try {
       const res = await UserStore.deleteMyPost(story);
@@ -2308,7 +2310,7 @@ const handleLike = async () => {
         <Modal visible={showActionMenu} transparent animationType={Platform.OS === 'web' ? 'none' : (menuAnchor ? 'none' : 'fade')} statusBarTranslucent onRequestClose={closeActionMenu}>
           <TouchableWithoutFeedback onPress={closeActionMenu}>
             <View style={(Platform.OS === 'web' || menuAnchor) ? styles.storyMoreMenuBackdropWeb : styles.storyMoreMenuBackdrop}>
-              <TouchableWithoutFeedback>
+              <TouchableWithoutFeedback onPress={(e) => { e?.stopPropagation?.(); }}>
                 <View style={(Platform.OS === 'web' || menuAnchor) ? [styles.storyMoreMenu, { position: 'absolute', top: menuAnchor?.top || 80, left: menuAnchor?.left || 80 }] : styles.storyMoreMenuSheet}>
                   {(!menuAnchor && Platform.OS !== 'web') ? <View style={styles.storyMoreMenuHandle} /> : null}
                   <TouchableOpacity style={styles.storyMoreMenuItem} onPress={handleMenuShare} activeOpacity={0.82}>
@@ -2358,6 +2360,7 @@ const handleLike = async () => {
           title={story.title}
           description={story.description || story.excerpt || story.subtitle || ''}
           url={postLink}
+          language={appLanguage}
           onShareSuccess={countShare}
           mediaKind={shareMediaKind}
           onShareMedia={handleShareMediaPackage}

@@ -25,8 +25,6 @@ export default function AdOverlayCta({ ad, onOpenLeadForm, bottom = 12, right = 
       const waUrl = buildWhatsappUrl(ad);
       if (waUrl) {
         openExternalUrl(waUrl);
-      } else if (Platform.OS === 'web' && typeof window !== 'undefined') {
-        window.alert('This advertiser has not added a WhatsApp number yet.');
       } else {
         Alert.alert('WhatsApp', 'This advertiser has not added a WhatsApp number yet.');
       }

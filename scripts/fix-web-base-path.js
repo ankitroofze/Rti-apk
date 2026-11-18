@@ -137,6 +137,35 @@ async function main() {
     return;
   }
 
+  // Ensure frames exist in dist/assets/frames
+  const framesSrc = path.resolve('assets/frames');
+  const framesDest = path.join(distDir, 'assets/frames');
+  if (fs.existsSync(framesSrc)) {
+    fs.mkdirSync(framesDest, { recursive: true });
+    for (const f of fs.readdirSync(framesSrc)) {
+      fs.copyFileSync(path.join(framesSrc, f), path.join(framesDest, f));
+    }
+  }
+
+  // Ensure music exist in dist/assets/music
+  const musicSrc = path.resolve('assets/music');
+  const musicDest = path.join(distDir, 'assets/music');
+  if (fs.existsSync(musicSrc)) {
+    fs.mkdirSync(musicDest, { recursive: true });
+    for (const f of fs.readdirSync(musicSrc)) {
+      fs.copyFileSync(path.join(musicSrc, f), path.join(musicDest, f));
+    }
+  }
+
+  // Ensure news-share.php and htaccess exist in dist
+  const rootFiles = ['news-share.php', '.htaccess'];
+  for (const f of rootFiles) {
+    const src = path.resolve(f);
+    if (fs.existsSync(src)) {
+      fs.copyFileSync(src, path.join(distDir, f));
+    }
+  }
+
   let changed = 0;
   for await (const filePath of walk(distDir)) {
     // Skip node_modules inside dist (if any).

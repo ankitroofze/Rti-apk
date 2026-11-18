@@ -322,12 +322,16 @@ const [reporterDate, setReporterDate] = useState('');
 
                 <TouchableOpacity
                   style={{flexDirection:'row',alignItems:'center',gap:6,paddingVertical:10,paddingHorizontal:18,borderRadius:10,backgroundColor:'#ffffff',borderWidth:1.5,borderColor:'#FCA5A5'}}
-                  onPress={async()=>{
-                    if(!window.confirm('All Epaper clear?')) return;
-                    const user = await UserStore.getCurrentUser();
-                    if(!user) return;
-                    await UserStore.updateUser(user.email, { epapers: [] });
-                    loadData();
+                  onPress={()=>{
+                    Alert.alert('Clear All', 'All Epaper will be cleared. Continue?', [
+                      { text: 'Cancel', style: 'cancel' },
+                      { text: 'Clear All', style: 'destructive', onPress: async () => {
+                        const user = await UserStore.getCurrentUser();
+                        if(!user) return;
+                        await UserStore.updateUser(user.email, { epapers: [] });
+                        loadData();
+                      }},
+                    ]);
                   }}
                   activeOpacity={0.85}
                 >
@@ -519,7 +523,7 @@ const [reporterDate, setReporterDate] = useState('');
                                 loadLayout: layout,
                               });
                             } else {
-                              alert('No newspaper layout was found for this date.');
+                              Alert.alert('Not found', 'No newspaper layout was found for this date.');
                             }
                           }}
                         >

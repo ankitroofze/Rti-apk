@@ -17,8 +17,10 @@ export function MediaDownloadButton({ uri, type = 'image', size = 34, style, mus
   const [job, setJob] = useState(null);              // native image + frame: { uri, frame }
   const captureRefView = useRef(null);
   const doneRef = useRef(false);
-  const { showPopup } = useToast();
-  const notify = useCallback((message) => { if (message) showPopup(message, 'info', { title: 'Download' }); }, [showPopup]);
+  const { showToast } = useToast();
+  const notify = useCallback((message) => {
+    if (message) showToast(message, 'info', { title: 'Download' });
+  }, [showToast]);
 
   const finish = useCallback((res) => {
     setBusy(false);
@@ -63,14 +65,14 @@ export function MediaDownloadButton({ uri, type = 'image', size = 34, style, mus
     setBusy(true);
     const hasSound = Boolean(musicUrl || voiceUri);
     if ((type === 'video' && (frame || hasSound)) || (type === 'image' && frame)) {
-      notify(hasSound || type === 'video' ? 'Preparing download with frame & sound…' : 'Preparing download with frame…');
+      notify(hasSound || type === 'video' ? 'Preparing download with frame & sound…' : 'Preparing download with animated frame…');
     }
     if (type === 'image' && frame && Platform.OS !== 'web' && /^(https?:|file:|content:)/i.test(String(uri))) {
       doneRef.current = false;
       setJob({ uri: String(uri), frame });             // FramedExportView render -> onLoad me capture
       return;
     }
-    const res = await downloadMedia(uri, { type, musicUrl, musicVolume, muteOriginal, voiceUri, frame, asVideo: Boolean(hasSound) });   // video: frame + music merge, image(web): frame canvas
+    const res = await downloadMedia(uri, { type, musicUrl, musicVolume, muteOriginal, voiceUri, frame, asVideo: Boolean(frame || hasSound) });   // frame image/video: animated scrolling frame reel
     finish(res);
   }, [busy, uri, type, musicUrl, musicVolume, muteOriginal, voiceUri, frame, finish]);
 

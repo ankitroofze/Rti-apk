@@ -19,7 +19,7 @@ const NAV_ITEMS = [
   { label: 'Home', icon: 'home-outline' },
   { label: 'Profile', icon: 'person-outline' },
   { label: 'Post News', icon: 'newspaper-outline', screen: 'QuickMenu' },
-  { label: 'News Feed', icon: 'list-outline' },
+  { label: 'My News', icon: 'list-outline' },
   { label: 'My Network', icon: 'people-outline' },
   { label: 'Wallet', icon: 'wallet-outline' },
   { label: 'Withdraw', icon: 'cash-outline' },

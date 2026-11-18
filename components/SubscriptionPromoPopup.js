@@ -345,6 +345,7 @@ const st = StyleSheet.create({
   },
   bannerHeaderWrap: {
     width: '100%',
+    position: 'relative',
     overflow: 'hidden',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -360,14 +361,9 @@ const st = StyleSheet.create({
     overflow: 'hidden',
   },
   bannerHeaderImg: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    width: '100%',
-    height: '100%',
     opacity: 0.92,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
   },
   cancelBtn: {
     position: 'absolute',
@@ -462,7 +458,7 @@ const st = StyleSheet.create({
   plansScroll: {
     flex: 1,
     maxHeight: 330,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#ffffff',
   },
   plansContent: {
     padding: 14,
@@ -487,13 +483,7 @@ const st = StyleSheet.create({
   },
   planCardImg: {
     borderRadius: 16,
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    width: '100%',
-    height: '100%',
+    opacity: 0.95,
   },
   planTopRow: {
     flexDirection: 'row',

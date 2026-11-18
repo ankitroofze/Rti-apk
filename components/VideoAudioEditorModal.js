@@ -51,8 +51,6 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
   const [saving, setSaving] = useState(false);
   // Video stage (panel ke upar ka area) ka size — video + frame isi me device ke hisaab se fit hote hain
   const [stage, setStage] = useState({ w: 0, h: 0 });
-  // Smooth playback guard: video kabhi tez / aage na bhaage (music / voice lagne ke baad bhi)
-  const playClock = useRef({ active: false, wall: 0, base: 0 });
   const [previewing, setPreviewing] = useState(false);
   const progressAnim = useRef(new Animated.Value(0)).current;   // 0..1 (no re-render while playing)
   const previewingRef = useRef(false);
@@ -77,9 +75,9 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
 
   // Players
   const videoPlayer = useVideoPlayer(visible ? playUri : null, (p) => {
-    p.loop = false;
-    p.muted = true;
-    try { p.playbackRate = 1; } catch {}
+    p.loop = true;
+    p.muted = Boolean(initial?.muteOriginal ?? true);
+    try { p.playbackRate = 1; p.preservesPitch = true; } catch {}
     try { p.timeUpdateEventInterval = 0.25; } catch {}
   });
   const musicPlayer = useAudioPlayer(null);   // native only
@@ -90,16 +88,17 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
   const webAudio = useRef({ music: null, voice: null });
   const webRec = useRef({ mr: null, stream: null, chunks: [], mime: '' });
 
-  const playVideoFromStart = useCallback(() => {
+  const playVideoFromStart = useCallback(async () => {
     try {
-      videoPlayer.muted = true;
-      try { videoPlayer.playbackRate = 1; } catch {}   // never let the video run faster than normal
+      videoPlayer.pause();
+      videoPlayer.muted = Boolean(muteOriginal);
       videoPlayer.currentTime = 0;
+      try { videoPlayer.playbackRate = 1; videoPlayer.preservesPitch = true; } catch {}
+      await new Promise((r) => setTimeout(r, 60));
       videoPlayer.play();
-      try { videoPlayer.playbackRate = 1; } catch {}
-      playClock.current = { active: true, wall: Date.now(), base: 0 };
+      try { videoPlayer.playbackRate = 1; videoPlayer.preservesPitch = true; } catch {}
     } catch {}
-  }, [videoPlayer]);
+  }, [videoPlayer, muteOriginal]);
 
   // One function to play an audio track (music / voice) on web or native
   const playAudio = useCallback((key, uri, volume = 1, loop = false) => {
@@ -130,16 +129,29 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
 
   const pauseAudio = useCallback(() => {
     if (IS_WEB) {
-      ['music', 'voice'].forEach((k) => { try { webAudio.current[k]?.pause(); } catch {} });
+      ['music', 'voice'].forEach((k) => {
+        try {
+          const a = webAudio.current[k];
+          if (a) {
+            a.pause();
+            a.currentTime = 0;
+            a.playbackRate = 1;
+          }
+        } catch {}
+      });
       return;
     }
-    try { musicPlayer.pause(); } catch {}
-    try { voicePlayer.pause(); } catch {}
+    try { musicPlayer.pause(); musicPlayer.seekTo(0); } catch {}
+    try { voicePlayer.pause(); voicePlayer.seekTo(0); } catch {}
   }, [musicPlayer, voicePlayer]);
 
   const stopAll = useCallback(() => {
-    playClock.current.active = false;
-    try { videoPlayer.pause(); } catch {}
+    previewingRef.current = false;
+    try {
+      videoPlayer.pause();
+      videoPlayer.currentTime = 0;
+      try { videoPlayer.playbackRate = 1; videoPlayer.preservesPitch = true; } catch {}
+    } catch {}
     pauseAudio();
     setPreviewing(false);
   }, [videoPlayer, pauseAudio]);
@@ -154,7 +166,7 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
     setVoiceMime(initial?.voiceMime || null);
     setMuteOriginal(initial?.muteOriginal ?? true);
     progressAnim.setValue(0);
-    try { videoPlayer.muted = true; videoPlayer.currentTime = 0; } catch {}
+    try { videoPlayer.muted = Boolean(initial?.muteOriginal ?? true); videoPlayer.currentTime = 0; } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
@@ -179,48 +191,38 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
     try { voicePlayer.play(); } catch {}
   }, [musicPlayer, voicePlayer]);
 
-  // Video finished -> stop everything. Progress bar updates WITHOUT re-rendering the screen.
+  // Video finished -> loop smoothly or stop. Progress bar updates WITHOUT re-rendering the screen.
   // Video buffering -> pause audio, then resume + re-sync, so video and sound never drift apart.
   useEffect(() => {
-    const subEnd = videoPlayer.addListener?.('playToEnd', () => { stopAll(); progressAnim.setValue(0); });
+    const subEnd = videoPlayer.addListener?.('playToEnd', () => {
+      try {
+        videoPlayer.currentTime = 0;
+        videoPlayer.play();
+      } catch {
+        stopAll();
+        progressAnim.setValue(0);
+      }
+    });
     const subTime = videoPlayer.addListener?.('timeUpdate', (e) => {
       const cur = Number(e?.currentTime ?? 0);
       const dur = Number(videoPlayer.duration || 0);
       if (dur > 0) progressAnim.setValue(Math.max(0, Math.min(1, cur / dur)));
+      try {
+        if (Math.abs((videoPlayer.playbackRate || 1) - 1) > 0.05) {
+          videoPlayer.playbackRate = 1;
+        }
+      } catch {}
     });
     const subRate = videoPlayer.addListener?.('playbackRateChange', () => {
-      try { if (videoPlayer.playbackRate !== 1) videoPlayer.playbackRate = 1; } catch {}
+      try { if (Math.abs((videoPlayer.playbackRate || 1) - 1) > 0.05) videoPlayer.playbackRate = 1; } catch {}
     });
     const subStatus = videoPlayer.addListener?.('statusChange', (e) => {
-      if (e?.status === 'loading') playClock.current.active = false;          // buffering: clock rukta hai
-      else if (e?.status === 'readyToPlay' && playClock.current.wall) {         // buffering ke baad clock wahin se
-        playClock.current = { active: true, wall: Date.now(), base: Number(videoPlayer.currentTime || 0) };
-      }
       if (!previewingRef.current) return;
       if (e?.status === 'loading') pauseAudio();
       else if (e?.status === 'readyToPlay') resumeAudio();
     });
     return () => { subEnd?.remove?.(); subTime?.remove?.(); subRate?.remove?.(); subStatus?.remove?.(); };
   }, [videoPlayer, stopAll, pauseAudio, resumeAudio, progressAnim]);
-
-  // Drift guard: video real time se aage nikle (fast-forward jaisa) to turant sahi jagah wapas + speed 1x
-  useEffect(() => {
-    if (!visible) return undefined;
-    const id = setInterval(() => {
-      const clk = playClock.current;
-      if (!clk.active) return;
-      try {
-        if (videoPlayer.playbackRate !== 1) videoPlayer.playbackRate = 1;
-        const expected = clk.base + (Date.now() - clk.wall) / 1000;
-        const cur = Number(videoPlayer.currentTime || 0);
-        const dur = Number(videoPlayer.duration || 0);
-        if (cur - expected > 0.8 && (!dur || expected < dur - 0.3)) {
-          videoPlayer.currentTime = Math.max(0, expected);
-        }
-      } catch {}
-    }, 400);
-    return () => clearInterval(id);
-  }, [visible, videoPlayer]);
 
   // Cleanup on unmount
   useEffect(() => () => {
@@ -233,10 +235,17 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
   // Preview: video (muted) + music + voice together
   const startPreview = async () => {
     stopAll();
+    await new Promise((r) => setTimeout(r, 80));
     if (!IS_WEB) { try { await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }); } catch {} }
-    playVideoFromStart();
+    try {
+      videoPlayer.muted = Boolean(muteOriginal);
+      videoPlayer.currentTime = 0;
+      try { videoPlayer.playbackRate = 1; videoPlayer.preservesPitch = true; } catch {}
+      videoPlayer.play();
+    } catch {}
     if (music?.url) playAudio('music', music.url, musicVolume, true);
     if (voiceUri) playAudio('voice', voiceUri, 1, false);
+    previewingRef.current = true;
     setPreviewing(true);
   };
 
@@ -251,9 +260,27 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
     try { resolved = await getResolved(song); } catch (e) { console.warn('song resolve failed', e); return; }
     if (selectedRef.current !== song.id) return;     // user picked another song meanwhile
     setMusic(resolved);
+
+    // Give ExoPlayer / browser video 80ms while paused to reset decode clock to 0 cleanly
+    try {
+      videoPlayer.currentTime = 0;
+      try { videoPlayer.playbackRate = 1; videoPlayer.preservesPitch = true; } catch {}
+    } catch {}
+    await new Promise((r) => setTimeout(r, 80));
+    if (selectedRef.current !== song.id) return;
+
     if (!IS_WEB) { try { await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }); } catch {} }
-    playVideoFromStart();
+
+    try {
+      videoPlayer.muted = Boolean(muteOriginal);
+      videoPlayer.currentTime = 0;
+      try { videoPlayer.playbackRate = 1; videoPlayer.preservesPitch = true; } catch {}
+      videoPlayer.play();
+      try { videoPlayer.playbackRate = 1; videoPlayer.preservesPitch = true; } catch {}
+    } catch {}
+
     playAudio('music', resolved.url, musicVolume, true);
+    previewingRef.current = true;
     setPreviewing(true);
   };
 
@@ -371,11 +398,11 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
     try {
       let m = music;
       if (m && !m.url) { try { m = await getResolved(m); } catch { m = null; } }
-      const frameOpts = frameTemplate ? {
-        templateId: frameTemplate,
+      const frameOpts = {
+        templateId: frameTemplate || 'glossy2',
         title: title || 'RTI NEWS',
         description: description || '',
-      } : null;
+      };
 
       const res = await downloadMedia(videoUri, {
         type: 'video',
@@ -449,23 +476,25 @@ export default function VideoAudioEditorModal({ visible, videoUri, initial, onCl
             }}
           >
             {stage.w > 0 ? (
-              <View style={{ width: boxW, height: boxH, backgroundColor: '#000', overflow: 'hidden' }}>
+              <View style={{ position: 'relative', width: boxW, height: boxH, backgroundColor: '#000', overflow: 'hidden', alignItems: 'center', justifyContent: 'center' }}>
                 {playUri ? (
                   <VideoView
                     player={videoPlayer}
-                    style={[{ width: boxW, height: boxH }, IS_WEB ? { objectFit: 'contain' } : null]}
+                    style={[StyleSheet.absoluteFill, { width: boxW, height: boxH }, IS_WEB ? { objectFit: 'contain' } : null]}
                     contentFit="contain"
                     nativeControls={false}
                   />
                 ) : null}
                 {frameTpl ? (
-                  <NewsFrameOverlay
-                    width={boxW}
-                    height={boxH}
-                    title={title}
-                    description={description}
-                    templateId={frameTpl.id}
-                  />
+                  <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                    <NewsFrameOverlay
+                      width={boxW}
+                      height={boxH}
+                      title={title}
+                      description={description}
+                      templateId={frameTpl.id}
+                    />
+                  </View>
                 ) : null}
               </View>
             ) : null}

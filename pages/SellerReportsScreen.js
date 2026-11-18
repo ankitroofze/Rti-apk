@@ -28,11 +28,7 @@ const formatDate = (value) => {
 };
 
 const notify = (title, msg) => {
-  if (Platform.OS === 'web') {
-    alert(`${title}\n${msg}`);
-  } else {
-    Alert.alert(title, msg);
-  }
+  Alert.alert(title, msg);
 };
 
 const StatCard = ({ icon, label, value, color }) => (

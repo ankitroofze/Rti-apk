@@ -423,7 +423,15 @@ function CommentThreadItem({
                 placeholderTextColor="#94a3b8"
                 value={editingCommentText}
                 onChangeText={onEditingTextChange}
-                multiline
+                returnKeyType="send"
+                blurOnSubmit={false}
+                onSubmitEditing={onSubmitEdit}
+                onKeyPress={(e) => {
+                  if (e?.nativeEvent?.key === 'Enter' && !e?.nativeEvent?.shiftKey) {
+                    e?.preventDefault?.();
+                    onSubmitEdit();
+                  }
+                }}
                 maxLength={500}
               />
               <View style={styles.commentInlineActions}>
@@ -477,7 +485,15 @@ function CommentThreadItem({
               placeholderTextColor="#94a3b8"
               value={replyText}
               onChangeText={onReplyTextChange}
-              multiline
+              returnKeyType="send"
+              blurOnSubmit={false}
+              onSubmitEditing={onSubmitReply}
+              onKeyPress={(e) => {
+                if (e?.nativeEvent?.key === 'Enter' && !e?.nativeEvent?.shiftKey) {
+                  e?.preventDefault?.();
+                  onSubmitReply();
+                }
+              }}
               maxLength={500}
             />
             <View style={styles.commentInlineActions}>
@@ -545,6 +561,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
   const { width } = useWindowDimensions();
   const responsiveWidth = getResponsiveWindowWidth(width);
     const isCompactLayout = !IS_WEB || isMobileWebDevice() || responsiveWidth < 980;
+  const { showToast, showPopup } = useToast();
 
   const [trendingStories, setTrendingStories] = useState([]);
   useEffect(() => {
@@ -943,7 +960,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
     const handleToggleFollowAuthor = useCallback(async () => {
     const authorEmail = String(article.createdBy || article.author_email || '').trim().toLowerCase();
     const authorId = article.author_id || article.userId || null;
-    if (!currentUserEmail) { Alert.alert('Login required', 'Please login to follow this user.'); return; }
+    if (!currentUserEmail) { showToast('Please login to follow this user.', 'info'); return; }
     if (!authorEmail || authorEmail === currentUserEmail) return;
 
     const nextFollowing = !isFollowingAuthor;
@@ -954,15 +971,15 @@ export default function NewsDetailsScreen({ route, navigation }) {
         : await UserStore.unfollowUser(authorEmail, authorId);
       if (result?.ok === false) {
         setIsFollowingAuthor(!nextFollowing);
-        Alert.alert('Follow', result?.message || 'Unable to update follow status.');
+        showToast(result?.message || 'Unable to update follow status.', 'error');
         return;
       }
       refreshAuthorFollowState(authorEmail, currentUserEmail).catch(() => {});
     } catch {
       setIsFollowingAuthor(!nextFollowing);
-      Alert.alert('Follow', 'Unable to update follow status.');
+      showToast('Unable to update follow status.', 'error');
     }
-  }, [article.author_email, article.createdBy, currentUserEmail, followLoading, isFollowingAuthor, refreshAuthorFollowState]);
+  }, [article.author_email, article.createdBy, currentUserEmail, followLoading, isFollowingAuthor, refreshAuthorFollowState, showToast]);
 
   const handleLike = useCallback(async () => {
     const wasLiked = isLiked;
@@ -970,7 +987,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
     setIsLiked(!wasLiked);
     setLikeCount(Math.max(0, prevCount + (wasLiked ? -1 : 1)));
     const result = await UserStore.updateNewsFeedItem(article.id, 'like', { liked: wasLiked });
-    if (!result?.ok) { setIsLiked(wasLiked); setLikeCount(prevCount); Alert.alert('Notice', result?.message || 'Could not update like'); return; }
+    if (!result?.ok) { setIsLiked(wasLiked); setLikeCount(prevCount); showToast(result?.message || 'Could not update like', 'error'); return; }
     const finalLiked = result.liked !== undefined ? Boolean(result.liked) : !wasLiked;
     const finalCount = Number.isFinite(result.likesCount)
       ? result.likesCount
@@ -979,9 +996,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
     setLikeCount(finalCount);
     publishEngagement(article.id, { liked: finalLiked, likes: finalCount }, engId);   // ✅ card par bhi dikhe
     if (currentUserEmail) persistLikedLocal(currentUserEmail, article.id, finalLiked);
-  }, [article.id, isLiked, likeCount, currentUserEmail, engId]);
-
-  const { showPopup } = useToast();
+  }, [article.id, isLiked, likeCount, currentUserEmail, engId, showToast]);
   const { language: appLanguage } = useLanguage();
   const copy = useMemo(() => getSiteCopy(appLanguage), [appLanguage]);
   const commonCopy = copy.common;
@@ -1038,14 +1053,19 @@ export default function NewsDetailsScreen({ route, navigation }) {
         if (r.needsPaste) showPopup('News link copy ho gaya hai — caption me paste kar do.', 'info', { title: 'Share' });
         await handleShareSuccess();
       }
-    } catch { Alert.alert('Notice', 'Could not share this article'); }
-  }, [article, shareMediaKind, shareImageUrl, effectiveVideoUri, appLanguage, showPopup, captureFramedImage, handleShareSuccess]);
+    } catch { showToast('Could not share this article', 'error'); }
+  }, [article, shareMediaKind, shareImageUrl, effectiveVideoUri, appLanguage, showPopup, captureFramedImage, handleShareSuccess, showToast]);
 
   const handleAddComment = useCallback(async () => {
-    const trimmed = commentText.trim();
-    if (!trimmed) { Alert.alert('Notice', 'Please enter a comment'); return; }
+    const trimmed = commentText.replace(/[\r\n]+/g, ' ').trim();
+    if (!trimmed) return;
+    setCommentText('');
     const result = await UserStore.addNewsComment(article.id, trimmed);
-    if (!result?.ok) { Alert.alert('Notice', result?.message || 'Could not add comment'); return; }
+    if (!result?.ok) {
+      setCommentText(trimmed);
+      showToast(result?.message || 'Could not add comment', 'error');
+      return;
+    }
     const addedComment = normalizeComment(result.comment || {
       text: trimmed,
       author: currentUserName || 'User',
@@ -1055,9 +1075,8 @@ export default function NewsDetailsScreen({ route, navigation }) {
     const nextComments = Number.isFinite(result.commentsCount) ? result.commentsCount : Number(commentCount || 0) + 1;
     setCommentCount(nextComments);
     publishEngagement(article.id, { comments: nextComments }, engId);   // ✅ card par bhi
-    setCommentText('');
     await loadArticleDetails();
-  }, [article.id, commentText, commentCount, currentUserEmail, currentUserName, loadArticleDetails, engId]);
+  }, [article.id, commentText, commentCount, currentUserEmail, currentUserName, loadArticleDetails, engId, showToast]);
 
   const handleStartEditComment = useCallback((commentId, currentText) => {
     setEditingCommentId(commentId);
@@ -1075,11 +1094,11 @@ export default function NewsDetailsScreen({ route, navigation }) {
     const trimmed = editingCommentText.trim();
     if (!editingCommentId || !trimmed) return;
     const result = await UserStore.editNewsComment(article.id, editingCommentId, trimmed);
-    if (!result?.ok) { Alert.alert('Notice', result?.message || 'Could not edit comment'); return; }
+    if (!result?.ok) { showToast(result?.message || 'Could not edit comment', 'error'); return; }
     setEditingCommentId(null);
     setEditingCommentText('');
     await loadArticleDetails();
-  }, [article.id, editingCommentId, editingCommentText, loadArticleDetails]);
+  }, [article.id, editingCommentId, editingCommentText, loadArticleDetails, showToast]);
 
   const handleStartReplyComment = useCallback((commentId, options = {}) => {
     if (options?.toggleOnly) {
@@ -1102,7 +1121,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
     const trimmed = replyText.trim();
     if (!replyingToCommentId || !trimmed) return;
     const result = await UserStore.replyNewsComment(article.id, replyingToCommentId, trimmed);
-    if (!result?.ok) { Alert.alert('Notice', result?.message || 'Could not add reply'); return; }
+    if (!result?.ok) { showToast(result?.message || 'Could not add reply', 'error'); return; }
     const addedReply = normalizeComment(result.comment || {
       text: trimmed,
       author: currentUserName || 'User',
@@ -1122,13 +1141,13 @@ export default function NewsDetailsScreen({ route, navigation }) {
     setReplyingToCommentId(null);
     setReplyText('');
     await loadArticleDetails();
-  }, [article.id, commentCount, currentUserEmail, currentUserName, engId, loadArticleDetails, replyingToCommentId, replyText]);
+  }, [article.id, commentCount, currentUserEmail, currentUserName, engId, loadArticleDetails, replyingToCommentId, replyText, showToast]);
 
   const handleLikeComment = useCallback(async (commentId) => {
     const result = await UserStore.likeNewsComment(article.id, commentId);
-    if (!result?.ok) { Alert.alert('Notice', result?.message || 'Could not update comment like'); return; }
+    if (!result?.ok) { showToast(result?.message || 'Could not update comment like', 'error'); return; }
     await loadArticleDetails();
-  }, [article.id, loadArticleDetails]);
+  }, [article.id, loadArticleDetails, showToast]);
 
   // ✅ Apni post / reel ko detail page ke 3-dot menu se delete karo
   const canDeleteArticle = useMemo(() => {
@@ -1149,8 +1168,8 @@ export default function NewsDetailsScreen({ route, navigation }) {
   }, [article, navigation]);
 
   const postLink = useMemo(() => (
-    article.url ? String(article.url) : `https://rtinews.in/news/${encodeURIComponent(article.id || article.title || 'story')}`
-  ), [article.url, article.id, article.title]);
+    article.url ? String(article.url) : `https://rtinews.in/news/${encodeURIComponent(article.id || 'story')}`
+  ), [article.url, article.id]);
 
   const closeMoreMenu = useCallback(() => {
     setShowMoreMenu(false);
@@ -1205,32 +1224,32 @@ export default function NewsDetailsScreen({ route, navigation }) {
   }, [article.id, article.title]);
 
   const handleDeleteArticleAction = useCallback(async () => {
+    const confirmed = await new Promise((resolve) => {
+      showPopup(
+        'Are you sure you want to delete this post? This cannot be undone.',
+        'warning',
+        {
+          title: 'Delete Post',
+          primaryLabel: 'Delete',
+          primaryVariant: 'danger',
+          onPrimaryPress: () => resolve(true),
+          secondaryLabel: 'Cancel',
+          onSecondaryPress: () => resolve(false),
+        }
+      );
+    });
     closeMoreMenu();
-    const confirmed = IS_WEB
-      ? (typeof window !== 'undefined' && typeof window.confirm === 'function'
-          ? window.confirm('Are you sure you want to delete this post? This cannot be undone.')
-          : true)
-      : await new Promise((resolve) => {
-          Alert.alert(
-            'Delete Post',
-            'Are you sure you want to delete this post? This cannot be undone.',
-            [
-              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-              { text: 'Delete', style: 'destructive', onPress: () => resolve(true) },
-            ]
-          );
-        });
     if (!confirmed) return;
     const result = await handleDeleteArticle();
     if (result && result.ok === false) {
-      Alert.alert('Delete failed', result.message || 'Unable to delete post.');
+      showToast(result.message || 'Unable to delete post.', 'error');
     }
-  }, [handleDeleteArticle, closeMoreMenu]);
+  }, [handleDeleteArticle, closeMoreMenu, showPopup, showToast]);
 
   const handleBlockAuthorAction = useCallback(async () => {
     closeMoreMenu();
     if (!currentUserEmail) {
-      Alert.alert('Login Required', 'Please login to block this user.');
+      showToast('Please login to block this user.', 'info');
       return;
     }
     try {
@@ -1238,40 +1257,43 @@ export default function NewsDetailsScreen({ route, navigation }) {
       const aemail = String(article?.author_email || article?.createdBy || '').trim().toLowerCase();
       const res = await UserStore.blockUser(aemail, aid);
       if (res?.ok === false) {
-        Alert.alert('Block', res?.message || 'Unable to block user.');
+        showToast(res?.message || 'Unable to block user.', 'error');
         return;
       }
-      Alert.alert('Blocked', 'This user has been blocked.');
+      showToast('This user has been blocked.', 'success');
       if (navigation?.canGoBack?.()) navigation.goBack();
       else navigation?.navigate?.('Home');
     } catch {
-      Alert.alert('Block', 'Unable to block user.');
+      showToast('Unable to block user.', 'error');
     }
-  }, [currentUserEmail, article?.author_id, article?.author_email, article?.createdBy, navigation, closeMoreMenu]);
+  }, [currentUserEmail, article?.author_id, article?.author_email, article?.createdBy, navigation, closeMoreMenu, showToast]);
 
   const handleDeleteComment = useCallback(async (commentId) => {
-    const confirmed = IS_WEB
-      ? window.confirm('Are you sure you want to delete this comment?')
-      : await new Promise((resolve) => {
-          Alert.alert(
-            'Delete Comment',
-            'Are you sure you want to delete this comment?',
-            [
-              { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-              { text: 'Delete', style: 'destructive', onPress: () => resolve(true) },
-            ]
-          );
-        });
+    const confirmed = await new Promise((resolve) => {
+      showPopup(
+        'Are you sure you want to delete this comment?',
+        'warning',
+        {
+          title: 'Delete Comment',
+          primaryLabel: 'Delete',
+          primaryVariant: 'danger',
+          onPrimaryPress: () => resolve(true),
+          secondaryLabel: 'Cancel',
+          onSecondaryPress: () => resolve(false),
+        }
+      );
+    });
     if (!confirmed) return;
     const result = await UserStore.deleteNewsComment(article.id, commentId);
-    if (!result?.ok) { Alert.alert('Notice', result?.message || 'Could not delete comment'); return; }
+    if (!result?.ok) { showToast(result?.message || 'Could not delete comment', 'error'); return; }
+    showToast('Comment deleted successfully.', 'success');
     if (editingCommentId === commentId) { setEditingCommentId(null); setEditingCommentText(''); }
     if (replyingToCommentId === commentId) { setReplyingToCommentId(null); setReplyText(''); }
     const nextComments = Math.max(0, Number(commentCount || 0) - 1);
     setCommentCount(nextComments);
     publishEngagement(article.id, { comments: nextComments }, engId);
     await loadArticleDetails();
-  }, [article.id, commentCount, editingCommentId, engId, loadArticleDetails, replyingToCommentId]);
+  }, [article.id, commentCount, editingCommentId, engId, loadArticleDetails, replyingToCommentId, showPopup, showToast]);
 
   const handleOpenAttachment = useCallback(async () => {
     const fileUri = article?.file?.uri;
@@ -1747,9 +1769,18 @@ export default function NewsDetailsScreen({ route, navigation }) {
             <TextInput
               style={styles.commentInput}
               placeholder="Write a comment..."
+              placeholderTextColor="#94a3b8"
               value={commentText}
               onChangeText={setCommentText}
-              multiline
+              returnKeyType="send"
+              blurOnSubmit={false}
+              onSubmitEditing={handleAddComment}
+              onKeyPress={(e) => {
+                if (e?.nativeEvent?.key === 'Enter' && !e?.nativeEvent?.shiftKey) {
+                  e?.preventDefault?.();
+                  handleAddComment();
+                }
+              }}
               maxLength={500}
             />
             <TouchableOpacity
@@ -1812,7 +1843,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
       >
         <TouchableWithoutFeedback onPress={closeMoreMenu}>
           <View style={(IS_WEB || menuAnchor) ? styles.moreMenuBackdropWeb : styles.moreMenuBackdrop}>
-            <TouchableWithoutFeedback>
+            <TouchableWithoutFeedback onPress={(e) => { e?.stopPropagation?.(); }}>
               <View style={(IS_WEB || menuAnchor) ? [styles.moreMenuWeb, { position: 'absolute', top: menuAnchor?.top || 80, left: menuAnchor?.left || 80 }] : styles.moreMenuSheet}>
                 {(!menuAnchor && !IS_WEB) ? <View style={styles.moreMenuHandle} /> : null}
                 <TouchableOpacity style={styles.moreMenuItem} onPress={handleMenuShare} activeOpacity={0.82}>
@@ -1856,6 +1887,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
         title={article.title}
         description={article.description || article.excerpt || ''}
         url={postLink}
+        language={appLanguage}
         onShareSuccess={handleShareSuccess}
         mediaKind={shareMediaKind}
         onShareMedia={handleShareMediaPackage}

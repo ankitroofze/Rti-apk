@@ -39,7 +39,7 @@ const FONT = { regular: 'Roboto_400Regular', medium: 'Roboto_500Medium', bold: '
 const ORANGE = '#b91c1c';
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
-const notify = (title, msg) => (IS_WEB ? alert(`${title}\n${msg}`) : Alert.alert(title, msg));
+const notify = (title, msg) => Alert.alert(title, msg);
 
 const money = (val) => {
   const n = Number(val);

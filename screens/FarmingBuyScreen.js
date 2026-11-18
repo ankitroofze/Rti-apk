@@ -92,10 +92,6 @@ const niceStep = (max) => {
 };
 
 const notify = (title, message) => {
-  if (Platform.OS === 'web') {
-    window.alert(message ? `${title}\n${message}` : title);
-    return;
-  }
   Alert.alert(title, message);
 };
 

@@ -106,11 +106,6 @@ export default function LoginScreen({ navigation, route }) {
 
   const confirmReactivate = (email) => {
     const message = 'This account has been deleted. Do you want to reactivate it?';
-    if (Platform.OS === 'web') {
-      // react-native-web par Alert.alert multi-button support nahi karta
-      if (typeof window !== 'undefined' && window.confirm(message)) reactivateAccount(email);
-      return;
-    }
     Alert.alert('Account Deleted', message, [
       { text: 'No', style: 'cancel' },
       { text: 'Reactivate', onPress: () => reactivateAccount(email) },

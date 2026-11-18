@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import NameWithTick from '../components/NameWithTick';
 import NewsMusicSync from '../components/NewsMusicSync';
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
@@ -24,6 +25,7 @@ import WebLayout from '../components/WebLayout';
 import { UserStore } from '../store/UserStore';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl, storeWebUriToIdbMedia } from '../utils/webMediaStore';
+import { resolveMediaUrl } from '../utils/storyHelpers';
 import { safePause, safePlay, safeSetMuted } from '../utils/videoPlayerSafe';
 import { useGlobalMuted, getGlobalMuted, setGlobalMuted } from '../utils/Globalmutestore';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
@@ -33,6 +35,7 @@ import { getEngagement, subscribeEngagement } from '../utils/newsEngagementStore
 import useLiveRefresh from '../utils/useLiveRefresh';
 import { useAuth } from '../contexts/AuthContext';
 import { downloadMedia } from '../utils/downloadMedia';
+import { useToast } from '../components/ui/ToastProvider';
 
 const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 const MOBILE_BREAKPOINT = 900;
@@ -88,7 +91,7 @@ function isPlayableVideoSource(uri) {
 // Share Handler
 function handleSharePost(post) {
   const shareText = `📰 ${post.headline}\n\n${post.caption}\n\n📍 ${post.location}\n\n🗞️ Read more on RTI News`;
-  const shareUrl  = `https://rtinews.in/reel/${post.id}`;
+  const shareUrl  = `https://rtinews.in/news/${post.id}`;
   const fullMsg   = `${shareText}\n${shareUrl}`;
 
   if (Platform.OS === 'web') {
@@ -147,48 +150,160 @@ const feedCommentVerify = new Map(); // postId -> { server, real }
 // "1" dikh kar comment kholte hi "0" ho jaata tha.
 const feedCommentsConfirmed = new Set();
 
-// ✅ FIX (comment gayab ho jaata tha): abhi user ne jo comment / reply kiya wo server list ya server ke
-// stale count me turant nahi aata. Jab tak server list me na dikhe (max 3 min) use local list/count me rakhte hain.
-const RECENT_COMMENT_MS = 3 * 60 * 1000;
-const feedPendingComments = new Map(); // postId -> [{ comment, replyToId, ts }]
-const pendKey = (c) => `${String(c?.text || '').trim()}|${String(c?.author_email || '')}`;
-function listHasComment(list, c) {
-  return (Array.isArray(list) ? list : []).some((x) =>
-    String(x.id) === String(c.id) || pendKey(x) === pendKey(c) || listHasComment(x.replies, c));
+function isSameCommentId(idA, idB) {
+  if (idA == null || idB == null) return false;
+  const sA = String(idA).trim();
+  const sB = String(idB).trim();
+  if (sA === sB) return true;
+  const cleanA = sA.replace(/^(cmt-|rpl-)/i, '');
+  const cleanB = sB.replace(/^(cmt-|rpl-)/i, '');
+  return cleanA.length > 0 && cleanA === cleanB;
 }
+
+// ✅ FIX (comment/reply gayab nahi hona chahiye jab tak user delete na kare):
+// User dwara kiya gaya comment/reply local Map aur persistent storage me tab tak rehta hai
+// jab tak user khud use delete na kare ya server list me verify na ho jaye.
+const feedPendingComments = new Map(); // postId -> [{ comment, replyToId, ts }]
+const pendKey = (c) => `${String(c?.text || '').trim().toLowerCase()}|${String(c?.author_email || '').trim().toLowerCase()}`;
+function listHasComment(list, c) {
+  if (!c) return false;
+  return (Array.isArray(list) ? list : []).some((x) =>
+    isSameCommentId(x.id, c.id) ||
+    pendKey(x) === pendKey(c) ||
+    listHasComment(x.replies, c)
+  );
+}
+
+const PENDING_STORAGE_KEY = '@rti_feed_pending_comments_v2';
+function loadPersistedPendingComments() {
+  try {
+    let saved = null;
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      saved = window.sessionStorage?.getItem(PENDING_STORAGE_KEY) || window.localStorage?.getItem(PENDING_STORAGE_KEY);
+    }
+    if (saved) {
+      const obj = JSON.parse(saved);
+      Object.entries(obj).forEach(([k, arr]) => {
+        if (Array.isArray(arr) && arr.length > 0) {
+          feedPendingComments.set(String(k), arr);
+        }
+      });
+    }
+  } catch (_) {}
+}
+
+async function loadPersistedPendingCommentsAsync() {
+  loadPersistedPendingComments();
+  try {
+    const saved = await AsyncStorage.getItem(PENDING_STORAGE_KEY);
+    if (saved) {
+      const obj = JSON.parse(saved);
+      Object.entries(obj).forEach(([k, arr]) => {
+        if (Array.isArray(arr) && arr.length > 0) {
+          const existing = feedPendingComments.get(String(k)) || [];
+          const merged = [...existing];
+          arr.forEach((item) => {
+            if (!merged.some((m) => isSameCommentId(m?.comment?.id, item?.comment?.id) || pendKey(m?.comment) === pendKey(item?.comment))) {
+              merged.push(item);
+            }
+          });
+          feedPendingComments.set(String(k), merged);
+        }
+      });
+    }
+  } catch (_) {}
+}
+
+function persistPendingComments() {
+  try {
+    const obj = {};
+    feedPendingComments.forEach((val, key) => {
+      if (Array.isArray(val) && val.length > 0) obj[key] = val;
+    });
+    const str = JSON.stringify(obj);
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
+      window.sessionStorage.setItem(PENDING_STORAGE_KEY, str);
+      window.localStorage.setItem(PENDING_STORAGE_KEY, str);
+    }
+    AsyncStorage.setItem(PENDING_STORAGE_KEY, str).catch(() => {});
+  } catch (_) {}
+}
+loadPersistedPendingComments();
+loadPersistedPendingCommentsAsync().catch(() => {});
+
 function addPendingComment(postId, comment, replyToId) {
   const key = String(postId);
-  const arr = (feedPendingComments.get(key) || []).filter((p) => Date.now() - p.ts < RECENT_COMMENT_MS);
-  arr.push({ comment, replyToId: replyToId || null, ts: Date.now() });
-  feedPendingComments.set(key, arr);
+  loadPersistedPendingComments();
+  const arr = feedPendingComments.get(key) || [];
+  const filtered = arr.filter((p) => !isSameCommentId(p?.comment?.id, comment?.id) && pendKey(p?.comment) !== pendKey(comment));
+  filtered.push({ comment, replyToId: replyToId || null, ts: Date.now() });
+  feedPendingComments.set(key, filtered);
+  persistPendingComments();
 }
+
 function removePendingComment(postId, commentId) {
   const key = String(postId);
-  const arr = (feedPendingComments.get(key) || []).filter((p) => String(p.comment.id) !== String(commentId));
+  loadPersistedPendingComments();
+  const arr = (feedPendingComments.get(key) || []).filter((p) =>
+    !isSameCommentId(p?.comment?.id, commentId) && !isSameCommentId(p?.replyToId, commentId)
+  );
   if (arr.length) feedPendingComments.set(key, arr); else feedPendingComments.delete(key);
+  persistPendingComments();
 }
+
 function hasRecentPending(postId) {
+  loadPersistedPendingComments();
   const arr = feedPendingComments.get(String(postId));
-  return Boolean(arr && arr.some((p) => Date.now() - p.ts < RECENT_COMMENT_MS));
+  return Boolean(arr && arr.length > 0);
 }
+
 function mergePendingComments(postId, serverList) {
+  loadPersistedPendingComments();
   const key = String(postId);
   const pend = feedPendingComments.get(key);
-  let out = Array.isArray(serverList) ? serverList : [];
+  let out = Array.isArray(serverList) ? [...serverList] : [];
   if (!pend || !pend.length) return out;
   const still = [];
   pend.forEach((p) => {
-    if (Date.now() - p.ts >= RECENT_COMMENT_MS) return;
-    if (listHasComment(out, p.comment)) return; // server list me aa gaya
+    if (!p || !p.comment) return;
+    if (listHasComment(out, p.comment)) {
+      return; // server list me aa gaya
+    }
     still.push(p);
     if (p.replyToId) {
-      out = out.map((c) => (String(c.id) === String(p.replyToId)
-        ? { ...c, replies: [...(c.replies || []), p.comment] } : c));
+      let attached = false;
+      out = out.map((c) => {
+        const matchesParent = isSameCommentId(c.id, p.replyToId) ||
+          (Array.isArray(c.replies) && c.replies.some((r) => isSameCommentId(r.id, p.replyToId)));
+        if (matchesParent) {
+          attached = true;
+          const replies = Array.isArray(c.replies) ? c.replies : [];
+          const exists = replies.some((r) => isSameCommentId(r.id, p.comment.id) || pendKey(r) === pendKey(p.comment));
+          return {
+            ...c,
+            replies: exists ? replies : [...replies, p.comment],
+          };
+        }
+        return c;
+      });
+      // Fallback: If parent not matched by ID, attach to first comment or keep as top-level so NEVER lost
+      if (!attached && out.length > 0) {
+        out = out.map((c, idx) => idx === 0 ? {
+          ...c,
+          replies: (Array.isArray(c.replies) ? c.replies : []).some((r) => isSameCommentId(r.id, p.comment.id) || pendKey(r) === pendKey(p.comment))
+            ? c.replies
+            : [...(c.replies || []), p.comment],
+        } : c);
+      } else if (!attached) {
+        out = [...out, p.comment];
+      }
     } else {
-      out = [...out, p.comment];
+      const exists = out.some((c) => isSameCommentId(c.id, p.comment.id) || pendKey(c) === pendKey(p.comment));
+      if (!exists) out = [...out, p.comment];
     }
   });
   if (still.length) feedPendingComments.set(key, still); else feedPendingComments.delete(key);
+  persistPendingComments();
   return out;
 }
 
@@ -332,12 +447,18 @@ function MuteIcon({ muted, size = 20 }) {
   );
 }
 
+const isMobileWebBrowser = () => {
+  if (Platform.OS !== 'web') return false;
+  if (typeof navigator === 'undefined') return false;
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent || '');
+};
+
 // Share Modal
 function ShareModal({ visible, onClose, post }) {
   if (!post) return null;
 
   const shareText = encodeURIComponent(`📰 ${post.headline}\n\n${post.caption}\n\n📍 ${post.location}`);
-  const shareUrl  = encodeURIComponent(`https://rtinews.in/reel/${post.id}`);
+  const shareUrl  = encodeURIComponent(`https://rtinews.in/news/${post.id}`);
 
   const platforms = [
     {
@@ -345,8 +466,23 @@ function ShareModal({ visible, onClose, post }) {
       emoji: '💬',
       color: '#25D366',
       action: () => {
-        const url = `https://wa.me/?text=${shareText}%0A${shareUrl}`;
-        Platform.OS === 'web' ? window.open(url, '_blank') : Linking.openURL(url);
+        const fullMsg = `${shareText}%0A${shareUrl}`;
+        if (Platform.OS === 'web') {
+          if (isMobileWebBrowser()) {
+            try {
+              window.location.href = `whatsapp://send?text=${fullMsg}`;
+            } catch (_) {
+              window.location.href = `https://api.whatsapp.com/send?text=${fullMsg}`;
+            }
+          } else {
+            window.open(`https://web.whatsapp.com/send?text=${fullMsg}`, '_blank', 'noopener,noreferrer');
+          }
+        } else {
+          Linking.openURL(`whatsapp://send?text=${fullMsg}`).catch(() => {
+            Linking.openURL(`https://api.whatsapp.com/send?text=${fullMsg}`).catch(() => {});
+          });
+        }
+        onClose();
       },
     },
     {
@@ -354,8 +490,18 @@ function ShareModal({ visible, onClose, post }) {
       emoji: '✈️',
       color: '#0088cc',
       action: () => {
-        const url = `https://t.me/share/url?url=${shareUrl}&text=${shareText}`;
-        Platform.OS === 'web' ? window.open(url, '_blank') : Linking.openURL(url);
+        if (Platform.OS === 'web') {
+          if (isMobileWebBrowser()) {
+            window.location.href = `tg://msg_url?url=${shareUrl}&text=${shareText}`;
+          } else {
+            window.open(`https://t.me/share/url?url=${shareUrl}&text=${shareText}`, '_blank', 'noopener,noreferrer');
+          }
+        } else {
+          Linking.openURL(`tg://msg_url?url=${shareUrl}&text=${shareText}`).catch(() => {
+            Linking.openURL(`https://t.me/share/url?url=${shareUrl}&text=${shareText}`).catch(() => {});
+          });
+        }
+        onClose();
       },
     },
     {
@@ -364,7 +510,8 @@ function ShareModal({ visible, onClose, post }) {
       color: '#1DA1F2',
       action: () => {
         const url = `https://twitter.com/intent/tweet?text=${shareText}&url=${shareUrl}`;
-        Platform.OS === 'web' ? window.open(url, '_blank') : Linking.openURL(url);
+        Platform.OS === 'web' ? window.open(url, '_blank', 'noopener,noreferrer') : Linking.openURL(url);
+        onClose();
       },
     },
     {
@@ -373,20 +520,25 @@ function ShareModal({ visible, onClose, post }) {
       color: '#1877F2',
       action: () => {
         const url = `https://www.facebook.com/sharer/sharer.php?u=${shareUrl}`;
-        Platform.OS === 'web' ? window.open(url, '_blank') : Linking.openURL(url);
+        Platform.OS === 'web' ? window.open(url, '_blank', 'noopener,noreferrer') : Linking.openURL(url);
+        onClose();
       },
     },
     {
       name: 'Copy Link',
       emoji: '🔗',
       color: '#6b7280',
-      action: () => {
-        const link = `https://rtinews.in/reel/${post.id}`;
-        if (Platform.OS === 'web' && navigator?.clipboard) {
-          navigator.clipboard.writeText(link).then(() => Alert.alert('Copied!', 'Link copied to clipboard'));
-        } else {
-          Alert.alert('Link', link);
-        }
+      action: async () => {
+        const link = `https://rtinews.in/news/${post.id}`;
+        try {
+          if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(link);
+          } else {
+            // eslint-disable-next-line global-require
+            const { Clipboard } = require('react-native');
+            Clipboard?.setString?.(link);
+          }
+        } catch (_) {}
         onClose();
       },
     },
@@ -837,6 +989,7 @@ function interleaveSponsoredPosts(posts = [], ads = []) {
 
 // Upload Modal
 function UploadModal({ visible, onClose, onPost }) {
+  const { showToast } = useToast();
   const [caption, setCaption] = useState('');
   const [headline, setHeadline] = useState('');
   const [tag, setTag] = useState('Success Story');
@@ -869,7 +1022,7 @@ function UploadModal({ visible, onClose, onPost }) {
           handleCaptured({ type: a.type === 'video' ? 'video' : 'photo', uri: a.uri });
         }
       } catch {
-        Alert.alert('Camera', 'Unable to open camera.');
+        showToast('Unable to open camera.', 'error');
       }
       return;
     }
@@ -918,7 +1071,7 @@ function UploadModal({ visible, onClose, onPost }) {
 
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (permission.status !== 'granted') {
-        Alert.alert('Permission required', 'Please allow media access to upload a reel.');
+        showToast('Please allow media access to upload a reel.', 'info');
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({
@@ -937,7 +1090,7 @@ function UploadModal({ visible, onClose, onPost }) {
       } else {
         const vComp = await compressVideo(asset);
         if (!vComp.ok) {
-          Alert.alert('Video too large', vComp.message || 'Please select a video under 10 MB.');
+          showToast(vComp.message || 'Please select a video under 10 MB.', 'warning');
           return;
         }
         setMediaType('Video');
@@ -946,15 +1099,15 @@ function UploadModal({ visible, onClose, onPost }) {
       }
       setAudioMix(null);
     } catch {
-      Alert.alert('Upload failed', 'Unable to select this media.');
+      showToast('Unable to select this media.', 'error');
     } finally {
       setPicking(false);
     }
   };
 
   const handlePost = () => {
-    if (!caption.trim()) { Alert.alert('Caption required', 'Please write something.'); return; }
-    if (!mediaUri) { Alert.alert('Media required', 'Please choose a video or photo.'); return; }
+    if (!caption.trim()) { showToast('Please write something.', 'info'); return; }
+    if (!mediaUri) { showToast('Please choose a video or photo.', 'info'); return; }
     const mix = (mediaType === 'Video' && audioMix && (audioMix.musicId || audioMix.voiceUri)) ? audioMix : null;
     onPost({ caption, headline, tag, mediaUri, mediaType, audioMix: mix });
     setCaption('');
@@ -1003,7 +1156,7 @@ function UploadModal({ visible, onClose, onPost }) {
               <Ionicons name="camera-outline" size={18} color="#f1f5f9" />
               <Text style={{ color: '#f1f5f9', fontSize: 13, fontWeight: '700' }}>Camera</Text>
             </TouchableOpacity>
-            {mediaUri && mediaType === 'Video' && Platform.OS !== 'web' ? (
+            {mediaUri && mediaType === 'Video' ? (
               <TouchableOpacity
                 onPress={() => setAudioEditorVisible(true)}
                 activeOpacity={0.85}
@@ -1039,7 +1192,7 @@ function UploadModal({ visible, onClose, onPost }) {
 }
 
 // Comments Modal
-function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditComment, onDeleteComment, onLikeComment }) {
+function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditComment, onDeleteComment, onLikeComment, onLoadReplies }) {
   const [text, setText] = useState('');
   const [replyTo, setReplyTo] = useState(null);
   const [editingCommentId, setEditingCommentId] = useState(null);
@@ -1101,9 +1254,12 @@ function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditC
     setEditingCommentText('');
   };
 
-  const handleReplyComment = (commentId) => {
-    const nextReplyTarget = safeComments.find((comment) => comment.id === commentId) || null;
-    setReplyTo(nextReplyTarget);
+  const handleReplyComment = (commentId, userHint = null) => {
+    const nextReplyTarget = safeComments.find((comment) => isSameCommentId(comment.id, commentId)) || null;
+    const targetObj = nextReplyTarget
+      ? { ...nextReplyTarget, user: userHint || nextReplyTarget.user }
+      : (userHint ? { id: commentId, user: userHint } : { id: commentId, user: 'comment' });
+    setReplyTo(targetObj);
     setExpandedReplyThreads((prev) => ({ ...prev, [commentId]: true }));
     setReplyingToCommentId(commentId);
     setReplyText('');
@@ -1116,23 +1272,34 @@ function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditC
   };
 
   const handleSubmitReply = async () => {
-    if (!replyText.trim()) return;
+    const trimmed = replyText.trim();
+    if (!trimmed) return;
+    const targetId = replyingToCommentId || replyTo?.id || null;
     if (onAddComment) {
-      await onAddComment(replyText.trim(), replyingToCommentId);
+      await onAddComment(trimmed, targetId);
     }
-    if (replyingToCommentId) {
-      setExpandedReplyThreads((prev) => ({ ...prev, [replyingToCommentId]: true }));
+    if (targetId) {
+      setExpandedReplyThreads((prev) => ({ ...prev, [targetId]: true }));
     }
     setReplyTo(null);
     setReplyingToCommentId(null);
     setReplyText('');
   };
 
-  const handleToggleReplies = (commentId) => {
+  const handleToggleReplies = async (commentId) => {
+    const willExpand = !expandedReplyThreads[commentId];
     setExpandedReplyThreads((prev) => ({
       ...prev,
-      [commentId]: !prev[commentId],
+      [commentId]: willExpand,
     }));
+    if (willExpand && onLoadReplies) {
+      const targetComment = safeComments.find((c) => isSameCommentId(c.id, commentId));
+      if (!targetComment?.replies || targetComment.replies.length === 0) {
+        try {
+          await onLoadReplies(commentId);
+        } catch (_) {}
+      }
+    }
   };
 
   return (
@@ -1344,6 +1511,13 @@ function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditC
                                       </Text>
                                     </TouchableOpacity>
 
+                                    <TouchableOpacity
+                                      style={styles.commentActionBtn}
+                                      onPress={() => handleReplyComment(c.id, reply.author || reply.user)}
+                                    >
+                                      <Text style={styles.commentActionText}>Reply</Text>
+                                    </TouchableOpacity>
+
                                     {replyOwnerMatch ? (
                                       editingCommentId === reply.id ? (
                                         <>
@@ -1385,21 +1559,37 @@ function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditC
             <View style={{ flex: 1 }}>
               {replyTo ? (
                 <View style={styles.replyingPill}>
-                  <Text style={styles.replyingText}>Replying to {replyTo.user}</Text>
-                  <TouchableOpacity onPress={() => setReplyTo(null)}>
+                  <Text style={styles.replyingText}>Replying to {replyTo.user || replyTo.author || 'comment'}</Text>
+                  <TouchableOpacity onPress={() => { setReplyTo(null); setReplyingToCommentId(null); }}>
                     <Text style={styles.replyingClose}>✕</Text>
                   </TouchableOpacity>
                 </View>
               ) : null}
               <TextInput
                 style={styles.commentInput}
-                placeholder={replyTo ? `Reply to ${replyTo.user}...` : 'Write a comment...'}
+                placeholder={replyTo ? `Reply to ${replyTo.user || replyTo.author || 'comment'}...` : 'Write a comment...'}
                 placeholderTextColor="#475569"
                 value={text}
                 onChangeText={setText}
               />
             </View>
-            <TouchableOpacity style={styles.sendBtn} onPress={() => { if (!text.trim()) return; onAddComment(text.trim()); setText(''); }}>
+            <TouchableOpacity
+              style={styles.sendBtn}
+              onPress={() => {
+                const trimmed = text.trim();
+                if (!trimmed) return;
+                const targetReplyId = replyTo?.id || replyingToCommentId || null;
+                if (onAddComment) {
+                  onAddComment(trimmed, targetReplyId);
+                }
+                if (targetReplyId) {
+                  setExpandedReplyThreads((prev) => ({ ...prev, [targetReplyId]: true }));
+                }
+                setText('');
+                setReplyTo(null);
+                setReplyingToCommentId(null);
+              }}
+            >
               <Text style={styles.sendBtnText}>➤</Text>
             </TouchableOpacity>
           </View>
@@ -1466,7 +1656,7 @@ function ActionColumn({ post, onLike, onComment, onShare, onDownload, onBookmark
         {!isMobileLayout ? <Text style={labelStyle}>Share</Text> : null}
       </TouchableOpacity>
 
-      {post.video ? (
+      {(post.video || post.image || (Array.isArray(post?.images) && post.images.length > 0)) ? (
         <TouchableOpacity style={btn} onPress={() => onDownload?.(post)} activeOpacity={0.75}>
           <View style={iconWrap}>
             <Feather name="download" size={iconSz - 4} color="#fff" />
@@ -1644,6 +1834,7 @@ function LocalVoiceOver({ voiceUri, musicUrl, musicVolume = 0.6, playing }) {
 
 // Reel Card
 function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, onDescription, onProfilePress, onAdPress, onFollow, onVerifyComments, isActive, isNear = true, bottomInset = 0, cardWidth, cardHeight, isMobileLayout }) {
+  const { showToast } = useToast();
   const safePost = post || {};
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const flashAnim = useRef(new Animated.Value(0)).current; // resume par center me pause icon flash
@@ -1725,10 +1916,10 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
   const [galleryW, setGalleryW] = useState(0);
   const [galleryIdx, setGalleryIdx] = useState(0);
   const openDoc = useCallback(() => {
-    if (!docUrl) { Alert.alert('Unavailable', 'Link is not available.'); return; }
+    if (!docUrl) { showToast('Link is not available.', 'info'); return; }
     if (Platform.OS === 'web') { window.open(docUrl, '_blank', 'noopener'); return; }
-    Linking.openURL(docUrl).catch(() => Alert.alert('Notice', 'Could not open the link.'));
-  }, [docUrl]);
+    Linking.openURL(docUrl).catch(() => showToast('Could not open the link.', 'error'));
+  }, [docUrl, showToast]);
 
   useEffect(() => {
     let alive = true;
@@ -1771,7 +1962,7 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
       const activeUser = currentUser || UserStore.getCachedCurrentUser?.() || await UserStore.getCurrentUser().catch(() => null);
       if (activeUser && authorEmail && activeUser.email && String(activeUser.email).trim().toLowerCase() === authorEmail) {
         setIsFollowing(!next);
-        Alert.alert('Cannot Follow', 'You cannot follow yourself.');
+        showToast('You cannot follow yourself.', 'info');
         return;
       }
       const result = next
@@ -1779,12 +1970,12 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
         : await UserStore.unfollowUser(authorEmail, authorId);
       if (result?.ok === false) {
         setIsFollowing(!next);
-        Alert.alert('Follow', result?.message || 'Unable to update follow status.');
+        showToast(result?.message || 'Unable to update follow status.', 'error');
       }
     } catch (error) {
       console.error('Error updating follow status:', error);
       setIsFollowing(!next);
-      Alert.alert('Notice', 'Unable to update follow status. Please try again.');
+      showToast('Unable to update follow status. Please try again.', 'error');
     }
   };
 
@@ -2335,6 +2526,7 @@ function LoginRequiredModal({ visible, onClose, onLogin }) {
 
 // Main Feed Screen
 export default function FeedScreen({ navigation, route }) {
+  const { showToast, showPopup } = useToast();
   const targetReelId = route?.params?.id ? String(route.params.id) : null;
   const [posts, setPosts]               = useState([]);
   const pinnedPostRef = useRef(null);
@@ -2617,34 +2809,87 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
   const syncPostComments = useCallback(async (id, opts = {}) => {
     try {
       const { keepIfEmpty = false, ensureComment = null } = opts || {};
-      const summary = await UserStore.getNewsFeedSummary({ focusItemId: id });
-      const item = summary?.items?.find((entry) => String(entry.id) === String(id));
-      const rawComments = Array.isArray(item?.comments_list) ? item.comments_list : [];
+      let rawComments = [];
+
+      // 1. Direct comments API fetch (fast & specific to this post)
+      try {
+        const pageRes = await UserStore.getNewsCommentsPage(id);
+        if (pageRes?.ok && Array.isArray(pageRes.comments) && pageRes.comments.length > 0) {
+          rawComments = pageRes.comments;
+        }
+      } catch (_) {}
+
+      // 2. Direct AuthAPI fallback if pageRes had no comments
+      if (!rawComments.length) {
+        try {
+          const directRes = await AuthAPI.getCommentsDetailed(id);
+          if (directRes?.ok && Array.isArray(directRes.comments) && directRes.comments.length > 0) {
+            rawComments = directRes.comments;
+          }
+        } catch (_) {}
+      }
+
+      // 3. Fallback to summary with feedType: 'feeds'
+      if (!rawComments.length) {
+        try {
+          const summary = await UserStore.getNewsFeedSummary({ focusItemId: id, feedType: 'feeds' });
+          const item = summary?.items?.find((entry) => String(entry.id) === String(id));
+          if (Array.isArray(item?.comments_list) && item.comments_list.length > 0) {
+            rawComments = item.comments_list;
+          }
+        } catch (_) {}
+      }
+
       const normalizedComments = rawComments.map((comment, index) =>
         normalizeFeedComment(comment, `cmt-${index + 1}`, commentProfilesByEmail)
       );
 
       setPosts((prev) => prev.map((post) => {
         if (post.id !== id) return post;
-        // ✅ FIX: server se post hi na mile / request fail ho (item nahi) to local comments mat udao
-        let next = mergePendingComments(id, (!item && Array.isArray(post.comments)) ? post.comments : normalizedComments);
-        // ✅ FIX: server list khali / fail aaye (list endpoint lag ya error) to local comments mat udao
-        if (keepIfEmpty && next.length === 0 && Array.isArray(post.comments) && post.comments.length) {
-          next = post.comments;
+        const prevComments = Array.isArray(post.comments) ? post.comments : [];
+
+        // Merge replies from prevComments into normalizedComments so replies are NEVER wiped out by sync!
+        let baseList = normalizedComments.length > 0 ? normalizedComments.map((newC) => {
+          const oldC = prevComments.find((pc) => isSameCommentId(pc.id, newC.id) || pendKey(pc) === pendKey(newC));
+          if (oldC && Array.isArray(oldC.replies) && oldC.replies.length > 0) {
+            const combinedReplies = [...(Array.isArray(newC.replies) ? newC.replies : [])];
+            oldC.replies.forEach((or) => {
+              const alreadyHas = combinedReplies.some((nr) => isSameCommentId(nr.id, or.id) || pendKey(nr) === pendKey(or));
+              if (!alreadyHas) combinedReplies.push(or);
+            });
+            return { ...newC, replies: combinedReplies };
+          }
+          return newC;
+        }) : prevComments;
+
+        let next = mergePendingComments(id, baseList);
+        if (keepIfEmpty && next.length === 0 && prevComments.length) {
+          next = prevComments;
         }
-        // ✅ FIX: abhi add kiya hua comment server list me na dikhe to bhi rakho
         if (ensureComment) {
           const exists = next.some((c) =>
-            String(c.id) === String(ensureComment.id) ||
-            (c.text === ensureComment.text && String(c.author_email || '') === String(ensureComment.author_email || ''))
+            isSameCommentId(c.id, ensureComment.id) || pendKey(c) === pendKey(ensureComment)
           );
           if (!exists) next = [...next, ensureComment];
         }
-        const realCount = countFeedComments(next);
-        // server ka stale count 20s live-refresh me wapas na aaye
-        if (item && !ensureComment && next === normalizedComments && !hasRecentPending(id)) {
-          feedCommentVerify.set(String(id), { server: Number(item.comments), real: realCount });
+        if (opts?.ensureReply && opts.ensureReply.reply && opts.ensureReply.parentId) {
+          const rep = opts.ensureReply.reply;
+          const pId = opts.ensureReply.parentId;
+          let attached = false;
+          next = next.map((c) => {
+            if (isSameCommentId(c.id, pId) || (Array.isArray(c.replies) && c.replies.some((r) => isSameCommentId(r.id, pId)))) {
+              attached = true;
+              const repList = Array.isArray(c.replies) ? c.replies : [];
+              const exists = repList.some((r) => isSameCommentId(r.id, rep.id) || pendKey(r) === pendKey(rep));
+              return { ...c, replies: exists ? repList : [...repList, rep] };
+            }
+            return c;
+          });
+          if (!attached && next.length > 0) {
+            next = next.map((c, i) => (i === 0 ? { ...c, replies: [...(Array.isArray(c.replies) ? c.replies : []), rep] } : c));
+          }
         }
+        const realCount = Math.max(countFeedComments(next), Number(post.commentsCount || 0));
         return { ...post, comments: next, commentsCount: realCount };
       }));
     } catch {}
@@ -2780,7 +3025,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
           : p));
         // Asli error dikhao (pehle chup-chaap revert hota tha, isliye unlike fail hone ka reason pata nahi chalta tha)
         console.warn('[Feed like] failed', { id, wasLiked: originalLiked, result });
-        if (result?.message) Alert.alert(originalLiked ? 'Unlike failed' : 'Like failed', result.message);
+        if (result?.message) showToast(result.message, 'error');
       }
     } catch {
       setPosts(prev => prev.map(p => p.id === id
@@ -2823,33 +3068,37 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
 
   const [downloadingReelId, setDownloadingReelId] = useState(null);
   const handleDownloadReel = useCallback(async (post) => {
-    if (!post?.video || downloadingReelId) return;
+    const mediaUri = post?.video || post?.image || (Array.isArray(post?.images) && post.images[0]) || '';
+    if (!mediaUri || downloadingReelId) return;
+    const isVideo = Boolean(post?.video);
     setDownloadingReelId(post.id);
-    Alert.alert('Download', 'Preparing video with frame & audio…');
+    const audioUrl = post.musicUrl || post.localMusicUrl || post.music_url || '';
+    const voiceUrl = post.localVoiceUri || post.voiceUri || post.voice_url || null;
+    showToast(isVideo ? 'Preparing video with sound…' : 'Preparing reel download…', 'info');
     try {
-      const res = await downloadMedia(post.video, {
-        type: 'video',
-        musicUrl: post.musicUrl || post.localMusicUrl || '',
+      const res = await downloadMedia(mediaUri, {
+        type: isVideo ? 'video' : 'image',
+        musicUrl: audioUrl,
         musicVolume: post.musicVolume ?? post.localMusicVolume ?? 0.6,
-        muteOriginal: Boolean(post.muteOriginal ?? post.localMuteOriginal),
-        voiceUri: post.localVoiceUri || post.voiceUri || post.voice_url || null,
+        muteOriginal: Boolean(post.muteOriginal ?? post.localMuteOriginal ?? post.mute_original),
+        voiceUri: voiceUrl,
         frame: post.useFrame ? {
           templateId: post.frameTemplate || 'glossy2',
-          title: post.headline || post.title || '',
+          title: post.headline || post.title || 'RTI NEWS',
           description: post.caption || post.description || '',
         } : null,
       });
       if (res?.ok) {
-        Alert.alert('Success', res.message || (Platform.OS === 'web' ? 'Video downloaded successfully!' : 'Video saved to Gallery!'));
+        showToast(res.message || (Platform.OS === 'web' ? 'Downloaded successfully!' : 'Saved to Gallery!'), 'success');
       } else {
-        Alert.alert('Error', res?.message || 'Download failed.');
+        showToast(res?.message || 'Download failed.', 'error');
       }
     } catch (e) {
-      Alert.alert('Error', e?.message || 'Download failed.');
+      showToast(e?.message || 'Download failed.', 'error');
     } finally {
       setDownloadingReelId(null);
     }
-  }, [downloadingReelId]);
+  }, [downloadingReelId, showToast]);
 
   const handleDescription = useCallback(async (id) => {
     setDescPost(id);
@@ -2859,7 +3108,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
   const handleAddComment = useCallback(async (text, replyToId = null, targetPostId = commentPost || descPost) => {
     if (!targetPostId) return;
     if (!requireLogin(true)) return;
-    const tempId = Date.now().toString();
+    const tempId = `temp-${Date.now()}`;
     const currentAvatar = String(currentUser.avatar || currentUser.profile_image || '').trim();
     const newComment = {
       id: tempId,
@@ -2872,6 +3121,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       date: new Date().toISOString().split('T')[0],
       likes: 0,
       liked_by: [],
+      replies: [],
     };
 
     addPendingComment(targetPostId, newComment, replyToId);
@@ -2880,9 +3130,10 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
         ? {
             ...p,
             comments: replyToId
-              ? p.comments.map(c => c.id === replyToId
-                  ? { ...c, replies: [...(c.replies || []), newComment] }
-                  : c
+              ? (Array.isArray(p.comments) ? p.comments : []).map(c =>
+                  isSameCommentId(c.id, replyToId) || (Array.isArray(c.replies) && c.replies.some(r => isSameCommentId(r.id, replyToId)))
+                    ? { ...c, replies: [...(Array.isArray(c.replies) ? c.replies : []), newComment] }
+                    : c
                 )
               : [...(Array.isArray(p.comments) ? p.comments : []), newComment],
             commentsCount: (p.commentsCount ?? (Array.isArray(p.comments) ? p.comments.length : 0)) + 1,
@@ -2895,31 +3146,37 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
         ? await UserStore.replyNewsComment(targetPostId, replyToId, text)
         : await UserStore.addNewsComment(targetPostId, text);
 
-      if (!result?.ok) {
-        // ✅ FIX: comment server par save nahi hua — chup-chaap gayab karne ke bajay asli error dikhao
-        console.warn('[Feed comment] failed', { targetPostId, replyToId, result });
+      // Server ka real comment (real id ke saath) — temp comment ki jagah wahi rakho
+      const saved = result?.comment
+        ? normalizeFeedComment({ ...newComment, ...result.comment, text: result.comment.text || text }, `cmt-${tempId}`, commentProfilesByEmail)
+        : newComment;
+
+      if (saved) {
         removePendingComment(targetPostId, tempId);
+        addPendingComment(targetPostId, saved, replyToId);
         setPosts(prev => prev.map(p => {
           if (p.id !== targetPostId) return p;
-          const strip = (list) => (Array.isArray(list) ? list : [])
-            .filter((c) => c.id !== tempId)
-            .map((c) => (Array.isArray(c.replies) ? { ...c, replies: c.replies.filter((r) => r.id !== tempId) } : c));
-          const nextComments = strip(p.comments);
-          return { ...p, comments: nextComments, commentsCount: countFeedComments(nextComments) };
+          const replaceInList = (list) => (Array.isArray(list) ? list : []).map(item => {
+            if (isSameCommentId(item.id, tempId)) return { ...saved, replies: item.replies || saved.replies || [] };
+            if (Array.isArray(item.replies) && item.replies.length > 0) {
+              return { ...item, replies: replaceInList(item.replies) };
+            }
+            return item;
+          });
+          return { ...p, comments: replaceInList(p.comments) };
         }));
-        Alert.alert('Comment failed', result?.message || 'Unable to post comment. Please try again.');
-        return;
       }
 
-      // Server ka real comment (real id ke saath) — temp comment ki jagah wahi rakho
-      const saved = result.comment
-        ? normalizeFeedComment({ ...newComment, ...result.comment, text: result.comment.text || text }, `cmt-${tempId}`, commentProfilesByEmail)
-        : null;
-      // pending entry ko server wale real comment se badlo (real id ke saath)
-      if (saved) { removePendingComment(targetPostId, tempId); addPendingComment(targetPostId, saved, replyToId); }
-      await syncPostComments(targetPostId, { keepIfEmpty: true, ensureComment: replyToId ? null : (saved || newComment) });
+      await syncPostComments(targetPostId, {
+        keepIfEmpty: true,
+        ensureComment: replyToId ? null : (saved || newComment),
+        ensureReply: replyToId ? { reply: (saved || newComment), parentId: replyToId } : null,
+      });
     } catch {
-      await syncPostComments(targetPostId, { keepIfEmpty: true });
+      await syncPostComments(targetPostId, {
+        keepIfEmpty: true,
+        ensureReply: replyToId ? { reply: newComment, parentId: replyToId } : null,
+      });
     }
   }, [commentPost, currentUser.avatar, currentUser.name, currentUser.profile_image, currentUserEmail, descPost, syncPostComments, commentProfilesByEmail, requireLogin]);
 
@@ -2928,11 +3185,11 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       prev.map(p => ({
         ...p,
         comments: Array.isArray(p.comments) ? p.comments.map(c => {
-          if (c.id === commentId) return { ...c, text: newText, edited_at: new Date().toISOString() };
+          if (isSameCommentId(c.id, commentId)) return { ...c, text: newText, edited_at: new Date().toISOString() };
           if (Array.isArray(c.replies)) {
             return {
               ...c,
-              replies: c.replies.map(r => r.id === commentId ? { ...r, text: newText, edited_at: new Date().toISOString() } : r)
+              replies: c.replies.map(r => isSameCommentId(r.id, commentId) ? { ...r, text: newText, edited_at: new Date().toISOString() } : r)
             };
           }
           return c;
@@ -2945,8 +3202,6 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
   }, [commentPost]);
 
   const handleDeleteComment = useCallback(async (commentId) => {
-    // ✅ FIX: pehle yahan SAARI reels ka comment count 1-1 kam ho jaata tha (sirf target post ka hona chahiye),
-    // aur server fail hone par comment wapas bhi nahi aata tha.
     const targetId = commentPost || descPost;
     removePendingComment(targetId, commentId);
     setPosts(prev =>
@@ -2954,8 +3209,8 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
         if (String(p.id) !== String(targetId)) return p;
         const before = countFeedComments(p.comments);
         const nextComments = (Array.isArray(p.comments) ? p.comments : [])
-          .filter(c => c.id !== commentId)
-          .map(c => (Array.isArray(c.replies) ? { ...c, replies: c.replies.filter(r => r.id !== commentId) } : c));
+          .filter(c => !isSameCommentId(c.id, commentId))
+          .map(c => (Array.isArray(c.replies) ? { ...c, replies: c.replies.filter(r => !isSameCommentId(r.id, commentId)) } : c));
         const removed = Math.max(0, before - countFeedComments(nextComments));
         const baseCount = Number(p.commentsCount ?? before);
         return { ...p, comments: nextComments, commentsCount: Math.max(0, baseCount - removed) };
@@ -2968,6 +3223,35 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       await syncPostComments(targetId, { keepIfEmpty: false });
     }
   }, [commentPost, descPost, syncPostComments]);
+
+  const handleLoadReplies = useCallback(async (commentId) => {
+    try {
+      const rawId = String(commentId).replace(/^cmt-/, '');
+      const res = await UserStore.getCommentReplies(rawId);
+      if (res?.ok && Array.isArray(res.replies) && res.replies.length > 0) {
+        setPosts((prev) => prev.map((p) => {
+          if (!Array.isArray(p.comments)) return p;
+          return {
+            ...p,
+            comments: p.comments.map((c) => {
+              if (isSameCommentId(c.id, commentId)) {
+                const existing = Array.isArray(c.replies) ? c.replies : [];
+                const combined = [...existing];
+                res.replies.forEach((r) => {
+                  const norm = normalizeFeedComment(r, `rpl-${r.id}`, commentProfilesByEmail);
+                  if (!combined.some((x) => isSameCommentId(x.id, norm.id) || pendKey(x) === pendKey(norm))) {
+                    combined.push(norm);
+                  }
+                });
+                return { ...c, replies: combined };
+              }
+              return c;
+            }),
+          };
+        }));
+      }
+    } catch (_) {}
+  }, [commentProfilesByEmail]);
 
   const handleLikeComment = useCallback(async (commentId) => {
     if (!requireLogin(true)) return;
@@ -3048,7 +3332,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       setNewsLimitModal({ visible: true, message: apiResult.message });
       return;
     }
-    Alert.alert('Save failed', apiResult.message || 'Unable to save this reel. Please try again.');
+    showToast(apiResult.message || 'Unable to save this reel. Please try again.', 'error');
     return;
   }
 
@@ -3057,14 +3341,14 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
 
   const backendNewsId = apiResult?.news?.id ?? apiResult?.data?.id ?? apiResult?.data?.news?.id;
   if (!backendNewsId) {
-    Alert.alert('Save failed', 'News created but ID missing from server response.');
+    showToast('News created but ID missing from server response.', 'error');
     return;
   }
 
   const postId = String(backendNewsId);
   // ✅ Playback hamesha backend ke `news.media` se — local selected file ka URL nahi
   const serverItem = UserStore.mapApiNewsItem(apiResult.news || apiResult.data?.news || apiResult.data);
-  const serverVideoUrl = isVideoPost ? (serverItem.video || serverItem.media || '') : '';
+  const serverVideoUrl = isVideoPost ? resolveMediaUrl(serverItem.video || serverItem.media || '') : '';
   const serverImageUrl = !isVideoPost ? (serverItem.images?.[0] || sendMediaUri) : '';
   const nextPost = {
     id: postId,
@@ -3222,16 +3506,16 @@ const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
             const sourceItems = summaryValue.items.map((item) => {
   // media_type: 1 = image, 2 = video, 3 = PDF, 4 = external URL
   const mt = String(item.mediaType || '');
-  const rawMedia = typeof item.media === 'string' ? item.media.trim() : '';
+  const rawMedia = typeof item.media === 'string' ? resolveMediaUrl(item.media.trim()) : '';
   const isHttp = /^https?:/i.test(rawMedia);
-  const videoFromItem = String(
+  const videoFromItem = resolveMediaUrl(String(
     typeof item.video === 'string' ? item.video : item.video?.uri || ''
-  ).trim();
+  ).trim());
   let kind;
-  if (mt === 'Video') kind = 'video';
-  else if (mt === 'File') kind = 'pdf';
-  else if (mt === 'Link') kind = 'link';
-  else if (mt === 'Image') kind = 'image';
+  if (mt === 'Video' || Number(item.media_type) === 2) kind = 'video';
+  else if (mt === 'File' || Number(item.media_type) === 3) kind = 'pdf';
+  else if (mt === 'Link' || Number(item.media_type) === 4) kind = 'link';
+  else if (mt === 'Image' || Number(item.media_type) === 1) kind = 'image';
   else kind = (videoFromItem || (isHttp && /\.(mp4|m4v|mov|webm|ogv|m3u8)(\?.*)?$/i.test(rawMedia))) ? 'video' : 'image';
 
   const videoUri = kind === 'video' ? (videoFromItem || (isHttp ? rawMedia : '')) : '';
@@ -3491,6 +3775,7 @@ image: item.image || null,
           onEditComment={handleEditComment}
           onDeleteComment={handleDeleteComment}
           onLikeComment={handleLikeComment}
+          onLoadReplies={handleLoadReplies}
         />
       ) : null}
 

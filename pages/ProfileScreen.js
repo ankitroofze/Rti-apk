@@ -933,10 +933,6 @@ function ProfileScreenInner({ navigation, route }) {
   const promptPhotoLimit = (message) => {
     const text = message || PHOTO_LIMIT_MESSAGE;
     const goToPlans = () => navigation.navigate('Subscription Plans', { returnTo: 'Profile' });
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined' && window.confirm(`${text}\n\nOpen subscription plans to upgrade?`)) goToPlans();
-      return;
-    }
     Alert.alert('Subscription Required', text, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Purchase Subscription', onPress: goToPlans },

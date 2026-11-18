@@ -80,7 +80,9 @@ export function getFrameTemplate(idOrName) {
 
 // Server ko bhejne ke liye: assets/frames wala exact file name (e.g. 'frame-glossy2.png').
 export function getFrameTemplateName(idOrName) {
-  return getFrameTemplate(idOrName).file;
+  const tpl = getFrameTemplate(idOrName);
+  const f = tpl?.file || 'frame-glossy2';
+  return f.endsWith('.png') ? f : `${f}.png`;
 }
 
 // Server se aaya value (file name / label / id) -> app ke andar hamesha id ('' ho to '' hi)

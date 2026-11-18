@@ -43,6 +43,7 @@ if (Platform.OS !== 'web') {
   actions = richEditorLib.actions;
 }
 import VideoPreview from '../components/VideoPreview';
+import NewsFrameOverlay from '../components/NewsFrameOverlay';
 import NewsCameraModal from '../components/NewsCameraModal';
 import { downloadMedia } from '../utils/downloadMedia';
 import { compressImage, compressVideo } from '../utils/mediaCompressor';
@@ -431,8 +432,8 @@ export default function AddNewsScreen({ navigation, route }) {
   const [postType, setPostType] = useState(Number(editItem?.type) === 2 ? 2 : 1); // 1 = News, 2 = Feed (Reel)
   const [mediaType, setMediaType] = useState(() => getExistingMediaType(editItem));
   const [images, setImages] = useState(() => getExistingImages(editItem));
-  // Breaking-news template: '' = koi template nahi, warna template id (glossy2 / glossy1 / redbar / banner)
-  const [frameTemplate, setFrameTemplate] = useState(editItem?.useFrame ? (editItem?.frameTemplate || DEFAULT_FRAME_ID) : '');
+  // Breaking-news template: default 'glossy2' news posts ke liye taaki video me frame hamesha sath rahe
+  const [frameTemplate, setFrameTemplate] = useState(editItem ? (editItem.useFrame ? (editItem.frameTemplate || DEFAULT_FRAME_ID) : '') : DEFAULT_FRAME_ID);
   const useFrame = Boolean(frameTemplate);
   const [video, setVideo] = useState(() => getExistingVideo(editItem));
   const [videoThumb, setVideoThumb] = useState(null);
@@ -447,6 +448,7 @@ export default function AddNewsScreen({ navigation, route }) {
   const [audioEditorVisible, setAudioEditorVisible] = useState(false);
   const [audioMix, setAudioMix] = useState(null); // { music, musicId, musicUrl, musicVolume, voiceUri, muteOriginal }
   const [downloadingVideo, setDownloadingVideo] = useState(false);
+  const [videoBoxW, setVideoBoxW] = useState(0);
 
   const handleDownloadVideo = async () => {
     if (!video || downloadingVideo) return;
@@ -455,11 +457,11 @@ export default function AddNewsScreen({ navigation, route }) {
     try {
       const plainTitle = htmlToPlain(titleHtmlRef.current || title) || 'RTI NEWS';
       const plainDesc = htmlToPlain(descriptionHtmlRef.current || descriptionText) || '';
-      const frameOpts = useFrame ? {
-        templateId: frameTemplate || 'glossy2',
+      const frameOpts = {
+        templateId: frameTemplate || DEFAULT_FRAME_ID,
         title: plainTitle,
         description: plainDesc,
-      } : null;
+      };
 
       const res = await downloadMedia(video, {
         type: 'video',
@@ -844,12 +846,12 @@ const admin = user.role === 'admin';
         if (!validateVideoDuration(asset.duration)) return;
 
         videoOriginalUriRef.current = asset.uri;
-        const persisted = await storeWebUriToIdbMedia(asset.uri, { prefix: 'video', mimeType: asset.mimeType || '' });
-        setVideo(persisted);
+        setVideo(asset.uri);
         setAudioMix(null);
+        storeWebUriToIdbMedia(asset.uri, { prefix: 'video', mimeType: asset.mimeType || '' }).catch(() => {});
         setTimeout(() => setAudioEditorVisible(true), 350); // ✅ web par bhi music/voice editor
 
-        const thumb = await generateVideoThumbnail(persisted);
+        const thumb = await generateVideoThumbnail(asset.uri);
         if (thumb) setVideoThumb(thumb);
 
         showToast('Video selected.', 'success');
@@ -1048,9 +1050,9 @@ console.log("Platform:", Platform.OS);
       extraImages: mediaType === 'Image' ? images.slice(1) : [],
       // Music / voice-over — sirf nayi (local) video ke liye; backend ffmpeg se merge karta hai
       audioMix: audioMixToSend,
-      // frame sirf image / video wali news par lagta hai
-      useFrame: useFrame && (mediaType === 'Image' || mediaType === 'Video'),
-      frameTemplate: useFrame && (mediaType === 'Image' || mediaType === 'Video') ? frameTemplate : '',
+      // frame sirf image / video wali news par lagta hai (Feed / Reel par nahi lagta)
+      useFrame: postType === 1 && useFrame && (mediaType === 'Image' || mediaType === 'Video'),
+      frameTemplate: postType === 1 && useFrame && (mediaType === 'Image' || mediaType === 'Video') ? frameTemplate : '',
     };
 
     const apiResult = isEditMode
@@ -1130,11 +1132,11 @@ console.log("Platform:", Platform.OS);
       navigation.dispatch(
         CommonActions.reset({
           index: 0,
-          // Feed (Reel) post => seedha Feed section, News post => News Feed
-          routes: [{ name: postType === 2 ? 'Feed' : 'News Feed' }],
+          // Feed (Reel) post => seedha Feed section, News post => My News
+          routes: [{ name: postType === 2 ? 'Feed' : 'My News' }],
         })
       );
-    }, 800);
+    }, 200);
   };
 
   const closeLimitModal = () => setLimitModal((prev) => ({ ...prev, visible: false }));
@@ -1169,6 +1171,7 @@ console.log("Platform:", Platform.OS);
     // Feed = video ya images. Media reset taaki purani image/file na jaye.
     setImages([]); setVideo(null); setVideoThumb(null); setAttachment(null);
     setMediaType(next === 2 ? 'Video' : 'None');
+    if (next === 2) setFrameTemplate(null);
   };
   const postTypeSelector = (
     <View style={T.chipsRow}>
@@ -1258,8 +1261,25 @@ console.log("Platform:", Platform.OS);
     <View style={T.mediaBlock}>
       <Text style={T.subLabel}>Upload one video (15s to 1 minute, max 10MB).</Text>
       {video ? (
-        <View style={T.videoPreviewWrap}>
-          <VideoPreview uri={video} style={T.videoPreview} contentFit="contain" />
+        <View
+          style={[T.videoPreviewWrap, useFrame && frameTemplate ? { backgroundColor: '#000', borderRadius: 8, overflow: 'hidden' } : null]}
+          onLayout={(e) => {
+            const w = Math.round(e.nativeEvent.layout.width);
+            if (w && w !== videoBoxW) setVideoBoxW(w);
+          }}
+        >
+          <VideoPreview uri={video} style={T.videoPreview} contentFit="contain" hideWatermark={Boolean(useFrame && frameTemplate)} />
+          {useFrame && frameTemplate && videoBoxW > 0 ? (
+            <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+              <NewsFrameOverlay
+                width={videoBoxW}
+                height={190}
+                title={title || 'RTI NEWS'}
+                description={descriptionText || ''}
+                templateId={frameTemplate}
+              />
+            </View>
+          ) : null}
           <TouchableOpacity style={T.videoRemoveBtn} onPress={() => { setVideo(null); setAudioMix(null); }}>
             <Feather name="x" size={12} color="#fff" />
           </TouchableOpacity>
@@ -1411,7 +1431,7 @@ console.log("Platform:", Platform.OS);
               {imageUploadBlock}
               {videoUploadBlock}
               {fileUploadBlock}
-              {(mediaType === 'Image' || (mediaType === 'Video' && !hasMergedServerVideo)) ? (
+              {postType === 1 && (mediaType === 'Image' || (mediaType === 'Video' && !hasMergedServerVideo)) ? (
                 <FrameTemplatePicker
                   value={frameTemplate}
                   onChange={setFrameTemplate}
@@ -1434,7 +1454,11 @@ console.log("Platform:", Platform.OS);
                 activeOpacity={0.85}
               >
                 <LinearGradient colors={C.gradientRed} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={ws.submitBtn}>
-                  <Feather name="send" size={15} color="#fff" />
+                  {saving ? (
+                    <ActivityIndicator size="small" color="#fff" style={{ marginRight: 6 }} />
+                  ) : (
+                    <Feather name="send" size={15} color="#fff" />
+                  )}
                   <Text style={ws.submitBtnText}>{submitLabel}</Text>
                 </LinearGradient>
               </TouchableOpacity>
@@ -1633,7 +1657,7 @@ console.log("Platform:", Platform.OS);
             {imageUploadBlock}
             {videoUploadBlock}
             {fileUploadBlock}
-            {(mediaType === 'Image' || (mediaType === 'Video' && !hasMergedServerVideo)) ? (
+            {postType === 1 && (mediaType === 'Image' || (mediaType === 'Video' && !hasMergedServerVideo)) ? (
               <FrameTemplatePicker
                 value={frameTemplate}
                 onChange={setFrameTemplate}
@@ -1652,7 +1676,11 @@ console.log("Platform:", Platform.OS);
             activeOpacity={0.85}
           >
             <LinearGradient colors={C.gradientRed} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.submitBtn}>
-              <Feather name="send" size={16} color="#fff" />
+              {saving ? (
+                <ActivityIndicator size="small" color="#fff" style={{ marginRight: 6 }} />
+              ) : (
+                <Feather name="send" size={16} color="#fff" />
+              )}
               <Text style={s.submitBtnText}>{submitLabel}</Text>
             </LinearGradient>
           </TouchableOpacity>

@@ -163,10 +163,6 @@ export async function openAdRedirect(ad = {}, navigation, options = {}) {
   }
 
   const message = options.fallbackMessage || 'This ad does not have a valid redirect yet.';
-  if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.alert === 'function') {
-    window.alert(message);
-  } else {
-    Alert.alert('Ad Link', message);
-  }
+  Alert.alert('Ad Link', message);
   return false;
 }

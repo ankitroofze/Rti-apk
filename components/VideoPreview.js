@@ -20,7 +20,7 @@ function isLikelyPlayableVideoSource(uri) {
   return /^https?:/i.test(uri) && !/\.(jpe?g|png|gif|webp|bmp|svg|heic|avif|pdf)(\?.*)?(#.*)?$/i.test(uri);
 }
 
-export default function VideoPreview({ uri, style, contentFit = 'contain' }) {
+export default function VideoPreview({ uri, style, contentFit = 'contain', hideWatermark = false }) {
   const [resolved, setResolved] = useState(null);
 
   useEffect(() => {
@@ -58,13 +58,15 @@ export default function VideoPreview({ uri, style, contentFit = 'contain' }) {
 
   return (
     // ✅ kaala background + contain: video crop / zoom nahi hota, poora dikhta hai
-    <View style={{ position: 'relative', backgroundColor: '#000', borderRadius: 8, overflow: 'hidden' }}>
+    <View style={[{ position: 'relative', width: '100%', backgroundColor: '#000', borderRadius: 8, overflow: 'hidden' }, style]}>
       {/* News jaisa player: play/pause, progress line + timer; video poora dikhta hai */}
-      <ControlledVideo uri={playableUri} style={style} />
-      <View pointerEvents="none" style={wm.bar}>
-        <Image source={require('../assets/images/logo.jpg')} style={wm.logo} />
-        <Text style={wm.text}>RTI NEWS</Text>
-      </View>
+      <ControlledVideo uri={playableUri} style={{ width: '100%', height: '100%' }} />
+      {!hideWatermark ? (
+        <View pointerEvents="none" style={wm.bar}>
+          <Image source={require('../assets/images/logo.jpg')} style={wm.logo} />
+          <Text style={wm.text}>RTI NEWS</Text>
+        </View>
+      ) : null}
     </View>
   );
 }

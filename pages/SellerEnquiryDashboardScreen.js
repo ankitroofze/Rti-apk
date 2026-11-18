@@ -28,7 +28,7 @@ const money = (val) => {
 };
 
 const notify = (title, msg) => {
-  if (IS_WEB) { alert(`${title}\n${msg}`); } else { Alert.alert(title, msg); }
+  Alert.alert(title, msg);
 };
 
 const getBuyerName    = (p = {}) => p.name || p.buyer_name || [p.buyer_first_name, p.buyer_last_name].filter(Boolean).join(' ') || 'Unknown';

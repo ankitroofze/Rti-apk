@@ -28,6 +28,7 @@ const SIDEBAR_RED_URI =
             : (_redAsset?.uri || _redAsset?.default || '')))
     : '';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { UserStore } from '../store/UserStore';
 import { getProfileTier } from '../utils/profileHelpers';
@@ -331,7 +332,7 @@ const MENU_SECTIONS = [
     items: [
       { label: 'Post News', icon: 'add-circle-outline', screen: 'Add News', iconStyle: 'blue' },
       { label: 'Profile', icon: 'person-circle-outline', screen: 'Profile', iconStyle: 'purple' },
-      { label: 'News Feed', icon: 'newspaper-outline', screen: 'News Feed', iconStyle: 'teal', badge: 'New' },
+      { label: 'My News', icon: 'newspaper-outline', screen: 'My News', iconStyle: 'teal', badge: 'New' },
       { label: 'My Network', icon: 'people-outline', screen: 'My Network', iconStyle: 'green' },
     ],
   },
@@ -420,6 +421,7 @@ const UNIFORM_ICON = { bg: '#fff7ed', border: '#fed7aa', color: '#94a3b8' };
 const CARD_DESCS = {
   'Post News': 'Share a story with your network',
   'Profile': 'Edit your public profile & bio',
+  'My News': 'Latest stories from your network',
   'News Feed': 'Latest stories from your network',
   'My Network': 'Manage connections & follows',
   'Wallet': 'Check balance & transactions',
@@ -490,7 +492,8 @@ const WEB_MODULES = [
   { label: 'Home', icon: 'home-outline', screen: 'Home', iconStyle: 'orange', isNavigation: true },
   { label: 'Profile', icon: 'person-circle-outline', screen: 'Profile', iconStyle: 'purple', component: ProfileScreen },
   { label: 'Post News', icon: 'add-circle-outline', screen: 'Add News', iconStyle: 'blue', component: AddNewsScreen },
-  { label: 'News Feed', icon: 'newspaper-outline', screen: 'News Feed', iconStyle: 'teal', component: NewsFeedScreen },
+  { label: 'My News', icon: 'newspaper-outline', screen: 'My News', iconStyle: 'teal', component: NewsFeedScreen },
+  { label: 'News Feed', icon: 'newspaper-outline', screen: 'News Feed', iconStyle: 'teal', component: NewsFeedScreen, hideInSidebar: true },
   { label: 'My Network', icon: 'people-outline', screen: 'My Network', iconStyle: 'green', component: MyNetworkScreen },
   { label: 'Wallet', icon: 'wallet-outline', screen: 'Wallet', iconStyle: 'amber', component: WalletScreen },
   { label: 'Withdraw', icon: 'cash-outline', screen: 'Withdraw', iconStyle: 'orange', component: WithdrawScreen },
@@ -542,7 +545,8 @@ const WEB_MODULES = [
 const SLUG_TO_SCREEN = {
   profile: 'Profile',
   'post-news': 'Add News',
-  'news-feed': 'News Feed',
+  'my-news': 'My News',
+  'news-feed': 'My News',
   'my-network': 'My Network',
   wallet: 'Wallet',
   withdraw: 'Withdraw',
@@ -573,7 +577,8 @@ const SLUG_TO_SCREEN = {
 const SCREEN_TO_SLUG = {
   Profile: 'profile',
   'Add News': 'post-news',
-  'News Feed': 'news-feed',
+  'My News': 'my-news',
+  'News Feed': 'my-news',
   'My Network': 'my-network',
   Wallet: 'wallet',
   Withdraw: 'withdraw',
@@ -976,21 +981,12 @@ function QuickMenuMobile({ navigation }) {
 
   return (
     <View style={styles.root}>
-     <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      <ImageBackground
-        source={require('../assets/images/profile-red.png')}
-        resizeMode="cover"
-        imageStyle={styles.headerImg}
-        style={[styles.header, Platform.OS === 'web' ? styles.headerWeb : { paddingTop: insets.top + 8 }]}
-      >
-        <TouchableOpacity onPress={() => navigation.navigate('Home')} style={styles.backBtn} activeOpacity={0.7}>
-          <Ionicons name="chevron-back" size={24} color="#ffffff" />
-        </TouchableOpacity>
-        <View>
-          <Text style={styles.headerTitle}>Quick Menu</Text>
-          <Text style={styles.headerSubtitle}>Access all features quickly</Text>
-        </View>
-      </ImageBackground>
+      <ModuleAndroidHeader
+        title="Quick Menu"
+        subtitle="Access all features quickly"
+        navigation={navigation}
+        onBack={() => navigation.navigate('Home')}
+      />
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[styles.listContainer, { paddingBottom: insets.bottom + 20 }]}

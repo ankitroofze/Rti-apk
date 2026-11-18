@@ -2,6 +2,18 @@ import { SIDEBAR_MENU_ITEMS, STATE_LABELS, FALLBACK_DISTRICT_MAP } from '../cons
 import { Platform } from 'react-native';
 import { normalizeFrameTemplateId } from '../constants/frameTemplates';
 
+const MEDIA_ORIGIN = process.env.EXPO_PUBLIC_API_ORIGIN || 'https://189.72.144.238';
+export function resolveMediaUrl(path) {
+  const value = String(path || '').trim();
+  if (!value) return '';
+  if (/^(https?:|blob:|data:|file:|content:|ph:|asset:)/i.test(value)) return value;
+  const clean = value.replace(/^\/+/, '');
+  if (clean.startsWith('storage/')) {
+    return `${MEDIA_ORIGIN}/${clean}`;
+  }
+  return `${MEDIA_ORIGIN}/storage/${clean}`;
+}
+
 export function stripHtml(value) {
   return String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -83,13 +95,42 @@ function isStoryFromToday(story) {
 
 export function normalizeStoryItem(item, index = 0) {
   if (!item) return null;
-  const title = String(item.title || '').trim();
+  const title = String(item.title || item.tittle || '').trim();
   if (!title) return null;
+
+  const mediaTypeNum = Number(item.media_type ?? item.mediaType);
+  const isVideoMediaType = mediaTypeNum === 2;
+  const isFileMediaType = mediaTypeNum === 3;
+  const isImageMediaType = mediaTypeNum === 1;
+
+  const isVideoExt = (u) => {
+    const raw = String(u || '').split('?')[0].split('#')[0].toLowerCase();
+    return /\.(mp4|m4v|webm|mov|mkv|3gp|avi|flv)$/i.test(raw);
+  };
+  const isFileExt = (u) => {
+    const raw = String(u || '').split('?')[0].split('#')[0].toLowerCase();
+    return /\.(pdf|docx?|xlsx?|txt|csv)$/i.test(raw);
+  };
+
+  const rawVideo = item.video || item.video_url || (isVideoMediaType ? item.media : null) || (isVideoExt(item.media) ? item.media : null);
+  const rawFile = item.file || item.file_url || (isFileMediaType ? item.media : null) || (isFileExt(item.media) ? item.media : null);
+
+  const resolvedVideo = rawVideo ? resolveMediaUrl(typeof rawVideo === 'string' ? rawVideo : (rawVideo?.uri || '')) : null;
+  const resolvedFile = rawFile ? (typeof rawFile === 'object' ? rawFile : { uri: resolveMediaUrl(rawFile), name: item.file_name || item.media_name || 'document' }) : null;
+
   const rawImage =
     (Array.isArray(item.images) ? item.images.find((u) => isValidImageUrl(u) && !String(u).includes('picsum.photos')) : '') ||
-    (isValidImageUrl(item.image) && !String(item.image).includes('picsum.photos') ? item.image : '');
+    (isValidImageUrl(item.image) && !String(item.image).includes('picsum.photos') ? item.image : '') ||
+    (isImageMediaType && isValidImageUrl(item.media) ? resolveMediaUrl(item.media) : '');
   const storyImage = rawImage || '';
-   return {
+
+  let resolvedMediaType = 'None';
+  if (resolvedVideo) resolvedMediaType = 'Video';
+  else if (resolvedFile) resolvedMediaType = 'File';
+  else if (storyImage || (Array.isArray(item.images) && item.images.length > 0)) resolvedMediaType = 'Image';
+  else if (item.mediaType && typeof item.mediaType === 'string') resolvedMediaType = item.mediaType;
+
+  return {
     id: item.id || `story-${index}`,
     author_id: item.author_id ?? null,
     createdBy: String(item.createdBy || item.created_by || '').trim().toLowerCase(),
@@ -114,11 +155,11 @@ export function normalizeStoryItem(item, index = 0) {
     author_is_subscriber: Boolean(item.author_is_subscriber || item.createdBySubscriber || false),
     image: storyImage,
     images: Array.isArray(item.images) && item.images.length
-      ? item.images.filter((u) => isValidImageUrl(u) && !String(u).includes('picsum.photos'))
+      ? item.images.map((u) => resolveMediaUrl(u)).filter((u) => isValidImageUrl(u) && !String(u).includes('picsum.photos'))
       : (storyImage ? [storyImage] : []),
-    video: item.video || null,
-    file: item.file || null,
-    mediaType: item.mediaType || (item.video ? 'Video' : (item.file ? 'File' : (storyImage ? 'Image' : 'None'))),
+    video: resolvedVideo || null,
+    file: resolvedFile || null,
+    mediaType: resolvedMediaType,
     // Frame / template (Home, All Feed, Details sab jagah same dikhe) — backend snake_case aur camelCase dono support
     useFrame: [1, '1', true, 'true'].includes(item.use_frame ?? item.useFrame),
     frameTemplate: normalizeFrameTemplateId(item.frame_template ?? item.frameTemplate ?? '') || (item.use_frame ? 'glossy2' : ''),
@@ -126,7 +167,7 @@ export function normalizeStoryItem(item, index = 0) {
     musicUrl: String(item.music_url ?? item.musicUrl ?? '').trim(),
     musicVolume: Number.isFinite(Number(item.music_volume ?? item.musicVolume)) ? Number(item.music_volume ?? item.musicVolume) : 0.6,
     muteOriginal: Boolean(item.muteOriginal) || [1, '1', true, 'true'].includes(item.mute_original),
-    voiceUri: item.voice_url || item.voice || item.voiceUri || null,
+    voiceUri: item.voice_url ? resolveMediaUrl(item.voice_url) : (item.voice ? resolveMediaUrl(item.voice) : (item.voiceUri || null)),
     date: item.date || '05 May 2026',
     createdAt: item.createdAt || item.created_at || item.date || '',
     publishedAgo: item.publishedAgo || 'Updated recently',

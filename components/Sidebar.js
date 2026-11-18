@@ -24,7 +24,7 @@ const menuItems = [
   { label: 'Ads Subscription', icon: 'megaphone-outline' },
    { label: 'My Ecom Subscription', icon: 'storefront-outline' },
   { label: 'My Quiz Subscription', icon: 'school-outline' },
-  { label: 'News Feed',          icon: 'newspaper-outline' },
+  { label: 'My News',            icon: 'newspaper-outline' },
   { label: 'e-Paper',            icon: 'document-text-outline' },
   { label: 'Live Streaming',     icon: 'radio-outline' },
   { label: 'Certification',      icon: 'ribbon-outline' },

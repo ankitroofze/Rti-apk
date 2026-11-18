@@ -55,7 +55,9 @@ export function resolveMusicUrl(nameOrUrl) {
   const song = findSongByFile(raw);
   if (!song) return Promise.resolve(null);
   if (!_musicUrlCache[song.id]) {
-    _musicUrlCache[song.id] = resolveSong(song).then((r) => r.url || null).catch((e) => { delete _musicUrlCache[song.id]; throw e; });
+    _musicUrlCache[song.id] = resolveSong(song)
+      .then((r) => r?.url || `/assets/music/${song.file}`)
+      .catch(() => `/assets/music/${song.file}`);
   }
   return _musicUrlCache[song.id];
 }

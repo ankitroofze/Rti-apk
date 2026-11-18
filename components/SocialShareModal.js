@@ -1,7 +1,7 @@
 // components/SocialShareModal.js
 // Modal that allows sharing a news post directly to social media (WhatsApp, Telegram, Twitter/X, Facebook, Copy Link)
 // with the news title, description, and post URL.
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   View,
@@ -14,6 +14,25 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { getMyReferralCode, attachReferral, buildShareText } from '../utils/shareNews';
+
+const isMobileBrowser = () => {
+  if (Platform.OS !== 'web') return false;
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || navigator.vendor || (typeof window !== 'undefined' && window.opera) || '';
+  return /android|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(ua);
+};
+
+function toPublicShareUrl(rawUrl) {
+  const u = String(rawUrl || '').trim();
+  if (!u) return 'https://rtinews.in';
+  if (u.includes('rtinews.in/news/')) return u;
+  const m = u.match(/(?:news|reel)\/([0-9a-zA-Z_-]+)/i);
+  if (m) {
+    return `https://rtinews.in/news/${encodeURIComponent(m[1])}`;
+  }
+  return u;
+}
 
 async function copyToClipboard(text) {
   try {
@@ -47,25 +66,47 @@ export function SocialShareModal({
   title = '',
   description = '',
   url = '',
+  language = 'hi',
   onShareSuccess,
   mediaKind = '',        // 'video' | 'image' — parent ne diya ho to "media + link" button dikhta hai
-  onShareMedia,          // async () => parent shareNewsPackage chalata hai (frame + music + link, share count bhi wahi badhata hai)
+  onShareMedia,          // async () => parent shareNewsPackage chalata hai (frame + music + link)
 }) {
   const [copied, setCopied] = useState(false);
   const [mediaBusy, setMediaBusy] = useState(false);
+  const [effectiveUrl, setEffectiveUrl] = useState(() => toPublicShareUrl(url));
+
+  useEffect(() => {
+    let active = true;
+    const base = toPublicShareUrl(url);
+    getMyReferralCode()
+      .then((code) => {
+        if (!active) return;
+        if (code) {
+          setEffectiveUrl(attachReferral(base, code));
+        } else {
+          setEffectiveUrl(base);
+        }
+      })
+      .catch(() => {
+        if (active) setEffectiveUrl(base);
+      });
+    return () => {
+      active = false;
+    };
+  }, [url]);
 
   if (!visible) return null;
 
   const cleanTitle = String(title || '').trim();
   const cleanDesc = String(description || '').trim();
-  const cleanUrl = String(url || '').trim();
 
-  const shareText = cleanTitle
-    ? `${cleanTitle}${cleanDesc ? '\n\n' + cleanDesc : ''}\n\n${cleanUrl}`
-    : cleanUrl;
+  const shareText = buildShareText({
+    title: cleanTitle,
+    link: effectiveUrl,
+    language: language || 'hi',
+  });
 
-  // Video / image (frame + music ke saath) + news link ek saath.
-  // Modal pehle band hota hai, taaki "Preparing…" / "Share" popup saaf dikhe (web par popup modal ke peeche chhup jaata hai).
+  // Dedicated button: Video / image (frame + music ke saath) + news link ek saath
   const handleMediaShare = async () => {
     if (mediaBusy || !onShareMedia) return;
     setMediaBusy(true);
@@ -79,27 +120,135 @@ export function SocialShareModal({
     }
   };
 
-  const handlePlatformPress = async (action) => {
+  const handlePlatformPress = async (action, shouldClose = true) => {
     try {
-      await action();
-      onShareSuccess?.();
+      const ok = await action();
+      if (ok !== false) {
+        onShareSuccess?.();
+        if (shouldClose) {
+          onClose?.();
+        }
+      }
     } catch (err) {
       console.warn('[SocialShareModal] Share action error:', err);
     }
   };
 
-  const openUrlSafe = (targetUrl) => {
+  const handleWhatsApp = async () => {
+    const waMsg = encodeURIComponent(shareText);
+    const waScheme = `whatsapp://send?text=${waMsg}`;
+    const waWeb = `https://api.whatsapp.com/send?text=${waMsg}`;
+
     if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined') {
-        window.open(targetUrl, '_blank', 'noopener,noreferrer');
-      }
-    } else {
-      Linking.openURL(targetUrl).catch(() => {
+      if (isMobileBrowser()) {
         try {
-          Share.share({ message: shareText, url: cleanUrl, title: cleanTitle });
-        } catch (_) {}
-      });
+          window.location.href = waScheme;
+        } catch (_) {
+          window.location.href = waWeb;
+        }
+      } else {
+        window.open(`https://web.whatsapp.com/send?text=${waMsg}`, '_blank', 'noopener,noreferrer');
+      }
+      return true;
     }
+
+    // Native Android / iOS
+    try {
+      const can = await Linking.canOpenURL(waScheme).catch(() => false);
+      if (can) {
+        await Linking.openURL(waScheme);
+        return true;
+      }
+      await Linking.openURL(waWeb);
+      return true;
+    } catch (_) {
+      try {
+        await Linking.openURL(waScheme);
+        return true;
+      } catch (_) {
+        Share.share({ message: shareText, url: effectiveUrl, title: cleanTitle }).catch(() => {});
+        return true;
+      }
+    }
+  };
+
+  const handleTelegram = async () => {
+    const tgMsg = encodeURIComponent(cleanTitle + (cleanDesc ? '\n\n' + cleanDesc : ''));
+    const tgLink = encodeURIComponent(effectiveUrl);
+    const tgScheme = `tg://msg_url?url=${tgLink}&text=${tgMsg}`;
+    const tgWeb = `https://t.me/share/url?url=${tgLink}&text=${tgMsg}`;
+
+    if (Platform.OS === 'web') {
+      if (isMobileBrowser()) {
+        try {
+          window.location.href = tgScheme;
+          setTimeout(() => {
+            try {
+              window.open(tgWeb, '_blank', 'noopener,noreferrer');
+            } catch (_) {}
+          }, 1500);
+        } catch (_) {
+          window.open(tgWeb, '_blank', 'noopener,noreferrer');
+        }
+      } else {
+        window.open(tgWeb, '_blank', 'noopener,noreferrer');
+      }
+      return true;
+    }
+
+    try {
+      await Linking.openURL(tgScheme);
+      return true;
+    } catch (_) {
+      try {
+        await Linking.openURL(tgWeb);
+        return true;
+      } catch (_) {
+        return false;
+      }
+    }
+  };
+
+  const handleTwitter = async () => {
+    const twText = encodeURIComponent(cleanTitle);
+    const twLink = encodeURIComponent(effectiveUrl);
+    const twUrl = `https://twitter.com/intent/tweet?text=${twText}&url=${twLink}`;
+
+    if (Platform.OS === 'web') {
+      window.open(twUrl, '_blank', 'noopener,noreferrer');
+      return true;
+    }
+    try {
+      await Linking.openURL(twUrl);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const handleFacebook = async () => {
+    const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(effectiveUrl)}`;
+
+    if (Platform.OS === 'web') {
+      window.open(fbUrl, '_blank', 'noopener,noreferrer');
+      return true;
+    }
+    try {
+      await Linking.openURL(fbUrl);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const handleCopyLink = async () => {
+    const success = await copyToClipboard(effectiveUrl || shareText);
+    if (success) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+      return true;
+    }
+    return false;
   };
 
   const platforms = [
@@ -107,54 +256,36 @@ export function SocialShareModal({
       name: 'WhatsApp',
       icon: 'logo-whatsapp',
       color: '#25D366',
-      action: () => {
-        const waMsg = encodeURIComponent(shareText);
-        const waUrl = `https://api.whatsapp.com/send?text=${waMsg}`;
-        openUrlSafe(waUrl);
-      },
+      action: handleWhatsApp,
+      closeOnPress: true,
     },
     {
       name: 'Telegram',
       icon: 'paper-plane',
       color: '#0088cc',
-      action: () => {
-        const tgMsg = encodeURIComponent(cleanTitle + (cleanDesc ? '\n\n' + cleanDesc : ''));
-        const tgLink = encodeURIComponent(cleanUrl);
-        const tgUrl = `https://t.me/share/url?url=${tgLink}&text=${tgMsg}`;
-        openUrlSafe(tgUrl);
-      },
+      action: handleTelegram,
+      closeOnPress: true,
     },
     {
       name: 'Twitter / X',
       icon: 'logo-twitter',
       color: '#1DA1F2',
-      action: () => {
-        const twText = encodeURIComponent(cleanTitle);
-        const twLink = encodeURIComponent(cleanUrl);
-        const twUrl = `https://twitter.com/intent/tweet?text=${twText}&url=${twLink}`;
-        openUrlSafe(twUrl);
-      },
+      action: handleTwitter,
+      closeOnPress: true,
     },
     {
       name: 'Facebook',
       icon: 'logo-facebook',
       color: '#1877F2',
-      action: () => {
-        const fbUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(cleanUrl)}`;
-        openUrlSafe(fbUrl);
-      },
+      action: handleFacebook,
+      closeOnPress: true,
     },
     {
       name: copied ? 'Copied!' : 'Copy Link',
       icon: copied ? 'checkmark-circle' : 'link-outline',
       color: copied ? '#10b981' : '#475569',
-      action: async () => {
-        const success = await copyToClipboard(cleanUrl || shareText);
-        if (success) {
-          setCopied(true);
-          setTimeout(() => setCopied(false), 2500);
-        }
-      },
+      action: handleCopyLink,
+      closeOnPress: false,
     },
   ];
 
@@ -163,18 +294,20 @@ export function SocialShareModal({
       if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.share) {
         await navigator.share({
           title: cleanTitle,
-          text: cleanDesc || cleanTitle,
-          url: cleanUrl,
+          text: shareText,
+          url: effectiveUrl,
         });
         onShareSuccess?.();
+        onClose?.();
       } else {
         const res = await Share.share({
           title: cleanTitle,
           message: shareText,
-          url: cleanUrl,
+          url: effectiveUrl,
         });
-        if (res.action === Share.sharedAction) {
+        if (res?.action === Share.sharedAction) {
           onShareSuccess?.();
+          onClose?.();
         }
       }
     } catch (_) {}
@@ -206,9 +339,9 @@ export function SocialShareModal({
                 {cleanDesc}
               </Text>
             ) : null}
-            {cleanUrl ? (
+            {effectiveUrl ? (
               <Text style={styles.previewUrl} numberOfLines={1}>
-                🔗 {cleanUrl}
+                🔗 {effectiveUrl}
               </Text>
             ) : null}
           </View>
@@ -233,7 +366,7 @@ export function SocialShareModal({
               <TouchableOpacity
                 key={p.name}
                 style={styles.platformBtn}
-                onPress={() => handlePlatformPress(p.action)}
+                onPress={() => handlePlatformPress(p.action, p.closeOnPress)}
                 activeOpacity={0.75}
               >
                 <View style={[styles.platformCircle, { backgroundColor: p.color }]}>

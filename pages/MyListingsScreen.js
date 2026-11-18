@@ -25,10 +25,6 @@ const IS_WEB = Platform.OS === 'web';
 const FONT = { regular: 'Roboto_400Regular', medium: 'Roboto_500Medium', bold: 'Roboto_700Bold', black: 'Roboto_900Black' };
 
 const notify = (title, message) => {
-  if (IS_WEB && typeof alert !== 'undefined') {
-    alert(`${title}\n${message}`);
-    return;
-  }
   Alert.alert(title, message);
 };
 

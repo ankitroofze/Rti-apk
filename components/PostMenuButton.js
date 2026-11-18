@@ -88,14 +88,10 @@ export default function PostMenuButton({
     try {
       const result = await onDelete?.();
       if (result && result.ok === false) {
-        const msg = result.message || 'Delete failed. Please try again.';
-        if (IS_WEB && typeof window !== 'undefined' && typeof window.alert === 'function') window.alert(msg);
-        else Alert.alert('Delete failed', msg);
+        Alert.alert('Delete failed', result.message || 'Delete failed. Please try again.');
       }
     } catch (e) {
-      const msg = 'Delete failed. Please try again.';
-      if (IS_WEB && typeof window !== 'undefined' && typeof window.alert === 'function') window.alert(msg);
-      else Alert.alert('Delete failed', msg);
+      Alert.alert('Delete failed', 'Delete failed. Please try again.');
     } finally {
       setBusy(false);
     }
@@ -105,13 +101,6 @@ export default function PostMenuButton({
     setOpen(false);
     const title = `Delete ${label}?`;
     const message = `Are you sure you want to delete this ${label}? This cannot be undone.`;
-    if (IS_WEB) {
-      const ok = typeof window !== 'undefined' && typeof window.confirm === 'function'
-        ? window.confirm(message)
-        : true;
-      if (ok) runDelete();
-      return;
-    }
     Alert.alert(title, message, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Delete', style: 'destructive', onPress: runDelete },

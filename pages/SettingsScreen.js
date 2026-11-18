@@ -238,13 +238,6 @@ function SettingsScreen__Inner({ navigation }) {
 
   // Step 1: confirm dialog
   const handleDeleteAccount = () => {
-    if (Platform.OS === 'web') {
-      // react-native-web par Alert.alert multi-button support nahi karta
-      if (typeof window !== 'undefined' && window.confirm(`Delete Account\n\n${DELETE_CONFIRM_MSG}`)) {
-        openDeletePasswordModal();
-      }
-      return;
-    }
     Alert.alert('Delete Account', DELETE_CONFIRM_MSG, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Continue', style: 'destructive', onPress: openDeletePasswordModal },

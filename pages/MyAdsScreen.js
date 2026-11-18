@@ -371,12 +371,6 @@ function MyAdsScreen__Inner({ navigation }) {
       }
     };
 
-    if (Platform.OS === 'web') {
-      const shouldDelete = globalThis.confirm?.('Are you sure you want to delete this ad? This cannot be undone.');
-      if (shouldDelete) doDelete();
-      return;
-    }
-
     Alert.alert(
       'Delete Ad',
       'Are you sure you want to delete this ad? This cannot be undone.',

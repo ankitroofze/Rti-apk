@@ -9,6 +9,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import { getFrameTemplateName } from '../../constants/frameTemplates';
+import { findSongByFile } from '../../constants/musicLibrary';
 import { getIdbMediaBlob, isIdbMediaUri } from '../../utils/webMediaStore';
 import { setAdsHidden, isAdsHidden, registerAdsRefresher, subscriptionsHideAds } from '../../utils/adsVisibility';
 
@@ -505,15 +506,16 @@ const clampMusicVolume = (v) => {
 
 const appendAudioMix = async (formData, audioMix) => {
   if (!audioMix) return;
-  // Bundled (local) songs ka id server ko nahi pata — unke liye sirf https music_url bhejte hain.
-  const isLocalSong = String(audioMix.musicId || '').startsWith('local-');
+  const song = audioMix.music || findSongByFile(audioMix.musicId || audioMix.musicUrl || audioMix.musicTitle);
+  // Bundled (local) songs ka id server ko nahi pata — unke liye sirf music_url bhejte hain.
+  const isLocalSong = !audioMix.musicId || String(audioMix.musicId).startsWith('local-');
   if (audioMix.musicId && !isLocalSong) formData.append('music_id', String(audioMix.musicId));
-  const remoteMusicUrl = audioMix.music?.remoteUrl
+  const remoteMusicUrl = song?.remoteUrl
     || (/^https?:/i.test(String(audioMix.musicUrl || '')) ? audioMix.musicUrl : null);
   // https link ho to wahi; bundled song ho to assets/music folder wala exact file name (e.g. 'nastelbom-breaking-news-513433.mp3')
-  const musicUrlToSend = remoteMusicUrl || audioMix.music?.file || null;
+  const musicUrlToSend = remoteMusicUrl || song?.file || (typeof audioMix.musicUrl === 'string' && !audioMix.musicUrl.startsWith('file:') && !audioMix.musicUrl.startsWith('blob:') ? audioMix.musicUrl : null);
   if (musicUrlToSend) formData.append('music_url', String(musicUrlToSend));
-  if (audioMix.musicId || audioMix.musicUrl) {
+  if (audioMix.musicId || audioMix.musicUrl || musicUrlToSend) {
     formData.append('music_volume', String(clampMusicVolume(audioMix.musicVolume)));
   }
   // User ne original awaaz band ki ho (ya voice-over lagaya ho) tabhi 1; warna 0
@@ -2034,7 +2036,10 @@ export const AuthAPI = {
       const formData = new FormData();
       formData.append('type', String(Number(type) === 2 ? 2 : 1));
       formData.append('tittle', title || '');
+      formData.append('title', title || '');
       formData.append('sub_tittle', subTitle || '');
+      formData.append('sub_title', subTitle || '');
+      formData.append('subtitle', subTitle || '');
       formData.append('description', description || '');
       formData.append('report_type', reportType || '');
       formData.append('media_type', String(mediaType));
@@ -2044,33 +2049,48 @@ export const AuthAPI = {
       // ✅ frame_merged: 1 = frame pehle se video me burned hai, 0 = raw video (client overlay karega)
       formData.append('frame_merged', toBinaryFlag(frameMerged === undefined ? false : frameMerged));
 
-      if (mediaUri) {
-        if (Platform.OS === 'web') {
-          const fileRes = await fetch(mediaUri);
-          const blob = await fileRes.blob();
-          formData.append(Number(mediaType) === 1 ? 'images[]' : 'media', blob, mediaName);
-        } else {
+      if (Platform.OS === 'web') {
+        const parallelWebTasks = [];
+        if (mediaUri) {
+          parallelWebTasks.push(
+            fetch(mediaUri)
+              .then((r) => r.blob())
+              .then((blob) => {
+                formData.append(Number(mediaType) === 1 ? 'images[]' : 'media', blob, mediaName);
+              })
+              .catch((err) => console.warn('[AuthApi.createNews] media blob fetch failed:', err))
+          );
+        }
+        for (let i = 0; i < (extraImages || []).length; i += 1) {
+          const uri = extraImages[i];
+          if (!uri) continue;
+          parallelWebTasks.push(
+            fetch(uri)
+              .then((r) => r.blob())
+              .then((blob) => {
+                formData.append('images[]', blob, `image_${i + 1}.jpg`);
+              })
+              .catch((err) => console.warn('[AuthApi.createNews] extra image blob fetch failed:', err))
+          );
+        }
+        if (parallelWebTasks.length > 0) await Promise.all(parallelWebTasks);
+      } else {
+        if (mediaUri) {
           formData.append(Number(mediaType) === 1 ? 'images[]' : 'media', {
             uri: mediaUri,
             type: mediaMime || 'application/octet-stream',
             name: mediaName,
           });
         }
+        for (let i = 0; i < (extraImages || []).length; i += 1) {
+          const uri = extraImages[i];
+          if (!uri) continue;
+          formData.append('images[]', { uri, type: 'image/jpeg', name: `image_${i + 1}.jpg` });
+        }
       }
 
       // music / voice / mute_original sirf video (media_type = 2) ke saath bhejte hain
       if (Number(mediaType) === 2) await appendAudioMix(formData, audioMix);
-
-      for (let i = 0; i < (extraImages || []).length; i += 1) {
-        const uri = extraImages[i];
-        if (!uri) continue;
-        if (Platform.OS === 'web') {
-          const blob = await fetch(uri).then((r) => r.blob());
-          formData.append('images[]', blob, `image_${i + 1}.jpg`);
-        } else {
-          formData.append('images[]', { uri, type: 'image/jpeg', name: `image_${i + 1}.jpg` });
-        }
-      }
 
       const res = await fetchWithTimeout(`${BASE_URL}/news`, {
         method: 'POST',
@@ -2361,10 +2381,17 @@ export const AuthAPI = {
       }
 
       // ✅ FIX: backend "comment" field chahta hai top-level ke liye,
-      // aur reply ke liye "sub_comment" + parent_id
+      // aur reply ke liye "sub_comment" + parent_id (saath me comment, text, reply bhi bhejte hain taaki koi validation fail na ho)
       const contentIdField = adsId ? { ads_id: numericNewsId } : { news_id: numericNewsId };
       const fields = parentId
-        ? { ...contentIdField, sub_comment: text || '', parent_id: String(parentId) }
+        ? {
+            ...contentIdField,
+            sub_comment: text || '',
+            comment: text || '',
+            reply: text || '',
+            text: text || '',
+            parent_id: String(parentId),
+          }
         : { ...contentIdField, comment: text || '' };
 
       const { status, data } = await postFormData('/comments', fields, token);
@@ -2393,21 +2420,92 @@ export const AuthAPI = {
 
   /**
    * Delete a comment
-   * DELETE /comments/{commentId}
+   * API_ENDPOINTS.md (Section 2.3 line 151): POST (Delete) /comments/:commentId
    * Headers: Authorization: Bearer {token}
    */
-  deleteComment: async (commentId) => {
+  deleteComment: async (commentId, { newsId = null, isAd = false, adsId = null } = {}) => {
     try {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
 
-      const response = await fetch(`${BASE_URL}/comments/${commentId}`, {
+      const resolvedNewsId = newsId ? Number(newsId) : null;
+      const resolvedAdsId = adsId ? Number(adsId) : null;
+
+      const baseBody = {
+        _method: 'DELETE',
+        action: 'delete',
+      };
+      if (resolvedAdsId) {
+        baseBody.ads_id = resolvedAdsId;
+      } else if (resolvedNewsId) {
+        baseBody.news_id = resolvedNewsId;
+      }
+
+      // Step 1: POST to /comments/{commentId} with JSON (_method: 'DELETE', action: 'delete')
+      let response = await fetch(`${BASE_URL}/comments/${commentId}`, {
         method: 'POST',
         headers: {
           Accept: 'application/json',
+          'Content-Type': 'application/json',
+          'X-HTTP-Method-Override': 'DELETE',
           Authorization: `Bearer ${token}`,
         },
+        body: JSON.stringify(baseBody),
       });
+
+      // Step 2: Agar backend validation error (422) de ("comment field is required"),
+      // to server ke buggy CommentRequest ko satisfy karne ke liye comment + news_id ke saath bhejte hain
+      if (response.status === 422) {
+        const checkJson = await response.clone().json().catch(() => null);
+        const errStr = JSON.stringify(checkJson || '');
+        if (errStr.includes('comment') || errStr.includes('sub_comment')) {
+          response = await fetch(`${BASE_URL}/comments/${commentId}`, {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json',
+              'Content-Type': 'application/json',
+              'X-HTTP-Method-Override': 'DELETE',
+              Authorization: `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              ...baseBody,
+              comment: 'delete',
+              ...(resolvedNewsId ? { news_id: resolvedNewsId } : {}),
+              ...(resolvedAdsId ? { ads_id: resolvedAdsId } : {}),
+            }),
+          });
+        }
+      }
+
+      // Step 3: Agar 405 Method Not Allowed ya 404 aaye to direct DELETE try karo
+      if (response.status === 405 || response.status === 404) {
+        const delRes = await fetch(`${BASE_URL}/comments/${commentId}`, {
+          method: 'DELETE',
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+        }).catch(() => null);
+        if (delRes && (delRes.status === 200 || delRes.status === 201 || delRes.status === 204)) {
+          response = delRes;
+        }
+      }
+
+      // Step 4: Agar abhi bhi fail ho raha hai to /comments/{commentId}/delete try karo
+      if (response.status === 405 || response.status === 404) {
+        const altRes = await fetch(`${BASE_URL}/comments/${commentId}/delete`, {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(baseBody),
+        }).catch(() => null);
+        if (altRes && altRes.status < 400) {
+          response = altRes;
+        }
+      }
 
       const json = await response.json().catch(() => null);
 
@@ -2415,8 +2513,14 @@ export const AuthAPI = {
         return { ok: true, message: json?.message || 'Comment deleted.', commentsCount: json?.comments_count != null ? Number(json.comments_count) : null, data: json };
       }
       if (response.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
-      if (response.status === 404) return { ok: false, notFound: true, message: 'Comment not found.' };
+      // 404 idempotent: already deleted
+      if (response.status === 404) return { ok: true, notFound: true, message: 'Comment already deleted.', commentsCount: json?.comments_count != null ? Number(json.comments_count) : null };
       if (response.status === 403) return { ok: false, message: json?.message || 'You cannot delete this comment.' };
+      if (response.status === 422) {
+        const errors = json?.errors || {};
+        const firstError = Object.values(errors).flat()[0] || json?.message || 'Validation failed.';
+        return { ok: false, message: firstError };
+      }
       if (response.status === 429) return { ok: false, message: 'Please try again later.' };
       return { ok: false, message: json?.message || `Server error (${response.status}).` };
     } catch (err) {
@@ -2438,14 +2542,21 @@ export const AuthAPI = {
       if (cursor) params.cursor = cursor;
       const { status, data } = await publicRequest(`/comments/${newsId}/detailed?${new URLSearchParams(params).toString()}`);
       if (status === 200 || status === 201) {
-        const list = Array.isArray(data?.comments) ? data.comments : [];
-        const nextCursor = data?.next_cursor || null;
-        return { ok: true, comments: list, hasMore: Boolean(data?.has_more && nextCursor), nextCursor };
+        const list = Array.isArray(data?.comments)
+          ? data.comments
+          : (Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []));
+        if (list.length > 0) {
+          const nextCursor = data?.next_cursor || null;
+          return { ok: true, comments: list, hasMore: Boolean(data?.has_more && nextCursor), nextCursor };
+        }
       }
+      // Server par /detailed endpoint na ho ya 404 de to standard /comments/{newsId} endpoint se try karo
+      const fallback = await AuthAPI.getComments(newsId, { perPage, cursor });
+      if (fallback?.ok) return fallback;
       return { ok: false, notFound: status === 404, message: apiErrorMessage(status, data) };
     } catch (err) {
-      console.error('[AuthAPI.getCommentsDetailed] Error:', err);
-      return { ok: false, isNetwork: true, message: 'Network error.' };
+      console.error('[AuthAPI.getCommentsDetailed] Error, trying standard getComments fallback:', err);
+      return await AuthAPI.getComments(newsId, { perPage, cursor });
     }
   },
 
@@ -2483,12 +2594,21 @@ export const AuthAPI = {
     }
   },
 
-  /** POST /comments/{commentId}/replies — body: { reply } */
+  /** POST /comments/{commentId}/replies — body: { text, reply, comment, sub_comment } */
   addReply: async (commentId, text) => {
     try {
-      const r = await authedJSON('POST', `/comments/${commentId}/replies`, { reply: text });
+      const r = await authedJSON('POST', `/comments/${commentId}/replies`, {
+        text,
+        reply: text,
+        comment: text,
+        sub_comment: text,
+      });
       return r.ok
-        ? { ok: true, reply: r.data.reply || null, repliesCount: r.data.replies_count != null ? Number(r.data.replies_count) : null }
+        ? {
+            ok: true,
+            reply: r.data?.reply || r.data?.comment || r.data?.sub_comment || r.data?.comment_detail || r.data?.data || null,
+            repliesCount: r.data?.replies_count != null ? Number(r.data.replies_count) : null,
+          }
         : r;
     } catch (err) { return { ok: false, isNetwork: true, message: 'Network error.' }; }
   },
@@ -2670,7 +2790,10 @@ export const AuthAPI = {
       formData.append('_method', 'PUT'); // Laravel form-data + PUT trick
       if (type === 1 || type === 2 || type === '1' || type === '2') formData.append('type', String(type));
       formData.append('tittle', title || '');
+      formData.append('title', title || '');
       formData.append('sub_tittle', subTitle || '');
+      formData.append('sub_title', subTitle || '');
+      formData.append('subtitle', subTitle || '');
       formData.append('description', description || '');
       formData.append('report_type', reportType || '');
       formData.append('media_type', String(mediaType));
@@ -2684,35 +2807,48 @@ export const AuthAPI = {
         formData.append('frame_merged', toBinaryFlag(frameMerged === undefined ? false : frameMerged));
       }
 
-      if (mediaUri) {
-        if (Platform.OS === 'web') {
-          const fileRes = await fetch(mediaUri);
-          const blob = await fileRes.blob();
-          formData.append('media', blob, mediaName);
-        } else {
+      if (Platform.OS === 'web') {
+        const parallelWebTasks = [];
+        if (mediaUri) {
+          parallelWebTasks.push(
+            fetch(mediaUri)
+              .then((r) => r.blob())
+              .then((blob) => {
+                formData.append('media', blob, mediaName);
+              })
+              .catch((err) => console.warn('[AuthApi.updateNews] media blob fetch failed:', err))
+          );
+        }
+        for (let i = 0; i < (extraImages || []).length; i += 1) {
+          const uri = extraImages[i];
+          if (!uri) continue;
+          parallelWebTasks.push(
+            fetch(uri)
+              .then((response) => response.blob())
+              .then((blob) => {
+                formData.append('images[]', blob, `image_${i + 1}.jpg`);
+              })
+              .catch((err) => console.warn('[AuthApi.updateNews] extra image blob fetch failed:', err))
+          );
+        }
+        if (parallelWebTasks.length > 0) await Promise.all(parallelWebTasks);
+      } else {
+        if (mediaUri) {
           formData.append('media', {
             uri: mediaUri,
             type: mediaMime || 'application/octet-stream',
             name: mediaName,
           });
         }
-      }
-
-      // Keep edit uploads consistent with create: send every additional image,
-      // not only the first cover image.
-      // music / voice / mute_original sirf nayi video (media_type = 2 + naya media file) ke saath
-      if (Number(mediaType) === 2 && mediaUri) await appendAudioMix(formData, audioMix);
-
-      for (let i = 0; i < (extraImages || []).length; i += 1) {
-        const uri = extraImages[i];
-        if (!uri) continue;
-        if (Platform.OS === 'web') {
-          const blob = await fetch(uri).then((response) => response.blob());
-          formData.append('images[]', blob, `image_${i + 1}.jpg`);
-        } else {
+        for (let i = 0; i < (extraImages || []).length; i += 1) {
+          const uri = extraImages[i];
+          if (!uri) continue;
           formData.append('images[]', { uri, type: 'image/jpeg', name: `image_${i + 1}.jpg` });
         }
       }
+
+      // music / voice / mute_original sirf nayi video (media_type = 2 + naya media file) ke saath
+      if (Number(mediaType) === 2 && mediaUri) await appendAudioMix(formData, audioMix);
 
       const res = await fetchWithTimeout(`${BASE_URL}/news/${newsId}`, {
         method: 'POST', // _method override PUT ke liye
@@ -2777,7 +2913,8 @@ export const AuthAPI = {
 
   /**
    * Delete News (Destroy)
-   * DELETE /news/{id}
+   * Backend route supports GET, HEAD, POST, PUT.
+   * User explicitly requested: Send POST in payload (_method: 'POST', action: 'delete')
    * Headers: Authorization: Bearer {token}
    */
   deleteNews: async (newsId) => {
@@ -2785,22 +2922,59 @@ export const AuthAPI = {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
 
-      const response = await fetch(`${BASE_URL}/news/${newsId}`, {
-        method: 'DELETE',
+      // Backend route /news/{id} supports GET, HEAD, POST, PUT.
+      // Payload me _method: 'POST' aur action: 'delete' bhej rahe hain (no DELETE override header)
+      let response = await fetch(`${BASE_URL}/news/${newsId}`, {
+        method: 'POST',
         headers: {
           Accept: 'application/json',
+          'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
+        body: JSON.stringify({ _method: 'POST', action: 'delete' }),
       });
 
+      // Fallback 1: Agar 405 Method Not Allowed aaye to /news/{id}/delete try karo
+      if (response.status === 405 || response.status === 404) {
+        const altResponse = await fetch(`${BASE_URL}/news/${newsId}/delete`, {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ _method: 'POST', action: 'delete' }),
+        }).catch(() => null);
+        if (altResponse && altResponse.status < 400) {
+          response = altResponse;
+        }
+      }
+
+      // Fallback 2: Agar abhi bhi 405 hai to DELETE method direct try karo
+      if (response.status === 405) {
+        const delResponse = await fetch(`${BASE_URL}/news/${newsId}`, {
+          method: 'DELETE',
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+        }).catch(() => null);
+        if (delResponse) response = delResponse;
+      }
+
       let json = {};
-      try { json = await response.json(); } catch { json = {}; } // 204 No Content me body nahi hoti
+      try { json = await response.json(); } catch { json = {}; }
 
       if (response.status === 200 || response.status === 201 || response.status === 204) {
         return { ok: true, message: json?.message || 'News deleted successfully!', data: json };
       }
       if (response.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
       if (response.status === 404) return { ok: false, notFound: true, message: 'News not found.' };
+      if (response.status === 422) {
+        const errors = json?.errors || {};
+        const firstError = Object.values(errors).flat()[0] || json?.message || 'Validation failed.';
+        return { ok: false, message: firstError };
+      }
       return { ok: false, message: json?.message || `Server error (${response.status}).` };
     } catch (err) {
       console.error('[AuthAPI.deleteNews] Error:', err);

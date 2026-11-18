@@ -181,31 +181,21 @@ export async function downloadMedia(url, { type = 'image', musicUrl = '', voiceU
         warn = `Could not add frame or audio${m.error ? ` (${m.error})` : ''}. Original video was saved.`;
       }
     } else if (type === 'image' && frame && Platform.OS === 'web') {
-      if (musicUrl || voiceUri || asVideo) {
-        // Image + Frame + Music/Voice ya user ne video reel chahi -> 6-second MP4 Video Reel with scrolling ticker
-        try {
-          const v = await composeFramedImageAsVideoWeb(src, { frame, musicUrl, voiceUri, musicVolume, duration: 6 });
-          target = v.uri;
-          extra = { ext: v.ext, owned: true };
-          outType = 'video';
-        } catch (err) {
-          console.warn('[downloadMedia] image video reel fallback to static JPG:', err);
-          try {
-            const c = await composeFramedImageWeb(src, frame);
-            target = c.uri;
-            extra = { ext: c.ext, owned: true };
-          } catch (err2) {
-            warn = `Could not apply frame (${err2?.message || err?.message}). Original image was saved.`;
-          }
-        }
-      } else {
-        // WEB image: frame + title ko canvas par jodkar ek JPG (native par ye MediaDownloadButton me capture se hota hai)
+      // ✅ USER REQUEST: "images bhi agar mai download karu to mujhe usse image me bhi ye niche ke text scroll hote huye dikhne chiye"
+      // Static image (.jpg) me text scroll nahi hota, isliye frame ke sath image ko animated MP4 video reel me banate hain jisme bottom ticker smoothly scroll karta hai!
+      try {
+        const v = await composeFramedImageAsVideoWeb(src, { frame, musicUrl, voiceUri, musicVolume, duration: 8 });
+        target = v.uri;
+        extra = { ext: v.ext, owned: true };
+        outType = 'video';
+      } catch (err) {
+        console.warn('[downloadMedia] animated video reel fallback to static JPG:', err);
         try {
           const c = await composeFramedImageWeb(src, frame);
           target = c.uri;
           extra = { ext: c.ext, owned: true };
-        } catch (err) {
-          warn = `Could not apply frame${err?.message ? ` (${err.message})` : ''}. Original image was saved.`;
+        } catch (err2) {
+          warn = `Could not apply frame (${err2?.message || err?.message}). Original image was saved.`;
         }
       }
     }

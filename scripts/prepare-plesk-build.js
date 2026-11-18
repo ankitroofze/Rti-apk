@@ -35,6 +35,22 @@ function copyRecursive(src, dest) {
 copyRecursive(distDir, outDir);
 console.log('[prepare-plesk-build] Copied dist files into out/');
 
+// 2a. Ensure public/assets/frames are copied to out/assets/frames
+const framesSrc = path.join(rootDir, 'assets', 'frames');
+const framesDest = path.join(outDir, 'assets', 'frames');
+if (fs.existsSync(framesSrc)) {
+  copyRecursive(framesSrc, framesDest);
+  console.log('[prepare-plesk-build] Copied assets/frames into out/assets/frames');
+}
+
+// 2a2. Ensure assets/music are copied to out/assets/music
+const musicSrc = path.join(rootDir, 'assets', 'music');
+const musicDest = path.join(outDir, 'assets', 'music');
+if (fs.existsSync(musicSrc)) {
+  copyRecursive(musicSrc, musicDest);
+  console.log('[prepare-plesk-build] Copied assets/music into out/assets/music');
+}
+
 // 2b. Ensure out/index.html has <base href="/" /> and root-absolute paths for deep route refreshes
 const outIndexHtmlPath = path.join(outDir, 'index.html');
 if (fs.existsSync(outIndexHtmlPath)) {
@@ -92,7 +108,7 @@ const webConfigContent = `<?xml version="1.0" encoding="UTF-8"?>
 
         <!-- Rule 1a: News share link (OG tags + SPA) -->
         <rule name="NewsShare" stopProcessing="true">
-          <match url="^news/([0-9]+)/?$" />
+          <match url="^(news|reel)/([0-9]+)/?$" />
           <action type="Rewrite" url="news-share.php" appendQueryString="true" />
         </rule>
 
@@ -162,13 +178,17 @@ const apiProxyContent = `<?php
 
 error_reporting(0);
 ini_set('display_errors', '0');
+ini_set('upload_max_filesize', '50M');
+ini_set('post_max_size', '50M');
+ini_set('memory_limit', '256M');
+ini_set('max_execution_time', '300');
 
 $TARGET_BASE = 'https://189.72.144.238/api/api';
 
 // CORS headers
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, PATCH, OPTIONS");
-header("Access-Control-Allow-Headers: Authorization, Content-Type, Accept, X-Requested-With, Origin");
+header("Access-Control-Allow-Headers: Authorization, Content-Type, Accept, X-Requested-With, Origin, X-HTTP-Method-Override");
 header("Access-Control-Max-Age: 86400");
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -379,7 +399,7 @@ const htaccessContent = `<IfModule mod_rewrite.c>
   # Forward Storage media calls to PHP proxy
   RewriteRule ^storage-proxy(/.*)?$ storage-proxy.php?__proxy_endpoint=$1 [QSA,L]
   # News share link: OG tags + SPA
-  RewriteRule ^news/([0-9]+)/?$ news-share.php [QSA,L]
+  RewriteRule ^(news|reel)/([0-9]+)/?$ news-share.php [QSA,L]
 
   # Exclude existing physical files and directories from SPA rewrite
   RewriteCond %{REQUEST_FILENAME} -f [OR]
