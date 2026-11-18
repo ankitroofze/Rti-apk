@@ -187,11 +187,19 @@ foreach ($headerLines as $line) {
     if (stripos($lower, 'transfer-encoding:') === 0 ||
         stripos($lower, 'content-length:') === 0 ||
         stripos($lower, 'connection:') === 0 ||
-        stripos($lower, 'access-control-') === 0) {
+        stripos($lower, 'access-control-') === 0 ||
+        stripos($lower, 'cache-control:') === 0 ||
+        stripos($lower, 'pragma:') === 0 ||
+        stripos($lower, 'etag:') === 0) {
         continue;
     }
     header($line, false);
 }
+
+// Ensure browser never caches dynamic API responses
+header("Cache-Control: no-cache, no-store, must-revalidate");
+header("Pragma: no-cache");
+header("Expires: 0");
 
 echo $body;
 

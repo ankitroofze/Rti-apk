@@ -342,7 +342,9 @@ function useSellForm(navigation, editListing) {
     };
     if (isEditing) {
       const upd = await UserStore.updateEcomeListing(editListing.id, {
-        ecomSubId: ECOME_SUB_ID_BY_SECTOR[sector] || editListing.ecom_sub_id || 1,
+        // 🐞 FIX: pehle fallback `1` jaata tha — product galat sub-category me chala jaata tha aur list se gayab ho jaata tha. Ab asli id ya kuch nahi.
+        ecomSubId: ECOME_SUB_ID_BY_SECTOR[sector] || editListing.ecom_sub_id || undefined,
+        baseListing: editListing,
         sector,
         title: listing.title,
         inStock: listing.inStock,
@@ -350,6 +352,7 @@ function useSellForm(navigation, editListing) {
         description: listing.description,
         city: listing.city,
         contact: listing.contact,
+        images: mediaItems, // sirf naye (local) images upload honge, purane backend pe hi rehte hain
       });
       setSaving(false);
       if (!upd.ok) {
@@ -362,7 +365,8 @@ function useSellForm(navigation, editListing) {
         return;
       }
       showToast('Your product has been updated successfully.', 'success');
-      navigation.navigate('CommerceAdsCenter');
+      // refresh param: CommerceAdsCenter ko batata hai ki fresh data laao taaki update turant dikhe
+      navigation.navigate('CommerceAdsCenter', { refresh: Date.now() });
       return;
     }
     const result = await UserStore.createEcomeListing(listing);
@@ -381,8 +385,8 @@ function useSellForm(navigation, editListing) {
     setSector(''); setWhatSelling(''); setInStock(true); setPrice('');
     setDescription(''); setCity(''); setContact('');
     setMediaItems([]); setMediaUri(''); setMediaType('');
-    // Web par purana Ecome landing page nahi dikhana — seedha Buy page (listing wahi dikhegi)
-    navigation.navigate(Platform.OS === 'web' ? 'FarmingBuy' : 'Ecome');
+    // Seedha FarmingBuy (Marketplace) par bhejte hain fresh refresh param ke saath taaki turant listing dikhe
+    navigation.navigate('FarmingBuy', { refresh: Date.now() });
   };
 
   return {

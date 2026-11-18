@@ -27,11 +27,11 @@ export const getFileSize = async (uri) => {
         return blob.size || 0;
       }
     } else {
-      // Native (file:// or content://)
+      // Native (file:// / content:// / ph:// ...) — pehle sirf file:// naapta tha, isliye content:// video ka size 0 aata tha aur 10 MB check skip ho jaata tha
       const cleanUri = String(uri).trim();
-      if (cleanUri.startsWith('file://')) {
+      if (!/^https?:/i.test(cleanUri)) {
         const info = await FileSystem.getInfoAsync(cleanUri);
-        return info.size || 0;
+        return info?.size || 0;
       }
     }
   } catch (err) {
@@ -325,4 +325,3 @@ export default {
   MAX_VIDEO_SIZE_BYTES,
   MAX_FILE_SIZE_BYTES,
 };
-

@@ -47,9 +47,21 @@ const STATUS_CONFIG = {
   inactive: { bg: '#f1f5f9', text: '#64748b' },
 };
 
+// 🐞 FIX: item.status backend/normalizer se NUMBER (1 / 0) aata hai. Pehle yahan seedha (item.status || 'active').toLowerCase()
+// chalta tha — 1.toLowerCase() TypeError deta hai, isliye listing wala screen crash hota tha / product list blank rehti thi.
+// Ab status ko hamesha safe text me badalte hain: 1 => active, 0 => inactive, text => lowercase text.
+const getStatusKey = (item = {}) => {
+  const st = item.status;
+  if (st === undefined || st === null || st === '') return 'active';
+  const asNum = Number(st);
+  if (Number.isFinite(asNum)) return asNum === 0 ? 'inactive' : 'active';
+  const text = String(st).trim().toLowerCase();
+  return STATUS_CONFIG[text] ? text : 'active';
+};
+
 // ─── Mobile card ───────────────────────────────────────────────────────────────
 const ListingCardMobile = ({ item, onDelete }) => {
-  const status = (item.status || 'active').toLowerCase();
+  const status = getStatusKey(item);
   const pill = STATUS_CONFIG[status] || STATUS_CONFIG.active;
   return (
     <View style={styles.card}>
@@ -65,7 +77,7 @@ const ListingCardMobile = ({ item, onDelete }) => {
           </Text>
         </View>
         <View style={[styles.statusPill, { backgroundColor: pill.bg }]}>
-          <Text style={[styles.statusText, { color: pill.text }]}>{item.status || 'active'}</Text>
+          <Text style={[styles.statusText, { color: pill.text }]}>{status}</Text>
         </View>
         {onDelete ? <PostMenuButton inline dark size={28} label="product" onDelete={() => onDelete(item)} style={{ marginLeft: 6 }} /> : null}
       </View>
@@ -94,7 +106,7 @@ const ListingCardMobile = ({ item, onDelete }) => {
 
 // ─── Web table row ─────────────────────────────────────────────────────────────
 const ListingRowWeb = ({ item, onDelete }) => {
-  const status = (item.status || 'active').toLowerCase();
+  const status = getStatusKey(item);
   const pill = STATUS_CONFIG[status] || STATUS_CONFIG.active;
   return (
     <View style={styles.tableRow}>
@@ -109,7 +121,7 @@ const ListingRowWeb = ({ item, onDelete }) => {
       <Text style={styles.rowCell}>{formatDate(item.createdAt) || '—'}</Text>
       <View style={{ flex: 1 }}>
         <View style={[styles.statusPill, { backgroundColor: pill.bg, alignSelf: 'flex-start' }]}>
-          <Text style={[styles.statusText, { color: pill.text }]}>{item.status || 'active'}</Text>
+          <Text style={[styles.statusText, { color: pill.text }]}>{status}</Text>
         </View>
       </View>
       <View style={{ width: 36, alignItems: 'flex-end', justifyContent: 'center' }}>
@@ -147,13 +159,14 @@ function MyListingsScreen__Inner({ navigation }) {
         notify('Login required', 'Please login to view your listings.');
         return;
       }
-      const summary = await UserStore.getEcomeMarketplaceSummary();
+      const summary = await UserStore.getEcomeMarketplaceSummary({ forceRefresh: true });
       const currentEmail = String(currentUser.email || '').trim().toLowerCase();
       const myListings = (Array.isArray(summary?.listings) ? summary.listings : []).filter(
         (item) =>
-          String(item.createdBy || item.owner_email || '').trim().toLowerCase() === currentEmail
+          item.is_mine === true || String(item.createdBy || item.owner_email || '').trim().toLowerCase() === currentEmail
       );
-      setListings(myListings);
+      // 🐞 FIX: server list fail ho aur kuch na mile to purani list mat hatao
+      setListings((prev) => ((summary?.listingsError && myListings.length === 0 && prev.length) ? prev : myListings));
     } catch (error) {
       console.error('My listings load error:', error);
       notify('Load failed', 'Unable to load your listings.');
@@ -175,7 +188,7 @@ function MyListingsScreen__Inner({ navigation }) {
     return result;
   }, []);
 
-  const activeCount = listings.filter((l) => (l.status || 'active').toLowerCase() === 'active').length;
+  const activeCount = listings.filter((l) => getStatusKey(l) === 'active').length;
 
   const totalValue = listings.reduce((sum, l) => {
     const raw = parseFloat(String(l.price || '').replace(/[^\d.]/g, '')) || 0;
@@ -193,7 +206,7 @@ function MyListingsScreen__Inner({ navigation }) {
     (l.title || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const pendingCount = listings.filter((l) => (l.status || '').toLowerCase() === 'pending').length;
+  const pendingCount = listings.filter((l) => getStatusKey(l) === 'pending').length;
 
   return (
     <SafeAreaView style={styles.root}>

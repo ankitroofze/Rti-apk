@@ -8,6 +8,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { INDIAN_STATES, getDistricts } from '../pages/locationData';
 import { UserStore } from '../store/UserStore';
+import { useToast } from '../components/ui/ToastProvider';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -214,6 +215,7 @@ const sh = StyleSheet.create({
 
 // ── Main Screen ────────────────────────────────────────────────────────────────
 function ChoosePlanScreen__Inner({ navigation, route }) {
+  const { showToast } = useToast();
   const adData = route?.params?.adData || {};
 const { width: winWidth } = useWindowDimensions();
 const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
@@ -318,7 +320,7 @@ const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
           district:    selDistrict,
         });
         if (!postResult?.ok) {
-          Alert.alert('Unable to post advertisement', postResult?.message || 'Please try again.');
+          showToast(postResult?.message || 'Unable to post advertisement. Please try again.', 'error');
           return;
         }
         // draft clear karne ke liye wait nahi karna — background me hone do

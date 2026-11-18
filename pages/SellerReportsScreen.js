@@ -111,7 +111,7 @@ function SellerReportsScreen__Inner({ navigation }) {
 
       // Get user's listings
       const userListings = (Array.isArray(summary.listings) ? summary.listings : [])
-        .filter((item) => String(item.createdBy || '').trim().toLowerCase() === userEmail);
+        .filter((item) => item.is_mine === true || String(item.createdBy || '').trim().toLowerCase() === userEmail);
 
       // Get user's enquiries
       const userEnquiries = (Array.isArray(summary.enquiries) ? summary.enquiries : [])

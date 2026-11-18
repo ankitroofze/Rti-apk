@@ -108,6 +108,7 @@ function CommentItem({
   onSubmitReply,
   onCancelReply,
   isReply = false,
+  mentionNames = [],
 }) {
   const isCurrentUser = Boolean(
     comment.is_mine ||
@@ -155,7 +156,23 @@ function CommentItem({
         ) : (
           <View style={styles.commentBubble}>
             <NameWithTick name={comment.author} show={Boolean(comment.author_has_blue_tick)} style={styles.commentAuthor} badgeSize={13} />
-            <Text style={styles.commentText}>{comment.text}</Text>
+            {(() => {
+              // 🐞 FIX: sub-comment par reply karne par uska @naam dikhe — leading @mention highlight hota hai
+              const fullText = String(comment.text || '');
+              if (isReply && fullText.startsWith('@')) {
+                const hit = [...mentionNames].filter(Boolean).sort((a, b) => b.length - a.length)
+                  .find((n) => fullText.toLowerCase().startsWith(`@${n}`.toLowerCase()));
+                if (hit) {
+                  return (
+                    <Text style={styles.commentText}>
+                      <Text style={{ color: '#ea580c', fontWeight: '700' }}>{fullText.slice(0, hit.length + 1)}</Text>
+                      {fullText.slice(hit.length + 1)}
+                    </Text>
+                  );
+                }
+              }
+              return <Text style={styles.commentText}>{fullText}</Text>;
+            })()}
             <Text style={styles.commentTime}>{comment.time}{comment.edited_at ? ' • Edited' : ''}</Text>
           </View>
         )}
@@ -250,6 +267,7 @@ function CommentItem({
                     onSubmitReply={onSubmitReply}
                     onCancelReply={onCancelReply}
                     isReply={true}
+                    mentionNames={[comment.author, ...(comment.replies || []).map((r) => r.author)].filter(Boolean)}
                   />
                 ))}
                 {repliesMeta?.[comment.id]?.loading ? (
@@ -1443,7 +1461,10 @@ const handleLike = async () => {
       setEditingCommentId(null);
       setEditingCommentText('');
       setReplyingToCommentId(commentId);
-      setReplyText('');
+      // 🐞 FIX: reply ke upar reply — jisne sub-comment kiya uska @naam pehle se likha aa jaye
+      const parentForReply = localComments.find((c) => c.id === parentCommentId);
+      const targetReply = parentCommentId !== commentId ? (parentForReply?.replies || []).find((r) => r.id === commentId) : null;
+      setReplyText(targetReply?.author ? `@${targetReply.author} ` : '');
       setExpandedReplyThreads((prev) => ({ ...prev, [parentCommentId]: true }));
       const parent = localComments.find((c) => c.id === parentCommentId);
       if (parent && Number(parent.replies_count || 0) > 0 && !repliesMetaRef.current[parentCommentId]?.loaded) loadReplies(parentCommentId);
@@ -1457,7 +1478,17 @@ const handleLike = async () => {
     try {
       // reply hamesha top-level comment par jaata hai (reply ke upar reply = uska parent comment)
       const parentCommentId = findParentCommentId(localComments, replyingToCommentId) || replyingToCommentId;
-      const result = await UserStore.replyNewsComment(story.id, parentCommentId, trimmed);
+      // Sub-comment par reply ho aur @naam hat gaya ho to wapas laga do taaki pata chale kispe reply hai
+      let finalText = trimmed;
+      if (parentCommentId !== replyingToCommentId) {
+        const parentForReply = localComments.find((c) => c.id === parentCommentId);
+        const targetReply = (parentForReply?.replies || []).find((r) => r.id === replyingToCommentId);
+        if (targetReply?.author && finalText.toLowerCase() === `@${targetReply.author}`.toLowerCase()) return; // sirf @naam, reply likha hi nahi
+        if (targetReply?.author && !finalText.toLowerCase().startsWith(`@${targetReply.author}`.toLowerCase())) {
+          finalText = `@${targetReply.author} ${finalText}`.slice(0, 1000);
+        }
+      }
+      const result = await UserStore.replyNewsComment(story.id, parentCommentId, finalText);
       if (!result?.ok) {
         if (result?.isAuth) goToLogin();
         else if (result?.notFound) await loadComments({ reset: true });

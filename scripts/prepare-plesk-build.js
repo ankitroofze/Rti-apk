@@ -358,6 +358,9 @@ foreach ($headersList as $hdr) {
     if (stripos($lower, 'content-length:') === 0) continue;
     if (stripos($lower, 'connection:') === 0) continue;
     if (stripos($lower, 'access-control-') === 0) continue;
+    if (stripos($lower, 'cache-control:') === 0) continue;
+    if (stripos($lower, 'pragma:') === 0) continue;
+    if (stripos($lower, 'etag:') === 0) continue;
     header($hdrTrimmed, false);
 }
 

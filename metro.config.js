@@ -19,6 +19,11 @@ config.server = {
           onProxyReq: (proxyReq) => {
             proxyReq.removeHeader('transfer-encoding');
           },
+          onProxyRes: (proxyRes) => {
+            proxyRes.headers['cache-control'] = 'no-store, no-cache, must-revalidate, max-age=0';
+            proxyRes.headers['pragma'] = 'no-cache';
+            proxyRes.headers['expires'] = '0';
+          },
           onError: (err, req2, res2) => {
             console.error('[PROXY ERROR]', req2.url, '->', err.code, err.message);
             res2.writeHead(502, { 'Content-Type': 'application/json' });

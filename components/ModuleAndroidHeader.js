@@ -12,6 +12,7 @@ import React from 'react';
 import { Image, StatusBar, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
+import { smartGoBack } from '../utils/smartBack';
 
 const RED_IMAGE = require('../assets/images/profile-red.png');
 
@@ -37,7 +38,8 @@ export default function ModuleAndroidHeader({
 
   const handleBack = () => {
     if (onBack) return onBack();
-    if (navigation?.goBack) navigation.goBack();
+    // history na ho to goBack() kuch nahi karta — fallback Home
+    smartGoBack(navigation, 'Home');
   };
 
   return (

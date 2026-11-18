@@ -1053,6 +1053,8 @@ console.log("Platform:", Platform.OS);
       // frame sirf image / video wali news par lagta hai (Feed / Reel par nahi lagta)
       useFrame: postType === 1 && useFrame && (mediaType === 'Image' || mediaType === 'Video'),
       frameTemplate: postType === 1 && useFrame && (mediaType === 'Image' || mediaType === 'Video') ? frameTemplate : '',
+      // Feed (type 2) par admin approval nahi lagta — seedha publish
+      status: postType === 2 ? 'approved' : '',
     };
 
     const apiResult = isEditMode
@@ -1104,7 +1106,9 @@ console.log("Platform:", Platform.OS);
     await AsyncStorage.removeItem(`${NEWS_DRAFT_PREFIX}${String(user.email || '').toLowerCase()}`);
 
     showToast(
-      user.role === 'admin'
+      postType === 2
+        ? 'Feed posted successfully!'
+        : user.role === 'admin'
         ? 'News published successfully!'
         : 'Submitted! Waiting for admin approval.',
       'success'

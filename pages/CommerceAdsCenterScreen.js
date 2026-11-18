@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -130,7 +130,7 @@ const ProductCard = ({ item, cardWidth, onOpen, onEdit, onDelete, onToggleStock,
   );
 };
 
-export default function CommerceAdsCenterScreen({ navigation }) {
+export default function CommerceAdsCenterScreen({ navigation, route }) {
   // Desktop web par ye page sidebar wale shell ke andar hi khule
   const redirectingToSidebar = useQuickMenuRedirect(navigation, 'CommerceAdsCenter');
   const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_700Bold });
@@ -159,8 +159,11 @@ export default function CommerceAdsCenterScreen({ navigation }) {
   const productCardWidth = Math.floor((usableWidth - gap * (productColumns - 1)) / productColumns);
   const actionCardWidth = (usableWidth - gap * (actionColumns - 1)) / actionColumns;
 
+  // 🐞 FIX: pehle har focus par poori list hatakar spinner dikhta tha — update ke baad data "gayab" lagta tha.
+  // Ab spinner sirf pehli baar; baad me purani list dikhti rehti hai aur fresh data aate hi replace ho jaati hai.
+  const hasLoadedRef = useRef(false);
   const loadData = useCallback(async () => {
-    setLoading(true);
+    if (!hasLoadedRef.current) setLoading(true);
     try {
       const currentUser = await UserStore.getCurrentUser();
       setUser(currentUser || null);
@@ -169,31 +172,36 @@ export default function CommerceAdsCenterScreen({ navigation }) {
       const currentId = String(currentUser?.id ?? currentUser?.user_id ?? '').trim().toLowerCase();
       // listing ka owner kabhi email, kabhi numeric user_id (createdBy) hota hai — dono match karo
       const isMine = (item) =>
+        item.is_mine === true ||
         [item.owner_email, item.createdBy, item.user_id]
           .map((v) => String(v ?? '').trim().toLowerCase())
           .filter(Boolean)
           .some((o) => (currentEmail && o === currentEmail) || (currentId && o === currentId));
 
       // 1) My Listings — jitne products maine add kiye (My Listings screen jaisa hi logic)
-      const summary = await UserStore.getEcomeMarketplaceSummary();
+      const summary = await UserStore.getEcomeMarketplaceSummary({ forceRefresh: true });
       const listings = Array.isArray(summary?.listings) ? summary.listings : [];
       const mine = listings.filter(isMine);
-      const myListings = mine.length;
-      setProducts(mine);
-
-      setStats({ myListings });
+      // 🐞 FIX: server list fail (timeout/network) ho aur kuch na mile to purani dikh rahi list mat hatao
+      const keepPrevious = Boolean(summary?.listingsError) && mine.length === 0;
+      if (!keepPrevious) {
+        setProducts(mine);
+        setStats({ myListings: mine.length });
+      }
     } catch (error) {
       console.error('Commerce hub load error:', error);
       notify('Load failed', 'Unable to load commerce dashboard.');
     } finally {
+      hasLoadedRef.current = true;
       setLoading(false);
     }
   }, []);
 
+  // route.params.refresh: Sell (edit) se update ke baad aata hai — dobara fresh load chalta hai
   useFocusEffect(
     useCallback(() => {
       loadData();
-    }, [loadData])
+    }, [loadData, route?.params?.refresh])
   );
 
   // ✅ In Stock / Out of Stock toggle — turant UI badlo, fail ho to wapas purani value

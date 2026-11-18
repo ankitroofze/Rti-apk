@@ -131,6 +131,7 @@ function SellerEnquiryDashboardScreen__Inner({ navigation }) {
       const enquiries  = Array.isArray(summary.enquiries) ? summary.enquiries : [];
       const enriched   = (Array.isArray(summary.listings) ? summary.listings : [])
         .filter((l) => {
+  if (l.is_mine === true) return true;
   const sellerEmail = String(l.createdBy || l.owner_email || '').trim().toLowerCase();
   return sellerEmail === userEmail;
 })

@@ -1,4 +1,5 @@
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
+import { smartGoBack } from '../utils/smartBack';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -438,6 +439,7 @@ export default function FarmingBuyScreen({ navigation, route }) {
 
   const [loading, setLoading] = useState(true);
   const [listings, setListings] = useState([]);
+  const [loadError, setLoadError] = useState('');
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [wishlist, setWishlist] = useState({});
   const toggleWishlist = (item) => {
@@ -464,6 +466,7 @@ export default function FarmingBuyScreen({ navigation, route }) {
     return () => { alive = false; };
   }, []));
   const isMyProduct = useCallback((item) => {
+    if (item?.is_mine === true) return true;
     if (!item || (!myEmail && !myId)) return false;
     // listing ka owner kabhi email aur kabhi numeric user_id (createdBy) hota hai — dono check karo
     const owners = [item.owner_email, item.createdBy, item.user_id]
@@ -479,22 +482,45 @@ export default function FarmingBuyScreen({ navigation, route }) {
   const [maxPrice, setMaxPrice] = useState('');
   const [sortBy, setSortBy] = useState('newest');
 
-  const loadListings = useCallback(async () => {
+  // 🐞 FIX: pehle 2 load ek saath chalte (focus + refresh param) to purana/slow response naye response ko overwrite kar deta tha,
+  // aur error aane par loading ya list galat state me reh jaati thi. Ab sirf sabse naya request apna result set karta hai.
+  const loadReqRef = useRef(0);
+  const loadListings = useCallback(async (force = false) => {
+    const reqId = loadReqRef.current + 1;
+    loadReqRef.current = reqId;
     setLoading(true);
-    const summary = await UserStore.getEcomeMarketplaceSummary({ skipBlockedUsers: false });
-    // ✅ Buy page par Out of Stock product nahi dikhega (seller ke apne pages par dikhta rahega)
-    const all = Array.isArray(summary?.listings) ? summary.listings : [];
-    setListings(all.filter((l) => l.in_stock !== false));
-    setLoading(false);
+    try {
+      const summary = await UserStore.getEcomeMarketplaceSummary({ skipBlockedUsers: false, forceRefresh: force });
+      if (reqId !== loadReqRef.current) return; // naya request chal raha hai — ye purana result ignore
+      // ✅ Buy page par Out of Stock product nahi dikhega (seller ke apne pages par dikhta rahega)
+      const all = Array.isArray(summary?.listings) ? summary.listings : [];
+      setListings(all.filter((l) => l.in_stock !== false));
+      setLoadError(summary?.listingsError || '');
+    } catch (e) {
+      console.warn('[FarmingBuy] loadListings failed:', e?.message || e);
+      setLoadError(e?.message || 'Product list load nahi ho payi.');
+    } finally {
+      if (reqId === loadReqRef.current) setLoading(false);
+    }
   }, []);
 
   const lastLoadRef = useRef(0);
+  const lastEcomVersionRef = useRef(-1);
+  const lastRefreshParamRef = useRef(null);
   useFocusEffect(useCallback(() => {
-    // 30 sec ke andar dobara focus ho to reload mat karo
-    if (Date.now() - lastLoadRef.current < 30000 && listings.length) return;
+    const refreshParam = route?.params?.refresh;
+    const isParamRefresh = Boolean(refreshParam && refreshParam !== lastRefreshParamRef.current);
+    if (isParamRefresh) {
+      lastRefreshParamRef.current = refreshParam;
+    }
+    // 30 sec ke andar dobara focus ho to reload mat karo — par product add/edit/delete hua ho to HAMESHA reload
+    const ecomVersion = UserStore.getEcomChangeVersion?.() ?? 0;
+    const changed = ecomVersion !== lastEcomVersionRef.current;
+    if (!changed && !isParamRefresh && Date.now() - lastLoadRef.current < 30000 && listings.length) return;
+    lastEcomVersionRef.current = ecomVersion;
     lastLoadRef.current = Date.now();
-    loadListings();
-  }, [loadListings, listings.length]));
+    loadListings(changed || isParamRefresh);
+  }, [loadListings, listings.length, route?.params?.refresh]));
 
   // ── Price range slider (line type) ──
   const sliderMax = useMemo(
@@ -608,7 +634,8 @@ export default function FarmingBuyScreen({ navigation, route }) {
       <ModuleWebHeader
         title="Ecome Marketplace"
         navigation={navigation}
-        onBack={() => navigation.goBack()}
+        // goBack() history na ho to chup-chaap fail hota tha — ab history na ho to Home par jaata hai
+        onBack={() => smartGoBack(navigation, 'Home')}
         onMenuPress={() => setSidebarVisible(true)}
         rightExtra={
           <TouchableOpacity onPress={() => navigation.navigate('Sell')} style={[styles.sellBtnHeader, isWeb && (isMobileWebDevice() || width <= 640) && { paddingHorizontal: 8, paddingVertical: 5, gap: 2 }]} activeOpacity={0.85}>
@@ -618,7 +645,7 @@ export default function FarmingBuyScreen({ navigation, route }) {
         }
       />
       {Platform.OS !== 'web' ? (
-<ModuleAndroidHeader title="Ecome Marketplace" onBack={() => navigation.goBack()} />
+<ModuleAndroidHeader title="Ecome Marketplace" onBack={() => smartGoBack(navigation, 'Home')} />
 ) : null}
 {/* White native header removed — red ModuleAndroidHeader hi use hota hai */}
       {/* Search row — header ke neeche, apni line me */}
@@ -725,6 +752,15 @@ export default function FarmingBuyScreen({ navigation, route }) {
 
           {/* ── Main content: results header + grid ── */}
           <View style={{ flex: 1 }}>
+            {!!loadError && !loading && (
+              <View style={{ backgroundColor: '#fef2f2', borderColor: '#fecaca', borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <Ionicons name="alert-circle" size={20} color="#dc2626" />
+                <Text style={{ flex: 1, color: '#b91c1c', fontSize: 13 }}>{loadError}</Text>
+                <TouchableOpacity onPress={() => loadListings(true)} activeOpacity={0.8} style={{ backgroundColor: '#dc2626', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6 }}>
+                  <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             <View style={styles.resultsBar}>
               <Text style={styles.resultsText}>
                 {loading ? 'Loading…' : `Showing ${filteredListings.length} of ${listings.length} products`}

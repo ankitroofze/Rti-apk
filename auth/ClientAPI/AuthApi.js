@@ -11,6 +11,7 @@ import { Platform } from 'react-native';
 import { getFrameTemplateName } from '../../constants/frameTemplates';
 import { findSongByFile } from '../../constants/musicLibrary';
 import { getIdbMediaBlob, isIdbMediaUri } from '../../utils/webMediaStore';
+import { getFileSize } from '../../utils/mediaCompressor';
 import { setAdsHidden, isAdsHidden, registerAdsRefresher, subscriptionsHideAds } from '../../utils/adsVisibility';
 
 // BASE_URL environment config se aata hai (EXPO_PUBLIC_API_URL). Env set na ho to purana default.
@@ -92,10 +93,14 @@ const readResponseBody = async (response, context) => {
 // ── High-Performance In-Memory Cache for GET Requests ─────────────
 const _apiGetCache = new Map();
 const _inFlightGets = new Map();
+// 🐞 FIX: clearApiGetCache() ke waqt jo GET pehle se in-flight ho, wo baad me purana (stale) response cache me
+// wapas likh deta tha (naya product add karne ke baad bhi list purani dikhti thi). Epoch badal jaye to wo response cache nahi hota.
+let _apiCacheEpoch = 0;
 const API_CACHE_TTL_MS = 20000; // 20s in-memory cache for ultra-fast screen transitions
 const NO_CACHE_PATTERNS = ['/verify-otp', '/orders/verify', '/logout'];
 
 const clearApiGetCache = (pattern = null) => {
+  _apiCacheEpoch += 1;
   if (!pattern) {
     _apiGetCache.clear();
     _inFlightGets.clear();
@@ -132,6 +137,7 @@ const fetchWithDebug = async (endpoint, options = {}, debugBody = null, customTi
   }
 
   const executeRequest = async () => {
+    const epochAtStart = _apiCacheEpoch;
     const url = `${BASE_URL}${endpoint}`;
     const startedAt = Date.now();
     const effectiveTimeoutMs = customTimeoutMs || (isGet ? 12000 : REQUEST_TIMEOUT_MS);
@@ -160,7 +166,7 @@ const fetchWithDebug = async (endpoint, options = {}, debugBody = null, customTi
       const fetchOptions = {
         ...options,
         headers: fetchHeaders,
-        ...(shouldSkipCache ? { cache: 'no-store' } : {}),
+        ...((shouldSkipCache || options.noStore === true) ? { cache: 'no-store' } : {}),
         signal: controller?.signal,
       };
       const response = await fetch(url, fetchOptions);
@@ -182,7 +188,9 @@ const fetchWithDebug = async (endpoint, options = {}, debugBody = null, customTi
       });
 
       if (isGet && result.ok && (result.status === 200 || result.status === 201) && !shouldSkipCache) {
-        _apiGetCache.set(cacheKey, { timestamp: Date.now(), result });
+        if (epochAtStart === _apiCacheEpoch) {
+          _apiGetCache.set(cacheKey, { timestamp: Date.now(), result });
+        }
       } else if (!isGet && result.ok) {
         // ✅ Invalidate related cached GET responses on mutation
         if (endpoint.includes('/news') || endpoint.includes('/like') || endpoint.includes('/comment')) {
@@ -421,7 +429,7 @@ const putJSON = async (endpoint, body = {}, token = null) => {
 const HIDE_ADS_CACHE_MS = 60 * 1000;
 let _hideAdsCache = { token: null, at: 0, hidden: false };
 
-const getJSON = async (endpoint, token = null, timeoutMs = null) => {
+const getJSON = async (endpoint, token = null, timeoutMs = null, extraOptions = {}) => {
   const headers = {
     Accept: 'application/json',
   };
@@ -433,6 +441,7 @@ const getJSON = async (endpoint, token = null, timeoutMs = null) => {
   const response = await fetchWithDebug(endpoint, {
     method: 'GET',
     headers,
+    ...extraOptions,
   }, null, timeoutMs);
 
   return { status: response.status, data: response.data };
@@ -460,6 +469,30 @@ const authedJSON = async (method, endpoint, body = null) => {
 // ─────────────────────────────────────────────────────────
 // ── News upload helpers (video size / timeout) ──────────────────────────
 // true / 1 / '1' / 'true' => '1', baaki sab (false, 0, '0', null, undefined) => '0'
+// Ads video limit: 10 MB (backend limit) — message sab jagah ek hi
+const AD_VIDEO_MAX_BYTES = 10 * 1024 * 1024;
+const AD_VIDEO_TOO_LARGE_MSG = 'This video is larger than 10 MB. Please add a video under 10 MB.';
+// Server error aaye aur video bhej rahe the: size bada/anjaan ho to saaf English message do (generic "server error" nahi)
+const videoUploadFailureMessage = async (video, fallbackMessage) => {
+  let bytes = 0;
+  try { bytes = Number(await getFileSize(video)) || 0; } catch { bytes = 0; }
+  if (bytes > AD_VIDEO_MAX_BYTES) return AD_VIDEO_TOO_LARGE_MSG;
+  if (!bytes) return 'The server could not accept this video. It may be larger than 10 MB. Please add a video under 10 MB.';
+  // ✅ FIX: 10 MB ke andar hai phir bhi server ne reject kiya (server ki upload limit kam) — "Server error" nahi, size wala reason do
+  return `This video (${(bytes / (1024 * 1024)).toFixed(1)} MB) is too large for the server to accept. Please add a smaller video.`;
+};
+// ✅ FIX: server ka size wala message ("server error", "must not be greater than 10240 kilobytes" etc.)
+// toast me nahi dikhana — video/image ka size problem ho to apna saaf English message do.
+const AD_IMAGE_TOO_LARGE_MSG = 'This image is too large. Please add an image under 5 MB.';
+const adMediaSizeMessage = (status, data, hasVideo) => {
+  const errors = data?.errors || {};
+  const mediaKeys = Object.keys(errors).filter((k) => /^(video|image|images|media|file)(\.\d+)?$/i.test(k));
+  const text = [data?.message, ...Object.values(errors).flat()].filter(Boolean).join(' ');
+  const sizeWords = /(size|large|big|greater|exceed|max|kilobyte|megabyte|\bkb\b|\bmb\b|too long|payload|entity)/i.test(text);
+  const isSizeProblem = status === 413 || (mediaKeys.length > 0 && sizeWords) || (hasVideo && sizeWords);
+  if (!isSizeProblem) return '';
+  return hasVideo ? AD_VIDEO_TOO_LARGE_MSG : AD_IMAGE_TOO_LARGE_MSG;
+};
 const toBinaryFlag = (value) => ([true, 1, '1', 'true'].includes(value) ? '1' : '0');
 
 const NEWS_VIDEO_MAX_MB = 10;
@@ -2027,6 +2060,7 @@ export const AuthAPI = {
     useFrame = false,
     frameTemplate = '',
     frameMerged, // 1/0 (ya true/false) — na do to useFrame jaisa hi jaayega
+    status = '',  // 'approved' bhejo to post bina admin approval ke seedha live hogi (Feed ke liye)
   }) => {
     try {
       console.log("Received mediaUri:", mediaUri);
@@ -2035,6 +2069,11 @@ export const AuthAPI = {
 
       const formData = new FormData();
       formData.append('type', String(Number(type) === 2 ? 2 : 1));
+      // Feed post: admin approval nahi — seedha approved/publish
+      if (status) {
+        formData.append('status', String(status));
+        formData.append('is_approved', '1');
+      }
       formData.append('tittle', title || '');
       formData.append('title', title || '');
       formData.append('sub_tittle', subTitle || '');
@@ -3182,10 +3221,13 @@ export const AuthAPI = {
           }
           // ✅ FIX: pehle video read fail hone par chupchap drop ho jaata tha — ab saaf error milega
           if (!videoBlob) return { ok: false, message: 'Could not read the video. Please select the video again.' };
-          if (videoBlob.size > 10 * 1024 * 1024) return { ok: false, message: 'Video must be smaller than 10 MB.' };
+          if (videoBlob.size > AD_VIDEO_MAX_BYTES) return { ok: false, message: AD_VIDEO_TOO_LARGE_MSG };
           const vExt = (videoBlob.type.split('/')[1] || 'mp4').replace('quicktime', 'mov').split(';')[0];
           formData.append('video', videoBlob, `ad-video.${vExt}`);
         } else {
+          // 🐞 FIX: native par size check hi nahi tha — bada video server tak jaata aur "server error" aata tha
+          const nativeVideoSize = await getFileSize(video);
+          if (nativeVideoSize > AD_VIDEO_MAX_BYTES) return { ok: false, message: AD_VIDEO_TOO_LARGE_MSG };
           const meta = guessFileMeta(video, 'video', 0);
           formData.append('video', { uri: video, type: meta.type, name: meta.name });
         }
@@ -3205,15 +3247,25 @@ export const AuthAPI = {
       if (resStatus === 200 || resStatus === 201) return { ok: true, ad: data?.data || data?.ad || data };
       console.warn('[AuthAPI.createAdsDetails] server said:', resStatus, JSON.stringify(data)?.slice(0, 500));
       if (resStatus === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
-      if (resStatus === 413) return { ok: false, message: 'File is too large (413). Please choose a smaller photo/video.' };
-      if (resStatus === 422) {
+      if (resStatus === 413) return { ok: false, message: video ? AD_VIDEO_TOO_LARGE_MSG : 'File is too large (413). Please choose a smaller photo.' };
+      if (resStatus === 422 || resStatus === 400) {
+        const sizeMsg = adMediaSizeMessage(resStatus, data, hasVideo);
+        if (sizeMsg) return { ok: false, message: sizeMsg };
         const errors = data?.errors || {};
         const firstError = Object.values(errors).flat()[0] || data?.message || 'Validation failed.';
         return { ok: false, message: firstError, errors };
       }
+      if (video && (resStatus >= 500 || resStatus === 0 || data?.parseError)) {
+        return { ok: false, message: await videoUploadFailureMessage(video, data?.message || `Server error (${resStatus}).`) };
+      }
       return { ok: false, message: data?.message || `Server error (${resStatus}).` };
     } catch (err) {
       console.error('[AuthAPI.createAdsDetails] Error:', err);
+      // ✅ FIX: server bada file milte hi connection tod deta hai (browser me red ✕, response nahi) —
+      // video ke saath ye "Network error" nahi, size wala message hai
+      if (video && err?.name !== 'AbortError') {
+        return { ok: false, message: await videoUploadFailureMessage(video, '') };
+      }
       const why = err?.name === 'AbortError' ? 'Upload timed out.' : (err?.message || 'unknown');
       return { ok: false, isNetwork: true, message: `Network error. (${why})` };
     }
@@ -3250,10 +3302,12 @@ export const AuthAPI = {
           if (Platform.OS === 'web') {
             const vBlob = await toWebBlob(video);
             if (!vBlob) return { ok: false, message: 'Could not read the video. Please select the video again.' };
-            if (vBlob.size > 10 * 1024 * 1024) return { ok: false, message: 'Video must be smaller than 10 MB.' };
+            if (vBlob.size > AD_VIDEO_MAX_BYTES) return { ok: false, message: AD_VIDEO_TOO_LARGE_MSG };
             const vExt = (vBlob.type.split('/')[1] || 'mp4').replace('quicktime', 'mov').split(';')[0];
             formData.append('video', vBlob, `ad-video.${vExt}`);
           } else {
+            const nativeVideoSize = await getFileSize(video);
+            if (nativeVideoSize > AD_VIDEO_MAX_BYTES) return { ok: false, message: AD_VIDEO_TOO_LARGE_MSG };
             const meta = guessFileMeta(video, 'video', 0);
             formData.append('video', { uri: video, type: meta.type, name: meta.name });
           }
@@ -3282,6 +3336,10 @@ export const AuthAPI = {
       if (status === 200 || status === 201) return { ok: true, ad: data?.data || data?.ad || data };
       if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
       if (status === 404) return { ok: false, message: 'Ad not found.' };
+      if (status === 413 || status === 422 || status === 400) {
+        const sizeMsg = adMediaSizeMessage(status, data, isLocalVideoUri);
+        if (sizeMsg) return { ok: false, message: sizeMsg };
+      }
       if (status === 422) {
         const errors = data?.errors || {};
         const firstError = Object.values(errors).flat()[0] || data?.message || 'Validation failed.';
@@ -3290,6 +3348,9 @@ export const AuthAPI = {
       return { ok: false, message: data?.message || `Server error (${status}).` };
     } catch (err) {
       console.error('[AuthAPI.updateAdsDetails] Error:', err);
+      if (fields?.video && err?.name !== 'AbortError') {
+        return { ok: false, message: await videoUploadFailureMessage(fields.video, '') };
+      }
       return { ok: false, isNetwork: true, message: 'Network error.' };
     }
   },
@@ -3298,12 +3359,28 @@ export const AuthAPI = {
     try {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
-      const response = await fetch(`${BASE_URL}/ads-details/${id}`, {
-        method: 'DELETE',
+      // 🐞 FIX: delete me payload khali jaata tha. Ab payload me 0/1 data jaata hai: status = 0 (inactive), is_deleted = 1 (deleted).
+      // Multipart body DELETE verb par PHP/Laravel parse nahi karta, isliye POST + _method=DELETE (method spoofing); query me bhi wahi data.
+      const deleteQuery = 'status=0&is_deleted=1';
+      const deleteBody = new FormData();
+      deleteBody.append('_method', 'DELETE');
+      deleteBody.append('status', '0');
+      deleteBody.append('is_deleted', '1');
+      let response = await fetch(`${BASE_URL}/ads-details/${id}?${deleteQuery}`, {
+        method: 'POST',
         headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+        body: deleteBody,
       });
+      if (response.status === 405) {
+        // Route spoofing allow na ho to seedha DELETE (data query string me)
+        response = await fetch(`${BASE_URL}/ads-details/${id}?${deleteQuery}`, {
+          method: 'DELETE',
+          headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
+        });
+      }
       const json = await response.json().catch(() => null);
       if (response.status === 200 || response.status === 201 || response.status === 204) {
+        clearApiGetCache('/ads');
         return { ok: true, message: json?.message || 'Ad deleted.' };
       }
       if (response.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
@@ -3616,31 +3693,141 @@ export const AuthAPI = {
   // ECOM DETAILS API (product add/update/delete/view/status)
   // GET /ecom-details is PUBLIC, baaki sab auth token se
   // ─────────────────────────────────────────────────────────
-  getEcomDetails: async () => {
+  clearEcomCache: () => {
+    clearApiGetCache('/ecom');
+  },
+
+  getEcomDetails: async (opts = {}) => {
     try {
+      if (opts?.skipCache) {
+        clearApiGetCache('/ecom');
+      }
       // Optional token: logged-in user ke liye backend mutual-block filter lagata hai, guest ke liye public rehta hai
       const token = await getAuthToken();
-      let res = await getJSON('/ecom-details', token);
-      if (res.status === 401 && token) {
-        // Token format mismatch / session issue par guest request fallback karo taaki marketplace blank na ho
-        res = await getJSON('/ecom-details', null);
+      let useToken = token;
+
+      // Response kisi bhi shape me ho sakta hai: [..] / {data:[..]} / {data:{data:[..]}} / {ecom_details:[..]} / paginated
+      const extractList = (d) => {
+        if (Array.isArray(d)) return d;
+        const candidates = [
+          d?.data, d?.ecom_details, d?.ecom_detail, d?.details, d?.ecom, d?.items, d?.products,
+          d?.data?.data, d?.data?.ecom_details, d?.ecom_details?.data, d?.details?.data,
+        ];
+        for (const c of candidates) if (Array.isArray(c)) return c;
+        return [];
+      };
+      const fetchPage = async (qs) => {
+        const sep = qs ? (qs.startsWith('?') ? '' : '?') : '';
+        const url = qs ? `/ecom-details${sep}${qs}` : '/ecom-details';
+        // 🐞 FIX: list GET ka default timeout 12s tha — product list bada ho ya proxy slow ho to request abort ho jaati thi
+        // aur Buy page par list khali dikhti thi (error bhi nahi dikhta tha). Ab 30s + browser HTTP cache bypass (noStore).
+        const getOpts = { noStore: true };
+        let res = await getJSON(url, useToken, 30000, getOpts);
+        if (res.status === 401 && useToken) {
+          // Token format mismatch / session issue par guest request fallback karo taaki marketplace blank na ho
+          useToken = null;
+          res = await getJSON(url, null, 30000, getOpts);
+        }
+        return res;
+      };
+
+      // 1. Pehle standard /ecom-details fetch karo (bina kisi unsupported per_page query ke)
+      let first = await fetchPage('');
+      if (!(first.status === 200 || first.status === 201) && useToken) {
+        useToken = null;
+        first = await fetchPage('');
       }
-      const { status, data } = res;
-      if (status === 200 || status === 201) {
-        const rawList = Array.isArray(data) ? data : (data?.data || data?.ecom_details || data?.details || []);
-        return { ok: true, details: rawList };
+
+      if (!(first.status === 200 || first.status === 201)) {
+        console.warn('[AuthAPI.getEcomDetails] GET /ecom-details FAIL ->', first.status, first.data?.message || '');
+        return { ok: false, status: first.status, message: first.data?.message || `Server error (${first.status}).` };
       }
-      return { ok: false, message: data?.message || `Server error (${status}).` };
+
+      const all = [];
+      const seen = new Set();
+      const pushList = (list) => (Array.isArray(list) ? list : []).forEach((it) => {
+        const key = it?.id != null ? String(it.id) : null;
+        if (key && seen.has(key)) return;
+        if (key) seen.add(key);
+        all.push(it);
+      });
+
+      pushList(extractList(first.data));
+
+      // 2. Agar response paginated hai to agle pages fetch karke jod lo
+      // 🐞 FIX: pagination info kabhi top-level pe, kabhi meta / pagination / data / ecom_details ke andar aati hai.
+      // Pehle sirf kuch shapes check hote the, isliye backend 10-10 product ke page deta to sirf pehla page aata tha
+      // aur naya product (agle page par) Buy list me kabhi nahi aata tha.
+      const findPageMeta = (body) => {
+        const pools = [
+          body, body?.meta, body?.pagination, body?.data, body?.data?.meta,
+          body?.ecom_details, body?.ecom_detail, body?.details, body?.products, body?.items,
+        ];
+        for (const pool of pools) {
+          if (pool && typeof pool === 'object' && !Array.isArray(pool)
+            && (pool.last_page != null || pool.next_cursor != null || pool.next_page_url != null || pool.has_more != null)) {
+            return pool;
+          }
+        }
+        return {};
+      };
+
+      const meta = findPageMeta(first.data);
+      const nextCursor = meta?.next_cursor || null;
+
+      if (nextCursor && meta?.has_more !== false) {
+        let cur = first;
+        for (let i = 0; i < 20; i += 1) {
+          const c = findPageMeta(cur.data)?.next_cursor;
+          if (!c) break;
+          const nxt = await fetchPage(`cursor=${encodeURIComponent(c)}`);
+          if (!(nxt.status === 200 || nxt.status === 201)) break;
+          const before = all.length;
+          pushList(extractList(nxt.data));
+          if (all.length === before) break; // koi naya product nahi mila — loop band
+          cur = nxt;
+        }
+      } else {
+        const curPage = Number(meta?.current_page || 1);
+        const lastPage = Number(meta?.last_page || 0);
+        const hasNextUrl = Boolean(meta?.next_page_url);
+        if (lastPage > curPage || (!lastPage && hasNextUrl)) {
+          const cap = lastPage ? Math.min(lastPage, curPage + 30) : curPage + 30;
+          for (let p = curPage + 1; p <= cap; p += 1) {
+            const nxt = await fetchPage(`page=${p}`);
+            if (!(nxt.status === 200 || nxt.status === 201)) break;
+            const list = extractList(nxt.data);
+            if (!list.length) break;
+            const before = all.length;
+            pushList(list);
+            if (all.length === before) break; // wahi purana page dobara aaya — loop band
+            if (!lastPage && !findPageMeta(nxt.data)?.next_page_url) break;
+          }
+        }
+      }
+
+      if (__DEV__) {
+        console.log('[AuthAPI.getEcomDetails] products fetched:', all.length);
+        if (!all.length) console.warn('[AuthAPI.getEcomDetails] 200 aaya par list khali — response keys:', first.data && typeof first.data === 'object' ? Object.keys(first.data) : typeof first.data);
+      }
+      return { ok: true, details: all };
     } catch (err) {
       console.error('[AuthAPI.getEcomDetails] Error:', err);
-      return { ok: false, isNetwork: true, message: 'Network error.' };
+      const timedOut = err?.name === 'AbortError';
+      return { ok: false, isNetwork: true, message: timedOut ? 'Server ne list dene me bahut der lagayi (timeout).' : 'Network error — server tak request nahi pahunchi.' };
     }
   },
 
   getEcomDetailsById: async (id) => {
     try {
-      const { status, data } = await getJSON(`/ecom-details/${id}`);
-      if (status === 200 || status === 201) return { ok: true, detail: data?.data || data?.detail || data };
+      const token = await getAuthToken();
+      let { status, data } = await getJSON(`/ecom-details/${id}`, token);
+      if (status === 401 && token) {
+        const retry = await getJSON(`/ecom-details/${id}`, null);
+        status = retry.status;
+        data = retry.data;
+      }
+      if (status === 200 || status === 201) return { ok: true, detail: data?.data || data?.ecom_detail || data?.ecom_details || data?.detail || data };
       if (status === 404) return { ok: false, message: 'Product not found.' };
       return { ok: false, message: data?.message || `Server error (${status}).` };
     } catch (err) {
@@ -3666,8 +3853,12 @@ export const AuthAPI = {
       formData.append('price', String(price ?? ''));
       formData.append('description', description || '');
       formData.append('city', city || '');
-      // ⚠️ backend field name "conatct" (typo) hai, curl example ke hisaab se waisa hi bhejna hai
+      // ⚠️ backend field name "conatct" (typo) hai, curl example ke hisaab se waisa hi bhejna hai; dono bhejte hain
       formData.append('conatct', contact || '');
+      formData.append('contact', contact || '');
+      // Product add hote hi live (admin approval ke bina) — status 1 = active/visible
+      formData.append('status', '1');
+      formData.append('is_approved', '1');
       if (startDate) formData.append('start_date', startDate);
       if (endDate) formData.append('end_date', endDate);
 
@@ -3698,7 +3889,10 @@ export const AuthAPI = {
       });
 
       const json = await res.json().catch(() => null);
-      if (res.status === 200 || res.status === 201) return { ok: true, detail: json?.data || json?.detail || json };
+      if (res.status === 200 || res.status === 201) {
+        clearApiGetCache('/ecom'); // raw fetch hai — GET cache khud saaf karo, warna naya product list me nahi aata
+        return { ok: true, detail: json?.data || json?.ecom_detail || json?.ecom_details || json?.detail || json };
+      }
       // ✅ FIX: backend "Token has expired." bhi 401 ke sath dega, isko clearly session-expired maano
       if (res.status === 401) return { ok: false, isAuth: true, message: json?.message || 'Session expired. Please login again.' };
       if (res.status === 422) {
@@ -3718,11 +3912,33 @@ export const AuthAPI = {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
 
+      // 🐞 FIX: images ab update me bhi jaati hain (pehle sirf text fields jaate the, isliye image change kabhi save nahi hota tha)
+      const { images = [], ...plainFields } = fields || {};
       const formData = new FormData();
-      Object.entries(fields).forEach(([key, value]) => {
+      Object.entries(plainFields).forEach(([key, value]) => {
         if (key === '_method') return;
         if (value !== undefined && value !== null) formData.append(key, String(value));
       });
+
+      for (let idx = 0; idx < (images || []).length; idx += 1) {
+        const img = images[idx];
+        if (!img) continue;
+        if (Platform.OS === 'web') {
+          let imageBlob = img instanceof Blob ? img : null;
+          const imageUri = typeof img === 'string' ? img : (img.previewUri || img.uri || '');
+          if (!imageBlob && isIdbMediaUri(imageUri)) imageBlob = await getIdbMediaBlob(imageUri);
+          if (!imageBlob && imageUri) {
+            try { imageBlob = await fetch(imageUri).then((response) => response.blob()); } catch { /* skip */ }
+          }
+          if (imageBlob) formData.append('images[]', imageBlob, img.name || `image_${idx}.jpg`);
+        } else {
+          formData.append('images[]', {
+            uri: img.uri || img,
+            type: img.type || 'image/jpeg',
+            name: img.name || `image_${idx}.jpg`,
+          });
+        }
+      }
 
       const res = await fetch(`${BASE_URL}/ecom-details/${id}`, {
         method: 'POST',
@@ -3730,7 +3946,11 @@ export const AuthAPI = {
         body: formData,
       });
       const json = await res.json().catch(() => null);
-      if (res.status === 200 || res.status === 201) return { ok: true, detail: json?.data || json?.detail || json };
+      console.log('[AuthAPI.updateEcomDetails] status:', res.status, 'id:', id, 'resp keys:', json && typeof json === 'object' ? Object.keys(json) : typeof json);
+      if (res.status === 200 || res.status === 201) {
+        clearApiGetCache('/ecom'); // raw fetch hai — GET cache saaf karo taaki update turant dikhe
+        return { ok: true, detail: json?.data || json?.ecom_detail || json?.ecom_details || json?.detail || json };
+      }
       if (res.status === 401) return { ok: false, isAuth: true, message: json?.message || 'Session expired. Please login again.' };
       if (res.status === 404) return { ok: false, message: 'Product not found.' };
       if (res.status === 422) {
@@ -3757,7 +3977,10 @@ export const AuthAPI = {
         body: formData,
       });
       const json = await res.json().catch(() => null);
-      if (res.status === 200 || res.status === 201) return { ok: true, detail: json?.data || json?.detail || json };
+      if (res.status === 200 || res.status === 201) {
+        clearApiGetCache('/ecom');
+        return { ok: true, detail: json?.data || json?.detail || json };
+      }
       if (res.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
       if (res.status === 404) return { ok: false, message: 'Product not found.' };
       return { ok: false, message: json?.message || `Server error (${res.status}).` };
@@ -3780,7 +4003,10 @@ export const AuthAPI = {
         body: formData,
       });
       const json = await res.json().catch(() => null);
-      if (res.status === 200 || res.status === 201) return { ok: true, detail: json?.data || json?.detail || json };
+      if (res.status === 200 || res.status === 201) {
+        clearApiGetCache('/ecom');
+        return { ok: true, detail: json?.data || json?.detail || json };
+      }
       if (res.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
       if (res.status === 403) return { ok: false, message: 'You can update only your own product.' };
       if (res.status === 404) return { ok: false, message: 'Product not found.' };
@@ -3801,6 +4027,7 @@ export const AuthAPI = {
       });
       const json = await response.json().catch(() => null);
       if (response.status === 200 || response.status === 201 || response.status === 204) {
+        clearApiGetCache('/ecom');
         return { ok: true, message: json?.message || 'Product deleted.' };
       }
       if (response.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };

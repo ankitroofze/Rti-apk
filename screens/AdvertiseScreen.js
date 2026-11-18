@@ -20,7 +20,7 @@ import { UserStore } from '../store/UserStore';
 import { useToast } from '../components/ui/ToastProvider';
 import { useAuth } from '../contexts/AuthContext';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
-import { compressImage, compressVideo } from '../utils/mediaCompressor';
+import { compressImage, compressVideo, getFileSize } from '../utils/mediaCompressor';
 
 const ADS_TUTORIAL_VIDEO = require('../assets/frames/ads-video.mp4');
 
@@ -751,6 +751,31 @@ const editAd = route?.params?.editAd || null;
     return ['images'];
   };
   const MAX_VIDEO_MB = 10; // backend limit: 10 MB (mp4, mov, avi, webm)
+  const MAX_IMAGE_MB = 5;
+  const videoTooLargeMsg = (bytes) => `This video is too large${bytes ? ` (${(bytes / (1024 * 1024)).toFixed(1)} MB)` : ''}. Files above ${MAX_VIDEO_MB} MB are not allowed. Please add a video under ${MAX_VIDEO_MB} MB.`;
+  const IMAGE_TOO_LARGE_MSG = `This image is too large even after compression. Please add an image under ${MAX_IMAGE_MB} MB.`;
+  // Image compress karo (1280px, quality 0.7); phir bhi 5 MB se bada ho to null (toast caller dikhata hai)
+  const prepareImage = async (uri) => {
+    let out = null;
+    try { out = await compressImage(uri, { maxWidth: 1280, maxHeight: 1280, quality: 0.7 }); } catch { out = null; }
+    const finalUri = out?.uri || uri;
+    let bytes = Number(out?.sizeBytes || 0);
+    if (!bytes) { try { bytes = Number(await getFileSize(finalUri)) || 0; } catch { bytes = 0; } }
+    return bytes > MAX_IMAGE_MB * 1024 * 1024 ? null : finalUri;
+  };
+  // Size kabhi asset me nahi hota (Android / web) — to file se naap lo. 0 ka matlab naap nahi paye (server side check bhi hai).
+  const getVideoBytes = async (asset, uri) => {
+    const fromAsset = Number(asset?.fileSize || asset?.file?.size || asset?.size || 0);
+    if (fromAsset) return fromAsset;
+    let n = 0;
+    try { n = Number(await getFileSize(uri)) || 0; } catch { n = 0; }
+    if (n) return n;
+    // ✅ FIX: FileSystem se size na mile (content:// etc.) to fetch→blob se naap lo, taaki select hote hi toast aa jaye
+    try {
+      const blob = await fetch(uri).then((r) => r.blob());
+      return Number(blob?.size) || 0;
+    } catch { return 0; }
+  };
   const isVideoAsset = (a) => a?.type === 'video' || String(a?.mimeType || '').startsWith('video/') || /\.(mp4|mov|m4v|webm|3gp)(\?|$)/i.test(String(a?.uri || a?.fileName || ''));
 
   // WEB: ek hi picker me photo + video dono (file dialog)
@@ -773,9 +798,9 @@ const editAd = route?.params?.editAd || null;
 
       if (videos.length) {
         const v = videos[0];
-        const vComp = await compressVideo(v, { maxSizeBytes: MAX_VIDEO_MB * 1024 * 1024 });
-        if (!vComp.ok) {
-          Alert.alert('Video too large', vComp.message || `Please choose a video under ${MAX_VIDEO_MB} MB.`);
+        const vBytes = await getVideoBytes(v, v.uri);
+        if (vBytes > MAX_VIDEO_MB * 1024 * 1024) {
+          showToast(videoTooLargeMsg(vBytes), 'error', { title: 'Video too large' });
           return;
         }
         // ek ad me ya video ya photo (backend media_type 1/2) — video chuna to photos hata do
@@ -784,14 +809,11 @@ const editAd = route?.params?.editAd || null;
         setExtraPhotos([]);
       } else if (images.length) {
         setAdVideo(null);
-        const compMain = await compressImage(images[0].uri, { maxWidth: 1280, maxHeight: 1280, quality: 0.7 });
-        setPhoto(compMain?.uri || images[0].uri);
-        const compExtras = await Promise.all(
-          images.slice(1, 5).map(async (x) => {
-            const c = await compressImage(x.uri, { maxWidth: 1280, maxHeight: 1280, quality: 0.7 }).catch(() => null);
-            return c?.uri || x.uri;
-          })
-        );
+        const mainUri = await prepareImage(images[0].uri);
+        if (!mainUri) { showToast(IMAGE_TOO_LARGE_MSG, 'error'); return; }
+        setPhoto(mainUri);
+        const compExtras = (await Promise.all(images.slice(1, 5).map((x) => prepareImage(x.uri)))).filter(Boolean);
+        if (compExtras.length < Math.min(images.length - 1, 4)) showToast(IMAGE_TOO_LARGE_MSG, 'error');
         setExtraPhotos(compExtras);
       }
       setTimeout(() => {
@@ -818,15 +840,12 @@ const editAd = route?.params?.editAd || null;
         quality: 0.5,
       });
       if (result.canceled || !result.assets?.length) return;
+      const mainUri = await prepareImage(result.assets[0].uri);
+      if (!mainUri) { showToast(IMAGE_TOO_LARGE_MSG, 'error'); return; }
       setAdVideo(null); // ek ad me ya photo ya video
-      const compMain = await compressImage(result.assets[0].uri, { maxWidth: 1280, maxHeight: 1280, quality: 0.7 });
-      setPhoto(compMain?.uri || result.assets[0].uri);
-      const compExtras = await Promise.all(
-        result.assets.slice(1, 5).map(async (a) => {
-          const c = await compressImage(a.uri, { maxWidth: 1280, maxHeight: 1280, quality: 0.7 }).catch(() => null);
-          return c?.uri || a.uri;
-        })
-      );
+      setPhoto(mainUri);
+      const compExtras = (await Promise.all(result.assets.slice(1, 5).map((a) => prepareImage(a.uri)))).filter(Boolean);
+      if (compExtras.length < Math.min(result.assets.length - 1, 4)) showToast(IMAGE_TOO_LARGE_MSG, 'error');
       setExtraPhotos(compExtras);
       setTimeout(() => {
         (Platform.OS === 'web' ? webScrollRef : mobileScrollRef).current?.scrollTo({ y: 360, animated: true });
@@ -861,10 +880,9 @@ const editAd = route?.params?.editAd || null;
       });
       if (result.canceled || !result.assets?.length) return;
       const asset = result.assets[0];
-      const MAX_MB = MAX_VIDEO_MB;
-      const size = asset.fileSize || asset.file?.size || 0; // web par fileSize nahi hota, file.size hota hai
-      if (size && size > MAX_MB * 1024 * 1024) {
-        Alert.alert('Video too large', `Please choose a video under ${MAX_MB} MB.`);
+      const size = await getVideoBytes(asset, asset.uri);
+      if (size > MAX_VIDEO_MB * 1024 * 1024) {
+        showToast(videoTooLargeMsg(size), 'error', { title: 'Video too large' });
         return;
       }
       setAdVideo(asset.uri);
@@ -921,6 +939,14 @@ const editAd = route?.params?.editAd || null;
     if (!photo && !adVideo) {
       Alert.alert('Required', 'Please add an advertisement photo or video.');
       return;
+    }
+    // 🐞 FIX: submit par bhi video size dobara check (draft / purana selected video bhi) — 10 MB se bada ho to submit nahi hoga
+    if (adVideo) {
+      const submitVideoBytes = await getVideoBytes(null, adVideo);
+      if (submitVideoBytes > MAX_VIDEO_MB * 1024 * 1024) {
+        showToast(videoTooLargeMsg(submitVideoBytes), 'error');
+        return;
+      }
     }
     if (!title.trim()) {
       Alert.alert('Required', 'Please write an advertisement title.');

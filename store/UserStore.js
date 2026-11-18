@@ -815,23 +815,83 @@ const fetchBackendCommentsForPost = async (postId) => {
   }
 };
 
+// ✅ Apne add kiye hue ecom product ki ids (device par) — backend list me owner info na aaye
+// ya product list/pagination me na mile tab bhi "My Ecom" me hamesha dikhe.
+const MY_ECOM_IDS_PREFIX = 'my_ecom_ids::';
+// Product add/update/delete/stock par badhta hai — marketplace jaisi screens isse jaan leti hain ki reload zaroori hai
+let ecomChangeVersion = 0;
+const bumpEcomVersion = () => { ecomChangeVersion += 1; };
+
+// 🐞 FIX (update ke baad data gayab): product update ke baad backend GET kabhi purana / adhura record deta tha aur merge me wahi jeet jaata tha,
+// isliye edit kiya hua data screen se gayab ya purana dikhta tha. Ab jo fields user ne abhi update kiye unhe kuch der (3 min) yaad rakhte hain
+// aur list me backend record ke upar laga dete hain — taaki update HAMESHA turant dikhe.
+const recentEcomUpdates = new Map(); // product id -> { at, data }
+const RECENT_ECOM_UPDATE_TTL_MS = 3 * 60 * 1000;
+const rememberEcomUpdate = (id, data = {}) => {
+  const key = String(id ?? '');
+  if (!key) return;
+  const prev = recentEcomUpdates.get(key);
+  const prevData = prev && (Date.now() - prev.at < RECENT_ECOM_UPDATE_TTL_MS) ? prev.data : {};
+  recentEcomUpdates.set(key, { at: Date.now(), data: { ...prevData, ...data } });
+};
+// Poora updated product bhi yaad rakho — backend list me na aaye to bhi product list se gayab na ho
+const recentEcomListings = new Map(); // id -> { at, listing }
+const rememberEcomListing = (id, listing) => { if (id != null && listing) recentEcomListings.set(String(id), { at: Date.now(), listing }); };
+const applyRecentEcomUpdate = (item) => {
+  const key = String(item?.id ?? '');
+  const entry = key ? recentEcomUpdates.get(key) : null;
+  if (!entry) return item;
+  if (Date.now() - entry.at > RECENT_ECOM_UPDATE_TTL_MS) { recentEcomUpdates.delete(key); return item; }
+  return { ...item, ...entry.data };
+};
+const readMyEcomIds = async (email) => {
+  try {
+    const raw = await AsyncStorage.getItem(`${MY_ECOM_IDS_PREFIX}${String(email || '').trim().toLowerCase()}`);
+    const arr = raw ? JSON.parse(raw) : [];
+    return Array.isArray(arr) ? arr.map(String) : [];
+  } catch { return []; }
+};
+const writeMyEcomIds = async (email, ids) => {
+  try {
+    await AsyncStorage.setItem(
+      `${MY_ECOM_IDS_PREFIX}${String(email || '').trim().toLowerCase()}`,
+      JSON.stringify(Array.from(new Set((ids || []).map(String))).slice(-200))
+    );
+  } catch { /* ignore */ }
+};
+
+// 🐞 FIX: backend ecom images kabhi relative path (jaise "ecom/abc.jpg") me aati hain. News wale code me resolveMediaUrl lagta tha
+// par ecom me nahi — isliye product list me aata tha par image blank / broken dikhti thi. idb-media: (web local) ko as-is rakho.
+const resolveEcomMediaUrl = (u) => {
+  const value = String(u || '').trim();
+  if (!value) return '';
+  if (/^idb-media:/i.test(value)) return value;
+  return resolveMediaUrl(value);
+};
+
 const normalizeEcomDetail = (raw = {}) => {
   const owner = raw.user || raw.owner || {};
-  const rawImages = Array.isArray(raw.images) ? raw.images : (raw.image ? [raw.image] : (raw.photo ? [raw.photo] : []));
+  const rawImages = (Array.isArray(raw.images) && raw.images.length)
+    ? raw.images
+    : (Array.isArray(raw.mediaItems) && raw.mediaItems.length
+        ? raw.mediaItems.map((m) => (typeof m === 'string' ? m : (m?.uri || m?.url || ''))).filter(Boolean)
+        : (raw.image ? [raw.image] : (raw.photo ? [raw.photo] : [])));
   const cleanImages = rawImages
-    .map((img) => (typeof img === 'string' ? img : (img?.url || img?.path || img?.uri || '')))
-    .filter((u) => u && typeof u === 'string' && !u.includes('picsum.photos'));
-  const primaryImage = cleanImages[0] || (typeof raw.image === 'string' && !raw.image.includes('picsum.photos') ? raw.image : '') || '';
+    .map((img) => (typeof img === 'string' ? img : (img?.url || img?.image_url || img?.image || img?.path || img?.uri || '')))
+    .filter((u) => u && typeof u === 'string' && !u.includes('picsum.photos'))
+    .map(resolveEcomMediaUrl)
+    .filter(Boolean);
+  const primaryImage = cleanImages[0] || (typeof raw.image === 'string' && !raw.image.includes('picsum.photos') ? resolveEcomMediaUrl(raw.image) : '') || '';
   const userId = String(raw.user_id ?? owner.id ?? '').trim();
-  const ownerEmail = String(owner.email || raw.owner_email || '').trim().toLowerCase();
+  const ownerEmail = String(owner.email || raw.owner_email || raw.createdBy || '').trim().toLowerCase();
   return {
     id: raw.id,
     user_id: userId,
     owner_id: userId,
     ecom_sub_id: raw.ecom_sub_id || raw.category_id || '',
     title: raw.product_name || raw.title || 'E-Commerce Product',
-    sector: raw.category || '',
-    category: raw.category || '',
+    sector: raw.category || raw.sector || '',
+    category: raw.category || raw.sector || '',
     description: raw.description || '',
     // ✅ quantity hata di — ab sirf stock status. Backend se in_stock nahi aaya (purana product) to In Stock maano
     in_stock: !(raw.in_stock === false || raw.in_stock === 0 || raw.in_stock === '0' || raw.in_stock === 'false'),
@@ -840,8 +900,19 @@ const normalizeEcomDetail = (raw = {}) => {
     contact: raw.conatct || raw.contact || '',
     start_date: raw.start_date || '',
     end_date: raw.end_date || '',
-    status: raw.status !== undefined && raw.status !== null ? Number(raw.status) : 1,
-    is_deleted: Boolean(raw.is_deleted === 1 || raw.is_deleted === '1' || raw.is_deleted === true || raw.deleted_at),
+    // status number (1/0) ya text (active/approved/pending/inactive...) dono aa sakte hain —
+    // pehle text par Number() NaN ban kar product list se gayab ho jaata tha
+    status: (() => {
+      const st = raw.status;
+      if (st === undefined || st === null || st === '') return 1;
+      const asNum = Number(st);
+      if (Number.isFinite(asNum)) return asNum;
+      return ['inactive', 'rejected', 'blocked', 'disabled', 'deleted'].includes(String(st).trim().toLowerCase()) ? 0 : 1;
+    })(),
+    // 🐞 FIX (ROOT CAUSE): backend /ecom-details har LIVE product ke saath "is_deleted": 1 bhej raha hai (status:1 hone par bhi).
+    // Pehle is_deleted == 1 ko "deleted" maan kar saare products list se hata diye jaate the — isliye data aane par bhi screen khali thi.
+    // Ab sirf asli soft-delete marker (deleted_at) ko deleted maante hain. (Backend ko is_deleted ka matlab theek karna chahiye.)
+    is_deleted: Boolean(raw.deleted_at),
     image: primaryImage,
     images: cleanImages,
     mediaItems: cleanImages.map((uri) => ({
@@ -850,11 +921,12 @@ const normalizeEcomDetail = (raw = {}) => {
     })),
     createdBy: ownerEmail || userId,
     owner_email: ownerEmail,
-    owner_name: owner.name || raw.author_name || 'Seller',
-    owner_profile_image: owner.profile_image || '',
+    owner_name: owner.name || raw.author_name || raw.owner_name || 'Seller',
+    owner_profile_image: resolveEcomMediaUrl(owner.profile_image || raw.author_profile_image || raw.owner_profile_image || ''),
     owner_has_blue_tick: Boolean(owner.has_blue_tick || raw.owner_has_blue_tick || hasBlueTick(owner)),
-    createdAt: raw.created_at || '',
-    updatedAt: raw.updated_at || '',
+    is_mine: raw.is_mine === true,
+    createdAt: raw.created_at || raw.createdAt || '',
+    updatedAt: raw.updated_at || raw.updatedAt || '',
   };
 };
 
@@ -2519,6 +2591,8 @@ const clearAccountMemoryCaches = () => {
   _followOverrides.clear();
   lastCreditSyncAt = 0;              // agla user turant fresh credits sync kare
   cachedBackendPlans = [];           // plans user/location ke hisaab se aate hain
+  recentEcomUpdates.clear();         // pichle user ke ecom update overrides
+  recentEcomListings.clear();
   try { clearIdCardVerification(); } catch { }
   try { clearReferralInfo(); } catch { }
   try { resetEngagement(); } catch { }  // pichle user ka liked/views state
@@ -6940,7 +7014,10 @@ export const UserStore = {
         if (backendRes?.ok && Array.isArray(backendRes.ads)) backendAdsList = backendRes.ads;
       } catch (e) { /* ignore */ }
       const backendAdsById = new Map(backendAdsList.map((b) => [String(b.id), b]));
-      const adsWithViews = (Array.isArray(user.ads) ? user.ads : []).map((ad) => {
+      const adsWithViews = (Array.isArray(user.ads) ? user.ads : [])
+        // ✅ FIX: local list me same ad do baar ho to ek hi card dikhao
+        .filter((ad, idx, arr) => ad?.id == null || arr.findIndex((x) => String(x?.id) === String(ad.id)) === idx)
+        .map((ad) => {
         const b = backendAdsById.get(String(ad.id)) || {};
         return {
           ...ad,
@@ -7017,7 +7094,7 @@ export const UserStore = {
     } catch (e) { console.log('[getMyAdPosts] failed:', e); return []; }
   },
 
-  // ✅ NEW: Profile "Ecom" tab ke liye — user ke apne ecom products (GET /ecom-details me se owner match).
+  // ✅ NEW: Profile "Ecom" tab ke liye — user ke apne ecom products (GET /ecom-details + local listings).
   // Har product ko post-shape me convert karta hai; id 'ecom-<id>' hoti hai taaki news ki id se na takraye.
   getMyEcomPosts: async (target = {}) => {
     try {
@@ -7025,19 +7102,17 @@ export const UserStore = {
       const email = String(target.email || me?.email || '').trim().toLowerCase();
       const uid = String(target.id ?? me?.id ?? '').trim();
       if (!email && !uid) return [];
-      const res = await AuthAPI.getEcomDetails();
-      if (!res?.ok || !Array.isArray(res.details)) return [];
-      return res.details
-        .filter((raw) => !(raw.is_deleted === 1 || raw.is_deleted === '1' || raw.is_deleted === true || raw.deleted_at))
-        .filter((raw) => {
-          const owner = raw?.user || raw?.owner || {};
-          const rawUid = String(raw?.user_id ?? owner?.id ?? '').trim();
-          const rawEmail = String(owner?.email || raw?.owner_email || '').trim().toLowerCase();
-          return Boolean((uid && rawUid && rawUid === uid) || (email && rawEmail && rawEmail === email));
+      const summary = await UserStore.getEcomeMarketplaceSummary({ includeEnquiries: false });
+      const allListings = Array.isArray(summary?.listings) ? summary.listings : [];
+      return allListings
+        .filter((item) => {
+          if (email && String(me?.email || '').trim().toLowerCase() === email && item.is_mine === true) return true;
+          const ownerEmail = String(item.owner_email || item.createdBy || '').trim().toLowerCase();
+          const ownerId = String(item.user_id || item.owner_id || '').trim();
+          return Boolean((uid && ownerId && ownerId === uid) || (email && ownerEmail && ownerEmail === email));
         })
-        .map((raw) => {
-          const item = normalizeEcomDetail(raw);
-          const img = item.mediaItems?.[0]?.uri || '';
+        .map((item) => {
+          const img = item.image || item.mediaItems?.[0]?.uri || '';
           return {
             id: `ecom-${item.id}`,
             ecom_id: item.id,
@@ -7049,11 +7124,11 @@ export const UserStore = {
             price: item.price,
             in_stock: item.in_stock,
             image: img,
-            images: (item.mediaItems || []).map((m) => m.uri),
+            images: (item.mediaItems || []).map((m) => m?.uri || m).filter(Boolean),
             createdAt: item.createdAt,
             created_at: item.createdAt,
             owner_email: item.owner_email,
-            owner_id: String(raw?.user_id ?? '').trim(),
+            owner_id: String(item.user_id || '').trim(),
             createdBy: item.owner_email,
             author_name: item.owner_name,
             views: 0,
@@ -7123,6 +7198,8 @@ export const UserStore = {
       };
 
       const finalSortedAds = res.ads
+        // ✅ FIX: same ad id do baar aaye (edit ke baad) to sirf ek rakho
+        .filter((ad, idx, arr) => ad?.id == null || arr.findIndex((x) => String(x?.id) === String(ad.id)) === idx)
         .filter((ad) => Number(ad?.status ?? 1) === 1)
         // ✅ FIX: expired ads (end_date guzar chuki) ko Home feed pe mat dikhao
         .filter((ad) => !ad?.end_date || String(ad.end_date) >= today)
@@ -7483,8 +7560,9 @@ export const UserStore = {
           end_date: backendAd.end_date || endDate,
           status: 'active',
         };
-        const updatedAds = [newAd, ...(Array.isArray(user.ads) ? user.ads : [])];
+        const updatedAds = [newAd, ...(Array.isArray(user.ads) ? user.ads : []).filter((a) => String(a?.id) !== String(newAd.id))];
         const updatedUser = await UserStore.updateUser(user.email, { ad_credits: currentCredits - 1, ads: updatedAds });
+        UserStore._adsCache = null; // Home feed ka 20s ads cache saaf
         if (!updatedUser) return { ok: false, message: 'Unable to use credit.' };
         return { ok: true, credits: currentCredits - 1, ad: newAd };
       }
@@ -7500,14 +7578,33 @@ export const UserStore = {
       });
       if (!apiRes.ok) return { ok: false, message: apiRes.message || 'Unable to update ad on server.' };
 
+      // ✅ FIX: edit ke baad backend ki nayi image/video use karo (purani `image` + nayi `photo` dono
+      // rehne se same ad ke 2 images/cards ban jaate the) aur id String se compare karo (1 vs '1').
+      const backendAd = apiRes.ad || {};
+      const freshImage = backendAd.image || adData.image || adData.photo || '';
       let updatedAd = null;
-      const updatedAds = (Array.isArray(user.ads) ? user.ads : []).map((ad) => {
-        if (ad.id !== adData.id) return ad;
-        updatedAd = { ...ad, ...adData, updated_at: today };
+      const existingAds = Array.isArray(user.ads) ? user.ads : [];
+      const merged = existingAds.map((ad) => {
+        if (String(ad.id) !== String(adData.id)) return ad;
+        updatedAd = {
+          ...ad,
+          ...adData,
+          image: freshImage,
+          photo: freshImage,
+          images: (Array.isArray(backendAd.images) && backendAd.images.length) ? backendAd.images : (freshImage ? [freshImage] : []),
+          video: backendAd.video || backendAd.video_url || adData.video || '',
+          updated_at: today,
+        };
         return updatedAd;
       });
-      if (!updatedAd) return { ok: false, message: 'Ad not found.' };
+      // Ad sirf backend par thi (local list me nahi) — duplicate nahi, ek entry add karo
+      if (!updatedAd) {
+        updatedAd = { ...adData, image: freshImage, photo: freshImage, updated_at: today, status: 'active' };
+        merged.unshift(updatedAd);
+      }
+      const updatedAds = merged.filter((a, idx, arr) => arr.findIndex((x) => String(x?.id) === String(a.id)) === idx);
       const updatedUser = await UserStore.updateUser(user.email, { ads: updatedAds });
+      UserStore._adsCache = null;
       if (!updatedUser) return { ok: false, message: 'Unable to save changes.' };
       return { ok: true, credits: currentCredits, ad: updatedAd };
     } catch (e) {
@@ -7523,8 +7620,9 @@ export const UserStore = {
       if (!user) return { ok: false, message: 'Please login again.' };
       const apiRes = await AuthAPI.deleteAdsDetails(adId);
       if (!apiRes.ok) return { ok: false, message: apiRes.message || 'Unable to delete ad on server.' };
-      const updatedAds = (Array.isArray(user.ads) ? user.ads : []).filter(ad => ad.id !== adId);
+      const updatedAds = (Array.isArray(user.ads) ? user.ads : []).filter(ad => String(ad.id) !== String(adId));
       const updatedUser = await UserStore.updateUser(user.email, { ads: updatedAds });
+      UserStore._adsCache = null;
       if (!updatedUser) return { ok: false, message: 'Unable to delete ad.' };
       return { ok: true };
     } catch { return { ok: false, message: 'Unable to delete ad.' }; }
@@ -7535,6 +7633,7 @@ export const UserStore = {
     { plan_id: 'ecome-growth-monthly', plan_name: 'Growth E-Commerce', price: 899, credits: 25, duration: '30 Days', validity_days: 30 },
     { plan_id: 'ecome-power-monthly', plan_name: 'Power E-Commerce', price: 1499, credits: 50, duration: '30 Days', validity_days: 30 },
   ]),
+  getEcomChangeVersion: () => ecomChangeVersion,
   getEcomeMarketplaceSummary: async (options = {}) => {
     // Sync background mein chale, UI ko block na kare
     UserStore.syncCreditSubscriptionsFromBackend().catch(() => { });
@@ -7621,41 +7720,134 @@ export const UserStore = {
         console.warn('[getEcomeMarketplaceSummary] getEcomSubscriptions failed, using local fallback:', e);
       }
 
-      // ✅ FIX: listings ab real backend /ecom-details se aayengi, dummy local ecome_listings hata diya
+      // ✅ Listings: backend /ecom-details + local user listings (user ka apna product local me turant dikhe)
       let listings = [];
+      let listingsError = null;
       if (includeListings) {
         try {
-          const detailsRes = await AuthAPI.getEcomDetails();
-          if (detailsRes.ok && Array.isArray(detailsRes.details)) {
-            const blockedRes = options?.skipBlockedUsers
-              ? { ok: true, list: [] }
-              : await UserStore.getBlockedUsers();
-            const blockedEmailsForEcom = new Set((blockedRes?.list || []).map((u) => u.email).filter(Boolean));
-            const blockedIdsForEcom = new Set((blockedRes?.list || []).map((u) => (u.id != null ? String(u.id) : '')).filter(Boolean));
-            const isBlockedEcomOwner = (item) => {
-              const ownerEmail = String(item?.owner_email || '').trim().toLowerCase();
-              const ownerCreatedBy = String(item?.createdBy || '').trim().toLowerCase();
-              if (ownerEmail && blockedEmailsForEcom.has(ownerEmail)) return true;
-              if (ownerCreatedBy && (blockedEmailsForEcom.has(ownerCreatedBy) || blockedIdsForEcom.has(ownerCreatedBy))) return true;
-              return false;
-            };
-            listings = detailsRes.details
-              .filter((raw) => !(raw.is_deleted === 1 || raw.is_deleted === '1' || raw.is_deleted === true || raw.deleted_at))
-              .map(normalizeEcomDetail)
-              .filter((item) => !item.is_deleted)
-              // ✅ Out of Stock product list se gayab nahi hona chahiye (seller ke pages me dikhta rahe).
-              // Buy page apne level par in_stock === false wale products hata deta hai.
-              .filter((item) => item.status === undefined || item.status === null || Number(item.status) === 1 || item.in_stock === false || (currentUser && [item.owner_email, item.createdBy, item.user_id].some((v) => v && (v === String(currentUser.email || '').toLowerCase() || v === String(currentUser.id || '')))))
-              .filter((item) => !isBlockedEcomOwner(item))
-              .map((item) => ({
-                ...item,
-                sellers: Array.from(sellersByProduct.get(String(item.id))?.values?.() || []),
-                buyers: Array.from(buyersByProduct.get(String(item.id))?.values?.() || []),
-              }))
-              .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+          const detailsRes = await AuthAPI.getEcomDetails({ skipCache: options.forceRefresh });
+          const backendList = (detailsRes.ok && Array.isArray(detailsRes.details)) ? detailsRes.details : [];
+          // 🐞 FIX: GET /ecom-details fail hone par pehle kuch pata hi nahi chalta tha (sirf local listing dikhti thi).
+          // Ab error screen tak pahunchta hai taaki "GET fail hui ya list sach me khali hai" saaf dikhe.
+          if (!detailsRes.ok) listingsError = detailsRes.message || 'Product list load nahi ho payi.';
+
+          const blockedRes = options?.skipBlockedUsers
+            ? { ok: true, list: [] }
+            : await UserStore.getBlockedUsers();
+          const blockedEmailsForEcom = new Set((blockedRes?.list || []).map((u) => u.email).filter(Boolean));
+          const blockedIdsForEcom = new Set((blockedRes?.list || []).map((u) => (u.id != null ? String(u.id) : '')).filter(Boolean));
+          const isBlockedEcomOwner = (item) => {
+            const ownerEmail = String(item?.owner_email || '').trim().toLowerCase();
+            const ownerCreatedBy = String(item?.createdBy || '').trim().toLowerCase();
+            if (ownerEmail && blockedEmailsForEcom.has(ownerEmail)) return true;
+            if (ownerCreatedBy && (blockedEmailsForEcom.has(ownerCreatedBy) || blockedIdsForEcom.has(ownerCreatedBy))) return true;
+            return false;
+          };
+
+          const myEmailLc = String(currentUser?.email || '').trim().toLowerCase();
+          const myIdStr = String(currentUser?.id ?? currentUser?.user_id ?? '').trim().toLowerCase();
+          const myLocalIds = currentUser ? new Set(await readMyEcomIds(currentUser.email)) : new Set();
+          (Array.isArray(currentUser?.ecome_listings) ? currentUser.ecome_listings : []).forEach((it) => {
+            if (it?.id != null) myLocalIds.add(String(it.id));
+          });
+
+          const isOwnedByMe = (item) => {
+            if (item?.is_mine === true) return true;
+            if (myLocalIds.has(String(item.id))) return true;
+            return [item.owner_email, item.createdBy, item.user_id, item.owner_id]
+              .map((v) => String(v ?? '').trim().toLowerCase())
+              .filter(Boolean)
+              .some((o) => (myEmailLc && o === myEmailLc) || (myIdStr && o === myIdStr));
+          };
+
+          const baseDetails = [...backendList];
+          // Mere add kiye product jo list me nahi aaye (pagination / backend filter) — id se alag laao
+          if (currentUser && myLocalIds.size) {
+            const present = new Set(baseDetails.map((r) => String(r?.id)));
+            const missing = Array.from(myLocalIds).filter((id) => !present.has(id)).slice(0, 20);
+            if (missing.length) {
+              const fetched = await Promise.all(missing.map((id) => AuthAPI.getEcomDetailsById(id).catch(() => null)));
+              const stale = [];
+              fetched.forEach((r, i) => {
+                if (r?.ok && r.detail && r.detail.id != null) baseDetails.push(r.detail);
+                else if (r && !r.ok && !r.isNetwork) stale.push(missing[i]);
+              });
+              if (stale.length) writeMyEcomIds(currentUser.email, Array.from(myLocalIds).filter((id) => !stale.includes(id)));
+            }
           }
+
+          // 1. Normalize backend listings
+          const normalizedBackend = baseDetails
+            .filter((raw) => !raw.deleted_at)
+            .map(normalizeEcomDetail)
+            .map(applyRecentEcomUpdate)
+            .map((item) => ({ ...item, is_mine: isOwnedByMe(item) }))
+            .filter((item) => !item.is_deleted)
+            .filter((item) => item.is_mine || item.status === undefined || item.status === null || Number(item.status) !== 0 || item.in_stock === false)
+            .filter((item) => !isBlockedEcomOwner(item));
+
+          // 2. Local user listings (guarantees local additions always appear immediately!)
+          const localListings = (Array.isArray(currentUser?.ecome_listings) ? currentUser.ecome_listings : [])
+            .filter((it) => it && !it.is_deleted)
+            .map(normalizeEcomDetail)
+            .map((it) => ({
+              ...it,
+              is_mine: true,
+              in_stock: it.in_stock !== false,
+            }));
+
+          // 3. Merge: prepend local products that are not yet in normalizedBackend
+          const backendIdSet = new Set(normalizedBackend.map((b) => String(b.id)));
+          const finalMerged = [];
+
+          localListings.forEach((localIt) => {
+            const locId = String(localIt.id);
+            const backendMatch = normalizedBackend.find((b) => String(b.id) === locId);
+            if (backendMatch) {
+              backendMatch.is_mine = true;
+              if (localIt.mediaItems?.length && (!backendMatch.mediaItems || !backendMatch.mediaItems.length)) {
+                backendMatch.mediaItems = localIt.mediaItems;
+                backendMatch.images = localIt.images;
+                backendMatch.image = localIt.image;
+              }
+            } else {
+              backendIdSet.add(locId);
+              finalMerged.push(localIt);
+            }
+          });
+
+          normalizedBackend.forEach((bIt) => {
+            finalMerged.push(bIt);
+          });
+
+          // 🐞 FIX: abhi edit kiya hua product backend list me (stale/filter) na aaye to bhi gayab na ho — apni updated copy dikhao
+          const presentIds = new Set(finalMerged.map((x) => String(x.id)));
+          recentEcomListings.forEach((entry, rid) => {
+            if (Date.now() - entry.at > RECENT_ECOM_UPDATE_TTL_MS) { recentEcomListings.delete(rid); return; }
+            if (!presentIds.has(rid) && entry.listing && !entry.listing.is_deleted) {
+              finalMerged.push({ ...normalizeEcomDetail(entry.listing), ...entry.listing, is_mine: true });
+            }
+          });
+
+          listings = finalMerged
+            .map((item) => ({
+              ...item,
+              sellers: Array.from(sellersByProduct.get(String(item.id))?.values?.() || []),
+              buyers: Array.from(buyersByProduct.get(String(item.id))?.values?.() || []),
+            }))
+            .sort((a, b) => {
+              const timeA = new Date(a.createdAt || 0).getTime() || 0;
+              const timeB = new Date(b.createdAt || 0).getTime() || 0;
+              return timeB - timeA;
+            });
         } catch (e) {
           console.warn('[getEcomeMarketplaceSummary] getEcomDetails failed:', e);
+          if (currentUser?.ecome_listings?.length) {
+            listings = currentUser.ecome_listings
+              .filter((it) => it && !it.is_deleted)
+              .map(normalizeEcomDetail)
+              .map((it) => ({ ...it, is_mine: true }));
+          }
         }
       }
 
@@ -7681,11 +7873,14 @@ export const UserStore = {
         expired: ecomeState.expired,
         expires_at: ecomeState.expires_at,
         listings,
+        listingsError,
         enquiries,
         plans,
         priceFeedback: Array.isArray(currentUser?.farming_price_feedback) ? currentUser.farming_price_feedback : [],
       };
-    } catch {
+    } catch (e) {
+      // 🐞 FIX: pehle yahan error chup-chaap nigal liya jaata tha aur har screen par list khali dikhti thi — ab kam se kam log hoga
+      console.warn('[getEcomeMarketplaceSummary] failed:', e?.message || e);
       return { currentUser: null, credits: 0, subscription: null, listings: [], enquiries: [], plans: UserStore.getEcomePlans(), priceFeedback: [] };
     }
   },
@@ -7822,15 +8017,63 @@ export const UserStore = {
         message: apiRes.message || 'Unable to save your listing.',
       };
 
-      const listing = normalizeEcomDetail(apiRes.detail || {});
+      const backendDetail = (apiRes.detail && typeof apiRes.detail === 'object') ? apiRes.detail : {};
+      const resolvedId = backendDetail.id != null ? String(backendDetail.id) : (listingData.id || `ecom_${Date.now()}`);
 
-      // Listing backend pe save ho chuki hai — credit update fail ho to bhi success maano
+      const newListing = {
+        ...listingData,
+        ...normalizeEcomDetail(backendDetail),
+        id: resolvedId,
+        title: backendDetail.product_name || backendDetail.title || listingData.title || 'E-Commerce Product',
+        sector: backendDetail.category || listingData.sector || listingData.category || '',
+        category: backendDetail.category || listingData.sector || listingData.category || '',
+        price: String(backendDetail.price ?? listingData.price ?? ''),
+        description: backendDetail.description || listingData.description || '',
+        city: backendDetail.city || listingData.city || '',
+        contact: backendDetail.conatct || backendDetail.contact || listingData.contact || '',
+        in_stock: listingData.inStock !== false && backendDetail.in_stock !== false,
+        status: 1,
+        is_mine: true,
+        owner_email: user.email,
+        createdBy: user.email,
+        owner_name: user.name || 'Seller',
+        owner_profile_image: user.profile_image || '',
+        user_id: String(backendDetail.user_id ?? user.id ?? user.user_id ?? ''),
+        // 🐞 FIX: backend images kabhi objects ({id, url}) aati hain — raw array seedha rakhne se mediaItems[].uri object ban jaata tha.
+        // normalizeEcomDetail(backendDetail) ki clean (full URL) images use karo, na mile to local picked images.
+        images: (normalizeEcomDetail(backendDetail).images.length)
+          ? normalizeEcomDetail(backendDetail).images
+          : (listingData.mediaItems || []).map((m) => m?.uri).filter(Boolean),
+        mediaItems: (normalizeEcomDetail(backendDetail).images.length)
+          ? normalizeEcomDetail(backendDetail).images.map((uri) => ({ uri, type: 'image' }))
+          : (listingData.mediaItems || []),
+        image: normalizeEcomDetail(backendDetail).image || (listingData.mediaItems?.[0]?.uri || ''),
+        createdAt: backendDetail.created_at || new Date().toISOString(),
+      };
+
+      // 1) Save to local user's ecome_listings (guarantees local app immediately has the item)
+      const existingListings = Array.isArray(user.ecome_listings) ? user.ecome_listings : [];
+      const updatedListings = [
+        newListing,
+        ...existingListings.filter((it) => String(it?.id) !== String(newListing.id)),
+      ];
+
+      // 2) Save ID into my_ecom_ids
+      const ids = await readMyEcomIds(user.email);
+      await writeMyEcomIds(user.email, [...ids, String(newListing.id)]);
+
+      bumpEcomVersion();
+
+      // 3) Update user record in storage
       try {
-        await UserStore.updateUser(user.email, { ecome_credits: currentCredits - 1 });
+        await UserStore.updateUser(user.email, {
+          ecome_credits: currentCredits - 1,
+          ecome_listings: updatedListings,
+        });
       } catch (e) {
-        console.warn('[createEcomeListing] credit update failed:', e);
+        console.warn('[createEcomeListing] credit/listing update failed:', e);
       }
-      return { ok: true, credits: currentCredits - 1, listing };
+      return { ok: true, credits: currentCredits - 1, listing: newListing };
     } catch (err) {
       console.error('[createEcomeListing] failed:', err);
       return { ok: false, message: `Unable to save your listing. ${err?.message || ''}`.trim() };
@@ -7866,30 +8109,110 @@ export const UserStore = {
       const currentCredits = Number(creditState.credits ?? 0);
       if (currentCredits <= 0) return { ok: false, code: 'NO_CREDITS', message: 'No E-Commerce credits left. Please buy an E-Commerce credit plan.' };
 
+      const isFalsyStock = (v) => [false, 0, '0', 'false'].includes(v);
+      const sectorValue = fields.sector || fields.category;
+
+      // 🐞 FIX: update me images bheji hi nahi jaati thi — ab sirf NAYE (device/blob) images upload hote hain, purane http images backend pe pehle se hain
+      const newImages = (Array.isArray(fields.images) ? fields.images : [])
+        .filter((item) => item && item.uri && !/^https?:\/\//i.test(String(item.uri)))
+        .slice(0, 5)
+        .map((item) => ({
+          uri: item.uri,
+          previewUri: item.previewUri || '',
+          type: item.mimeType || 'image/jpeg',
+          name: item.name || 'image.jpg',
+        }));
+
       const apiRes = await AuthAPI.updateEcomDetails(id, {
         ecom_sub_id: fields.ecomSubId,
-        category: fields.sector || fields.category,
+        category: sectorValue,
         product_name: fields.title,
         // 0 = Out of Stock, 1 = In Stock
-        in_stock: fields.inStock === undefined ? undefined : ([false, 0, '0', 'false'].includes(fields.inStock) ? 0 : 1),
+        in_stock: fields.inStock === undefined ? undefined : (isFalsyStock(fields.inStock) ? 0 : 1),
         price: fields.price,
         description: fields.description,
         city: fields.city,
+        // create jaisa hi: backend field "conatct" (typo) aur "contact" dono bhejo
         conatct: fields.contact,
+        contact: fields.contact,
         start_date: fields.startDate,
         end_date: fields.endDate,
         status: fields.status !== undefined ? fields.status : 1,
+        // create me product live (admin approval ke bina) hota hai — edit ke baad bhi live rahe, pending/hidden na ho
+        is_approved: (fields.status === undefined || Number(fields.status) === 1) ? 1 : undefined,
+        images: newImages,
       });
       if (!apiRes.ok) return { ok: false, isAuth: Boolean(apiRes.isAuth), message: apiRes.message || 'Unable to update listing.' };
+      bumpEcomVersion();
+
+      // Backend response me asli product object (id ke saath) ho tabhi use karo
+      const rawDetail = (() => {
+        const d = apiRes.detail;
+        if (!d || typeof d !== 'object') return null;
+        const inner = d.ecom_detail || d.ecom_details || d.detail || d.data || d;
+        return (inner && typeof inner === 'object' && !Array.isArray(inner) && inner.id != null) ? inner : null;
+      })();
+      const backendNorm = rawDetail ? normalizeEcomDetail(rawDetail) : null;
+
+      // Jo fields user ne abhi submit kiye wahi "edited" hain — inhe sab jagah (local + list overlay) laagu karenge
+      const edited = {};
+      if (fields.title) edited.title = fields.title;
+      if (sectorValue) { edited.sector = sectorValue; edited.category = sectorValue; }
+      if (fields.ecomSubId) edited.ecom_sub_id = fields.ecomSubId;
+      if (fields.price !== undefined) edited.price = String(fields.price);
+      if (fields.description !== undefined) edited.description = fields.description;
+      if (fields.city !== undefined) edited.city = fields.city;
+      if (fields.contact !== undefined) edited.contact = fields.contact;
+      if (fields.inStock !== undefined) edited.in_stock = !isFalsyStock(fields.inStock);
+      rememberEcomUpdate(id, edited);
+
+      // Local user.ecome_listings bhi update karo (purana record + naya edit, kuch gayab nahi hoga)
+      const existingListings = Array.isArray(user.ecome_listings) ? user.ecome_listings : [];
+      const existing = existingListings.find((it) => String(it?.id) === String(id)) || null;
+      const baseFromForm = (fields.baseListing && fields.baseListing.id != null) ? fields.baseListing : null;
+      const base = existing || backendNorm || baseFromForm || null;
+      let merged = null;
+      if (base) {
+        merged = {
+          ...base,
+          ...edited,
+          id: base.id ?? id,
+          status: fields.status !== undefined ? fields.status : 1,
+          is_mine: true,
+          owner_email: base.owner_email || user.email,
+          createdBy: base.createdBy || user.email,
+          updatedAt: backendNorm?.updatedAt || new Date().toISOString(),
+        };
+        if (backendNorm?.images?.length) {
+          merged.images = backendNorm.images;
+          merged.mediaItems = backendNorm.mediaItems;
+          merged.image = backendNorm.image;
+        }
+      }
+      if (merged) rememberEcomListing(id, merged);
+      const updatedListings = !merged
+        ? existingListings
+        : (existing
+          ? existingListings.map((it) => (String(it?.id) === String(id) ? merged : it))
+          : [merged, ...existingListings]);
+
+      try {
+        const ids = await readMyEcomIds(user.email);
+        await writeMyEcomIds(user.email, [...ids, String(id)]);
+      } catch { /* best-effort */ }
 
       // Listing backend pe update ho chuki hai — credit update fail ho to bhi success maano
       try {
-        await UserStore.updateUser(user.email, { ecome_credits: currentCredits - 1 });
+        await UserStore.updateUser(user.email, {
+          ecome_credits: currentCredits - 1,
+          ecome_listings: updatedListings,
+        });
       } catch (e) {
         console.warn('[updateEcomeListing] credit update failed:', e);
       }
-      return { ok: true, credits: currentCredits - 1, listing: normalizeEcomDetail(apiRes.detail || {}) };
-    } catch {
+      return { ok: true, credits: currentCredits - 1, listing: merged || backendNorm };
+    } catch (e) {
+      console.warn('[updateEcomeListing] failed:', e?.message || e);
       return { ok: false, message: 'Unable to update listing.' };
     }
   },
@@ -7901,6 +8224,7 @@ export const UserStore = {
       if (!user) return { ok: false, message: 'Please login again.' };
       const apiRes = await AuthAPI.updateEcomDetailsStatus(id, statusValue);
       if (!apiRes.ok) return { ok: false, message: apiRes.message || 'Unable to update status.' };
+      bumpEcomVersion();
       return { ok: true, listing: normalizeEcomDetail(apiRes.detail || {}) };
     } catch {
       return { ok: false, message: 'Unable to update status.' };
@@ -7914,6 +8238,14 @@ export const UserStore = {
       if (!user) return { ok: false, message: 'Please login again.' };
       const apiRes = await AuthAPI.updateEcomDetailsStock(id, inStock);
       if (!apiRes.ok) return { ok: false, isAuth: Boolean(apiRes.isAuth), message: apiRes.message || 'Unable to update stock.' };
+      bumpEcomVersion();
+      rememberEcomUpdate(id, { in_stock: Boolean(inStock) });
+      const existingListings = Array.isArray(user.ecome_listings) ? user.ecome_listings : [];
+      const updatedListings = existingListings.map((it) => {
+        if (String(it?.id) !== String(id)) return it;
+        return { ...it, in_stock: Boolean(inStock) };
+      });
+      await UserStore.updateUser(user.email, { ecome_listings: updatedListings });
       return { ok: true, listing: normalizeEcomDetail(apiRes.detail || {}) };
     } catch {
       return { ok: false, message: 'Unable to update stock.' };
@@ -7927,6 +8259,14 @@ export const UserStore = {
       if (!user) return { ok: false, message: 'Please login again.' };
       const apiRes = await AuthAPI.deleteEcomDetails(id);
       if (!apiRes.ok) return { ok: false, message: apiRes.message || 'Unable to delete listing.' };
+      bumpEcomVersion();
+      recentEcomUpdates.delete(String(id));
+      recentEcomListings.delete(String(id));
+      const ids = await readMyEcomIds(user.email);
+      await writeMyEcomIds(user.email, ids.filter((x) => x !== String(id)));
+      const existingListings = Array.isArray(user.ecome_listings) ? user.ecome_listings : [];
+      const updatedListings = existingListings.filter((it) => String(it?.id) !== String(id));
+      await UserStore.updateUser(user.email, { ecome_listings: updatedListings });
       return { ok: true };
     } catch {
       return { ok: false, message: 'Unable to delete listing.' };
