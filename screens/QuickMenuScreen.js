@@ -366,6 +366,14 @@ const MENU_SECTIONS = [
     ],
   },
   {
+    title: 'Advertisement',
+    items: [
+      { label: 'Advertisement Post', icon: 'megaphone-outline', screen: 'Advertise', iconStyle: 'orange' },
+      { label: 'Advertisement Subscription Plans', icon: 'pricetags-outline', screen: 'AdPlans', iconStyle: 'orange' },
+      { label: 'Advertisement Dashboard', icon: 'speedometer-outline', screen: 'MyAds', iconStyle: 'orange' },
+    ],
+  },
+  {
     title: 'Account',
     items: [
       { label: 'Logout', icon: 'log-out-outline', screen: '__logout__', iconStyle: 'rose', isDestructive: true },
@@ -463,6 +471,14 @@ const ECOM_SUBMENU = [
   { label: 'My Ecom Product', icon: 'storefront-outline', screen: 'CommerceAdsCenter' },
 ];
 const ECOM_GROUP_SCREENS = ['My Ecom Subscription', 'EcomSubscription', 'Sell', 'FarmingBuy', 'CommerceAdsCenter'];
+// ✅ "Advertisement" par click => Advertisement Post / Advertisement Subscription Plans / Advertisement Dashboard (My Ads)
+// (pehle ye teeno Settings page me the, ab sidebar dropdown me)
+const AD_SUBMENU = [
+  { label: 'Advertisement Post', icon: 'megaphone-outline', screen: 'Advertise' },
+  { label: 'Advertisement Subscription Plans', icon: 'pricetags-outline', screen: 'AdPlans' },
+  { label: 'Advertisement Dashboard', icon: 'speedometer-outline', screen: 'MyAds' },
+];
+const AD_GROUP_SCREENS = ['Advertise', 'AdPlans', 'MyAds', 'MyAdSubscription', 'AdLeadResponse'];
 // ✅ "Enquiry" par click => Ecom Enquiry / Ads Enquiry (Certification jaisa dropdown) (dono ek hi MyEnquiriesScreen, alag type ke saath)
 const ENQUIRY_SUBMENU = [
   { label: 'Ecom Enquiry', icon: 'storefront-outline', screen: 'MyEnquiries' },
@@ -477,7 +493,7 @@ const CERT_SUBMENU = [
 ];
 const CERT_GROUP_SCREENS = ['Certification', 'MyAttempts', 'My Quiz Subscription', 'QuizSubscription'];
 // Ye screens do dropdowns me aati hain (Subscription Plans + Certification) — jis group se khola wahi highlight ho
-const SHARED_GROUP_SCREENS = ['My Quiz Subscription', 'QuizSubscription'];
+const SHARED_GROUP_SCREENS = ['My Quiz Subscription', 'QuizSubscription', 'AdPlans'];
 // Jo screen web par kabhi nahi dikhni chahiye => uski jagah ye khule
 const SCREEN_ALIAS = { Ecome: 'FarmingBuy' };
 // Ek hi screen (MyEnquiriesScreen), `type` param se Ecom ya Ads ki enquiries dikhati hai
@@ -516,6 +532,8 @@ const WEB_MODULES = [
 { label: 'Ecommerce', icon: 'leaf-outline', screen: '__ecom__', iconStyle: 'farmGreen', subMenu: ECOM_SUBMENU, groupScreens: ECOM_GROUP_SCREENS, toggleOnly: true },
   { label: 'Sell Product', icon: 'cloud-upload-outline', screen: 'Sell', iconStyle: 'farmGreen', component: SellScreen, hideInSidebar: true },
   { label: 'My Ecom Product', icon: 'storefront-outline', screen: 'CommerceAdsCenter', iconStyle: 'farmGreen', component: CommerceAdsCenterScreen, hideInSidebar: true },
+  // Advertisement dropdown: Advertisement Post / Advertisement Subscription Plans / Advertisement Dashboard (My Ads)
+  { label: 'Advertisement', icon: 'megaphone-outline', screen: '__ads__', iconStyle: 'orange', subMenu: AD_SUBMENU, groupScreens: AD_GROUP_SCREENS, toggleOnly: true },
   // Sidebar me ab sirf "Enquiry" dikhta hai — click karne par Ecom Enquiry / Ads Enquiry khulte hain
   { label: 'Enquiry', icon: 'chatbubbles-outline', screen: '__enquiry__', iconStyle: 'orange', subMenu: ENQUIRY_SUBMENU, groupScreens: ENQUIRY_GROUP_SCREENS, toggleOnly: true },
   { label: 'Ecom Enquiries', icon: 'chatbubbles-outline', screen: 'MyEnquiries', iconStyle: 'orange', component: EcomEnquiriesPage, hideInSidebar: true },
@@ -571,6 +589,9 @@ const SLUG_TO_SCREEN = {
   'ads-enquiry': 'AdsEnquiries',
   settings: 'Settings',
   'my-ads': 'MyAds',
+  advertise: 'Advertise',
+  'ad-plans': 'AdPlans',
+  'ads-subscription': 'AdPlans',
   farming: 'FarmingBuy',
 };
 
@@ -594,6 +615,8 @@ const SCREEN_TO_SLUG = {
   AdsEnquiries: 'ads-enquiries',
   Settings: 'settings',
   MyAds: 'my-ads',
+  Advertise: 'advertise',
+  AdPlans: 'ad-plans',
   FarmingBuy: 'farming',
   CommerceAdsCenter: 'commerce-ads-center',
 };
@@ -842,9 +865,11 @@ function QuickMenuWeb({ navigation, route }) {
                 {subVisible ? (
                   <div style={{ margin: '2px 10px 4px 36px', display: 'flex', flexDirection: 'column', gap: 2 }}>
                     {item.subMenu.map((sub) => {
-                      const subActive = sub.screen === activeScreen
+                      const ownsShared = !SHARED_GROUP_SCREENS.includes(sub.screen)
+                        || (lastGroup || 'Subscription Plans') === item.label;
+                      const subActive = ownsShared && (sub.screen === activeScreen
                         || (sub.screen === 'My Quiz Subscription' && activeScreen === 'QuizSubscription')
-                        || (sub.screen === 'My Ecom Subscription' && activeScreen === 'EcomSubscription');
+                        || (sub.screen === 'My Ecom Subscription' && activeScreen === 'EcomSubscription'));
                       return (
                         <div
                           key={sub.screen}

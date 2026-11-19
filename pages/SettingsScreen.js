@@ -360,9 +360,7 @@ function SettingsScreen__Inner({ navigation }) {
           {/* Reporter Registration — temporarily hidden
           <SettingsItem icon="person-add-outline" label="Reporter Registration"             onPress={() => nav('Register')} />
           */}
-         <SettingsItem icon="megaphone-outline" label="Advertise"                          onPress={() => nav('Advertise')} />
-      <SettingsItem icon="pricetags-outline" label="Ads Subscription" onPress={() => nav('AdPlans')} />
-          <SettingsItem icon="newspaper-outline" label="My Ads" onPress={() => nav('MyAds')} />
+          {/* Advertise / Ads Subscription / My Ads — ab Quick Menu sidebar ke "Advertisement" dropdown me hain */}
           {/* Purchase blue tick — temporarily removed from all platforms */}
           <SettingsItem icon="card-outline" label="My subscriptions"                   onPress={() => nav('Subscription Plans')} />
           <SettingsItem icon="cart-outline" label="My Ecom Product"             onPress={() => nav('CommerceAdsCenter')} />
