@@ -1809,7 +1809,15 @@ const handleLike = async () => {
     ? Boolean(currentUser && UserStore.hasBlueTick(currentUser))
     : (liveAuthorProfile
       ? Boolean(UserStore.hasBlueTick(liveAuthorProfile))
-      : Boolean(story.author_has_blue_tick || (story.author_is_premium && story.author_is_subscriber !== false)));
+      : Boolean(
+          story.author_has_blue_tick ||
+          story.has_blue_tick ||
+          story.is_blue_tick ||
+          story.blue_tick ||
+          (story.author_is_premium && story.author_is_subscriber !== false) ||
+          (story.is_premium && story.is_subscriber !== false) ||
+          (story.author_subscription_plan && UserStore.hasBlueTick({ subscription_plan: story.author_subscription_plan, is_subscriber: story.author_is_subscriber !== false }))
+        ));
 
   // Seat name (jaise "Car Nicobar") ab nahi dikhana. Uski jagah author ke
   // subscription plan ka role name dikhega.

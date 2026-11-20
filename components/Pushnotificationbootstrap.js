@@ -15,6 +15,7 @@ import WebPushPrompt from './WebPushPrompt'; // web par "Enable notifications" b
 
 // Notification tap par navigation ready na ho (app killed / naya tab) to thodi der retry karo
 function openWhenReady(data, tries = 0) {
+  if (!data) return;
   if (navigationRef.isReady()) {
     navigateFromNotification(navigationRef, data);
     return;

@@ -182,7 +182,8 @@ function SponsoredHeader({ ad, navigation, commonCopy }) {
         email,
         profile_image: ad.owner_profile_image || '',
         avatar: ad.owner_profile_image || '',
-        has_blue_tick: Boolean(ad.owner_has_blue_tick),
+        has_blue_tick: Boolean(ad.owner_has_blue_tick || ad.verified || ad.has_blue_tick),
+        author_has_blue_tick: Boolean(ad.owner_has_blue_tick || ad.verified || ad.has_blue_tick),
       },
     });
   };
@@ -192,7 +193,7 @@ function SponsoredHeader({ ad, navigation, commonCopy }) {
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
           <Text style={styles.sponsoredName} numberOfLines={1}>{name}</Text>
-          {(ad.owner_has_blue_tick || ad.verified) ? <VerifiedBadge size={14} /> : null}
+          {(ad.owner_has_blue_tick || ad.verified || ad.has_blue_tick) ? <VerifiedBadge size={14} /> : null}
         </View>
         <Text style={styles.sponsoredSub}>{commonCopy?.sponsored || 'Sponsored'}</Text>
       </View>

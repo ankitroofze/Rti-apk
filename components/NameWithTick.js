@@ -22,10 +22,15 @@ export const userHasBlueTick = (u) => {
   if (hasPlanInfo) {
     try { return Boolean(UserStore.hasBlueTick(u)); } catch { return false; }
   }
+  try {
+    if (UserStore.hasBlueTick(u)) return true;
+  } catch {}
   // Warna server ka flag (jaise comments / followers / feed me aata hai)
   return Boolean(
     u.has_blue_tick || u.author_has_blue_tick || u.owner_has_blue_tick ||
-    u.authorHasBlueTick || u.user_has_blue_tick
+    u.authorHasBlueTick || u.user_has_blue_tick || u.is_blue_tick || u.blue_tick ||
+    (u.is_premium && u.is_subscriber !== false) ||
+    (u.author_is_premium && u.author_is_subscriber !== false)
   );
 };
 

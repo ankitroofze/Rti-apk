@@ -597,6 +597,11 @@ function ProfileScreenInner({ navigation, route }) {
         taluka: apiUser.taluka || user.taluka,
         village: apiUser.village || user.village || '',
         my_referral_code: apiUser.referral_code || user.my_referral_code,
+        has_blue_tick: apiUser.has_blue_tick ?? apiUser.is_blue_tick ?? apiUser.blue_tick ?? user.has_blue_tick,
+        is_premium: apiUser.is_premium ?? user.is_premium,
+        is_subscribed: apiUser.is_subscribed ?? apiUser.is_subscriber ?? user.is_subscribed,
+        subscription_plan: apiUser.subscription_plan ?? user.subscription_plan,
+        subscription_type: apiUser.subscription_type ?? user.subscription_type,
       });
       if (synced) user = synced;
       const rawImg = user.profile_image || '';
@@ -761,7 +766,15 @@ function ProfileScreenInner({ navigation, route }) {
   // ── Derived Profile Properties & Edit Permissions ────────────────
   const displayProfile = isEditing ? form : savedProfile;
   const profileSeatId = String(displayProfile?.state_seat?.seat_id || '').trim();
-  const displayHasBlueTick = Boolean(isLoggedIn && UserStore.hasBlueTick(displayProfile));
+  const displayHasBlueTick = Boolean(
+    isLoggedIn && (
+      UserStore.hasBlueTick(displayProfile) ||
+      displayProfile?.has_blue_tick ||
+      displayProfile?.is_blue_tick ||
+      displayProfile?.blue_tick ||
+      (displayProfile?.is_premium && displayProfile?.is_subscriber !== false)
+    )
+  );
   const hasPremiumSubscription = Boolean(isLoggedIn && UserStore.hasPremiumAccess(displayProfile));
   const profileTier = isLoggedIn
     ? getProfileTier({ ...displayProfile, has_blue_tick: displayHasBlueTick })

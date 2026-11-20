@@ -716,21 +716,31 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const baseDisplay = profile || author || {};
   const _hasPlanInfo = (o) => Boolean(o?.subscription_plan || o?.active_plan || o?.role_subscription_plan || o?.subscription);
   const display = (() => {
-    if (_hasPlanInfo(baseDisplay)) return baseDisplay;
-    const postsList = Array.isArray(posts) ? posts : [];
-    const postWithPlan = postsList.find((p) => p?.author_subscription_plan);
-    const fallbackPlan = author?.subscription_plan || author?.active_plan || postWithPlan?.author_subscription_plan || feedAuthorInfo?.plan || null;
-    if (!fallbackPlan) return baseDisplay;
-    const fallbackIsSub = Boolean(
-      author?.is_subscribed || author?.author_is_subscriber || author?.author_is_premium || feedAuthorInfo?.isSub ||
-      postsList.some((p) => p?.author_is_subscriber || p?.author_is_premium)
-    );
-    return {
-      ...baseDisplay,
-      subscription_plan: fallbackPlan,
-      subscription_type: baseDisplay?.subscription_type || author?.subscription_type || postWithPlan?.author_subscription_type || feedAuthorInfo?.type || '',
-      is_subscribed: Boolean(baseDisplay?.is_subscribed) || fallbackIsSub,
-    };
+    let resolved = baseDisplay;
+    if (!_hasPlanInfo(resolved)) {
+      const postsList = Array.isArray(posts) ? posts : [];
+      const postWithPlan = postsList.find((p) => p?.author_subscription_plan);
+      const fallbackPlan = author?.subscription_plan || author?.active_plan || postWithPlan?.author_subscription_plan || feedAuthorInfo?.plan || null;
+      if (fallbackPlan) {
+        const fallbackIsSub = Boolean(
+          author?.is_subscribed || author?.author_is_subscriber || author?.author_is_premium || feedAuthorInfo?.isSub ||
+          postsList.some((p) => p?.author_is_subscriber || p?.author_is_premium)
+        );
+        resolved = {
+          ...resolved,
+          subscription_plan: fallbackPlan,
+          subscription_type: resolved?.subscription_type || author?.subscription_type || postWithPlan?.author_subscription_type || feedAuthorInfo?.type || '',
+          is_subscribed: Boolean(resolved?.is_subscribed) || fallbackIsSub,
+        };
+      }
+    }
+    if (!resolved.has_blue_tick && (author?.has_blue_tick || author?.author_has_blue_tick || baseDisplay?.has_blue_tick || baseDisplay?.author_has_blue_tick)) {
+      resolved = { ...resolved, has_blue_tick: true };
+    }
+    if (!resolved.is_premium && (author?.is_premium || author?.author_is_premium || baseDisplay?.is_premium || baseDisplay?.author_is_premium)) {
+      resolved = { ...resolved, is_premium: true };
+    }
+    return resolved;
   })();
   const name = String(display?.name || display?.author_name || 'User').trim() || 'User';
 
@@ -746,12 +756,23 @@ export default function UserPublicProfileScreen({ route, navigation }) {
  const bio = String(display?.bio || '').trim();
   const rawReferralCode = String(display?.my_referral_code || display?.referral_code || '').trim();
     // Latest active Premium plan hamesha purane seat/role label se upar rahega
+  const isVerified = Boolean(
+    UserStore.hasBlueTick(display) ||
+    display?.has_blue_tick ||
+    display?.is_blue_tick ||
+    display?.blue_tick ||
+    display?.author_has_blue_tick ||
+    author?.has_blue_tick ||
+    author?.author_has_blue_tick ||
+    (display?.is_premium && display?.is_subscriber !== false) ||
+    (display?.author_is_premium && display?.author_is_subscriber !== false)
+  );
   const _hasRoleTier = ['representative', 'executive', 'chief'].includes(getProfileTier({
     state_seat: display?.state_seat, seat_id: display?.seat_id, seat_name: display?.seat_name,
     role: display?.role || display?.author_role,
     subscription_plan: display?.subscription_plan,
   }).key);
-  const latestIsPremium = !_hasRoleTier && Boolean(UserStore.hasBlueTick(display));
+  const latestIsPremium = isVerified && !_hasRoleTier;
   const seatName = latestIsPremium ? '' : String(display?.state_seat?.seat_name || display?.author_seat_name || '').trim();
   const seatId = latestIsPremium ? '' : String(display?.state_seat?.seat_id || display?.author_seat_id || '').trim();
   const roleId = latestIsPremium ? 'premium' : String(display?.role || display?.author_role || '').trim().toLowerCase();
@@ -766,7 +787,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   // labels (for example "Free Member") must not replace it.
   const rolePillText = latestIsPremium
     ? 'Premium User'
-    : (purchasedRoleNames || roleLabelToEnglish(roleId) || roleLabel || seatName || '');
+    : (purchasedRoleNames || roleLabelToEnglish(roleId) || roleLabel || seatName || (isVerified ? 'Premium User' : ''));
   const joinDate = String(display?.join_date || '').trim();
   const networkCount = (() => {
     const val = Number(display?.referral_count || 0);
@@ -796,9 +817,6 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
   const photoUri = display?.profile_image || display?.profile_image_url || display?.avatar || display?.author_profile_image || '';
   const safePhotoUri = isValidImageUrl(photoUri) ? photoUri : '';
-  // Never trust stale post/legacy flags: entitlement belongs to this profile's
-  // active Premium Plan and is identical on web and Android.
-  const isVerified = !_hasRoleTier && Boolean(UserStore.hasBlueTick(display));
   const isSubscribedProfile = Boolean(
     display?.is_subscribed || display?.author_is_subscribed || ['basic', 'pro', 'premium'].includes(roleId)
   );

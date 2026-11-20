@@ -611,8 +611,13 @@ function DescriptionModal({ visible, onClose, post, onShare, onAddComment, curre
         post?.verified ||
         post?.author_has_blue_tick ||
         post?.has_blue_tick ||
+        post?.is_blue_tick ||
+        post?.blue_tick ||
         post?.authorHasBlueTick ||
-        post?.createdByBlueTick
+        post?.createdByBlueTick ||
+        (post?.author_is_premium && post?.author_is_subscriber !== false) ||
+        (post?.is_premium && post?.is_subscriber !== false) ||
+        UserStore.hasBlueTick(post)
       );
 
   useEffect(() => {
@@ -1896,8 +1901,13 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
     safePost.verified ||
     safePost.author_has_blue_tick ||
     safePost.has_blue_tick ||
+    safePost.is_blue_tick ||
+    safePost.blue_tick ||
     safePost.authorHasBlueTick ||
     safePost.createdByBlueTick ||
+    (safePost.author_is_premium && safePost.author_is_subscriber !== false) ||
+    (safePost.is_premium && safePost.is_subscriber !== false) ||
+    UserStore.hasBlueTick(safePost) ||
     (authorEmail && currentUserEmail && authorEmail === currentUserEmail && currentUserHasBlueTick)
   );
   const shares      = Number(safePost.shares || 0);

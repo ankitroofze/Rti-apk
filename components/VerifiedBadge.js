@@ -2,10 +2,11 @@ import React from 'react';
 import { View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
-export default function VerifiedBadge({ size = 20, style }) {
+export default function VerifiedBadge({ size = 20, iconSize, style }) {
+  const actualSize = size || iconSize || 20;
   return (
-    <View style={[{ width: size, height: size }, style]}>
-      <Svg viewBox="0 0 24 24" width={size} height={size}>
+    <View style={[{ width: actualSize, height: actualSize, alignItems: 'center', justifyContent: 'center' }, style]}>
+      <Svg viewBox="0 0 24 24" width={actualSize} height={actualSize}>
         <Path
           fill="#1D9BF0"
           d="M12 1L14.39 8.26L22 9.27L16.55 14.14L18.18 22L12 18.27L5.82 22L7.45 14.14L2 9.27L9.61 8.26L12 1Z"

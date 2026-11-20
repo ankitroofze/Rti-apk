@@ -1610,6 +1610,12 @@ const handleLike = async (item) => {
                     (currentUserEmail &&
                       String(item.createdBy || item.created_by || '').trim().toLowerCase() === currentUserEmail &&
                       currentUserHasBlueTick) ||
+                    item.author_has_blue_tick ||
+                    item.has_blue_tick ||
+                    item.is_blue_tick ||
+                    item.blue_tick ||
+                    (item.author_is_premium && item.author_is_subscriber !== false) ||
+                    (item.is_premium && item.is_subscriber !== false) ||
                     UserStore.hasBlueTick({
                       subscription_plan: item.author_subscription_plan,
                       is_subscribed: item.author_is_subscriber || item.author_is_premium,
@@ -1622,6 +1628,9 @@ const handleLike = async (item) => {
                       seat_id: item.author_seat_id,
                       has_blue_tick: Boolean(
                         item.author_has_blue_tick ||
+                        item.has_blue_tick ||
+                        item.is_blue_tick ||
+                        item.blue_tick ||
                         (currentUserEmail && String(item.createdBy || item.created_by || '').trim().toLowerCase() === currentUserEmail && currentUserHasBlueTick)
                       ),
                       is_subscribed: Boolean(item.author_is_subscriber || item.author_is_premium),

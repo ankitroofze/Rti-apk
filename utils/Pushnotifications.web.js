@@ -102,7 +102,11 @@ async function getMessagingInstance() {
 }
 
 // ── Public API (native ke same naam) ────────────────────────────────────────
+export const CHANNEL_ID = 'default';
+export const CHANNEL_NAME = 'RTI News Notifications';
 export const setupChannel = async () => {}; // web par channel nahi hota
+export const checkPermission = async () => (getPermissionState() === 'granted');
+export const displayHeadsUpNotification = async () => {};
 
 export async function requestPermission() {
   if (!isWebPushSupported()) return false;

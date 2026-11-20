@@ -680,7 +680,12 @@ const normalizeBackendPlan = (raw = {}) => {
     features: Array.isArray(raw.features) ? raw.features : [],
     // ✅ FIX: plan ke naam se hi role decide hoga (premium/pro/basic/free) — jo plan buy karoge wahi role milega
     role: getRoleFromPlanName(planName),
-    is_premium: Boolean(raw.is_premium),
+    is_premium: Boolean(
+      raw.is_premium === true || raw.is_premium === 1 || raw.is_premium === '1' || String(raw.is_premium).toLowerCase() === 'true' ||
+      raw.has_blue_tick === true || raw.has_blue_tick === 1 || raw.has_blue_tick === '1' ||
+      String(planName).toLowerCase().includes('premium') ||
+      String(raw.id ?? raw.plan_id ?? '').toLowerCase().includes('premium')
+    ),
   };
 };
 
@@ -1194,7 +1199,29 @@ const toApiCount = (...values) => {
 };
 
 const mapApiNewsToFeedItem = (apiItem = {}) => {
-  const author = apiItem.user || apiItem.author || {};
+  const rawAuthor = apiItem.user || apiItem.author || {};
+  const author = {
+    ...rawAuthor,
+    has_blue_tick: rawAuthor.has_blue_tick ?? apiItem.author_has_blue_tick ?? apiItem.has_blue_tick ?? rawAuthor.is_blue_tick ?? rawAuthor.blue_tick,
+    is_premium: rawAuthor.is_premium ?? apiItem.author_is_premium ?? apiItem.is_premium ?? rawAuthor.is_premium_user,
+    is_subscriber: rawAuthor.is_subscriber ?? apiItem.author_is_subscriber ?? apiItem.is_subscriber ?? rawAuthor.is_subscribed,
+    is_subscribed: rawAuthor.is_subscribed ?? apiItem.author_is_subscribed ?? apiItem.is_subscribed ?? rawAuthor.is_subscriber,
+    subscription_plan: rawAuthor.subscription_plan || rawAuthor.active_plan || apiItem.author_subscription_plan || null,
+    subscription_type: rawAuthor.subscription_type || apiItem.author_subscription_type || '',
+    role: rawAuthor.role || apiItem.author_role || '',
+    role_label: rawAuthor.role_label || apiItem.author_role_label || '',
+  };
+  const authorHasBlueTickCalculated = Boolean(
+    hasBlueTick(author) ||
+    author.has_blue_tick === true ||
+    author.has_blue_tick === 1 ||
+    author.has_blue_tick === '1' ||
+    author.has_blue_tick === 'true' ||
+    (isPremiumPlan(author.subscription_plan) && author.is_subscriber !== false && author.is_subscribed !== false) ||
+    (author.is_premium && author.is_subscriber !== false && author.is_subscribed !== false) ||
+    String(author.role || '').toLowerCase() === 'premium' ||
+    String(author.subscription_type || '').toLowerCase() === 'premium'
+  );
   const authorSeat = author.state_seat || author.seat || {};
   const mediaTypeRaw = apiItem.media_type ?? apiItem.mediaType ?? 0;
   // 1 = image, 2 = video, 3 = PDF, 4 = external URL
@@ -1314,9 +1341,10 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
     author_state: author.state || apiItem.author_state || '',
     author_district: author.district || apiItem.author_district || '',
     author_taluka: author.taluka || apiItem.author_taluka || '',
-    author_has_blue_tick: hasBlueTick(author),
-    author_is_premium: Boolean(author.is_premium),
-    author_is_subscriber: Boolean(author.is_subscriber),
+    author_has_blue_tick: authorHasBlueTickCalculated,
+    has_blue_tick: authorHasBlueTickCalculated,
+    author_is_premium: Boolean(author.is_premium || isPremiumPlan(author.subscription_plan)),
+    author_is_subscriber: Boolean(author.is_subscriber || author.is_subscribed),
     // ✅ FIX: backend se author ka seat/role naam bhi map karo — pehle ye missing tha
     // isliye "Reporter" fallback hamesha dikhta tha chahe user ne koi bhi role liya ho
     author_seat_id: String(authorSeat.seat_id || apiItem.author_seat_id || '').trim(),
@@ -1799,14 +1827,23 @@ const normalizePaymentHistory = (items = []) => {
 };
 
 const isPremiumPlan = (plan) => {
+  if (!plan) return false;
   // Backend ka asli flag sabse upar: sirf is_premium plan hi "Premium" hai
-  if (plan?.is_premium === true || plan?.is_premium === 1 || plan?.is_premium === '1') return true;
-  // Role subscriptions are returned by the backend as either "Premium" or
-  // "Premium Plan". Do not match arbitrary text (Premium Ads/Quiz etc.).
+  if (plan?.is_premium === true || plan?.is_premium === 1 || plan?.is_premium === '1' || String(plan?.is_premium).toLowerCase() === 'true') return true;
+  if (plan?.has_blue_tick === true || plan?.has_blue_tick === 1 || plan?.has_blue_tick === '1' || String(plan?.has_blue_tick).toLowerCase() === 'true') return true;
+  if (plan?.blue_tick === true || plan?.blue_tick === 1 || plan?.blue_tick === '1' || String(plan?.blue_tick).toLowerCase() === 'true') return true;
+
   const planName = String(plan?.plan_name || plan?.name || plan?.title || '')
     .trim().replace(/\s+/g, ' ').toLowerCase();
   const planId = String(plan?.plan_id || plan?.id || '').trim().toLowerCase();
-  return planName === 'premium' || planName === 'premium plan' || planId === 'plan-premium';
+  return (
+    planName === 'premium' ||
+    planName === 'premium plan' ||
+    planName === 'premium access' ||
+    planName.includes('premium') ||
+    planId === 'plan-premium' ||
+    planId.includes('premium')
+  );
 };
 const getRoleSubscriptionPlan = (user = {}) => (
   user?.subscription_plan || user?.active_plan || user?.role_subscription_plan || user?.subscription || null
@@ -1820,7 +1857,7 @@ const hasBlueTick = (user = {}) => {
   if (expiresAt && isExpiredValue(expiresAt)) return false;
 
   // 1. Explicit server flag (if true)
-  const serverFlag = user.has_blue_tick ?? user.is_blue_tick ?? user.blue_tick;
+  const serverFlag = user.has_blue_tick ?? user.is_blue_tick ?? user.blue_tick ?? user.author_has_blue_tick ?? user.authorHasBlueTick;
   if (serverFlag === true || serverFlag === 1 || serverFlag === '1' || serverFlag === 'true') {
     return true;
   }
@@ -1835,9 +1872,13 @@ const hasBlueTick = (user = {}) => {
   const isPremiumUser = Boolean(
     user.is_premium ||
     user.author_is_premium ||
+    user.is_premium_user ||
+    user.premium ||
     (plan && isPremiumPlan(plan)) ||
     hasPremiumAccess(user) ||
+    String(user.role || '').toLowerCase() === 'premium' ||
     String(user.role_label || user.author_role_label || '').toLowerCase().includes('premium') ||
+    String(user.subscription_type || '').toLowerCase().includes('premium') ||
     String(plan?.plan_name || plan?.name || '').toLowerCase().includes('premium')
   );
   if (isPremiumUser && user.is_subscriber !== false && user.is_subscribed !== false) {
@@ -1881,7 +1922,8 @@ const hasActiveSubscription = (user = {}) => {
   const plan = getRoleSubscriptionPlan(user);
   const expiresAt = plan?.expires_at || plan?.expiry || plan?.end_date;
   if (expiresAt && isExpiredValue(expiresAt)) return false;
-  if (user.is_subscribed !== undefined) return Boolean(user.is_subscribed);
+  const explicitSub = user.is_subscribed ?? user.is_subscriber ?? user.author_is_subscribed ?? user.author_is_subscriber;
+  if (explicitSub !== undefined) return Boolean(explicitSub);
   // Public profile/news responses may provide the active plan but omit the
   // private `is_subscribed` flag. Respect an active server plan in that case.
   const planStatus = String(plan?.status || plan?.subscription_status || '').trim().toLowerCase();
@@ -2715,6 +2757,13 @@ export const UserStore = {
         id: profile.id ?? profile.user_id ?? null,
         avatar: profile.avatar || profile.profile_image || null,
         seat_name: String(profile.state_seat?.seat_name || '').trim(),
+        has_blue_tick: Boolean(
+          hasBlueTick(profile) ||
+          profile.has_blue_tick ||
+          profile.is_blue_tick ||
+          profile.blue_tick ||
+          (profile.is_premium && profile.is_subscriber !== false)
+        ),
         posts: Array.isArray(profile.posts) ? profile.posts.map(mapApiNewsToFeedItem) : [],
       };
       UserStore._pubProfCache.set(key, { timestamp: Date.now(), data: normalized });
@@ -5076,13 +5125,15 @@ export const UserStore = {
             ? (currentUserRoleLabelForFeed || item.author_role_label)
             : item.author_role_label,
           author_has_blue_tick: Boolean(
-            isOwnPost ? currentUserHasBlueTickForFeed : item.author_has_blue_tick
+            isOwnPost
+              ? currentUserHasBlueTickForFeed
+              : (item.author_has_blue_tick || item.has_blue_tick || item.is_blue_tick || item.blue_tick || (item.author_is_premium && item.author_is_subscriber !== false))
           ),
           author_is_premium: Boolean(
-            isOwnPost ? currentUserIsPremiumForFeed : item.author_is_premium
+            isOwnPost ? currentUserIsPremiumForFeed : (item.author_is_premium || item.is_premium)
           ),
           author_is_subscriber: Boolean(
-            isOwnPost ? currentUserIsSubscriberForFeed : item.author_is_subscriber
+            isOwnPost ? currentUserIsSubscriberForFeed : (item.author_is_subscriber || item.is_subscriber)
           ),
         };
       });

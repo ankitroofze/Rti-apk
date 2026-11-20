@@ -121,8 +121,10 @@ export default function AllFeedPage({ navigation, kind = 'news' }) {
     const fallbackAuthor = {
       name: story.author_name || '', author_profile_image: story.author_profile_image || '',
       author_seat_name: story.author_seat_name || '', author_role_label: story.author_role_label || '',
-      author_has_blue_tick: Boolean(story.author_has_blue_tick),
-      author_is_premium: Boolean(story.author_is_premium),
+      author_has_blue_tick: Boolean(story.author_has_blue_tick || story.has_blue_tick),
+      author_is_premium: Boolean(story.author_is_premium || story.is_premium),
+      has_blue_tick: Boolean(story.author_has_blue_tick || story.has_blue_tick),
+      subscription_plan: story.author_subscription_plan || story.subscription_plan || null,
     };
     if (!story.createdBy && !fallbackAuthor.name) return;
     const me = await UserStore.getCurrentUser();

@@ -10,16 +10,19 @@ const num = (v) => {
  * `data` = push ka data object (values strings hote hain) ya inbox item ({ type, news_id, ... }).
  */
 export async function navigateFromNotification(navigation, data = {}) {
-  if (!navigation?.navigate) return;
+  if (!navigation?.navigate || !data) return;
   const type = String(data?.type || '').trim();
 
   try {
     switch (type) {
+      case 'news':
+      case 'breaking_news':
+      case 'article':
       case 'new_comment':
       case 'comment_reply':
       case 'news_liked':
       case 'news_status': {
-        const id = num(data.news_id);
+        const id = num(data.news_id || data.article_id || data.id);
         if (!id) return navigation.navigate('Notifications');
         let article = { id };
         try {
@@ -41,8 +44,18 @@ export async function navigateFromNotification(navigation, data = {}) {
         return navigation.navigate('Wallet');
       case 'lead_form_submission':
         return navigation.navigate('AdLeadResponse', { submissionId: data.submission_id, adId: data.ad_id });
-      default:
+      default: {
+        const fallbackNewsId = num(data.news_id || data.article_id);
+        if (fallbackNewsId) {
+          let article = { id: fallbackNewsId };
+          try {
+            const res = await AuthAPI.getNewsById(fallbackNewsId);
+            if (res?.ok && res.news) article = { ...res.news, id: fallbackNewsId };
+          } catch {}
+          return navigation.navigate('NewsDetails', { article });
+        }
         return navigation.navigate('Notifications');
+      }
     }
   } catch {
     // navigation fail ho to app crash nahi hona chahiye

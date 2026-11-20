@@ -650,7 +650,15 @@ export default function NewsDetailsScreen({ route, navigation }) {
     ? Boolean(currentUser && UserStore.hasBlueTick(currentUser))
     : (liveAuthor
       ? Boolean(UserStore.hasBlueTick(liveAuthor))
-      : Boolean(article.author_has_blue_tick || (article.author_is_premium && article.author_is_subscriber !== false)));
+      : Boolean(
+          article.author_has_blue_tick ||
+          article.has_blue_tick ||
+          article.is_blue_tick ||
+          article.blue_tick ||
+          (article.author_is_premium && article.author_is_subscriber !== false) ||
+          (article.is_premium && article.is_subscriber !== false) ||
+          (article.author_subscription_plan && UserStore.hasBlueTick({ subscription_plan: article.author_subscription_plan, is_subscriber: article.author_is_subscriber !== false }))
+        ));
 
   const resolvedHeroImage = useResolvedImageUri(article.image);
   const resolvedGalleryImages = useResolvedImageUris(article.images);
