@@ -2501,12 +2501,17 @@ const _followTargetKey = (email, id) => {
 };
 
 const _rememberFollowing = (email, id, isFollowing, info = null) => {
-  const key = _followTargetKey(email, id);
-  if (!key) return;
-  _followOverrides.set(key, Boolean(isFollowing));
   const normEmail = String(email || '').trim().toLowerCase();
-  const idStr = id != null ? String(id) : '';
-  if (isFollowing) {
+  const idStr = id != null && String(id) !== '' ? String(id) : '';
+  const isBool = Boolean(isFollowing);
+
+  if (idStr) _followOverrides.set(`id:${idStr}`, isBool);
+  if (normEmail) _followOverrides.set(`email:${normEmail}`, isBool);
+
+  const key = idStr ? `id:${idStr}` : (normEmail ? `email:${normEmail}` : '');
+  if (!key) return;
+
+  if (isBool) {
     if (_myFollowingCache) {
       if (idStr) _myFollowingCache.idSet.add(idStr);
       if (normEmail) _myFollowingCache.emailSet.add(normEmail);
@@ -2529,6 +2534,7 @@ const _rememberFollowing = (email, id, isFollowing, info = null) => {
     _optimisticFollowing.delete(key);
     // Remove a legacy email-only entry too if the current action has an id.
     if (normEmail) _optimisticFollowing.delete(`email:${normEmail}`);
+    if (idStr) _optimisticFollowing.delete(`id:${idStr}`);
   }
 };
 
@@ -6550,40 +6556,39 @@ export const UserStore = {
       const targetEmail = String(targetUserEmail || '').trim().toLowerCase();
       const currentEmail = String(currentUser.email || '').trim().toLowerCase();
       if (!targetEmail && !targetUserId) return { ok: false, message: 'User not found.' };
-      if (currentEmail === targetEmail) return { ok: false, message: 'Cannot follow yourself.' };
+      if (currentEmail && targetEmail && currentEmail === targetEmail) return { ok: false, message: 'Cannot follow yourself.' };
+      if (currentUser.id && targetUserId && String(currentUser.id) === String(targetUserId)) return { ok: false, message: 'Cannot follow yourself.' };
 
-      let targetId = targetUserId ?? null;
+      let targetId = targetUserId != null && String(targetUserId) !== '' ? String(targetUserId) : null;
       if (!targetId && targetEmail) {
         const targetUser = await UserStore.getUser(targetEmail);
         targetId = targetUser?.id ?? targetUser?.user_id ?? null;
       }
 
-      let apiResult = targetId ? await AuthAPI.followUserApi(targetId).catch(() => ({ ok: false })) : { ok: false };
+      let apiResult = (targetId || targetEmail)
+        ? await AuthAPI.followUserApi(targetId, targetEmail).catch(() => ({ ok: false }))
+        : { ok: false };
       // Agar token missing/expired tha, silent re-login try karo
       if (!apiResult.ok && (apiResult.isAuth || String(apiResult.message || '').toLowerCase().includes('logged in') || String(apiResult.message || '').toLowerCase().includes('session'))) {
         if (currentUser.email && currentUser.password) {
           try {
             const relogin = await AuthAPI.login({ email: currentUser.email, password: currentUser.password });
-            if (relogin.ok && targetId) {
-              apiResult = await AuthAPI.followUserApi(targetId);
+            if (relogin.ok && (targetId || targetEmail)) {
+              apiResult = await AuthAPI.followUserApi(targetId, targetEmail);
             }
           } catch {}
         }
       }
 
-      // Agar server session issue de ya user id resolve na hui ho, tab bhi local following state sync rakho taaki UI block na ho
       if (!apiResult.ok) {
-        try {
-          const myFollowing = Array.isArray(currentUser.following) ? currentUser.following : [];
-          if (targetEmail && !myFollowing.includes(targetEmail)) {
-            await UserStore.updateUser(currentEmail, { following: [...myFollowing, targetEmail] });
-          }
-        } catch {}
-        _broadcastFollowChange(targetEmail, targetId, true);
-        return { ok: true, message: 'Successfully followed.', isFollowing: true };
+        return { ok: false, message: apiResult.message || 'Unable to follow user.' };
       }
 
-      // ✅ FIX: success ke baad local cached currentUser.following update nahi hota tha.
+      // Invalidate caches so next refresh fetches fresh data from server
+      if (targetId) UserStore._pubProfCache?.delete?.(String(targetId));
+      if (targetEmail) UserStore._pubProfCache?.delete?.(String(targetEmail));
+      if (UserStore._folSumCache) UserStore._folSumCache.clear();
+
       try {
         const myFollowing = Array.isArray(currentUser.following) ? currentUser.following : [];
         if (targetEmail && !myFollowing.includes(targetEmail)) {
@@ -6591,12 +6596,11 @@ export const UserStore = {
         }
       } catch { /* best-effort cache sync */ }
 
-      // ✅ isi id/email ke sabhi follow buttons (app mein kahin bhi) ko turant notify karo
       _broadcastFollowChange(targetEmail, targetId, true);
-      // Naam + photo background me bhar do (best-effort) taaki Following list me
-      // backend ke refresh se pehle bhi sahi naam/photo dikhe.
+
       (async () => {
         try {
+          if (!targetId) return;
           const prof = await UserStore.getPublicProfileById(targetId);
           if (!prof) return;
           const fullName = [prof.firstname, prof.lastname].filter((x) => x && String(x).trim()).join(' ').trim();
@@ -6606,6 +6610,7 @@ export const UserStore = {
           });
         } catch { /* ignore */ }
       })();
+
       return {
         ok: true,
         message: 'Successfully followed user.',
@@ -6627,40 +6632,40 @@ export const UserStore = {
       const currentEmail = String(currentUser.email || '').trim().toLowerCase();
       if (!targetEmail && !targetUserId) return { ok: false, message: 'User not found.' };
 
-      let targetId = targetUserId ?? null;
+      let targetId = targetUserId != null && String(targetUserId) !== '' ? String(targetUserId) : null;
       if (!targetId && targetEmail) {
         const targetUser = await UserStore.getUser(targetEmail);
         targetId = targetUser?.id ?? targetUser?.user_id ?? null;
       }
 
-      let apiResult = targetId ? await AuthAPI.unfollowUserApi(targetId).catch(() => ({ ok: false })) : { ok: false };
+      let apiResult = (targetId || targetEmail)
+        ? await AuthAPI.unfollowUserApi(targetId, targetEmail).catch(() => ({ ok: false }))
+        : { ok: false };
       if (!apiResult.ok && (apiResult.isAuth || String(apiResult.message || '').toLowerCase().includes('logged in') || String(apiResult.message || '').toLowerCase().includes('session'))) {
         if (currentUser.email && currentUser.password) {
           try {
             const relogin = await AuthAPI.login({ email: currentUser.email, password: currentUser.password });
-            if (relogin.ok && targetId) {
-              apiResult = await AuthAPI.unfollowUserApi(targetId);
+            if (relogin.ok && (targetId || targetEmail)) {
+              apiResult = await AuthAPI.unfollowUserApi(targetId, targetEmail);
             }
           } catch {}
         }
       }
 
       if (!apiResult.ok) {
-        try {
-          const myFollowing = Array.isArray(currentUser.following) ? currentUser.following : [];
-          await UserStore.updateUser(currentEmail, { following: myFollowing.filter((e) => e !== targetEmail) });
-        } catch {}
-        _broadcastFollowChange(targetEmail, targetId, false);
-        return { ok: true, message: 'Successfully unfollowed.', isFollowing: false };
+        return { ok: false, message: apiResult.message || 'Unable to unfollow user.' };
       }
 
-      // ✅ FIX: followUser wala hi cache-sync fix, unfollow ke liye.
+      // Invalidate caches so next refresh fetches fresh data from server
+      if (targetId) UserStore._pubProfCache?.delete?.(String(targetId));
+      if (targetEmail) UserStore._pubProfCache?.delete?.(String(targetEmail));
+      if (UserStore._folSumCache) UserStore._folSumCache.clear();
+
       try {
         const myFollowing = Array.isArray(currentUser.following) ? currentUser.following : [];
         await UserStore.updateUser(currentEmail, { following: myFollowing.filter((e) => e !== targetEmail) });
-      } catch { /* cache sync best-effort hai, API result asli source of truth hai */ }
+      } catch { /* cache sync best-effort */ }
 
-      // ✅ isi id/email ke sabhi follow buttons ko turant notify karo
       _broadcastFollowChange(targetEmail, targetId, false);
 
       return {
@@ -6814,9 +6819,11 @@ export const UserStore = {
       }
 
       const matchesTarget = (u) => {
-        const uId = u?.id != null ? String(u.id) : '';
+        const uId = String(u?.id ?? u?.user_id ?? u?.following_id ?? u?.target_id ?? '').trim();
         const uEmail = String(u?.email || u?.user_email || '').trim().toLowerCase();
-        return Boolean((targetId && uId && uId === targetId) || (targetEmail && uEmail && uEmail === targetEmail));
+        if (targetId && uId && uId === String(targetId).trim()) return true;
+        if (targetEmail && uEmail && uEmail === targetEmail) return true;
+        return false;
       };
 
       // ── Apni profile: purana behaviour (meri lists + optimistic merge) ──
@@ -6829,9 +6836,9 @@ export const UserStore = {
         const followers = (followersRes.ok ? followersRes.list : []).map(_normalizeFollowListItem);
         const selfResult = {
           isFollowing: false,
-          followingCount: following.length,
+          followingCount: followingRes?.count ?? following.length,
           following,
-          followersCount: followers.length,
+          followersCount: followersRes?.count ?? followers.length,
           followers,
           resolvedId: myIdRaw,
         };
@@ -6849,7 +6856,7 @@ export const UserStore = {
 
       const myFollowing = _mergeFollowing((myFollowingRes.ok ? myFollowingRes.list : []).map(_normalizeFollowListItem));
       let resolvedId = targetId || null;
-      const isFollowing = myFollowing.some((u) => {
+      const isFollowingInList = myFollowing.some((u) => {
         if (matchesTarget(u)) { if (resolvedId == null && u.id != null) resolvedId = u.id; return true; }
         return false;
       });
@@ -6857,6 +6864,14 @@ export const UserStore = {
         const m = myFollowing.find(matchesTarget);
         if (m?.id != null) resolvedId = m.id;
       }
+
+      const overrideKeyId = targetId ? `id:${targetId}` : '';
+      const overrideKeyEmail = targetEmail ? `email:${targetEmail}` : '';
+      const override = (overrideKeyId && _followOverrides.has(overrideKeyId))
+        ? _followOverrides.get(overrideKeyId)
+        : (overrideKeyEmail && _followOverrides.has(overrideKeyEmail) ? _followOverrides.get(overrideKeyEmail) : undefined);
+
+      const isFollowing = override !== undefined ? Boolean(override) : isFollowingInList;
 
       // Target ki id nahi mili => uski lists nahi la sakte; MERI lists dikhane ka risk
       // nahi lenge. Counts null bhejte hain taaki screen purane counts na toote.
@@ -6872,14 +6887,11 @@ export const UserStore = {
       // Target ke followers — meri recent follow/unfollow action apply karo.
       let targetFollowers = (targetFollowersRes.ok ? targetFollowersRes.list : []).map(_normalizeFollowListItem);
       const isMe = (u) => {
-        const uId = u?.id != null ? String(u.id) : '';
+        const uId = String(u?.id ?? u?.user_id ?? '').trim();
         const uEmail = String(u?.email || '').trim().toLowerCase();
         return Boolean((myId && uId && uId === myId) || (myEmail && uEmail && uEmail === myEmail));
       };
-      const override = _followOverrides.has(`id:${targetId}`)
-        ? _followOverrides.get(`id:${targetId}`)
-        : (targetEmail && _followOverrides.has(`email:${targetEmail}`) ? _followOverrides.get(`email:${targetEmail}`) : undefined);
-      if (override === true && !targetFollowers.some(isMe) && (myId || myEmail)) {
+      if (isFollowing && !targetFollowers.some(isMe) && (myId || myEmail)) {
         targetFollowers = [
           ...targetFollowers,
           _normalizeFollowListItem({
@@ -6889,15 +6901,17 @@ export const UserStore = {
             profile_image: currentUser?.profile_image || '',
           }),
         ];
-      } else if (override === false) {
+      } else if (!isFollowing) {
         targetFollowers = targetFollowers.filter((u) => !isMe(u));
       }
 
       const otherResult = {
         isFollowing,
-        followingCount: targetFollowing.length,
+        followingCount: targetFollowingRes?.count ?? targetFollowing.length,
         following: targetFollowing,
-        followersCount: targetFollowers.length,
+        followersCount: targetFollowersRes?.ok && (targetFollowersRes.count > 0 || targetFollowers.length > 0)
+          ? Math.max(targetFollowersRes.count || 0, targetFollowers.length)
+          : null,
         followers: targetFollowers,
         resolvedId,
       };

@@ -538,20 +538,43 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       }
       setLoading(false); // ✅ Profile header, name, avatar visible in < 300ms!
 
+      const profileFollowers = getNumericCount(user?.followers_count ?? user?.followers ?? author?.followers_count ?? author?.followers ?? 0);
+      const profileFollowing = getNumericCount(user?.following_count ?? user?.following ?? author?.following_count ?? author?.following ?? 0);
+
       if (active && !silent) {
         setFollowStats({
-          followers: getNumericCount(user?.followers_count ?? user?.followers ?? user?.referral_count ?? 0),
-          following: getNumericCount(user?.following_count ?? user?.following ?? 0),
+          followers: profileFollowers,
+          following: profileFollowing,
         });
         setFollowLists({ followers: [], following: [] });
       }
 
       if (active && (summary || !silent) && !(silent && followActionInFlightRef.current)) {
-        setIsFollowing(Boolean(summary?.isFollowing));
-        if (summary && summary.followersCount != null && summary.followingCount != null) {
+        const finalIsFollowing = typeof summary?.isFollowing === 'boolean'
+          ? summary.isFollowing
+          : (UserStore.checkIsFollowingSync?.(targetEmail, targetId) ?? isFollowing);
+        setIsFollowing(Boolean(finalIsFollowing));
+
+        if (summary) {
           setFollowLists({ followers: summary.followers || [], following: summary.following || [] });
-          setFollowStats({ followers: summary.followersCount, following: summary.followingCount });
         }
+
+        setFollowStats((prev) => {
+          const currentFollowers = Math.max(profileFollowers, Number(prev.followers || 0));
+          const currentFollowing = Math.max(profileFollowing, Number(prev.following || 0));
+          const countFromSummary = summary?.followersCount != null && summary.followersCount > 0 ? summary.followersCount : null;
+          let resolvedFollowers = countFromSummary != null ? Math.max(countFromSummary, profileFollowers) : currentFollowers;
+          if (finalIsFollowing && resolvedFollowers === 0) {
+            resolvedFollowers = 1;
+          }
+          const resolvedFollowing = summary?.followingCount != null && summary.followingCount > 0
+            ? Math.max(summary.followingCount, profileFollowing)
+            : currentFollowing;
+          return {
+            followers: resolvedFollowers,
+            following: resolvedFollowing,
+          };
+        });
       }
 
       // ✅ SPEED: Priority 2 — Deferred fetch for news posts, ads & ecom
@@ -1414,15 +1437,14 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       followers: Math.max(0, Number(prev.followers || 0) + (nextFollowing ? 1 : -1)),
     }));
     try {
+      const targetId = profile?.id ?? userId ?? author?.id ?? author?.author_id ?? author?.user_id ?? null;
+      const targetEmail = resolvedEmail || profile?.email || author?.email || author?.createdBy || author?.author_email || '';
+
       let result;
       if (nextFollowing) {
-            result = await (UserStore.followUser
-          ? UserStore.followUser(resolvedEmail, profile?.id ?? userId)
-          : UserStore.updateNewsFeedItem?.(resolvedEmail, 'follow'));
+        result = await UserStore.followUser(targetEmail, targetId);
       } else {
-        result = await (UserStore.unfollowUser
-          ? UserStore.unfollowUser(resolvedEmail, profile?.id ?? userId)
-          : UserStore.updateNewsFeedItem?.(resolvedEmail, 'unfollow'));
+        result = await UserStore.unfollowUser(targetEmail, targetId);
       }
       if (result && result.ok === false) {
         setIsFollowing(!nextFollowing);

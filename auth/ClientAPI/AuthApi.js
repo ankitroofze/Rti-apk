@@ -1105,8 +1105,12 @@ export const AuthAPI = {
 
   getPublicProfileById: async (id) => {
     try {
-      const { status, data } = await getJSON(`/profile/${id}`);
-      if (status === 200) return { ok: true, profile: data?.profile };
+      const token = await getAuthToken().catch(() => null);
+      const { status, data } = await getJSON(`/profile/${id}`, token);
+      if (status === 200) {
+        const prof = data?.profile || data?.user || data?.data || data;
+        return { ok: true, profile: prof };
+      }
       return { ok: false, message: data?.message || `Server error (${status}).` };
     } catch (err) {
       console.error('[AuthAPI.getPublicProfileById] Error:', err);
@@ -4181,12 +4185,20 @@ export const AuthAPI = {
   },
 
   // ── FOLLOW / BLOCK API ──────────────────────────────────────
-  followUserApi: async (userId) => {
+  followUserApi: async (userId, targetEmail = '') => {
     try {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
-      const { status, data } = await postJSON('/users/follow', { user_id: userId }, token);
+      const payload = {
+        ...(userId != null && userId !== '' ? { user_id: userId, target_id: userId, target_user_id: userId, id: userId } : {}),
+        ...(targetEmail ? { email: targetEmail, target_email: targetEmail } : {}),
+      };
+      const { status, data } = await postJSON('/users/follow', payload, token);
       if (status === 200 || status === 201) return { ok: true, data };
+      const msg = String(data?.message || '').toLowerCase();
+      if (msg.includes('already follow') || msg.includes('already following')) {
+        return { ok: true, data, already: true };
+      }
       if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
       return { ok: false, message: data?.message || `Server error (${status}).` };
     } catch (err) {
@@ -4195,12 +4207,20 @@ export const AuthAPI = {
     }
   },
 
-  unfollowUserApi: async (userId) => {
+  unfollowUserApi: async (userId, targetEmail = '') => {
     try {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
-      const { status, data } = await postJSON('/users/unfollow', { user_id: userId }, token);
+      const payload = {
+        ...(userId != null && userId !== '' ? { user_id: userId, target_id: userId, target_user_id: userId, id: userId } : {}),
+        ...(targetEmail ? { email: targetEmail, target_email: targetEmail } : {}),
+      };
+      const { status, data } = await postJSON('/users/unfollow', payload, token);
       if (status === 200 || status === 201) return { ok: true, data };
+      const msg = String(data?.message || '').toLowerCase();
+      if (msg.includes('not follow') || msg.includes('already unfollow')) {
+        return { ok: true, data, already: true };
+      }
       return { ok: false, message: data?.message || `Server error (${status}).` };
     } catch (err) {
       console.error('[AuthAPI.unfollowUserApi] Error:', err);
@@ -4220,7 +4240,11 @@ export const AuthAPI = {
           : Array.isArray(data?.followers) ? data.followers
             : Array.isArray(data?.data) ? data.data
               : [];
-        return { ok: true, list };
+        const count = typeof data?.count === 'number' ? data.count
+          : typeof data?.total === 'number' ? data.total
+            : typeof data?.followers_count === 'number' ? data.followers_count
+              : list.length;
+        return { ok: true, list, count };
       }
       return { ok: false, message: data?.message || `Server error (${status}).` };
     } catch (err) {
@@ -4241,7 +4265,11 @@ export const AuthAPI = {
           : Array.isArray(data?.following) ? data.following
             : Array.isArray(data?.data) ? data.data
               : [];
-        return { ok: true, list };
+        const count = typeof data?.count === 'number' ? data.count
+          : typeof data?.total === 'number' ? data.total
+            : typeof data?.following_count === 'number' ? data.following_count
+              : list.length;
+        return { ok: true, list, count };
       }
       return { ok: false, message: data?.message || `Server error (${status}).` };
     } catch (err) {
