@@ -13,6 +13,7 @@ import { useToast } from '../components/ui/ToastProvider';
 import s from '../styles/SettingsStyles';
 import { UserStore } from '../store/UserStore';
 import ModuleWebHeader from '../components/Modulewebheader';
+import AppNavbar from '../components/AppNavbar';
 import { INDIAN_STATES, getDistricts, getTalukas, getVillages } from './locationData';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { useAuth } from '../contexts/AuthContext';
@@ -351,7 +352,7 @@ function SettingsScreen__Inner({ navigation }) {
         </ImageBackground>
       )}
 
-      <ScrollView style={s.scroll} contentContainerStyle={s.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView style={s.scroll} contentContainerStyle={[s.scrollContent, { paddingBottom: 90 }]} showsVerticalScrollIndicator={false}>
 
         {/* ── Account ── */}
         <SectionHeader title="Account" />
@@ -498,6 +499,7 @@ function SettingsScreen__Inner({ navigation }) {
        selected={locTaluka}   onSelect={handleTalukaChange}    onClose={() => setTalukaModal(false)} />
       <DropdownModal visible={villageModal}  title="Select Village"  items={villageList}
         selected={locVillage}  onSelect={setLocVillage}         onClose={() => setVillageModal(false)} />
+      <AppNavbar navigation={navigation} activeScreen="Settings" hideTopHeader={true} />
     </View>
     </SafeAreaView>
   );

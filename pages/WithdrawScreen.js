@@ -15,6 +15,7 @@ import { buildWithdrawalReceiptHtml, loadInvoiceLogo, canInvoiceWithdrawal, down
 import { MODULE_HEADER_HEIGHT_WEB, HEADER_BG_IMAGE } from '../constants/subscriptionThemes';
 import ModuleWebHeader from '../components/Modulewebheader';
 import ModuleMobileHeader from '../components/ModuleMobileHeader';
+import AppNavbar from '../components/AppNavbar';
 
 const PAGE_SIZE = 10;
 
@@ -922,7 +923,7 @@ export default function WithdrawScreen({ navigation }) {
 
       <ScrollView
         style={WithdrawStyles.scrollView}
-        contentContainerStyle={[WithdrawStyles.scrollContent, isTablet && TABLET_CONTENT_WRAP]}
+        contentContainerStyle={[WithdrawStyles.scrollContent, isTablet && TABLET_CONTENT_WRAP, { paddingBottom: 90 }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
@@ -1324,6 +1325,7 @@ export default function WithdrawScreen({ navigation }) {
         ) : null}
       </ScrollView>
 
+      <AppNavbar navigation={navigation} activeScreen="Withdraw" hideTopHeader={true} />
       <Sidebar
         visible={sidebarVisible}
         onClose={() => setSidebarVisible(false)}

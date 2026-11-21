@@ -4,6 +4,7 @@ import { Keyboard, findNodeHandle } from 'react-native';
 import KeyboardAwareScroll from '../components/KeyboardAwareScroll';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import ModuleWebHeader from '../components/Modulewebheader';
+import AppNavbar from '../components/AppNavbar';
 import {
   View,
   Text,
@@ -628,6 +629,7 @@ function EcomeSellMobile({ navigation, editListing }) {
         onConfirm={form.handleConfirmBuy}
         onCancel={() => form.setConfirmPlan(null)}
       />
+      <AppNavbar navigation={navigation} activeScreen="Sell" hideTopHeader={true} />
     </View>
   );
 }
@@ -737,6 +739,7 @@ function EcomeSellWeb({ navigation, editListing }) {
         onConfirm={form.handleConfirmBuy}
         onCancel={() => form.setConfirmPlan(null)}
       />
+      <AppNavbar navigation={navigation} activeScreen="Sell" hideTopHeader={true} />
     </View>
   );
 }

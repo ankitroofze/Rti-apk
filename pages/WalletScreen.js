@@ -11,6 +11,7 @@ import { UserStore } from '../store/UserStore';
 import { MODULE_HEADER_HEIGHT_WEB, HEADER_BG_IMAGE } from '../constants/subscriptionThemes';
 import ModuleWebHeader from '../components/Modulewebheader';
 import ModuleMobileHeader from '../components/ModuleMobileHeader';
+import AppNavbar from '../components/AppNavbar';
 
 const PAGE_SIZE = 10;
 
@@ -528,7 +529,7 @@ export default function WalletScreen({ navigation, route }) {
     return (
       <View style={w.root}>
         {/* ✅ Web header — design ek hi jagah (components/ModuleWebHeader.js) se aata hai */}
-        <ModuleWebHeader title="Wallet" navigation={navigation} />
+        <ModuleWebHeader title="Wallet" navigation={navigation} onBack={goBackToOrigin} />
 
         <ScrollView style={w.scroll} contentContainerStyle={w.scrollContent} showsVerticalScrollIndicator={false}>
           <View style={w.innerWrap}>
@@ -774,7 +775,7 @@ export default function WalletScreen({ navigation, route }) {
     />
       <ScrollView
         style={m.scrollView}
-        contentContainerStyle={[m.scrollContent, isTablet && { maxWidth: 720, width: '100%', alignSelf: 'center' }]}
+        contentContainerStyle={[m.scrollContent, isTablet && { maxWidth: 720, width: '100%', alignSelf: 'center' }, { paddingBottom: 90 }]}
         showsVerticalScrollIndicator={false}
       >
         {/* ── WALLET INTRO BANNER (web jaisa) ── */}
@@ -865,6 +866,7 @@ export default function WalletScreen({ navigation, route }) {
 
       </ScrollView>
 
+      <AppNavbar navigation={navigation} activeScreen="Wallet" hideTopHeader={true} />
       <Sidebar visible={sidebarVisible} onClose={() => setSidebarVisible(false)} activeItem={moduleName} />
     </View>
   );

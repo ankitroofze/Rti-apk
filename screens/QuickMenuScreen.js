@@ -28,6 +28,7 @@ const SIDEBAR_RED_URI =
             : (_redAsset?.uri || _redAsset?.default || '')))
     : '';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import AppNavbar from '../components/AppNavbar';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import { useAuth } from '../contexts/AuthContext';
 import { UserStore } from '../store/UserStore';
@@ -1014,7 +1015,7 @@ function QuickMenuMobile({ navigation }) {
       />
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[styles.listContainer, { paddingBottom: insets.bottom + 20 }]}
+        contentContainerStyle={[styles.listContainer, { paddingBottom: insets.bottom + 80 }]}
       >
         {MENU_SECTIONS.map((section) => (
           <View key={section.title}>
@@ -1067,6 +1068,7 @@ function QuickMenuMobile({ navigation }) {
           </View>
         ))}
       </ScrollView>
+      <AppNavbar navigation={navigation} activeScreen="QuickMenu" hideTopHeader={true} />
     </View>
   );
 }

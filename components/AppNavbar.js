@@ -713,7 +713,8 @@ export default function AppNavbar({ activeScreen, navigation, hideTopHeader = fa
   }
 
   // ─── Desktop ───────────────────────────────────────────────────────────
-    return (
+  if (hideTopHeader) return null;
+  return (
     <View style={[styles.desktopNavbarShell, isScrolled && styles.desktopNavbarShellScrolled]}>
       <View style={styles.desktopNavbarInner}>
         <NavbarBrand onPressHome={() => handleNavigate('Home')} />

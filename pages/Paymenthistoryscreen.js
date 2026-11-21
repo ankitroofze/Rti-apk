@@ -30,6 +30,7 @@ import { useToast } from '../components/ui/ToastProvider';
 import InvoiceViewerModal from '../components/InvoiceViewerModal';
 import S from '../styles/Paymenthistorystyles';
 import ModuleWebHeader from '../components/Modulewebheader';
+import AppNavbar from '../components/AppNavbar';
 
 // ── Module meta — icon/color/label har subscription type ke liye ──
 const MODULES = {
@@ -290,7 +291,7 @@ function PaymentHistoryScreen__Inner({ navigation }) {
           <ActivityIndicator color="#dc2626" style={{ marginTop: 40 }} />
         ) : (
           <ScrollView
-            contentContainerStyle={S.scrollContent}
+            contentContainerStyle={[S.scrollContent, { paddingBottom: 90 }]}
             showsVerticalScrollIndicator={false}
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#dc2626']} tintColor="#dc2626" />}
           >
@@ -496,6 +497,7 @@ function PaymentHistoryScreen__Inner({ navigation }) {
           </ScrollView>
         )}
       </View>
+      <AppNavbar navigation={navigation} activeScreen="PaymentHistory" hideTopHeader={true} />
       <InvoiceViewerModal
         visible={!!invoiceView}
         html={invoiceView?.html}

@@ -1,5 +1,5 @@
 // components/ModuleMobileHeader.js
-// Router: Web -> kuch nahi (web ka header Modulewebheader.js se aata hai)
+// Router: Web -> components/Modulewebheader.js
 //         Android -> components/ModuleAndroidHeader.js (alag design)
 //         iOS -> ab Android jaisa hi (ModuleAndroidHeader). IosModuleHeader neeche backup ke liye rakha hai
 import React from 'react';
@@ -7,13 +7,14 @@ import { Platform, StatusBar, View, Text, TouchableOpacity, ImageBackground } fr
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import ModuleAndroidHeader from './ModuleAndroidHeader';
+import ModuleWebHeader from './Modulewebheader';
 
 const RED_IMAGE = require('../assets/images/profile-red.png');
 
 const HEADER_CONTENT_HEIGHT = 56;
 
 export default function ModuleMobileHeader(props) {
-  if (Platform.OS === 'web') return null;
+  if (Platform.OS === 'web') return <ModuleWebHeader {...props} />;
   // iOS bhi ab Android jaisa header (ModuleAndroidHeader) use karta hai
   return <ModuleAndroidHeader {...props} />;
 }

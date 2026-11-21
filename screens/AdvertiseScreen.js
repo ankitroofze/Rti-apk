@@ -12,6 +12,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Asset } from 'expo-asset';
 import ModuleWebHeader from '../components/Modulewebheader';
+import AppNavbar from '../components/AppNavbar';
 import { HEADER_BG_IMAGE } from '../constants/subscriptionThemes';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import AdVideoPlayer from '../components/AdVideoPlayer';
@@ -1264,6 +1265,7 @@ const editAd = route?.params?.editAd || null;
           whatsappNumber={extraValues.lead_form_whatsapp || ''}
           setWhatsappNumber={(v) => setExtraValues((p) => ({ ...p, lead_form_whatsapp: normalizeIndianMobileNumber(v) }))}
         />
+        <AppNavbar navigation={navigation} activeScreen="Advertise" hideTopHeader={true} />
       </View>
     );
   }
@@ -1409,6 +1411,7 @@ const editAd = route?.params?.editAd || null;
         whatsappNumber={extraValues.lead_form_whatsapp || ''}
         setWhatsappNumber={(v) => setExtraValues((p) => ({ ...p, lead_form_whatsapp: normalizeIndianMobileNumber(v) }))}
       />
+      <AppNavbar navigation={navigation} activeScreen="Advertise" hideTopHeader={true} />
     </KeyboardAvoidingView>
   );
 }
@@ -1541,7 +1544,7 @@ const s = StyleSheet.create({
   headerTitle: { flex: 1, fontSize: 15, fontFamily: FONT.bold, color: C.textMain },
 
   scroll: { flex: 1 },
-  scrollContent: { paddingBottom: 48, paddingTop: 8 },
+  scrollContent: { paddingBottom: 90, paddingTop: 8 },
 
   videoWrapper: { width: SW, backgroundColor: '#000' },
   video: { width: SW, height: Math.round(SW * 9 / 16) },
@@ -1649,7 +1652,7 @@ const ws = StyleSheet.create({
   topBarTitleCompact: { flexShrink: 1 },
 
   scroll: { flex: 1 },
-  scrollContent: { paddingBottom: 60, alignItems: 'center' },
+  scrollContent: { paddingBottom: 90, alignItems: 'center' },
   scrollContentCompact: { paddingHorizontal: 0 },
   innerWrap: { width: '100%', maxWidth: 520, alignSelf: 'center', paddingTop: 24, paddingHorizontal: 16 },
 
