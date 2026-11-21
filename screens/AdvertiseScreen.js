@@ -1651,7 +1651,7 @@ const ws = StyleSheet.create({
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 60, alignItems: 'center' },
   scrollContentCompact: { paddingHorizontal: 0 },
-  innerWrap: { width: '100%', maxWidth: 520, alignSelf: 'center', paddingTop: 24 },
+  innerWrap: { width: '100%', maxWidth: 520, alignSelf: 'center', paddingTop: 24, paddingHorizontal: 16 },
 
   tutorialCard: {
     width: '100%', borderRadius: 12, overflow: 'hidden',

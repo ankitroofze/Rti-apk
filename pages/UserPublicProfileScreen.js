@@ -700,7 +700,6 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       // silent reload me network fail hua (khaali list) to purani posts mat udao
       if (!silent || mergedWithEngagement.length) setPosts(mergedWithEngagement);
       setLoading(false);
-      if (!user && resolvedEmail && !silent) showToastRef.current?.('User profile not found on this device. Showing available info.', 'error');
     })();
     return () => { active = false; };
   // A profile may be opened with only userId (the following API does not

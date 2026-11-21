@@ -84,14 +84,29 @@ export default function MyEcomSubscriptionScreen({ navigation }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [user, backendPlans, mine] = await Promise.all([
+      const [user, backendPlans, mine, myProductsRes] = await Promise.all([
         UserStore.getCurrentUserSynced(),
         UserStore.getEcomSubscriptionPlans(),
         UserStore.getMySubscriptions(),
+        UserStore.getMyEcomPosts().catch(() => []),
       ]);
       setPlans(Array.isArray(backendPlans) ? backendPlans : []);
-      setSub(user?.ecome_subscription || null);
-      setCredits(Number(user?.ecome_credits || 0));
+      const activeSub = user?.ecome_subscription || null;
+      setSub(activeSub);
+
+      const planTotalCredits = Number(activeSub?.credits || 0);
+      const myProds = Array.isArray(myProductsRes) ? myProductsRes : (Array.isArray(user?.ecome_listings) ? user.ecome_listings : []);
+      const activeProductsCount = myProds.length;
+
+      let resolvedCredits = Number(user?.ecome_credits ?? 0);
+      if (planTotalCredits > 0) {
+        const accurateRemaining = Math.max(0, planTotalCredits - activeProductsCount);
+        if (resolvedCredits !== accurateRemaining) {
+          resolvedCredits = accurateRemaining;
+          UserStore.updateUser(user.email, { ecome_credits: accurateRemaining }).catch(() => {});
+        }
+      }
+      setCredits(resolvedCredits);
       setIsActive(user ? UserStore.hasActiveEcomSubscription(user) : false);
       const items = (mine?.items || []).filter((i) =>
         /ecom/i.test(String(i.type || '')) || /ecom/i.test(String(i.planName || ''))

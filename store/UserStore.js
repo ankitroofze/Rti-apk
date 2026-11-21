@@ -8269,13 +8269,13 @@ export const UserStore = {
       // Listing backend pe update ho chuki hai — credit update fail ho to bhi success maano
       try {
         await UserStore.updateUser(user.email, {
-          ecome_credits: currentCredits - 1,
+          ecome_credits: currentCredits,
           ecome_listings: updatedListings,
         });
       } catch (e) {
         console.warn('[updateEcomeListing] credit update failed:', e);
       }
-      return { ok: true, credits: currentCredits - 1, listing: merged || backendNorm };
+      return { ok: true, credits: currentCredits, listing: merged || backendNorm };
     } catch (e) {
       console.warn('[updateEcomeListing] failed:', e?.message || e);
       return { ok: false, message: 'Unable to update listing.' };

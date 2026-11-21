@@ -846,17 +846,6 @@ export default function FarmingBuyScreen({ navigation, route }) {
                           <Text style={{ color: '#fff', fontSize: 10.5, fontWeight: '800' }}>Out of Stock</Text>
                         </View>
                       ) : null}
-                      <TouchableOpacity
-                        style={styles.wishlistBtn}
-                        activeOpacity={0.8}
-                        onPress={(e) => { e.stopPropagation?.(); toggleWishlist?.(item); }}
-                      >
-                        <Ionicons
-                          name={wishlist?.[item.id] ? 'heart' : 'heart-outline'}
-                          size={16}
-                          color={wishlist?.[item.id] ? '#dc2626' : '#64748b'}
-                        />
-                      </TouchableOpacity>
                     </View>
                     <View style={[styles.cardBody, compactCards && styles.cardBodyCompact]}>
                       {item.sector ? (

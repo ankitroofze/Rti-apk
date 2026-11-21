@@ -61,7 +61,12 @@ const toPhone = (raw) => {
 };
 
 // Ads wali enquiry me item `ad` / `advertisement` key me bhi aa sakta hai — dono handle
-const isAdsEnquiry = (e = {}) => String(e.type || '').toLowerCase() === 'ads';
+const isAdsEnquiry = (e = {}) => {
+  const t = String(e.type || e.enquiry_type || '').toLowerCase();
+  if (t === 'ads' || t === 'ad') return true;
+  if (Boolean(e.ad || e.ad_id || e.advertisement || e.ad_title)) return true;
+  return false;
+};
 const ecomOf = (e = {}) => e.ecom || e.ad || e.advertisement || {};
 const ecomName = (e = {}) => ecomOf(e).product_name || ecomOf(e).title || e.product_name || e.ad_title || (isAdsEnquiry(e) ? 'Advertisement' : 'Ecom');
 const ecomImage = (e = {}) => ecomOf(e).image || ecomOf(e).image_url || ecomOf(e).images?.[0] || e.product_images?.[0] || null;
@@ -514,20 +519,20 @@ export default function MyEnquiriesScreen({ navigation, route }) {
   const loadSent = useCallback(async () => {
     setSentLoading(true);
     try {
-      // ✅ User ki Ads + Ecom DONO enquiries (GET /ecom-enquiries) — type field se ADS / ECOM pehchana jaata hai
-      const res = await AuthAPI.getEcomEnquiries();
+      const res = await AuthAPI.getEcomEnquiries({ type: enquiryType });
       if (!res.ok) {
         setSentError(res.message || 'Failed to load enquiries.');
         if (res.isAuth) notify('Session expired', 'Please login again.');
       } else {
         setSentError('');
-        setSent((Array.isArray(res.enquiries) ? res.enquiries : []).map(withEnqStatus));
+        const fresh = byType(res.enquiries).map(withEnqStatus);
+        setSent(fresh);
       }
     } catch (e) {
       setSentError('Something went wrong.');
     }
     setSentLoading(false);
-  }, []);
+  }, [byType, enquiryType]);
 
   useFocusEffect(useCallback(() => {
     loadReceived(true);

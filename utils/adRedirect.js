@@ -1,4 +1,5 @@
 import { Alert, Linking, Platform } from 'react-native';
+import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 
 const ensureExternalUrl = (value = '') => {
   const raw = String(value || '').trim();
@@ -129,20 +130,40 @@ export async function openAdRedirect(ad = {}, navigation, options = {}) {
       return true;
     }
     const email = String(ad.owner_email || ad.createdBy || ad.created_by || '').trim().toLowerCase();
-    if (navigation?.navigate && email) {
+    const userId = ad.user_id || ad.owner_id || ad.userId || null;
+    if (navigation?.navigate && (email || userId)) {
       navigation.navigate('UserProfile', {
         email,
+        userId,
         author: {
+          id: userId,
           name: ad.owner_name || ad.user || 'Advertiser',
+          author_name: ad.owner_name || ad.user || 'Advertiser',
           author_profile_image: ad.owner_profile_image || ad.avatar || '',
+          profile_image: ad.owner_profile_image || ad.avatar || '',
           author_role_label: ad.owner_role_label || ad.role || 'Sponsored',
+          role: ad.owner_role_label || ad.role || 'Sponsored',
           author_has_blue_tick: Boolean(ad.owner_has_blue_tick || ad.verified),
           has_blue_tick: Boolean(ad.owner_has_blue_tick || ad.verified),
           createdBy: email,
+          email,
         },
       });
       return true;
     }
+  }
+
+  if (meta.type === 'whatsapp') {
+    try {
+      const adId = ad.originalAdId || ad.id;
+      if (adId) {
+        AuthAPI.createEcomEnquiry({
+          ecom_id: adId,
+          type: 'ads',
+          message: 'Contacted via WhatsApp',
+        }).catch(() => {});
+      }
+    } catch { /* best-effort */ }
   }
 
   if (meta.type === 'lead_form') {
