@@ -3,21 +3,35 @@
 // WhatsApp / Call Now). Side panel (RightUtilityPanel) jaisa hi look — ab feed ke
 // beech wale (center) ads me bhi yahi dikhta hai.
 import React from 'react';
-import { View, Text, TouchableOpacity, Linking, StyleSheet, Platform, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { openExternalUrl, buildWhatsappUrl } from '../utils/adRedirect';
+import { openExternalUrl, buildWhatsappUrl, openPhoneCall, getAdPhone } from '../utils/adRedirect';
+import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 
 export default function AdCtaButtons({ ad, onOpenLeadForm, style }) {
   if (!ad) return null;
   const isLead = ad.redirect === 'lead_form';
-  const isLink = ad.redirect === 'website' || ad.redirect === 'shop' || ad.redirect === 'whatsapp';
-  const canCall = Boolean(ad.owner_mobile) && ad.allowCalls !== false;
+  const hasWa = Boolean(buildWhatsappUrl(ad));
+  const isWa = ad.redirect === 'whatsapp' || (hasWa && !isLead && ad.redirect !== 'website' && ad.redirect !== 'shop');
+  const isLink = ad.redirect === 'website' || ad.redirect === 'shop' || isWa;
+  const phone = getAdPhone(ad);
+  const canCall = Boolean(phone) && ad.allowCalls !== false;
   if (!isLead && !isLink && !canCall) return null;
 
   const onLinkPress = () => {
-    if (ad.redirect === 'whatsapp') {
+    if (isWa) {
       const waUrl = buildWhatsappUrl(ad);
       if (waUrl) {
+        try {
+          const adId = ad.originalAdId || ad.id;
+          if (adId) {
+            AuthAPI.createEcomEnquiry({
+              ecom_id: adId,
+              type: 'ads',
+              message: 'Contacted via WhatsApp',
+            }).catch(() => {});
+          }
+        } catch {}
         openExternalUrl(waUrl);
       } else {
         Alert.alert('WhatsApp', 'This advertiser has not added a WhatsApp number yet.');
@@ -25,6 +39,10 @@ export default function AdCtaButtons({ ad, onOpenLeadForm, style }) {
       return;
     }
     openExternalUrl(ad.redirect === 'shop' ? ad.extraValues?.shop_url : ad.extraValues?.website_url);
+  };
+
+  const onCallPress = () => {
+    openPhoneCall(ad);
   };
 
   return (
@@ -38,17 +56,17 @@ export default function AdCtaButtons({ ad, onOpenLeadForm, style }) {
       {isLink ? (
         <TouchableOpacity style={[styles.btn, styles.orange]} activeOpacity={0.88} onPress={onLinkPress}>
           <Ionicons
-            name={ad.redirect === 'shop' ? 'storefront-outline' : ad.redirect === 'whatsapp' ? 'logo-whatsapp' : 'globe-outline'}
+            name={ad.redirect === 'shop' ? 'storefront-outline' : isWa ? 'logo-whatsapp' : 'globe-outline'}
             size={14}
             color="#fff"
           />
           <Text style={styles.btnText}>
-            {ad.redirect === 'shop' ? 'Visit Shop' : ad.redirect === 'whatsapp' ? 'Message on Whatsapp' : 'Visit Website'}
+            {ad.redirect === 'shop' ? 'Visit Shop' : isWa ? 'Message on WhatsApp' : 'Visit Website'}
           </Text>
         </TouchableOpacity>
       ) : null}
       {canCall ? (
-        <TouchableOpacity style={[styles.btn, styles.green]} activeOpacity={0.88} onPress={() => Linking.openURL(`tel:${ad.owner_mobile}`)}>
+        <TouchableOpacity style={[styles.btn, styles.green]} activeOpacity={0.88} onPress={onCallPress}>
           <Ionicons name="call" size={14} color="#fff" />
           <Text style={styles.btnText}>Call Now</Text>
         </TouchableOpacity>

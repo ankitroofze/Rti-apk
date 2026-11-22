@@ -114,6 +114,55 @@ if (typeof document !== 'undefined') {
     document.head.appendChild(styleEl);
   }
 
+  if (!document.getElementById('app-global-sleek-scrollbar')) {
+    const scrollStyleEl = document.createElement('style');
+    scrollStyleEl.id = 'app-global-sleek-scrollbar';
+    scrollStyleEl.textContent = `
+      /* Web-only sleek custom scrollbar — no bulky buttons, smooth rounded thumb */
+      * {
+        scrollbar-width: thin !important;
+        scrollbar-color: rgba(148, 163, 184, 0.45) transparent !important;
+      }
+
+      /* WebKit (Chrome, Edge, Safari, Opera) */
+      ::-webkit-scrollbar {
+        width: 6px !important;
+        height: 6px !important;
+      }
+
+      ::-webkit-scrollbar-track {
+        background: transparent !important;
+      }
+
+      ::-webkit-scrollbar-thumb {
+        background-color: rgba(148, 163, 184, 0.45) !important;
+        border-radius: 9999px !important;
+        border: 1px solid transparent !important;
+        background-clip: padding-box !important;
+      }
+
+      ::-webkit-scrollbar-thumb:hover {
+        background-color: rgba(100, 116, 139, 0.8) !important;
+      }
+
+      ::-webkit-scrollbar-thumb:active {
+        background-color: #ea580c !important;
+      }
+
+      /* Sirf bar dikhe, native stepper/arrow buttons (scroller buttons) bilkul nahi */
+      ::-webkit-scrollbar-button {
+        display: none !important;
+        width: 0 !important;
+        height: 0 !important;
+      }
+
+      ::-webkit-scrollbar-corner {
+        background: transparent !important;
+      }
+    `;
+    document.head.appendChild(scrollStyleEl);
+  }
+
   const observer = new MutationObserver(() => {
     document.querySelectorAll('[aria-hidden="true"]').forEach((el) => {
       if (el.contains(document.activeElement)) {

@@ -9,7 +9,7 @@
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import ModuleWebHeader from '../components/Modulewebheader';
 import ModuleMobileHeader from '../components/ModuleMobileHeader';
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -94,8 +94,25 @@ const STATUS_MAP = {
 const normStatus = (v) => (Number(v) === ST_CLOSED ? ST_CLOSED : Number(v) === ST_REVIEW ? ST_REVIEW : ST_NEW);
 const getStatus = (v) => STATUS_MAP[normStatus(v)];
 const STATUS_OPTIONS = [ST_NEW, ST_REVIEW, ST_CLOSED].map((v) => ({ value: v, label: STATUS_MAP[v].label }));
+// Extract quantity from any possible backend property
+const enqQty = (e = {}) => {
+  const val = e.qty ?? e.quantity ?? e.requested_quantity ?? e.product_quantity ?? e.product_qty ?? e.enquiry_qty ?? e.order_qty ?? e.count;
+  if (val !== undefined && val !== null && String(val).trim() !== '' && String(val).trim() !== '-') {
+    return String(val).trim();
+  }
+  return '';
+};
+
 // Backend `enq_status` hi source of truth hai (purani `status` key fallback). `enq_status_label` ho to wahi dikhao.
-const withEnqStatus = (e = {}) => ({ ...e, status: e.enq_status ?? e.status });
+const withEnqStatus = (e = {}) => {
+  const q = enqQty(e);
+  return {
+    ...e,
+    status: e.enq_status ?? e.status,
+    qty: q || e.qty || '',
+    quantity: q || e.quantity || '',
+  };
+};
 // API label "New" aaye to bhi "New Enquiry" dikhao (Review / Closed jaisa hai waisa hi)
 const statusLabelOf = (e = {}) => {
   const apiLabel = String(e.enq_status_label || '').trim();
@@ -104,17 +121,19 @@ const statusLabelOf = (e = {}) => {
 };
 
 // ─── small UI pieces ──────────────────────────────────────────────────────────
-const Thumb = ({ uri, size = 64, radius = 12 }) =>
-  uri ? (
-    <Image source={{ uri }} style={{ width: size, height: size, borderRadius: radius, backgroundColor: '#f1f5f9' }} />
+const Thumb = ({ uri, size = 64, radius = 12 }) => {
+  const validUri = uri && typeof uri === 'string' && uri.trim().length > 0 ? uri.trim() : null;
+  return validUri ? (
+    <Image source={{ uri: validUri }} style={{ width: size, height: size, borderRadius: radius, backgroundColor: '#f1f5f9' }} />
   ) : (
     <View style={{ width: size, height: size, borderRadius: radius, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' }}>
       <Ionicons name="image-outline" size={size * 0.38} color="#FCA5A5" />
     </View>
   );
+};
 
 const Avatar = ({ person, size = 34 }) => {
-  const uri = person?.profile_image_url;
+  const uri = person?.profile_image_url && typeof person.profile_image_url === 'string' && person.profile_image_url.trim().length > 0 ? person.profile_image_url.trim() : null;
   if (uri) return <Image source={{ uri }} style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: '#f1f5f9' }} />;
   return (
     <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: '#FEE2E2', alignItems: 'center', justifyContent: 'center' }}>
@@ -229,7 +248,7 @@ const StageTabs = ({ stage, setStage, counts }) => {
 };
 
 // ─── Enquiry card ─────────────────────────────────────────────────────────────
-const EnquiryCard = ({ item, mode, onOpen, onCall, onWhatsApp, onClose, onStatusChange, updating }) => {
+const EnquiryCard = React.memo(({ item, mode, onOpen, onCall, onWhatsApp, onClose, onStatusChange, updating }) => {
   const st = getStatus(item.status);
   const isReceived = mode === 'received';
   const ecom = ecomOf(item);
@@ -296,7 +315,9 @@ const EnquiryCard = ({ item, mode, onOpen, onCall, onWhatsApp, onClose, onStatus
 
         {/* chips */}
         <View style={s.chipsRow}>
-          <Chip icon="layers-outline" text={`Qty: ${item.qty || '—'}`} tint={ORANGE} bg="#FEF2F2" border="#FECACA" />
+          {!isAdsEnquiry(item) ? (
+            <Chip icon="layers-outline" text={`Qty: ${enqQty(item) || '—'}`} tint={ORANGE} bg="#FEF2F2" border="#FECACA" />
+          ) : null}
           <Chip icon="calendar-outline" text={fmtDate(item.created_at)} />
         </View>
 
@@ -330,7 +351,7 @@ const EnquiryCard = ({ item, mode, onOpen, onCall, onWhatsApp, onClose, onStatus
       </View>
     </TouchableOpacity>
   );
-};
+});
 
 // ─── Detail modal ─────────────────────────────────────────────────────────────
 const DetailModal = ({ visible, item, mode, onClose, onCall, onWhatsApp, onEmail, onCloseEnquiry }) => {
@@ -399,7 +420,7 @@ const DetailModal = ({ visible, item, mode, onClose, onCall, onWhatsApp, onEmail
                 <Row label="Name" value={enquirerName(item)} />
                 <Row label="Email" value={item.email} />
                 <Row label="Contact" value={item.contact} />
-                <Row label="Quantity" value={item.qty} />
+                {!isAdsEnquiry(item) ? <Row label="Quantity" value={enqQty(item) || '—'} /> : null}
                 {item.message ? <Row label="Message" value={item.message} multiline /> : null}
                 <Row label="Date" value={fmtDate(item.created_at)} />
               </View>
@@ -468,7 +489,10 @@ export default function MyEnquiriesScreen({ navigation, route }) {
   const isAdsPage = enquiryType === 'ads';
   const pageTitleText = isAdsPage ? 'Ads Enquiries' : 'Ecom Enquiries';
   // Backend type filter na lagaye to bhi yahan se sahi type ki hi enquiries dikhengi
-  const byType = (list) => (Array.isArray(list) ? list : []).filter((e) => isAdsEnquiry(e) === isAdsPage);
+  const byType = useCallback(
+    (list) => (Array.isArray(list) ? list : []).filter((e) => isAdsEnquiry(e) === isAdsPage),
+    [isAdsPage]
+  );
   const [tab, setTab] = useState(route?.params?.tab === 'sent' ? 'sent' : 'received');
 
   // Received (cursor pagination)
@@ -484,6 +508,7 @@ export default function MyEnquiriesScreen({ navigation, route }) {
   const [sent, setSent] = useState([]);
   const [sentLoading, setSentLoading] = useState(true);
   const [sentError, setSentError] = useState('');
+  const sentBusy = useRef(false);
 
   const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState(null);
@@ -495,9 +520,18 @@ export default function MyEnquiriesScreen({ navigation, route }) {
     if (recvBusy.current) return;
     if (!reset && !recvHasMore.current) return;
     recvBusy.current = true;
-    reset ? setRecvLoading(true) : setRecvMore(true);
+    if (reset) {
+      setRecvLoading(true);
+      recvCursor.current = null;
+    } else {
+      setRecvMore(true);
+    }
     try {
-      const res = await AuthAPI.getReceivedEcomEnquiries({ cursor: reset ? null : recvCursor.current, ecomId, type: enquiryType });
+      const res = await AuthAPI.getReceivedEcomEnquiries({
+        cursor: reset ? null : recvCursor.current,
+        ecomId,
+        type: enquiryType,
+      });
       if (!res.ok) {
         setRecvError(res.message || 'Failed to load enquiries.');
         if (res.isAuth) notify('Session expired', 'Please login again.');
@@ -510,13 +544,16 @@ export default function MyEnquiriesScreen({ navigation, route }) {
       }
     } catch (e) {
       setRecvError('Something went wrong.');
+    } finally {
+      recvBusy.current = false;
+      setRecvLoading(false);
+      setRecvMore(false);
     }
-    recvBusy.current = false;
-    setRecvLoading(false);
-    setRecvMore(false);
-  }, [ecomId, enquiryType]);
+  }, [byType, ecomId, enquiryType]);
 
   const loadSent = useCallback(async () => {
+    if (sentBusy.current) return;
+    sentBusy.current = true;
     setSentLoading(true);
     try {
       const res = await AuthAPI.getEcomEnquiries({ type: enquiryType });
@@ -530,14 +567,18 @@ export default function MyEnquiriesScreen({ navigation, route }) {
       }
     } catch (e) {
       setSentError('Something went wrong.');
+    } finally {
+      sentBusy.current = false;
+      setSentLoading(false);
     }
-    setSentLoading(false);
   }, [byType, enquiryType]);
 
-  useFocusEffect(useCallback(() => {
-    loadReceived(true);
-    loadSent();
-  }, [loadReceived, loadSent]));
+  useFocusEffect(
+    useCallback(() => {
+      loadReceived(true);
+      loadSent();
+    }, [loadReceived, loadSent])
+  );
 
   // Status badlo: PUT /ecom-enquiries/{id}  { enq_status: 1|2|3 }
   //  • request complete hone tak is enquiry ka dropdown disable (dobara update nahi)
@@ -611,8 +652,14 @@ export default function MyEnquiriesScreen({ navigation, route }) {
   const isReceived = tab === 'received';
   const receivedAll = received;
   const sentAll = sent;
-  const stageCounts = receivedAll.reduce((acc, e) => { const k = normStatus(e.status); acc[k] = (acc[k] || 0) + 1; return acc; }, {});
-  const data = isReceived ? receivedAll.filter((e) => normStatus(e.status) === stage) : sentAll;
+  const stageCounts = useMemo(
+    () => receivedAll.reduce((acc, e) => { const k = normStatus(e.status); acc[k] = (acc[k] || 0) + 1; return acc; }, {}),
+    [receivedAll]
+  );
+  const data = useMemo(
+    () => (isReceived ? receivedAll.filter((e) => normStatus(e.status) === stage) : sentAll),
+    [isReceived, receivedAll, stage, sentAll]
+  );
   const selectedView = selected || null;
   const loading = isReceived ? recvLoading : sentLoading;
   const error = isReceived ? recvError : sentError;
@@ -699,8 +746,12 @@ export default function MyEnquiriesScreen({ navigation, route }) {
         ListHeaderComponent={listHeader}
         ListEmptyComponent={emptyView}
         ListFooterComponent={recvMore && isReceived ? <ActivityIndicator style={{ marginVertical: 18 }} color={ORANGE} /> : null}
-        onEndReached={() => { if (isReceived) loadReceived(false); }}
-        onEndReachedThreshold={0.4}
+        onEndReached={() => { if (isReceived && !recvBusy.current && recvHasMore.current) loadReceived(false); }}
+        onEndReachedThreshold={0.3}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={5}
+        removeClippedSubviews={Platform.OS !== 'web'}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[ORANGE]} tintColor={ORANGE} />}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={[

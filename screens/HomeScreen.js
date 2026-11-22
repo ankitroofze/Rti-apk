@@ -24,7 +24,7 @@ import {
 } from '../utils/storyHelpers';
 import useRotatingRandomAds, { AD_ROTATE_MS } from '../utils/useRotatingAds';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
-import { openExternalUrl, buildWhatsappUrl } from '../utils/adRedirect';
+import { openExternalUrl, buildWhatsappUrl, openPhoneCall } from '../utils/adRedirect';
 import { emitFeedScroll } from '../utils/feedScrollBus';
 import useLiveRefresh from '../utils/useLiveRefresh';
 import NewsFeedCard from '../components/NewsFeedCard';
@@ -58,6 +58,7 @@ export function homeStoryFromAd(ad = {}) {
     ad.photo || ad.image || ad.image_url || ad.images?.[0] || ad.photos?.[0] || ''
   ).trim();
   return {
+    ...ad,
     id: String(ad.feed_id || (ad.id ? (String(ad.id).startsWith('ad-feed-') ? String(ad.id) : `ad-feed-${ad.id}`) : (ad.ad_id ? `ad-feed-${ad.ad_id}` : 'ad-item'))),
     isAd: true,
     title: ad.title || 'Sponsored Advertisement',
@@ -69,6 +70,8 @@ export function homeStoryFromAd(ad = {}) {
     image: photo,
     images: Array.isArray(ad.images) && ad.images.length ? ad.images : (photo ? [photo] : []),
     video: ad.video || '',
+    url: ad.url || ad.redirection_url || '',
+    redirection_url: ad.redirection_url || ad.url || '',
     state: ad.state || '',
     district: ad.district || '',
     date: ad.created_at || ad.updated_at || '',
@@ -79,10 +82,11 @@ export function homeStoryFromAd(ad = {}) {
     author_has_blue_tick: Boolean(ad.owner_has_blue_tick),
     createdBy: ad.owner_email || '',
     owner_email: ad.owner_email || '',
+    owner_id: ad.owner_id ?? ad.user_id ?? null,
+    user_id: ad.user_id ?? ad.owner_id ?? null,
     owner_name: ad.owner_name || 'Advertiser',
     owner_profile_image: ad.owner_profile_image || '',
     owner_role_label: ad.owner_role_label || 'Sponsored',
-    owner_has_blue_tick: Boolean(ad.owner_has_blue_tick),
     owner_mobile: ad.owner_mobile || '',
     redirect: ad.redirect || 'profile',
     extraValues: ad.extraValues || {},
@@ -1332,9 +1336,23 @@ const handleOpenLeadForm = useCallback(async (story) => {
     const extra = ad.extraValues || {};
 
     if (redirect === 'lead_form') { handleOpenLeadForm(ad); return; }
+    if (redirect === 'call' || redirect === 'contact') { openPhoneCall(ad); return; }
     if (redirect === 'whatsapp') {
       const waUrl = buildWhatsappUrl(ad);
-      if (waUrl) { openExternalUrl(waUrl); return; }
+      if (waUrl) {
+        try {
+          const adId = ad.originalAdId || ad.id;
+          if (adId) {
+            AuthAPI.createEcomEnquiry({
+              ecom_id: adId,
+              type: 'ads',
+              message: 'Contacted via WhatsApp',
+            }).catch(() => {});
+          }
+        } catch {}
+        openExternalUrl(waUrl);
+        return;
+      }
     }
     if (redirect === 'website' || redirect === 'shop') {
       const link = redirect === 'shop' ? extra.shop_url : extra.website_url;
@@ -1470,9 +1488,9 @@ const handleOpenLeadForm = useCallback(async (story) => {
   const LeftBox = isThreeColScroll ? ScrollView : View;
   const FeedBox = isThreeColScroll ? ScrollView : View;
   const RightBox = isThreeColScroll ? ScrollView : View;
-  const colExtra = isThreeColScroll ? { showsVerticalScrollIndicator: false } : {};
+  const colExtra = isThreeColScroll ? { showsVerticalScrollIndicator: Platform.OS === 'web' } : {};
   const feedBoxExtra = isThreeColScroll
-    ? { ref: pageScrollRef, onScroll: handleCenterScroll, scrollEventThrottle: 16, showsVerticalScrollIndicator: false, contentContainerStyle: { alignItems: 'center' } }
+    ? { ref: pageScrollRef, onScroll: handleCenterScroll, scrollEventThrottle: 16, showsVerticalScrollIndicator: Platform.OS === 'web', contentContainerStyle: { alignItems: 'center' } }
     : {};
 
   const pageContent = (
@@ -1701,7 +1719,7 @@ const handleOpenLeadForm = useCallback(async (story) => {
         <ScrollView
           style={styles.colsPageBody}
           contentContainerStyle={{ flexGrow: 1 }}
-          showsVerticalScrollIndicator={false}
+          showsVerticalScrollIndicator={Platform.OS === 'web'}
           onLayout={(e) => setColsViewportHeight(Math.round(e.nativeEvent.layout.height))}
         >
           {/* Columns poori visible height lete hain; footer unke neeche full width me aata hai */}
@@ -1733,7 +1751,7 @@ const handleOpenLeadForm = useCallback(async (story) => {
           isMobileLayout && styles.pageScrollContentMobile,
           isMobileLayout && styles.pageScrollContentWithMobileNav,
         ]}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={Platform.OS === 'web'}
       >
      {pageContent}
       </ScrollView>

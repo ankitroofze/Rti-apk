@@ -26,7 +26,7 @@ import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from './ui/ToastProvider';
 import { loginMessage } from '../utils/loginMessages';
-import { getAdRedirectMeta, openAdRedirect } from '../utils/adRedirect';
+import { getAdRedirectMeta, openAdRedirect, openPhoneCall, getAdPhone, buildWhatsappUrl } from '../utils/adRedirect';
 import styles from './NewsFeedCardStyles';
 import { LinearGradient } from 'expo-linear-gradient';
 import { getProfileTier, resolveRoleTitle, cleanRoleNames } from '../utils/profileHelpers';
@@ -47,7 +47,7 @@ import FramedExportView from './FramedExportView';
 import SocialShareModal from './SocialShareModal';
 import { useLanguage } from '../contexts/LanguageContext';
 import { shareNewsLink, shareNewsPackage, getMyReferralCode } from '../utils/shareNews';
-import { exportOptsFromStory } from '../utils/videoWithMusic';
+import { exportOptsFromStory, toCorsSafeMediaUrl } from '../utils/videoWithMusic';
 
 // ─────────────────────────────────────────────
 // Like persistence helpers
@@ -518,11 +518,21 @@ function TrendingCard({ item, onPress, onLike, onOpenComments, onShare, currentU
           </View>
         </View>
       ) : (
-        <Image
-          source={{ uri: item.images?.length ? item.images[0] : (item.image || item.thumbnail || undefined) }}
-          style={styles.trndCardImg}
-          resizeMode="cover"
-        />
+        (() => {
+          const rawImg = (item.images?.length && item.images[0]) ? item.images[0] : (item.image || item.thumbnail || null);
+          const safeImg = typeof rawImg === 'string' && rawImg.trim().length > 0 ? rawImg.trim() : null;
+          return safeImg ? (
+            <Image
+              source={{ uri: safeImg }}
+              style={styles.trndCardImg}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={[styles.trndCardImg, { backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' }]}>
+              <Feather name="image" size={20} color="#94a3b8" />
+            </View>
+          );
+        })()
       )}
       <View style={styles.trndCategoryChip}>
         <Text style={styles.trndCategoryChipText}>{item.category || 'News'}</Text>
@@ -985,7 +995,10 @@ function NewsFeedCardInner({
   }, [rawImageUri]);
 
   const effectiveVideoUri = useMemo(() => {
-    if (Platform.OS === 'web' && isIdbMediaUri(videoUri)) return resolvedVideoUri || '';
+    if (Platform.OS === 'web') {
+      if (isIdbMediaUri(videoUri)) return resolvedVideoUri || '';
+      return toCorsSafeMediaUrl(videoUri);
+    }
     return videoUri;
   }, [resolvedVideoUri, videoUri]);
 
@@ -1795,12 +1808,15 @@ const handleLike = async () => {
 
   useEffect(() => {
     let cancelled = false;
-    if (!storyAuthorId) { setLiveAuthorProfile(null); return; }
+    const hasTickInfo = story.author_has_blue_tick !== undefined || story.has_blue_tick !== undefined || story.is_blue_tick !== undefined;
+    if (!storyAuthorId || hasTickInfo) {
+      return () => { cancelled = true; };
+    }
     UserStore.getPublicProfileById(storyAuthorId).then((profile) => {
-      if (!cancelled) setLiveAuthorProfile(profile || null);
+      if (!cancelled && profile) setLiveAuthorProfile(profile);
     });
     return () => { cancelled = true; };
-  }, [storyAuthorId]);
+  }, [storyAuthorId, story.author_has_blue_tick, story.has_blue_tick, story.is_blue_tick]);
 
   // Refresh the profile entitlement so a web purchase appears on Android and
   // an old post cannot retain a tick after the Premium Plan expires.
@@ -2163,12 +2179,20 @@ const handleLike = async () => {
             </TouchableOpacity>
           ) : null}
 
-     {isAdStory && story.redirect === 'lead_form' ? (
+      {(() => {
+        if (!isAdStory) return null;
+        const adPhone = getAdPhone(story);
+        const canCall = Boolean(adPhone) && story.allowCalls !== false;
+        const hasWa = Boolean(buildWhatsappUrl(story));
+        const isWa = story.redirect === 'whatsapp' || (hasWa && story.redirect !== 'lead_form' && story.redirect !== 'website' && story.redirect !== 'shop');
+
+        if (story.redirect === 'lead_form') {
+          return (
             <View style={styles.adLeadStrip}>
               <TouchableOpacity
                 style={[
                   styles.adLeadStripHalf,
-                  story.owner_mobile ? styles.adLeadStripHalfBordered : null,
+                  canCall ? styles.adLeadStripHalfBordered : null,
                 ]}
                 onPress={(e) => { e.stopPropagation?.(); handleAdPress(); }}
                 activeOpacity={0.85}
@@ -2177,10 +2201,10 @@ const handleLike = async () => {
                 <Text style={styles.adLeadStripText}>{commonCopy?.fillLeadForm || 'Fill Lead Form'}</Text>
               </TouchableOpacity>
 
-              {story.owner_mobile ? (
+              {canCall ? (
                 <TouchableOpacity
                   style={styles.adLeadStripHalf}
-                  onPress={(e) => { e.stopPropagation?.(); Linking.openURL(`tel:${story.owner_mobile}`); }}
+                  onPress={(e) => { e.stopPropagation?.(); openPhoneCall(story); }}
                   activeOpacity={0.85}
                 >
                   <Ionicons name="call-outline" size={16} color="#ffffff" />
@@ -2188,29 +2212,37 @@ const handleLike = async () => {
                 </TouchableOpacity>
               ) : null}
             </View>
-        ) : isAdStory && (story.redirect === 'website' || story.redirect === 'shop' || story.redirect === 'whatsapp') ? (
+          );
+        }
+
+        if (story.redirect === 'website' || story.redirect === 'shop' || isWa) {
+          return (
             <View style={styles.adLeadStrip}>
               <TouchableOpacity
                 style={[
                   styles.adLeadStripHalf,
-                  story.owner_mobile ? styles.adLeadStripHalfBordered : null,
+                  canCall ? styles.adLeadStripHalfBordered : null,
                 ]}
                 onPress={(e) => { e.stopPropagation?.(); handleAdPress(); }}
                 activeOpacity={0.85}
               >
                 <Ionicons
-                  name={story.redirect === 'shop' ? 'storefront-outline' : story.redirect === 'whatsapp' ? 'logo-whatsapp' : 'globe-outline'}
+                  name={story.redirect === 'shop' ? 'storefront-outline' : isWa ? 'logo-whatsapp' : 'globe-outline'}
                   size={16}
                   color="#ffffff"
                 />
                 <Text style={styles.adLeadStripText}>
-                  {story.redirect === 'shop' ? (commonCopy?.visitShop || 'Visit Shop') : story.redirect === 'whatsapp' ? (commonCopy?.messageOnWhatsapp || 'Message on Whatsapp') : (commonCopy?.visitWebsite || 'Visit Website')}
+                  {story.redirect === 'shop'
+                    ? (commonCopy?.visitShop || 'Visit Shop')
+                    : isWa
+                      ? (commonCopy?.messageOnWhatsapp || 'Message on WhatsApp')
+                      : (commonCopy?.visitWebsite || 'Visit Website')}
                 </Text>
               </TouchableOpacity>
-              {story.owner_mobile ? (
+              {canCall ? (
                 <TouchableOpacity
                   style={styles.adLeadStripHalf}
-                  onPress={(e) => { e.stopPropagation?.(); Linking.openURL(`tel:${story.owner_mobile}`); }}
+                  onPress={(e) => { e.stopPropagation?.(); openPhoneCall(story); }}
                   activeOpacity={0.85}
                 >
                   <Ionicons name="call-outline" size={16} color="#ffffff" />
@@ -2218,16 +2250,24 @@ const handleLike = async () => {
                 </TouchableOpacity>
               ) : null}
             </View>
-                  ) : isAdStory && story.owner_mobile ? (
+          );
+        }
+
+        if (canCall) {
+          return (
             <TouchableOpacity
               style={styles.adCallOnlyStrip}
-              onPress={(e) => { e.stopPropagation?.(); Linking.openURL(`tel:${story.owner_mobile}`); }}
+              onPress={(e) => { e.stopPropagation?.(); openPhoneCall(story); }}
               activeOpacity={0.85}
             >
               <Ionicons name="call-outline" size={16} color="#ffffff" />
               <Text style={styles.adLeadStripText}>{commonCopy?.callNow || 'Call Now'}</Text>
             </TouchableOpacity>
-          ) : null}
+          );
+        }
+
+        return null;
+      })()}
 
           {/* Video duration badge (1:29) hata diya */}
           {!canPlayVideo ? (

@@ -4,42 +4,76 @@
 // teeno jagah yahi component use hota hai taaki sab ek jaisa dikhe.
 // Parent View `position: 'relative'` hona chahiye (media ko wrap karne wala).
 import React from 'react';
-import { View, Text, TouchableOpacity, Linking, StyleSheet, Platform, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { openExternalUrl, buildWhatsappUrl } from '../utils/adRedirect';
+import { openExternalUrl, buildWhatsappUrl, openPhoneCall, getAdPhone, openAdRedirect } from '../utils/adRedirect';
+import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 
 const FONT = Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold';
 
-export default function AdOverlayCta({ ad, onOpenLeadForm, bottom = 12, right = 10 }) {
+export default function AdOverlayCta({ ad, onOpenLeadForm, navigation, bottom = 12, right = 10 }) {
   if (!ad) return null;
   const isLead = ad.redirect === 'lead_form';
-  const isLink = ad.redirect === 'website' || ad.redirect === 'shop' || ad.redirect === 'whatsapp';
-  const canCall = Boolean(ad.owner_mobile) && ad.allowCalls !== false;
-  if (!isLead && !isLink && !canCall) return null;
+  const hasWa = Boolean(buildWhatsappUrl(ad));
+  const isWa = ad.redirect === 'whatsapp' || (hasWa && !isLead && ad.redirect !== 'website' && ad.redirect !== 'shop');
+  const directLink = String(ad.extraValues?.website_url || ad.extraValues?.shop_url || ad.url || ad.redirection_url || '').trim();
+  const hasDirectWeb = Boolean(directLink && /^(https?:)/i.test(directLink));
+  const isLink = ad.redirect === 'website' || ad.redirect === 'shop' || isWa || (!isLead && hasDirectWeb);
+  const phone = getAdPhone(ad);
+  const canCall = Boolean(phone) && ad.allowCalls !== false;
+  const isProfile = !isLead && !isLink && !canCall;
 
   const stop = (e) => { try { e?.stopPropagation?.(); } catch (_) { /* ignore */ } };
 
   const onLinkPress = (e) => {
     stop(e);
-    if (ad.redirect === 'whatsapp') {
+    if (isWa) {
       const waUrl = buildWhatsappUrl(ad);
       if (waUrl) {
+        try {
+          const adId = ad.originalAdId || ad.id;
+          if (adId) {
+            AuthAPI.createEcomEnquiry({
+              ecom_id: adId,
+              type: 'ads',
+              message: 'Contacted via WhatsApp',
+            }).catch(() => {});
+          }
+        } catch {}
         openExternalUrl(waUrl);
       } else {
         Alert.alert('WhatsApp', 'This advertiser has not added a WhatsApp number yet.');
       }
       return;
     }
-    openExternalUrl(ad.redirect === 'shop' ? ad.extraValues?.shop_url : ad.extraValues?.website_url);
+    const targetUrl = ad.redirect === 'shop'
+      ? (ad.extraValues?.shop_url || directLink)
+      : (ad.extraValues?.website_url || directLink);
+    if (targetUrl) {
+      openExternalUrl(targetUrl);
+    } else {
+      openAdRedirect(ad, navigation, { onOpenLeadForm });
+    }
   };
 
-  const linkIcon = ad.redirect === 'shop' ? 'storefront-outline' : ad.redirect === 'whatsapp' ? 'logo-whatsapp' : 'globe-outline';
-  const linkLabel = ad.redirect === 'shop' ? 'Visit Shop' : ad.redirect === 'whatsapp' ? 'Message on Whatsapp' : 'Visit Website';
+  const onCallPress = (e) => {
+    stop(e);
+    openPhoneCall(ad);
+  };
+
+  const onProfilePress = (e) => {
+    stop(e);
+    openAdRedirect(ad, navigation, { onOpenLeadForm });
+  };
+
+  const linkIcon = ad.redirect === 'shop' ? 'storefront-outline' : isWa ? 'logo-whatsapp' : 'globe-outline';
+  const linkLabel = ad.redirect === 'shop' ? 'Visit Shop' : isWa ? 'Message on WhatsApp' : 'Visit Website';
 
   const items = [];
   if (isLead) items.push({ key: 'lead', icon: 'document-text-outline', label: 'Fill Lead Form', onPress: (e) => { stop(e); onOpenLeadForm?.(ad); } });
   if (isLink) items.push({ key: 'link', icon: linkIcon, label: linkLabel, onPress: onLinkPress });
-  if (canCall) items.push({ key: 'call', icon: 'call-outline', label: 'Call Now', onPress: (e) => { stop(e); Linking.openURL(`tel:${ad.owner_mobile}`); } });
+  if (canCall) items.push({ key: 'call', icon: 'call-outline', label: 'Call Now', onPress: onCallPress });
+  if (isProfile) items.push({ key: 'profile', icon: 'person-circle-outline', label: 'View Profile', onPress: onProfilePress });
 
   return (
     <View pointerEvents="box-none" style={[styles.strip, { bottom, right }]}>

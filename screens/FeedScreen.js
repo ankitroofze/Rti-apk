@@ -26,6 +26,7 @@ import { UserStore } from '../store/UserStore';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl, storeWebUriToIdbMedia } from '../utils/webMediaStore';
 import { resolveMediaUrl } from '../utils/storyHelpers';
+import { toCorsSafeMediaUrl } from '../utils/videoWithMusic';
 import { safePause, safePlay, safeSetMuted } from '../utils/videoPlayerSafe';
 import { useGlobalMuted, getGlobalMuted, setGlobalMuted } from '../utils/Globalmutestore';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
@@ -83,9 +84,10 @@ function isPlayableVideoSource(uri) {
 
   if (Platform.OS !== 'web') return true;
   if (/^(blob:|data:|idb-media:)/i.test(uri)) return true;
+  if (/^\/storage(-proxy)?\//i.test(uri)) return true;
   // Android se upload hue video ke URL me extension na ho ya alag ho (.3gp, bina extension) to bhi web par
   // chalna chahiye. Ye function sirf video items ke liye bulaya jaata hai, isliye sirf saaf-saaf image/pdf URL reject karo.
-  return /^https?:/i.test(uri) && !/\.(jpe?g|png|gif|webp|bmp|svg|heic|avif|pdf)(\?.*)?(#.*)?$/i.test(uri);
+  return (/^https?:/i.test(uri) || /^\//i.test(uri)) && !/\.(jpe?g|png|gif|webp|bmp|svg|heic|avif|pdf)(\?.*)?(#.*)?$/i.test(uri);
 }
 
 // Share Handler
@@ -454,8 +456,16 @@ const isMobileWebBrowser = () => {
 };
 
 // Share Modal
-function ShareModal({ visible, onClose, post }) {
+function ShareModal({ visible, onClose, post, onShareAction }) {
   if (!post) return null;
+
+  const triggerShareRecord = () => {
+    try {
+      if (typeof onShareAction === 'function') {
+        onShareAction(post?.id);
+      }
+    } catch (_) {}
+  };
 
   const shareText = encodeURIComponent(`📰 ${post.headline}\n\n${post.caption}\n\n📍 ${post.location}`);
   const shareUrl  = encodeURIComponent(`https://rtinews.in/news/${post.id}`);
@@ -466,6 +476,7 @@ function ShareModal({ visible, onClose, post }) {
       emoji: '💬',
       color: '#25D366',
       action: () => {
+        triggerShareRecord();
         const fullMsg = `${shareText}%0A${shareUrl}`;
         if (Platform.OS === 'web') {
           if (isMobileWebBrowser()) {
@@ -490,6 +501,7 @@ function ShareModal({ visible, onClose, post }) {
       emoji: '✈️',
       color: '#0088cc',
       action: () => {
+        triggerShareRecord();
         if (Platform.OS === 'web') {
           if (isMobileWebBrowser()) {
             window.location.href = `tg://msg_url?url=${shareUrl}&text=${shareText}`;
@@ -509,6 +521,7 @@ function ShareModal({ visible, onClose, post }) {
       emoji: '🐦',
       color: '#1DA1F2',
       action: () => {
+        triggerShareRecord();
         const url = `https://twitter.com/intent/tweet?text=${shareText}&url=${shareUrl}`;
         Platform.OS === 'web' ? window.open(url, '_blank', 'noopener,noreferrer') : Linking.openURL(url);
         onClose();
@@ -519,6 +532,7 @@ function ShareModal({ visible, onClose, post }) {
       emoji: '📘',
       color: '#1877F2',
       action: () => {
+        triggerShareRecord();
         const url = `https://www.facebook.com/sharer/sharer.php?u=${shareUrl}`;
         Platform.OS === 'web' ? window.open(url, '_blank', 'noopener,noreferrer') : Linking.openURL(url);
         onClose();
@@ -529,6 +543,7 @@ function ShareModal({ visible, onClose, post }) {
       emoji: '🔗',
       color: '#6b7280',
       action: async () => {
+        triggerShareRecord();
         const link = `https://rtinews.in/news/${post.id}`;
         try {
           if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
@@ -2018,10 +2033,10 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
       t.startsWith('http://') ||
       isValidImageUrl(t)
     )) {
-      return t;
+      return Platform.OS === 'web' ? toCorsSafeMediaUrl(t) : t;
     }
-   // Agar thumbnail resolve nahi hua abhi, blank rakho — picsum mat dikhao
-return t || '';
+    // Agar thumbnail resolve nahi hua abhi, blank rakho — picsum mat dikhao
+    return t ? (Platform.OS === 'web' ? toCorsSafeMediaUrl(t) : t) : '';
   }, [resolvedThumbnailUrl, thumbnailError, postId]);
 
   const mediaUri = String(safePost.media || '').trim();
@@ -2060,7 +2075,8 @@ return t || '';
     }
 
     if (!mediaUri || !isPlayableVideoSource(mediaUri)) return null;
-    return { uri: mediaUri };
+    const finalUri = Platform.OS === 'web' ? toCorsSafeMediaUrl(mediaUri) : mediaUri;
+    return { uri: finalUri };
   }, [safePost.type, mediaUri, resolvedMediaUri]);
 
   // ✅ FIX: canPlayVideo derived from videoSource (not effectiveMediaUri)
@@ -2092,11 +2108,20 @@ return t || '';
       p.muted = getGlobalMuted() || Boolean(safePost.localMuteOriginal);   // global mute state se start (voice-over reel => original hamesha mute)
       p.volume = 1;
       p.autoplay = false;
-      p.addListener('statusChange', ({ status }) => {
-        if (status === 'readyToPlay' && mountedRef.current) setPlayerReady(true);
+      p.addListener('statusChange', ({ status, error }) => {
+        if (status === 'readyToPlay' && mountedRef.current) {
+          setPlayerReady(true);
+          setShowPoster(false);
+        } else if (status === 'error' && mountedRef.current) {
+          console.warn('[FeedScreen] video player error:', error);
+          setPlayerReady(false);
+          setShowPoster(true);
+        }
       });
       p.addListener('playbackStateChange', ({ playbackState }) => {
-        if (playbackState === 'playing' && mountedRef.current) setShowPoster(false);
+        if ((playbackState === 'playing' || playbackState === 'buffering') && mountedRef.current) {
+          setShowPoster(false);
+        }
       });
     } catch (_) { /* player release ho chuka ho to ignore */ }
   });
@@ -2157,7 +2182,12 @@ return t || '';
   // ✅ FIX (auto-play): 'readyToPlay' event kabhi miss ho jaaye to bhi 1.2s baad play try karo
   useEffect(() => {
     if (!isActive || !canPlayVideo || !activeSource || playerReady) return undefined;
-    const t = setTimeout(() => { if (mountedRef.current) setPlayerReady(true); }, 1200);
+    const t = setTimeout(() => {
+      if (mountedRef.current) {
+        setPlayerReady(true);
+        setShowPoster(false);
+      }
+    }, 1200);
     return () => clearTimeout(t);
   }, [isActive, canPlayVideo, activeSource, playerReady]);
 
@@ -2170,7 +2200,16 @@ return t || '';
         try {
           const r = player.play();
           if (r && typeof r.then === 'function') await r;
+          if (mountedRef.current) setShowPoster(false);
         } catch (error) {
+          if (error && (error.name === 'NotSupportedError' || String(error).includes('no supported sources'))) {
+            console.warn('[FeedScreen] Video source error:', error);
+            if (mountedRef.current) {
+              setPlayerReady(false);
+              setShowPoster(true);
+            }
+            return;
+          }
           // Browser kabhi awaaz ke saath autoplay rok deta hai — tab muted karke chala do
           // (user speaker button se unmute kar sakta hai), warna video ruka rahega.
           console.log('Auto-play with sound blocked:', error);
@@ -2178,9 +2217,15 @@ return t || '';
             setGlobalMuted(true);
             safeSetMuted(player, true);
             safePlay(player);
+            if (mountedRef.current) setShowPoster(false);
           } else {
             // pause mat dikhao (user ko tap na karna pade) — thodi der baad dobara try
-            setTimeout(() => { if (mountedRef.current) safePlay(player); }, 600);
+            setTimeout(() => {
+              if (mountedRef.current) {
+                safePlay(player);
+                setShowPoster(false);
+              }
+            }, 600);
           }
         }
       } else {
@@ -3071,9 +3116,19 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     await syncPostComments(id);
   }, [syncPostComments]);
 
-  const handleShare = useCallback((id) => {
-    setPosts(prev => prev.map(p => p.id === id ? { ...p, shares: (Number(p.shares) || 0) + 1 } : p));
+  const handleShare = useCallback(async (id) => {
+    if (!id) return;
     setSharePost(id);
+    // Optimistic UI update
+    setPosts(prev => prev.map(p => String(p.id) === String(id) ? { ...p, shares: (Number(p.shares) || 0) + 1 } : p));
+    try {
+      const res = await UserStore.recordShare(id);
+      if (res?.ok && Number.isFinite(res.shareCount)) {
+        setPosts(prev => prev.map(p => String(p.id) === String(id) ? { ...p, shares: res.shareCount } : p));
+      }
+    } catch (e) {
+      console.warn('Error recording share:', e);
+    }
   }, []);
 
   const [downloadingReelId, setDownloadingReelId] = useState(null);
@@ -3444,6 +3499,25 @@ const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
     { intervalMs: 20000, runOnFocus: false }
   );
 
+  // ✅ Back action: seedha Home screen par navigate karo
+  const handleBackToHome = useCallback(() => {
+    try {
+      if (navigation?.navigate) {
+        navigation.navigate('Home');
+        return;
+      }
+    } catch {}
+    try {
+      if (navigation?.canGoBack?.()) {
+        navigation.goBack();
+        return;
+      }
+    } catch {}
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location) {
+      window.location.href = '/';
+    }
+  }, [navigation]);
+
   // ✅ FIX: Android back button se app band ho jaata tha (Feed stack ka root ban jaata hai).
   // Ab back = pichli screen, aur agar pichli screen nahi hai to Home. App tabhi band hoga
   // jab user Home par ho. Sirf Feed focus me ho tab active rehta hai.
@@ -3451,12 +3525,11 @@ const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
     useCallback(() => {
       if (Platform.OS !== 'android') return undefined;
       const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-        if (navigation?.canGoBack?.()) navigation.goBack();
-        else navigation?.navigate?.('Home');
+        handleBackToHome();
         return true;
       });
       return () => sub.remove();
-    }, [navigation])
+    }, [handleBackToHome])
   );
 
   useFocusEffect(
@@ -3513,7 +3586,17 @@ const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
 
           if (summaryValue?.items) {
             const currentEmail = String(profileData?.email || '').trim().toLowerCase();
-            const sourceItems = summaryValue.items.map((item) => {
+            const validItems = summaryValue.items.filter((item) => {
+              const mt = String(item.mediaType || '');
+              const isVideo = mt === 'Video' || Number(item.media_type) === 2;
+              const rawMedia = typeof item.media === 'string' ? item.media.trim() : '';
+              const rawVideo = typeof item.video === 'string' ? item.video.trim() : (item.video?.uri || '');
+              const hasImages = Array.isArray(item.images) && item.images.length > 0;
+              if (isVideo && !rawMedia && !rawVideo) return false;
+              if (!isVideo && !rawMedia && !hasImages && !item.thumbnail && !item.image) return false;
+              return true;
+            });
+            const sourceItems = validItems.map((item) => {
   // media_type: 1 = image, 2 = video, 3 = PDF, 4 = external URL
   const mt = String(item.mediaType || '');
   const rawMedia = typeof item.media === 'string' ? resolveMediaUrl(item.media.trim()) : '';
@@ -3528,16 +3611,21 @@ const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
   else if (mt === 'Image' || Number(item.media_type) === 1) kind = 'image';
   else kind = (videoFromItem || (isHttp && /\.(mp4|m4v|mov|webm|ogv|m3u8)(\?.*)?$/i.test(rawMedia))) ? 'video' : 'image';
 
-  const videoUri = kind === 'video' ? (videoFromItem || (isHttp ? rawMedia : '')) : '';
+  const rawVideoUri = kind === 'video' ? (videoFromItem || (isHttp ? rawMedia : '')) : '';
+  const videoUri = (Platform.OS === 'web' && rawVideoUri) ? toCorsSafeMediaUrl(rawVideoUri) : rawVideoUri;
   const imagesList = kind === 'image' && Array.isArray(item.images)
-    ? item.images.filter((u) => typeof u === 'string' && u.trim())
+    ? item.images.filter((u) => typeof u === 'string' && u.trim()).map((u) => Platform.OS === 'web' ? toCorsSafeMediaUrl(u) : u)
     : [];
   // image post: images[] render hogi; images khali ho to `media` fallback image URL
-  const imageUri = kind === 'image'
+  const rawImageUri = kind === 'image'
     ? String(item.thumbnail || item.image || imagesList[0] || (isHttp ? rawMedia : '') || '').trim()
     : '';
+  const imageUri = (Platform.OS === 'web' && rawImageUri) ? toCorsSafeMediaUrl(rawImageUri) : rawImageUri;
   if (kind === 'image' && !imagesList.length && imageUri) imagesList.push(imageUri);
   const docUrl = (kind === 'pdf' || kind === 'link') && isHttp ? rawMedia : '';
+
+  const rawThumb = kind === 'video' ? String(item.thumbnail || '') : imageUri;
+  const safeThumb = (Platform.OS === 'web' && rawThumb) ? toCorsSafeMediaUrl(rawThumb) : rawThumb;
 
   return {
     ...item,
@@ -3546,7 +3634,7 @@ const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
     media: kind === 'video' ? videoUri : kind === 'image' ? imageUri : docUrl,
     video: kind === 'video' ? videoUri : null,
     // video ko kabhi image/thumbnail ki tarah use nahi karna — poster sirf backend thumbnail se
-    thumbnail: kind === 'video' ? String(item.thumbnail || '') : imageUri,
+    thumbnail: safeThumb,
     image: imageUri,
     images: imagesList,
     avatar: item.avatar || item.author_profile_image || '',
@@ -3658,6 +3746,35 @@ image: item.image || null,
     ? { borderLeftWidth: 1, borderRightWidth: 1, borderColor: 'rgba(255,255,255,0.06)' }
     : {}),
 }}>
+          {/* Floating Back to Home button */}
+          <TouchableOpacity
+            style={{
+              position: 'absolute',
+              top: Platform.OS === 'web' ? 18 : (Platform.OS === 'ios' ? 44 : 32),
+              left: 16,
+              zIndex: 9999,
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: 'rgba(15, 23, 42, 0.72)',
+              paddingVertical: 8,
+              paddingHorizontal: 14,
+              borderRadius: 22,
+              borderWidth: 1,
+              borderColor: 'rgba(255, 255, 255, 0.22)',
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.45,
+              shadowRadius: 8,
+              elevation: 10,
+              ...(Platform.OS === 'web' ? { backdropFilter: 'blur(12px)', cursor: 'pointer' } : {}),
+            }}
+            activeOpacity={0.75}
+            onPress={handleBackToHome}
+          >
+            <Ionicons name="arrow-back" size={20} color="#ffffff" style={{ marginRight: 6 }} />
+            <Text style={{ color: '#ffffff', fontSize: 13, fontWeight: '700', letterSpacing: 0.3 }}>Home</Text>
+          </TouchableOpacity>
+
           <FlatList
             data={posts}
             keyExtractor={item => item.id}
@@ -3793,6 +3910,7 @@ image: item.image || null,
         visible={!!sharePost}
         onClose={() => setSharePost(null)}
         post={activeShareData}
+        onShareAction={handleShare}
       />
 
       <DescriptionModal

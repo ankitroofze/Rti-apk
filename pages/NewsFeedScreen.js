@@ -2,7 +2,8 @@ import NameWithTick from '../components/NameWithTick';
 import React, { useCallback, useState, useEffect } from 'react';
 import {
   Image, ImageBackground, KeyboardAvoidingView, Linking, Modal, Platform, ScrollView, Share,
-  StatusBar, Text, TextInput, TouchableOpacity, View, Alert, BackHandler, StyleSheet, useWindowDimensions
+  StatusBar, Text, TextInput, TouchableOpacity, View, Alert, BackHandler, StyleSheet, useWindowDimensions,
+  ActivityIndicator
 } from 'react-native';
 import KeyboardAwareScroll from '../components/KeyboardAwareScroll';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -346,9 +347,16 @@ function FeedCommentItem({
     <View style={[styles.commentItem, isReply && styles.commentReplyItem]}>
       <View style={styles.commentTopRow}>
         <View style={styles.commentAuthorWrap}>
-          <View style={[styles.commentAvatar, isReply && styles.commentAvatarSmall]}>
-            <Text style={styles.commentAvatarText}>{String(comment.author || 'U').trim().charAt(0).toUpperCase() || 'U'}</Text>
-          </View>
+          {comment.author_avatar ? (
+            <Image
+              source={{ uri: comment.author_avatar }}
+              style={[styles.commentAvatar, isReply && styles.commentAvatarSmall, { borderRadius: isReply ? 11 : 16 }]}
+            />
+          ) : (
+            <View style={[styles.commentAvatar, isReply && styles.commentAvatarSmall]}>
+              <Text style={styles.commentAvatarText}>{String(comment.author || 'U').trim().charAt(0).toUpperCase() || 'U'}</Text>
+            </View>
+          )}
           <NameWithTick name={comment.author || 'User'} show={Boolean(comment.author_has_blue_tick)} style={styles.commentAuthor} badgeSize={12} />
         </View>
         <Text style={styles.commentDate}>{comment.date || ''}{comment.edited_at ? ' • Edited' : ''}</Text>
@@ -595,6 +603,7 @@ export default function NewsFeedScreen({ navigation }) {
   const [activeCommentItem, setActiveCommentItem] = useState(null);
   const [commentText, setCommentText] = useState('');
   const [localComments, setLocalComments] = useState([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState(null);
   const [editingCommentText, setEditingCommentText] = useState('');
   const [replyingToCommentId, setReplyingToCommentId] = useState(null);
@@ -694,14 +703,17 @@ export default function NewsFeedScreen({ navigation }) {
     if (!Array.isArray(comments)) return [];
     return comments.map((comment) => ({
       id: String(comment.id || ''),
-      text: String(comment.text || ''),
-      author: String(comment.author || 'User'),
-      author_email: String(comment.author_email || ''),
-      date: comment.date || '',
+      text: String(comment.text || comment.comment || ''),
+      author: String(comment.author || comment.user?.name || 'User'),
+      author_email: String(comment.author_email || comment.user?.email || ''),
+      author_avatar: String(comment.author_avatar || comment.authorAvatar || comment.user?.profile_image_url || comment.user?.profile_image || ''),
+      author_has_blue_tick: Boolean(comment.author_has_blue_tick || comment.has_blue_tick),
+      is_mine: Boolean(comment.is_mine),
+      date: comment.date || (comment.created_at ? new Date(comment.created_at).toLocaleDateString('en-IN') : ''),
       edited_at: comment.edited_at || null,
-      likes: Number(comment.likes || 0),
+      likes: Number(comment.likes || comment.likes_count || 0),
       liked_by: Array.isArray(comment.liked_by) ? comment.liked_by : [],
-      parent_comment_id: comment.parent_comment_id || null,
+      parent_comment_id: comment.parent_comment_id || comment.comment_id || null,
       replies: formatCommentsForView(Array.isArray(comment.replies) ? comment.replies : []),
     }));
   }, []);
@@ -946,17 +958,27 @@ const handleLike = async (item) => {
     setExpandedReplyThreads({});
   };
 
-  // ✅ FIX: pehle yahan syncFeed(focusItemId) poori news list ko replace kar deta tha (list gayab + activeCommentItem null
-  // => comment post hi nahi hota tha). Ab sirf is ek news ke comments laate hain, list ko haath nahi lagate.
+  // Dedicated comments API (UserStore.getNewsCommentsPage) se comments load karo (same as front page)
   const loadCommentsFor = async (itemId) => {
     if (!itemId) return;
+    setCommentsLoading(true);
     try {
-      const data = await UserStore.getNewsFeedSummary({ focusItemId: itemId });
-      const match = Array.isArray(data?.items) ? data.items.find((it) => String(it.id) === String(itemId)) : null;
-      if (!match) return;
-      const raw = Array.isArray(match.comments_list) ? match.comments_list : (Array.isArray(match.comments) ? match.comments : []);
-      setLocalComments(formatCommentsForView(raw));
-    } catch { /* list wale comments hi dikhte rahenge */ }
+      const res = await UserStore.getNewsCommentsPage(itemId, { perPage: 50 });
+      if (res?.ok && Array.isArray(res.comments)) {
+        setLocalComments(formatCommentsForView(res.comments));
+      } else {
+        const data = await UserStore.getNewsFeedSummary({ focusItemId: itemId });
+        const match = Array.isArray(data?.items) ? data.items.find((it) => String(it.id) === String(itemId)) : null;
+        if (match) {
+          const raw = Array.isArray(match.comments_list) ? match.comments_list : (Array.isArray(match.comments) ? match.comments : []);
+          setLocalComments(formatCommentsForView(raw));
+        }
+      }
+    } catch (e) {
+      console.warn('loadCommentsFor error:', e);
+    } finally {
+      setCommentsLoading(false);
+    }
   };
 
   const openComments = async (item) => {
@@ -1035,6 +1057,8 @@ const handleLike = async (item) => {
       text: String(added.text || trimmed),
       author: String(added.author || currentUser?.name || 'User'),
       author_email: String(added.author_email || currentUser?.email || ''),
+      author_avatar: String(added.author_avatar || currentUser?.profile_image || currentUser?.avatar || ''),
+      author_has_blue_tick: Boolean(added.author_has_blue_tick || currentUser?.has_blue_tick),
       date: added.date || 'Now',
       edited_at: null,
       likes: 0,
@@ -1192,6 +1216,8 @@ const handleLike = async (item) => {
       text: String(added.text || trimmed),
       author: String(added.author || currentUser?.name || 'User'),
       author_email: String(added.author_email || currentUser?.email || ''),
+      author_avatar: String(added.author_avatar || currentUser?.profile_image || currentUser?.avatar || ''),
+      author_has_blue_tick: Boolean(added.author_has_blue_tick || currentUser?.has_blue_tick),
       date: added.date || 'Now',
       edited_at: null,
       likes: 0,
@@ -1262,7 +1288,11 @@ const handleLike = async (item) => {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {localComments.length ? (
+          {commentsLoading ? (
+            <View style={{ paddingVertical: 24, alignItems: 'center', justifyContent: 'center' }}>
+              <ActivityIndicator size="small" color={C.primary} />
+            </View>
+          ) : localComments.length ? (
             localComments.map((c) => (
               <FeedCommentItem
                 key={c.id}

@@ -124,8 +124,8 @@ export default function SubscriptionPlanPurchase({
               countLabel={statusCard.countLabel}
               purchasedAt={statusCard.purchasedAt}
               expiresAt={statusCard.expiresAt}
-              themeImage={getNativeThemeImage(activeTheme)}
-              textColor={activeTheme?.textColor}
+              themeImage={statusCard.themeImage || getNativeThemeImage(activeTheme)}
+              textColor={statusCard.textColor || activeTheme?.textColor}
             />
           </View>
         ) : null}

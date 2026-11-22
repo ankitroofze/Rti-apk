@@ -3485,9 +3485,16 @@ export const AuthAPI = {
       if (status) q.push(`status=${encodeURIComponent(status)}`);
       const { status: code, data } = await getJSON(`/ecom-enquiries/received?${q.join('&')}`, token);
       if (code === 200 || code === 201) {
+        const rawList = Array.isArray(data?.ecom_enquiries)
+          ? data.ecom_enquiries
+          : (Array.isArray(data?.data)
+              ? data.data
+              : (Array.isArray(data?.enquiries)
+                  ? data.enquiries
+                  : (Array.isArray(data) ? data : [])));
         return {
           ok: true,
-          enquiries: Array.isArray(data?.ecom_enquiries) ? data.ecom_enquiries : [],
+          enquiries: rawList,
           hasMore: Boolean(data?.has_more),
           nextCursor: data?.next_cursor || null,
         };
@@ -3519,7 +3526,14 @@ export const AuthAPI = {
     try {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
-      const { status, data } = await postFormData('/ecom-enquiries', fields, token);
+      const normalizedFields = { ...fields };
+      const rawQty = fields.quantity ?? fields.qty ?? fields.product_qty;
+      if (rawQty !== undefined && rawQty !== null && String(rawQty).trim() !== '') {
+        const cleanQty = String(rawQty).trim();
+        normalizedFields.quantity = cleanQty;
+        normalizedFields.qty = cleanQty;
+      }
+      const { status, data } = await postFormData('/ecom-enquiries', normalizedFields, token);
       if (status === 200 || status === 201) return { ok: true, enquiry: data?.data || data?.enquiry || data };
       if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
       if (status === 422) {
@@ -4189,8 +4203,15 @@ export const AuthAPI = {
     try {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+      const cleanUid = (userId != null && String(userId) !== '' && String(userId) !== 'null' && String(userId) !== 'undefined') ? String(userId).trim() : null;
+      if (!cleanUid) {
+        return { ok: false, message: 'The user id field is required.' };
+      }
       const payload = {
-        ...(userId != null && userId !== '' ? { user_id: userId, target_id: userId, target_user_id: userId, id: userId } : {}),
+        user_id: cleanUid,
+        target_id: cleanUid,
+        target_user_id: cleanUid,
+        id: cleanUid,
         ...(targetEmail ? { email: targetEmail, target_email: targetEmail } : {}),
       };
       const { status, data } = await postJSON('/users/follow', payload, token);
@@ -4211,8 +4232,15 @@ export const AuthAPI = {
     try {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+      const cleanUid = (userId != null && String(userId) !== '' && String(userId) !== 'null' && String(userId) !== 'undefined') ? String(userId).trim() : null;
+      if (!cleanUid) {
+        return { ok: false, message: 'The user id field is required.' };
+      }
       const payload = {
-        ...(userId != null && userId !== '' ? { user_id: userId, target_id: userId, target_user_id: userId, id: userId } : {}),
+        user_id: cleanUid,
+        target_id: cleanUid,
+        target_user_id: cleanUid,
+        id: cleanUid,
         ...(targetEmail ? { email: targetEmail, target_email: targetEmail } : {}),
       };
       const { status, data } = await postJSON('/users/unfollow', payload, token);
@@ -4232,7 +4260,8 @@ export const AuthAPI = {
     try {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
-      const endpoint = userId ? `/users/followers?user_id=${userId}` : '/users/followers';
+      const cleanUid = (userId != null && String(userId) !== '' && String(userId) !== 'null' && String(userId) !== 'undefined') ? String(userId).trim() : null;
+      const endpoint = cleanUid ? `/users/followers?user_id=${cleanUid}` : '/users/followers';
       const { status, data } = await getJSON(endpoint, token);
       if (status === 200 || status === 201) {
         // Backend kabhi { followers: [...] }, kabhi { data: [...] }, kabhi seedha [...] bhejta hai — teeno handle karo
@@ -4257,7 +4286,8 @@ export const AuthAPI = {
     try {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
-      const endpoint = userId ? `/users/following?user_id=${userId}` : '/users/following';
+      const cleanUid = (userId != null && String(userId) !== '' && String(userId) !== 'null' && String(userId) !== 'undefined') ? String(userId).trim() : null;
+      const endpoint = cleanUid ? `/users/following?user_id=${cleanUid}` : '/users/following';
       const { status, data } = await getJSON(endpoint, token);
       if (status === 200 || status === 201) {
         // Backend kabhi { following: [...] }, kabhi { data: [...] }, kabhi seedha [...] bhejta hai — teeno handle karo
@@ -4282,7 +4312,9 @@ export const AuthAPI = {
     try {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
-      const { status, data } = await postJSON('/users/block', { user_id: userId }, token);
+      const cleanUid = (userId != null && String(userId) !== '' && String(userId) !== 'null' && String(userId) !== 'undefined') ? String(userId).trim() : null;
+      if (!cleanUid) return { ok: false, message: 'The user id field is required.' };
+      const { status, data } = await postJSON('/users/block', { user_id: cleanUid }, token);
       if (status === 200 || status === 201) return { ok: true, data };
       return { ok: false, message: data?.message || `Server error (${status}).` };
     } catch (err) {
@@ -4295,7 +4327,9 @@ export const AuthAPI = {
     try {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
-      const { status, data } = await postJSON('/users/unblock', { user_id: userId }, token);
+      const cleanUid = (userId != null && String(userId) !== '' && String(userId) !== 'null' && String(userId) !== 'undefined') ? String(userId).trim() : null;
+      if (!cleanUid) return { ok: false, message: 'The user id field is required.' };
+      const { status, data } = await postJSON('/users/unblock', { user_id: cleanUid }, token);
       if (status === 200 || status === 201) return { ok: true, data };
       return { ok: false, message: data?.message || `Server error (${status}).` };
     } catch (err) {

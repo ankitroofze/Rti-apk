@@ -34,7 +34,7 @@ const notify = (title, msg) => {
 const getBuyerName    = (p = {}) => p.name || p.buyer_name || [p.buyer_first_name, p.buyer_last_name].filter(Boolean).join(' ') || 'Unknown';
 const getBuyerEmail   = (p = {}) => p.email || p.buyer_contact_email || p.buyer_email || '—';
 const getBuyerContact = (p = {}) => p.contact || p.buyer_mobile || p.mobile || '';
-const getQty          = (p = {}) => p.quantity || p.requested_quantity || p.product_quantity || 'N/A';
+const getQty          = (p = {}) => p.qty || p.quantity || p.requested_quantity || p.product_quantity || p.product_qty || p.enquiry_qty || p.order_qty || 'N/A';
 const getDate         = (p = {}) => {
   const raw = p.created_at || p.createdAt || p.date;
   if (!raw) return '—';

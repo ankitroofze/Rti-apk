@@ -710,6 +710,25 @@ const editAd = route?.params?.editAd || null;
     return () => { active = false; };
   }, [isEditing]);
 
+  // Agar user ChoosePlan screen se "Edit Ad" karke wapis aaya hai, to draft populate karo
+  useEffect(() => {
+    const draft = route?.params?.editAdDraft;
+    if (!draft) return;
+    if (draft.photo !== undefined) setPhoto(draft.photo);
+    if (Array.isArray(draft.images)) {
+      const extras = draft.images.filter((img) => img !== draft.photo);
+      setExtraPhotos(extras);
+    }
+    if (draft.video !== undefined) setAdVideo(draft.video);
+    if (draft.title !== undefined) setTitle(draft.title);
+    if (draft.description !== undefined) setDescription(draft.description);
+    if (draft.redirect !== undefined) setSelectedRedirect(draft.redirect);
+    if (draft.extraValues !== undefined) setExtraValues(draft.extraValues);
+    if (draft.allowCalls !== undefined) setAllowCalls(Boolean(draft.allowCalls));
+    if (draft.extraValues?.lead_form_fields) setLeadFormFields(draft.extraValues.lead_form_fields);
+    if (draft.extraValues?.lead_form_submit_action) setLeadFormSubmitAction(draft.extraValues.lead_form_submit_action);
+  }, [route?.params?.editAdDraft]);
+
   const saveDraft = async () => {
     await AsyncStorage.setItem(AD_DRAFT_KEY, JSON.stringify({
       photo, extraPhotos, adVideo, title, description, selectedRedirect, extraValues, allowCalls,
@@ -1036,6 +1055,8 @@ const editAd = route?.params?.editAd || null;
       navigation.navigate('MyAds');
       return;
     }
+
+    await saveDraft();
 
     navigation.navigate('ChoosePlan', {
       adData: {

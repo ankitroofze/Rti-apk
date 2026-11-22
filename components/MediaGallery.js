@@ -7,6 +7,7 @@ import AutoFitAdImage from './AutoFitAdImage';
 import MediaControlBar, { isAudioUrl } from './MediaControlBar';
 import NewsVideoControls, { isHoverDevice } from './NewsVideoControls';
 import { subscribeUserScroll } from '../utils/feedScrollBus';
+import { toCorsSafeMediaUrl } from '../utils/videoWithMusic';
 import * as MediaDownloadButtonModule from './MediaDownloadButton';
 const MediaDownloadButton = MediaDownloadButtonModule.MediaDownloadButton || MediaDownloadButtonModule.default;
 
@@ -146,8 +147,10 @@ function AdVideoControls({ player, playing, ended, buffering, onToggle, onFullsc
 }
 
 function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 0, adAutoPlay = false, active = true, musicUrl = '', musicVolume = 0.6, muteOriginal = false, bannerH = 0 }) {
+  if (!uri) return null;
+  const safeVideoUri = toCorsSafeMediaUrl(uri);
   const [ratio, setRatio] = useState(null);
-  const [audioOnly, setAudioOnly] = useState(() => isAudioUrl(uri));
+  const [audioOnly, setAudioOnly] = useState(() => isAudioUrl(safeVideoUri));
   const [st, setSt] = useState({ playing: false, ended: false, cur: 0, dur: 0, muted: false });
   const [waiting, setWaiting] = useState(false);
   const [vel, setVel] = useState(null);
@@ -231,9 +234,9 @@ function WebVideoSlide({ uri, width, maxHeight, coverMode, onRatio, radius = 0, 
   return (
     <View style={{ width, height: frameH, backgroundColor: '#000', borderRadius: radius || 0, overflow: 'hidden' }}>
       {React.createElement('video', {
-        key: uri,
+        key: safeVideoUri,
         ref: setVideoNode,
-        src: uri,
+        src: safeVideoUri,
         controls: false,
         playsInline: true,
         ...(adAutoPlay ? { autoPlay: true, muted: true, loop: true } : {}),

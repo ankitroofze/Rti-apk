@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Linking, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { openExternalUrl, buildWhatsappUrl } from '../utils/adRedirect';
+import { openExternalUrl, buildWhatsappUrl, openAdRedirect } from '../utils/adRedirect';
 import AdOverlayCta from './AdOverlayCta';
 import VerifiedBadge from './VerifiedBadge';
 import useRotatingRandomAds, { AD_ROTATE_MS } from '../utils/useRotatingAds';
@@ -75,26 +75,35 @@ function collectAdImages(ad) {
 //  • apne aap chalta hai, shuru me MUTE, user volume button se unmute kar sakta hai
 //  • play/pause, seek, fullscreen controls; user pause kare to pause hi rehta hai
 //  • download button (image / video)
-function SponsoredMedia({ images, videoUri }) {
+function SponsoredMedia({ images, videoUri, onPress }) {
   const [w, setW] = useState(0);
   return (
-    <View
-      style={{ width: '100%', backgroundColor: '#000', borderRadius: 2, overflow: 'hidden' }}
+    <TouchableOpacity
+      activeOpacity={0.92}
+      onPress={onPress}
+      disabled={!onPress}
+      style={{
+        width: '100%',
+        backgroundColor: '#000',
+        borderRadius: 2,
+        overflow: 'hidden',
+        ...(Platform.OS === 'web' && onPress ? { cursor: 'pointer' } : null),
+      }}
       onLayout={(e) => {
         const nw = Math.round(e.nativeEvent.layout.width);
         if (nw && nw !== w) setW(nw);
       }}
     >
       {w > 0 ? (
-        <MediaGallery images={images} video={videoUri} width={w} maxHeight={420} adAutoPlay />
+        <MediaGallery images={images} video={videoUri} width={w} maxHeight={420} adAutoPlay onPressImage={onPress} />
       ) : (
         <View style={{ width: '100%', aspectRatio: 16 / 9, backgroundColor: '#000' }} />
       )}
-    </View>
+    </TouchableOpacity>
   );
 }
 
-function SponsoredImage({ ad, commonCopy }) {
+function SponsoredImage({ ad, commonCopy, onPress }) {
   const [failedToLoad, setFailedToLoad] = useState(false);
   const [ratio, setRatio] = useState(null);
   const images = useMemo(() => collectAdImages(ad), [ad]);
@@ -109,21 +118,38 @@ function SponsoredImage({ ad, commonCopy }) {
 
   // ✅ Video ad (ya multi-image ad): center jaisa auto-play player
   if (videoUri || images.length > 1) {
-    return <SponsoredMedia images={images} videoUri={videoUri} />;
+    return <SponsoredMedia images={images} videoUri={videoUri} onPress={() => onPress?.(ad)} />;
   }
 
   if (!imageUri || failedToLoad) {
     return (
-      <View style={[styles.sponsoredImage, styles.sponsoredImageFallback]}>
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPress={() => onPress?.(ad)}
+        disabled={!onPress}
+        style={[
+          styles.sponsoredImage,
+          styles.sponsoredImageFallback,
+          Platform.OS === 'web' && onPress ? { cursor: 'pointer' } : null,
+        ]}
+      >
         <Ionicons name="image-outline" size={28} color="#94a3b8" />
         <Text style={styles.sponsoredImageFallbackText}>{commonCopy?.advertisement || 'Advertisement'}</Text>
-      </View>
+      </TouchableOpacity>
     );
   }
 
   // Poori image dikhe (crop nahi): asli ratio ke hisaab se height, contain + download button
   return (
-    <View style={{ position: 'relative' }}>
+    <TouchableOpacity
+      activeOpacity={0.9}
+      onPress={() => onPress?.(ad)}
+      style={[
+        { position: 'relative' },
+        Platform.OS === 'web' && onPress ? { cursor: 'pointer' } : null,
+      ]}
+      disabled={!onPress}
+    >
       <Image
         source={{ uri: imageUri }}
         style={[styles.sponsoredImage, { height: undefined, aspectRatio: ratio || 1.5, maxHeight: 420 }]}
@@ -134,7 +160,7 @@ function SponsoredImage({ ad, commonCopy }) {
         }}
         onError={() => setFailedToLoad(true)}
       />
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -166,7 +192,12 @@ function SponsoredHeader({ ad, navigation, commonCopy }) {
   const name = ad.owner_name || 'Advertiser';
   const handlePress = async () => {
     const email = String(ad.owner_email || '').trim().toLowerCase();
-    const userId = ad.owner_id || null;
+    const rawUid = ad.user_id ?? ad.owner_id ?? ad.userId ?? null;
+    const cleanId = (s) => (s == null || s === '' || String(s) === 'null' || String(s) === 'undefined') ? null : String(s);
+    let userId = cleanId(rawUid);
+    if (!userId && email) {
+      userId = await UserStore.resolveUserIdByEmail(email);
+    }
     if (!email && !userId) return;
     try {
       const me = await UserStore.getCurrentUser();
@@ -175,9 +206,10 @@ function SponsoredHeader({ ad, navigation, commonCopy }) {
       if (isMe) { navigation?.navigate?.('Profile'); return; }
     } catch { /* ignore */ }
     navigation?.navigate?.('UserPublicProfile', {
-      email,
-      userId,
+      email: email || undefined,
+      userId: userId || undefined,
       author: {
+        id: userId || undefined,
         name,
         email,
         profile_image: ad.owner_profile_image || '',
@@ -267,11 +299,17 @@ export default function RightUtilityPanel({
               ]}
             >
               <SponsoredHeader ad={ad} navigation={navigation} commonCopy={commonCopy} />
-              <Text style={styles.sponsoredHeadline}>{ad.title}</Text>
-            <View style={{ position: 'relative', marginBottom: (ad.video || ad.video_url) ? 14 : 0 }}>
-              <SponsoredImage ad={ad} commonCopy={commonCopy} />
-              <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={(ad.video || ad.video_url) ? 46 : 12} />
-            </View>
+              <TouchableOpacity
+                onPress={() => openAdRedirect(ad, navigation, { onOpenLeadForm })}
+                activeOpacity={0.85}
+                style={Platform.OS === 'web' ? { cursor: 'pointer' } : null}
+              >
+                <Text style={styles.sponsoredHeadline}>{ad.title}</Text>
+              </TouchableOpacity>
+              <View style={{ position: 'relative', marginBottom: (ad.video || ad.video_url) ? 14 : 0 }}>
+                <SponsoredImage ad={ad} commonCopy={commonCopy} onPress={() => openAdRedirect(ad, navigation, { onOpenLeadForm })} />
+                <AdOverlayCta ad={ad} navigation={navigation} onOpenLeadForm={onOpenLeadForm} bottom={(ad.video || ad.video_url) ? 46 : 12} />
+              </View>
               
             </View>
           ))}
@@ -287,11 +325,17 @@ export default function RightUtilityPanel({
           {sideAds.map((ad, aIdx) => (
             <View key={`side-ad-${aIdx}-${ad?.id || 'ad'}`} style={{ marginBottom: 18, borderBottomWidth: 1, borderBottomColor: '#f1f5f9', paddingBottom: 14 }}>
               <SponsoredHeader ad={ad} navigation={navigation} commonCopy={commonCopy} />
-              <Text style={styles.sponsoredHeadline}>{ad.title}</Text>
-          <View style={{ position: 'relative', marginBottom: (ad.video || ad.video_url) ? 14 : 0 }}>
-              <SponsoredImage ad={ad} commonCopy={commonCopy} />
-              <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={(ad.video || ad.video_url) ? 46 : 12} />
-            </View>
+              <TouchableOpacity
+                onPress={() => openAdRedirect(ad, navigation, { onOpenLeadForm })}
+                activeOpacity={0.85}
+                style={Platform.OS === 'web' ? { cursor: 'pointer' } : null}
+              >
+                <Text style={styles.sponsoredHeadline}>{ad.title}</Text>
+              </TouchableOpacity>
+              <View style={{ position: 'relative', marginBottom: (ad.video || ad.video_url) ? 14 : 0 }}>
+                <SponsoredImage ad={ad} commonCopy={commonCopy} onPress={() => openAdRedirect(ad, navigation, { onOpenLeadForm })} />
+                <AdOverlayCta ad={ad} navigation={navigation} onOpenLeadForm={onOpenLeadForm} bottom={(ad.video || ad.video_url) ? 46 : 12} />
+              </View>
               
             </View>
           ))}

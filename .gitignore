@@ -68,3 +68,4 @@ __test_write*
 # Plesk build artifacts
 out/
 out.zip
+*.zip

@@ -90,7 +90,16 @@ const screensConfig = {
   UserPublicProfile: {
     path: 'user/:userId?',
     parse: {
-      userId: (userId) => `${userId}`,
+      userId: (userId) => {
+        const s = String(userId || '').trim();
+        return (!s || s === 'null' || s === 'undefined') ? undefined : s;
+      },
+    },
+    stringify: {
+      userId: (userId) => {
+        const s = String(userId || '').trim();
+        return (!s || s === 'null' || s === 'undefined') ? '' : s;
+      },
     },
   },
   VerifyMember: 'verify',
@@ -333,7 +342,13 @@ export const linkingConfig = {
   },
   getPathFromState: (state, options) => {
     try {
-      return defaultGetPathFromState(state, options);
+      // Clean up params like author (object) or userId="null" so URLs stay clean and don't produce /user/null or author=[object Object]
+      const cleanState = JSON.parse(JSON.stringify(state, (key, value) => {
+        if (key === 'author' && typeof value === 'object' && value !== null) return undefined;
+        if ((key === 'userId' || key === 'id') && (value === 'null' || value === 'undefined' || value === null)) return undefined;
+        return value;
+      }));
+      return defaultGetPathFromState(cleanState, options);
     } catch (_err) {
       return '/';
     }

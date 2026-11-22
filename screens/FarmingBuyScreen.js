@@ -335,12 +335,14 @@ const EnquiryFormModal = ({ product, onClose, onSaved }) => {
       return;
     }
     setSaving(true);
+    const qtyVal = quantity.trim();
     const result = await UserStore.createEcomeEnquiry(product.id, {
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       email: email.trim(),
       contact: normalizedContact,
-      quantity: quantity.trim(),
+      quantity: qtyVal,
+      qty: qtyVal,
       message: message.trim(),
     });
     setSaving(false);

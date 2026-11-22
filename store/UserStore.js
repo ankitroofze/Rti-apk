@@ -879,8 +879,8 @@ const normalizeEcomDetail = (raw = {}) => {
   const rawImages = (Array.isArray(raw.images) && raw.images.length)
     ? raw.images
     : (Array.isArray(raw.mediaItems) && raw.mediaItems.length
-        ? raw.mediaItems.map((m) => (typeof m === 'string' ? m : (m?.uri || m?.url || ''))).filter(Boolean)
-        : (raw.image ? [raw.image] : (raw.photo ? [raw.photo] : [])));
+      ? raw.mediaItems.map((m) => (typeof m === 'string' ? m : (m?.uri || m?.url || ''))).filter(Boolean)
+      : (raw.image ? [raw.image] : (raw.photo ? [raw.photo] : [])));
   const cleanImages = rawImages
     .map((img) => (typeof img === 'string' ? img : (img?.url || img?.image_url || img?.image || img?.path || img?.uri || '')))
     .filter((u) => u && typeof u === 'string' && !u.includes('picsum.photos'))
@@ -2741,6 +2741,51 @@ export const UserStore = {
     return () => _postDeletedListeners.delete(callback);
   },
 
+  // ✅ Resolve user ID by email using memory caches (ads, profiles, news, storage)
+  resolveUserIdByEmail: async (email) => {
+    const targetEmail = String(email || '').trim().toLowerCase();
+    if (!targetEmail) return null;
+    try {
+      // 1. Check ads in memory / cache
+      const ads = UserStore._adsCache?.data || [];
+      for (const ad of ads) {
+        const adEmail = String(ad.owner_email || ad.createdBy || ad.email || '').trim().toLowerCase();
+        const adUid = ad.user_id ?? ad.owner_id ?? ad.author_id ?? null;
+        if (adEmail === targetEmail && adUid != null && String(adUid) !== 'null' && String(adUid) !== 'undefined') {
+          return String(adUid);
+        }
+      }
+      // 2. Check public profile cache
+      if (UserStore._pubProfCache) {
+        for (const [k, v] of UserStore._pubProfCache.entries()) {
+          const prof = v?.data;
+          const profEmail = String(prof?.email || '').trim().toLowerCase();
+          const profUid = prof?.id ?? prof?.user_id ?? null;
+          if (profEmail === targetEmail && profUid != null && String(profUid) !== 'null' && String(profUid) !== 'undefined') {
+            return String(profUid);
+          }
+        }
+      }
+      // 3. Check local users
+      const local = await UserStore.getUser(targetEmail).catch(() => null);
+      if (local?.id != null && String(local.id) !== 'null' && String(local.id) !== 'undefined') {
+        return String(local.id);
+      }
+      // 4. If ads cache was empty, query ads feed to find creator ID
+      if (!ads.length) {
+        const freshAds = await UserStore.getActiveAdsFeed().catch(() => []);
+        for (const ad of freshAds) {
+          const adEmail = String(ad.owner_email || ad.createdBy || ad.email || '').trim().toLowerCase();
+          const adUid = ad.user_id ?? ad.owner_id ?? ad.author_id ?? null;
+          if (adEmail === targetEmail && adUid != null && String(adUid) !== 'null' && String(adUid) !== 'undefined') {
+            return String(adUid);
+          }
+        }
+      }
+    } catch { /* ignore */ }
+    return null;
+  },
+
   // ✅ NEW: kisi bhi user ka public profile uske numeric id se laata hai
   // (GET /profile/{id}). posts[] ko mapApiNewsToFeedItem se normalize karta hai
   // taaki NewsFeedCard ise seedha render kar sake (media_type 2 = video bhi
@@ -2756,7 +2801,10 @@ export const UserStore = {
         return cached.data;
       }
       const res = await AuthAPI.getPublicProfileById(key);
-      if (!res?.ok) return null;
+      if (!res?.ok) {
+        UserStore._pubProfCache.set(key, { timestamp: Date.now(), data: null });
+        return null;
+      }
       const profile = res.profile || {};
       const normalized = {
         ...profile,
@@ -3129,8 +3177,8 @@ export const UserStore = {
       if (!updatedUser) return { ok: false, message: 'Could not save the subscription.' };
       try {
         const { sendInvoiceEmailCopy } = require('../utils/invoiceGenerator');
-        sendInvoiceEmailCopy(quizPayment, updatedUser).catch(() => {});
-      } catch (_) {}
+        sendInvoiceEmailCopy(quizPayment, updatedUser).catch(() => { });
+      } catch (_) { }
       await recordQualifyingTransaction({
         buyerEmail: user.email,
         amount: Number(plan?.price || 0),
@@ -4812,7 +4860,7 @@ export const UserStore = {
           plan_name: activePlan.plan_name,
           module: 'role',
           status: 'paid',
-        }, updatedUser).catch(() => {});
+        }, updatedUser).catch(() => { });
       } catch (_) { }
 
       return { ok: true, role_label: getRoleLabel(newRole), user: updatedUser };
@@ -5043,15 +5091,38 @@ export const UserStore = {
       let apiItems = [];
       try {
         if (feedType === 'feeds') {
-          const apiRes = await AuthAPI.getFeeds({
-            per_page: feedPerPage,
-            ...(feedCursor ? { cursor: feedCursor } : {}),
-            ...(options?.comments === 0 ? { comments: 0 } : {}),
-          });
+          const [apiRes, newsRes] = await Promise.all([
+            AuthAPI.getFeeds({
+              per_page: feedPerPage,
+              ...(feedCursor ? { cursor: feedCursor } : {}),
+              ...(options?.comments === 0 ? { comments: 0 } : {}),
+            }),
+            AuthAPI.getNewsList({ per_page: 25 }).catch(() => ({ ok: false })),
+          ]);
           feedPagination = apiRes.pagination || null;
+          let rawList = [];
           if (apiRes.ok && Array.isArray(apiRes.news)) {
-            apiItems = apiRes.news;
+            rawList = apiRes.news;
           }
+          // Video items from news list ko bhi reels me include karo agar unme valid video media ho
+          if (newsRes.ok && Array.isArray(newsRes.news)) {
+            const videoNews = newsRes.news.filter(
+              (n) => (Number(n.media_type) === 2 || n.type === 2) && Boolean(n.media || n.video)
+            );
+            for (const vn of videoNews) {
+              if (!rawList.some((it) => String(it.id) === String(vn.id))) {
+                rawList.push(vn);
+              }
+            }
+          }
+          // Filter out broken reels (media_type === 2 par na video hai na media)
+          apiItems = rawList.filter((item) => {
+            const isVid = Number(item.media_type) === 2 || item.type === 2 || String(item.mediaType).toLowerCase() === 'video';
+            if (isVid) {
+              return Boolean(item.media || item.video || item.media_url);
+            }
+            return true;
+          });
         } else if (feedType === 'all') {
           // Home screen: sabhi users ke news, backend ke /news (index) route se
           let singleItemRes = null;
@@ -5686,7 +5757,7 @@ export const UserStore = {
             if (r?.ok && Array.isArray(r.replies)) {
               c.replies = r.replies.map((x) => mapApiReplyToLocal(x, me));
             }
-          } catch (_) {}
+          } catch (_) { }
         })
       );
       return {
@@ -5786,7 +5857,7 @@ export const UserStore = {
                 repliesCount: fallbackRes.commentsCount,
               };
             }
-          } catch (_) {}
+          } catch (_) { }
         }
       }
 
@@ -6556,14 +6627,25 @@ export const UserStore = {
       const targetEmail = String(targetUserEmail || '').trim().toLowerCase();
       const currentEmail = String(currentUser.email || '').trim().toLowerCase();
       if (!targetEmail && !targetUserId) return { ok: false, message: 'User not found.' };
-      if (currentEmail && targetEmail && currentEmail === targetEmail) return { ok: false, message: 'Cannot follow yourself.' };
-      if (currentUser.id && targetUserId && String(currentUser.id) === String(targetUserId)) return { ok: false, message: 'Cannot follow yourself.' };
 
-      let targetId = targetUserId != null && String(targetUserId) !== '' ? String(targetUserId) : null;
+      const cleanId = (v) => {
+        if (v == null) return null;
+        const s = String(v).trim();
+        if (!s || s === 'null' || s === 'undefined' || s === 'NaN') return null;
+        return s;
+      };
+
+      let targetId = cleanId(targetUserId);
+      if (!targetId && targetEmail) {
+        targetId = await UserStore.resolveUserIdByEmail(targetEmail);
+      }
       if (!targetId && targetEmail) {
         const targetUser = await UserStore.getUser(targetEmail);
-        targetId = targetUser?.id ?? targetUser?.user_id ?? null;
+        targetId = cleanId(targetUser?.id ?? targetUser?.user_id);
       }
+
+      if (currentEmail && targetEmail && currentEmail === targetEmail) return { ok: false, message: 'Cannot follow yourself.' };
+      if (currentUser.id && targetId && String(currentUser.id) === String(targetId)) return { ok: false, message: 'Cannot follow yourself.' };
 
       let apiResult = (targetId || targetEmail)
         ? await AuthAPI.followUserApi(targetId, targetEmail).catch(() => ({ ok: false }))
@@ -6576,7 +6658,7 @@ export const UserStore = {
             if (relogin.ok && (targetId || targetEmail)) {
               apiResult = await AuthAPI.followUserApi(targetId, targetEmail);
             }
-          } catch {}
+          } catch { }
         }
       }
 
@@ -6632,10 +6714,20 @@ export const UserStore = {
       const currentEmail = String(currentUser.email || '').trim().toLowerCase();
       if (!targetEmail && !targetUserId) return { ok: false, message: 'User not found.' };
 
-      let targetId = targetUserId != null && String(targetUserId) !== '' ? String(targetUserId) : null;
+      const cleanId = (v) => {
+        if (v == null) return null;
+        const s = String(v).trim();
+        if (!s || s === 'null' || s === 'undefined' || s === 'NaN') return null;
+        return s;
+      };
+
+      let targetId = cleanId(targetUserId);
+      if (!targetId && targetEmail) {
+        targetId = await UserStore.resolveUserIdByEmail(targetEmail);
+      }
       if (!targetId && targetEmail) {
         const targetUser = await UserStore.getUser(targetEmail);
-        targetId = targetUser?.id ?? targetUser?.user_id ?? null;
+        targetId = cleanId(targetUser?.id ?? targetUser?.user_id);
       }
 
       let apiResult = (targetId || targetEmail)
@@ -6648,7 +6740,7 @@ export const UserStore = {
             if (relogin.ok && (targetId || targetEmail)) {
               apiResult = await AuthAPI.unfollowUserApi(targetId, targetEmail);
             }
-          } catch {}
+          } catch { }
         }
       }
 
@@ -7083,14 +7175,14 @@ export const UserStore = {
         // ✅ FIX: local list me same ad do baar ho to ek hi card dikhao
         .filter((ad, idx, arr) => ad?.id == null || arr.findIndex((x) => String(x?.id) === String(ad.id)) === idx)
         .map((ad) => {
-        const b = backendAdsById.get(String(ad.id)) || {};
-        return {
-          ...ad,
-          views: ad.views ?? 0,
-          start_date: ad.start_date || b.start_date || '',
-          end_date: ad.end_date || b.end_date || '',
-        };
-      });
+          const b = backendAdsById.get(String(ad.id)) || {};
+          return {
+            ...ad,
+            views: ad.views ?? 0,
+            start_date: ad.start_date || b.start_date || '',
+            end_date: ad.end_date || b.end_date || '',
+          };
+        });
       return {
         credits: creditState.credits,
         ads: adsWithViews,
@@ -7272,7 +7364,7 @@ export const UserStore = {
         .map((ad) => {
           // ✅ FIX: actual field "redirection_url" hai ("url" nahi), aur usi
           // deep-link (rti-news://profile/<email>) se owner ka email nikal rahe hain
-          const redirectionUrl = ad.redirection_url || '';
+          const redirectionUrl = ad.redirection_url || ad.url || ad.redirect_url || '';
           const adOwnerObj = ad.owner || ad.user || ad.advertiser || ad.author || {};
           let ownerEmail = ad.owner_email || adOwnerObj.email || '';
           const profileMatch = redirectionUrl.match(/profile\/([^/?]+)/);
@@ -7280,17 +7372,51 @@ export const UserStore = {
             try { ownerEmail = decodeURIComponent(profileMatch[1]); } catch { ownerEmail = profileMatch[1]; }
           }
 
-          const REDIRECTION_ID_TO_TYPE = { 1: 'profile', 2: 'website', 3: 'shop', 4: 'lead_form', 5: 'whatsapp' };
-          const redirectType = REDIRECTION_ID_TO_TYPE[Number(ad.redirection)]
-            || (redirectionUrl.startsWith('rti-news://profile/') ? 'profile' : (redirectionUrl ? 'external' : 'profile'));
-          const extraValues = {};
-          if (redirectType === 'website') extraValues.website_url = redirectionUrl;
-          if (redirectType === 'shop') extraValues.shop_url = redirectionUrl;
-          // ✅ FIX: ad post karte waqt number "redirection_url" (https://wa.me/91XXXXXXXXXX) me save hota hai —
-          // pehle yahan sirf owner_mobile/contact_number padha ja raha tha, isliye WhatsApp button click par kuch nahi hota tha.
-          if (redirectType === 'whatsapp') {
-            const waFromUrl = (String(redirectionUrl).match(/wa\.me\/\+?(\d+)/i) || [])[1] || '';
-            extraValues.whatsapp_number = String(waFromUrl || ad.whatsapp_number || ad.whatsapp || ad.owner_mobile || ad.contact_number || '');
+          const rawRedir = String(ad.redirection ?? ad.redirect ?? '').trim().toLowerCase();
+          let redirectType = 'profile';
+          if (rawRedir === '5' || rawRedir === 'whatsapp' || rawRedir === 'my whatsapp number') {
+            redirectType = 'whatsapp';
+          } else if (rawRedir === '4' || rawRedir === 'lead_form' || rawRedir === 'lead form' || rawRedir === 'lead') {
+            redirectType = 'lead_form';
+          } else if (rawRedir === '3' || rawRedir === 'shop' || rawRedir === 'my shop') {
+            redirectType = 'shop';
+          } else if (rawRedir === '2' || rawRedir === 'website' || rawRedir === 'my website') {
+            redirectType = 'website';
+          } else if (rawRedir === '1' || rawRedir === 'profile' || rawRedir === 'my rti profile') {
+            redirectType = 'profile';
+          } else if (redirectionUrl.includes('wa.me') || redirectionUrl.includes('whatsapp.com')) {
+            redirectType = 'whatsapp';
+          } else if (redirectionUrl.includes('lead-form')) {
+            redirectType = 'lead_form';
+          } else if (redirectionUrl.startsWith('http://') || redirectionUrl.startsWith('https://')) {
+            redirectType = 'website';
+          }
+
+          const extraValues = { ...(ad.extraValues || {}) };
+          if (redirectType === 'website') extraValues.website_url = extraValues.website_url || redirectionUrl;
+          if (redirectType === 'shop') extraValues.shop_url = extraValues.shop_url || redirectionUrl;
+
+          const waFromUrl = (String(redirectionUrl).match(/wa\.me\/\+?(\d+)/i) || String(ad.url || '').match(/wa\.me\/\+?(\d+)/i) || [])[1] || '';
+          const resolvedPhone = String(
+            ad.owner_mobile ||
+            ad.contact_number ||
+            ad.mobile ||
+            ad.phone ||
+            ad.contact ||
+            ad.conatct ||
+            adOwnerObj.mobile ||
+            adOwnerObj.phone ||
+            adOwnerObj.contact_number ||
+            adOwnerObj.contact ||
+            ad.whatsapp_number ||
+            ad.whatsapp ||
+            extraValues.whatsapp_number ||
+            waFromUrl ||
+            ''
+          ).trim();
+
+          if (redirectType === 'whatsapp' || waFromUrl) {
+            extraValues.whatsapp_number = String(waFromUrl || extraValues.whatsapp_number || resolvedPhone);
           }
 
           return {
@@ -7335,7 +7461,7 @@ export const UserStore = {
               hasBlueTick(ad.owner || ad.user || {}) ||
               (ownerEmail && currentUserEmailForAds && String(ownerEmail).trim().toLowerCase() === currentUserEmailForAds && currentUserHasBlueTickForAds)
             ),
-            owner_mobile: ad.owner_mobile || ad.contact_number || '',
+            owner_mobile: resolvedPhone,
             allowCalls: ad.allowCalls !== false,
             created_at: ad.created_at || '',
             updated_at: ad.updated_at || '',
@@ -7364,6 +7490,20 @@ export const UserStore = {
     const raw = c.view_count ?? c.views_count ?? c.views ?? c.total_views;
     const n = Number(raw);
     return { ...res, views: raw != null && raw !== '' && Number.isFinite(n) ? n : null };
+  },
+
+  // News share count: backend pe share count update karta hai (POST /news/{id}/share)
+  recordShare: async (newsId) => {
+    if (!newsId) return { ok: false };
+    try {
+      const res = await AuthAPI.shareNews(newsId);
+      const serverCount = res?.ok && Number.isFinite(res.shareCount) ? res.shareCount : null;
+      publishEngagement(newsId, { ...(serverCount != null ? { shares: serverCount } : {}) }, 'userstore');
+      await UserStore.updateNewsFeedItem(newsId, 'share').catch(() => {});
+      return { ok: true, shareCount: serverCount };
+    } catch (e) {
+      return { ok: false };
+    }
   },
 
 
@@ -7428,8 +7568,8 @@ export const UserStore = {
       if (!updatedUser) return { ok: false, message: 'Could not save the credits.' };
       try {
         const { sendInvoiceEmailCopy } = require('../utils/invoiceGenerator');
-        sendInvoiceEmailCopy(adPayment, updatedUser).catch(() => {});
-      } catch (_) {}
+        sendInvoiceEmailCopy(adPayment, updatedUser).catch(() => { });
+      } catch (_) { }
       return { ok: true, credits: newCredits };
     } catch (err) {
       console.error('[UserStore.verifyAdPayment] Error:', err);
@@ -7496,8 +7636,8 @@ export const UserStore = {
           plan_id: ecomSubscription.plan_id,
           plan_name: ecomSubscription.plan_name,
           module: 'ecom',
-        }, updatedUser).catch(() => {});
-      } catch (_) {}
+        }, updatedUser).catch(() => { });
+      } catch (_) { }
       await recordQualifyingTransaction({
         buyerEmail: user.email,
         amount: Number(ecomSubscription.price || 0),
@@ -7594,9 +7734,9 @@ export const UserStore = {
           image: adData.image || adData.photo || '',
           images: adData.images || [],
           video: adData.video || '',
-          url: adData.url || adData.redirectUrl || '',
+          url: redirectUrl || adData.url || '',
           adsSubId: adData.adsSubId || adData.ads_sub_id || 1,
-          redirection: adData.redirection || adData.redirect || adData.url || adData.redirectUrl || 'profile',
+          redirection: adData.redirection || adData.redirect || 'profile',
           redirectionUrl: redirectUrl,
           startDate,
           endDate,
@@ -8343,11 +8483,16 @@ export const UserStore = {
       const currentUser = await UserStore.getCurrentUser();
       if (!currentUser) return { ok: false, message: 'Please login again.' };
 
+      const rawQty = enquiryData.quantity ?? enquiryData.qty ?? '';
       const res = await AuthAPI.createEcomEnquiry({
         ecom_id: productId,
         type: 'ecom',
         message: enquiryData.message || '',
-        quantity: enquiryData.quantity || '',
+        quantity: rawQty,
+        qty: rawQty,
+        product_qty: rawQty,
+        enquiry_qty: rawQty,
+        order_qty: rawQty,
         first_name: enquiryData.firstName || '',
         last_name: enquiryData.lastName || '',
         email: enquiryData.email || currentUser.email,

@@ -1,15 +1,16 @@
 // screens/QuizSubscriptionScreen.js
 // ─────────────────────────────────────────────────────────
-// Same design as Role/Membership Subscription page — isliye
-// implement karta hai components/SubscriptionPlanPurchase.js
-// (see that file's header comment for why).
+// Unified Quiz Subscription screen:
+//   - Upar: Active subscription card (agar active ho)
+//   - Niche: "Our Plans" grid with direct checkout
 // ─────────────────────────────────────────────────────────
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { useToast } from '../components/ui/ToastProvider';
 import { UserStore } from '../store/UserStore';
 import { openRazorpayCheckout } from '../utils/razorpayCheckout';
 import SubscriptionPlanPurchase from '../components/SubscriptionPlanPurchase';
 import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
+import { getCardTheme, getNativeThemeImage } from '../constants/subscriptionThemes';
 
 const FEATURES = [
   'All certification quizzes unlocked',
@@ -40,9 +41,9 @@ const toUiPlan = (plan) => ({
   ].filter(Boolean),
 });
 
-export default function QuizSubscriptionScreen({ navigation, route }) {
+export default function QuizSubscriptionScreen({ navigation, route, redirectScreenName = 'QuizSubscription' }) {
   // Desktop web par ye page kabhi bina sidebar ke na khule (quizItem wagairah params bhi saath jaate hain)
-  const redirectingToSidebar = useQuickMenuRedirect(navigation, 'QuizSubscription', route?.params);
+  const redirectingToSidebar = useQuickMenuRedirect(navigation, redirectScreenName, route?.params);
   const { showPopup } = useToast();
 
   const quizItem   = route?.params?.quizItem ?? null;
@@ -52,8 +53,13 @@ export default function QuizSubscriptionScreen({ navigation, route }) {
   const [plans, setPlans]               = useState(PLANS); // static fallback until backend responds
   const [selectedPlan, setSelectedPlan] = useState(PLANS[1].id);
   const [loading, setLoading]           = useState(false);
- const [plansLoading, setPlansLoading] = useState(true);
+  const [plansLoading, setPlansLoading] = useState(true);
   const [processingPlanId, setProcessingPlanId] = useState(null);
+
+  // Active quiz subscription state
+  const [userSub, setUserSub]           = useState(null);
+  const [isSubActive, setIsSubActive]   = useState(false);
+  const [subLoading, setSubLoading]     = useState(true);
   const [remainingCount, setRemainingCount] = useState(null); // null = no existing / unlimited-legacy sub
 
   useEffect(() => {
@@ -69,21 +75,32 @@ export default function QuizSubscriptionScreen({ navigation, route }) {
     return () => { active = false; };
   }, []);
 
-  // Agar user yaha isliye redirect hua kyunki uske quiz attempts khatam ho gaye the
-  // (expiry baaki thi phir bhi), to usko clearly bata do ki kitne attempts bache hain.
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      const user = await UserStore.getCurrentUser();
-      if (!active || !user) return;
+  // Active subscription details fetch karo
+  const loadUserSub = useCallback(async () => {
+    try {
+      const user = await UserStore.getCurrentUserSynced();
+      if (!user) {
+        setUserSub(null);
+        setIsSubActive(false);
+        setRemainingCount(null);
+        return;
+      }
+      const activeState = UserStore.hasActiveQuizSubscription(user);
       const remaining = UserStore.getQuizSubscriptionRemainingCount(user);
-      const total = user.quiz_subscription_total_count;
-      if (total !== undefined && total !== null) setRemainingCount(remaining ?? 0);
-    })();
-    return () => { active = false; };
+      setIsSubActive(Boolean(activeState));
+      setRemainingCount(remaining);
+      setUserSub(user.quiz_subscription_plan || null);
+    } catch (_) {}
+    finally {
+      setSubLoading(false);
+    }
   }, []);
 
- const doSubscribe = useCallback(async (plan) => {
+  useEffect(() => {
+    loadUserSub();
+  }, [loadUserSub]);
+
+  const doSubscribe = useCallback(async (plan) => {
     setProcessingPlanId(plan?.id ?? null);
     if (!plan) return;
     setLoading(true);
@@ -111,6 +128,8 @@ export default function QuizSubscriptionScreen({ navigation, route }) {
           }
 
           showPopup('Quiz Subscription activated! You can now attempt all quizzes.', 'success');
+          // Reload active subscription state
+          loadUserSub();
           if (quizItem) {
             navigation.replace('AttemptQuiz', { quiz: quizItem, subject, difficulty });
           } else {
@@ -132,7 +151,7 @@ export default function QuizSubscriptionScreen({ navigation, route }) {
       setLoading(false);
       showPopup('Something went wrong. Please try again.', 'error');
     }
-  }, [navigation, quizItem, subject, difficulty, showPopup]);
+  }, [navigation, quizItem, subject, difficulty, showPopup, loadUserSub]);
 
   const handlePay = useCallback((uiPlan) => {
     const plan = plans.find((p) => p.id === uiPlan.id);
@@ -148,30 +167,57 @@ export default function QuizSubscriptionScreen({ navigation, route }) {
     );
   }, [plans, doSubscribe, showPopup]);
 
+  const statusCard = useMemo(() => {
+    if (subLoading) return null;
+    if (isSubActive) {
+      return {
+        isActive: true,
+        planName: userSub?.plan_name || 'Subscription Plan',
+        price: userSub?.price,
+        purchasedAt: userSub?.purchased_at,
+        expiresAt: userSub?.expires_at,
+        countLabel: remainingCount === null
+          ? 'Unlimited attempts till expiry'
+          : `${remainingCount} quiz attempt${remainingCount === 1 ? '' : 's'} remaining`,
+        themeImage: getNativeThemeImage(getCardTheme(4)),
+        textColor: '#ffffff',
+      };
+    }
+    if (userSub && !isSubActive) {
+      return {
+        isActive: false,
+        planName: userSub?.plan_name || 'Subscription Plan',
+        price: userSub?.price,
+        purchasedAt: userSub?.purchased_at,
+        expiresAt: userSub?.expires_at,
+        countLabel: remainingCount === 0
+          ? 'Quiz attempts used up — renew or buy a new plan.'
+          : 'Expired — buy a new plan to continue.',
+      };
+    }
+    return null;
+  }, [subLoading, isSubActive, userSub, remainingCount]);
+
   if (redirectingToSidebar) return null;
+
+  const heroTitle = isSubActive ? 'My Quiz Subscription' : 'Choose Your Quiz Plan';
+  const heroSubtitle = isSubActive
+    ? 'Status of your Certification quiz plan and available renewal options.'
+    : 'A subscription is required to attempt quizzes. Each plan gives you a fixed number of attempts.';
 
   return (
     <SubscriptionPlanPurchase
       navigation={navigation}
       headerTitle="Quiz Subscription"
-      heroTitle="Choose Your Quiz Plan"
-      heroSubtitle="A subscription is required to attempt quizzes. Each plan gives you a fixed number of attempts."
+      heroTitle={heroTitle}
+      heroSubtitle={heroSubtitle}
       loading={plansLoading}
       plans={plans.map(toUiPlan)}
       selectedPlanId={selectedPlan}
       onSelectPlan={(plan) => setSelectedPlan(plan.id)}
-      statusCard={
-        remainingCount !== null
-          ? {
-              isActive: remainingCount > 0,
-              countLabel: remainingCount > 0
-                ? `${remainingCount} quiz attempt${remainingCount === 1 ? '' : 's'} remaining`
-                : 'Your quiz attempts are used up — buy a new plan to continue.',
-            }
-          : null
-      }
+      statusCard={statusCard}
       onPay={loading ? undefined : handlePay}
-       payLabel="Pay Now"
+      payLabel="Pay Now"
       processingPlanId={loading ? processingPlanId : null}
     />
   );

@@ -1374,7 +1374,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
           styles.pageScrollContent,
           !IS_WEB && styles.pageScrollContentWithMobileNav,
         ]}
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={Platform.OS === 'web'}
       >
         <View style={styles.pageBodyShell}>
           <View style={[styles.pageBodyInner, isCompactLayout && styles.pageBodyInnerCompact]}>

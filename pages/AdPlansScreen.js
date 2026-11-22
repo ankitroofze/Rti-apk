@@ -6,13 +6,14 @@
 // (see that file's header comment for why).
 // ─────────────────────────────────────────────────────────────
 import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text } from 'react-native';
 import { openRazorpayCheckout } from '../utils/razorpayCheckout';
 import { UserStore } from '../store/UserStore';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi'; // ⚠️ path apne project structure ke hisaab se confirm/adjust kar lena
 import { useToast } from '../components/ui/ToastProvider';
 import SubscriptionPlanPurchase from '../components/SubscriptionPlanPurchase';
+import { getCardTheme, getNativeThemeImage } from '../constants/subscriptionThemes';
 
 const normalizePlan = (raw, index) => {
   const id = raw?.id ?? `plan-${index}`;
@@ -151,6 +152,33 @@ const doBuy = useCallback(async (plan) => {
     );
   }, [plans, doBuy, showPopup]);
 
+  const activePlanIndex = useMemo(() => {
+    if (!adSub || currentCredits <= 0) return -1;
+    // 1. Check by plan_id
+    if (adSub.plan_id != null) {
+      const idx = plans.findIndex((p) => String(p.id) === String(adSub.plan_id));
+      if (idx >= 0) return idx;
+    }
+    // 2. Check by credits match
+    if (adSub.credits != null) {
+      const idx = plans.findIndex((p) => Number(p.credits) === Number(adSub.credits));
+      if (idx >= 0) return idx;
+    }
+    // 3. Check by plan_name / title match
+    if (adSub.plan_name) {
+      const subName = String(adSub.plan_name).toLowerCase().trim();
+      const idx = plans.findIndex((p) => String(p.name).toLowerCase().trim() === subName);
+      if (idx >= 0) return idx;
+    }
+    // Default fallback: pehla plan (index 0) ya ads red theme (index 1)
+    return plans.length > 0 ? 0 : 1;
+  }, [adSub, currentCredits, plans]);
+
+  const activePlanTheme = activePlanIndex >= 0 ? getCardTheme(activePlanIndex) : null;
+  const activePlanId = (activePlanIndex >= 0 && plans[activePlanIndex])
+    ? plans[activePlanIndex].id
+    : (adSub?.plan_id ? String(adSub.plan_id) : undefined);
+
   if (redirectingToSidebar) return null;
 
   return (
@@ -163,22 +191,25 @@ const doBuy = useCallback(async (plan) => {
       plans={plans}
       selectedPlanId={selectedPlan}
       onSelectPlan={(plan) => setSelectedPlan(plan.id)}
+      activePlanId={activePlanId}
       statusCard={
-        !loadingData
+        !loadingData && (currentCredits > 0 || adSub)
           ? {
               isActive: currentCredits > 0,
-              planName: adSub?.plan_name,
-              price: adSub?.price,
+              planName: adSub?.plan_name || (activePlanIndex >= 0 ? plans[activePlanIndex]?.name : 'Active Ad Plan'),
+              price: adSub?.price ?? (activePlanIndex >= 0 ? plans[activePlanIndex]?.price : undefined),
               purchasedAt: adSub?.purchased_at,
               expiresAt: adSub?.expires_at,
               countLabel: currentCredits > 0
                 ? `${currentCredits} ad credit${currentCredits === 1 ? '' : 's'} available`
                 : 'No ad credits available — buy a plan to start posting.',
+              themeImage: (currentCredits > 0 && activePlanTheme) ? getNativeThemeImage(activePlanTheme) : undefined,
+              textColor: activePlanTheme?.textColor || '#ffffff',
             }
           : null
       }
       onPay={loading ? undefined : handlePay}
-     payLabel="Pay Now"
+      payLabel="Pay Now"
       processingPlanId={loading ? processingPlanId : null}
       emptyText={plansError || 'No ad plans are available right now.'}
     />

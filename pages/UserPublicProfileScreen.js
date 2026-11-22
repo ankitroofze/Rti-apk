@@ -1,5 +1,5 @@
 import NameWithTick from '../components/NameWithTick';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, BackHandler, Clipboard, Image, ImageBackground, KeyboardAvoidingView, Linking, Modal,
   Platform, ScrollView, Share, StatusBar, Text, TextInput,
@@ -368,7 +368,10 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   // stale backend data aata tha aur followers count achanak 0 ho jata tha. Ref se stable rakho.
   const showToastRef = useRef(showToast);
   useEffect(() => { showToastRef.current = showToast; }, [showToast]);
-   const { email, author, userId } = route?.params || {};
+  const { email, author, userId } = route?.params || {};
+  const cleanId = (s) => (s == null || s === '' || String(s) === 'null' || String(s) === 'undefined') ? null : String(s);
+  const cleanUserId = cleanId(userId);
+  const safeAuthor = (author && typeof author === 'object') ? author : null;
 
   // ── Responsive width detection ─────────────────────────────────────────────
   const { width: windowWidth } = useWindowDimensions();
@@ -381,19 +384,19 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
   // ✅ SPEED: route params se author mila hai to turant 0ms render karo (blank loader flash nahi)
   const [profile, setProfile] = useState(() => {
-    if (author && typeof author === 'object') {
+    if (safeAuthor) {
       return {
-        ...author,
-        id: author.id ?? author.author_id ?? userId ?? null,
-        name: author.name || author.author_name || author.createdByName || '',
-        avatar: author.avatar || author.profile_image || author.author_profile_image || null,
-        profile_image: author.profile_image || author.author_profile_image || author.avatar || null,
-        seat_name: author.seat_name || author.author_seat_name || author.state_seat?.seat_name || '',
+        ...safeAuthor,
+        id: cleanId(safeAuthor.id) || cleanId(safeAuthor.author_id) || cleanUserId || null,
+        name: safeAuthor.name || safeAuthor.author_name || safeAuthor.createdByName || '',
+        avatar: safeAuthor.avatar || safeAuthor.profile_image || safeAuthor.author_profile_image || null,
+        profile_image: safeAuthor.profile_image || safeAuthor.author_profile_image || safeAuthor.avatar || null,
+        seat_name: safeAuthor.seat_name || safeAuthor.author_seat_name || safeAuthor.state_seat?.seat_name || '',
       };
     }
     return null;
   });
-  const [loading, setLoading] = useState(() => !(author && typeof author === 'object'));
+  const [loading, setLoading] = useState(() => !safeAuthor);
   const [posts, setPosts] = useState([]);
   // ✅ Silent reload trigger — screen par wapas aane / app foreground / har 45 sec par bump hota hai
   const [refreshTick, setRefreshTick] = useState(0);
@@ -402,7 +405,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
   // ── Follow states ──────────────────────────────────────────────────────────
   const [isFollowing, setIsFollowing] = useState(() => {
-    return UserStore.checkIsFollowingSync?.(email, userId) ?? false;
+    return UserStore.checkIsFollowingSync?.(email, cleanUserId) ?? false;
   });
   const [followLoading, setFollowLoading] = useState(false);
   const [followStats, setFollowStats] = useState({ followers: 0, following: 0 });
@@ -462,18 +465,36 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const [replyingToCommentId, setReplyingToCommentId] = useState(null);
   const [replyText, setReplyText] = useState('');
 
-  // ✅ FIX: Android back / upar-neeche karte waqt app se bahar nikal jaata tha
-  // (profile notification / link se khula ho to stack me pichli screen nahi hoti).
-  // Ab: pichli screen hai to wahan, nahi to Home.
+  // ✅ Back action: seedha Home screen par navigate karo (user request)
+  const handleBack = useCallback(() => {
+    try {
+      if (navigation?.navigate) {
+        navigation.navigate('Home');
+        return;
+      }
+      if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location) {
+        window.location.href = '/';
+        return;
+      }
+      if (navigation?.canGoBack?.()) {
+        navigation.goBack();
+      }
+    } catch {
+      if (Platform.OS === 'web' && typeof window !== 'undefined' && window.location) {
+        window.location.href = '/';
+      }
+    }
+  }, [navigation]);
+
+  // ✅ Android back hardware button handler
   useEffect(() => {
     if (Platform.OS !== 'android') return undefined;
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      if (navigation?.canGoBack?.()) navigation.goBack();
-      else navigation?.navigate?.('Home');
+      handleBack();
       return true;
     });
     return () => sub.remove();
-  }, [navigation]);
+  }, [handleBack]);
 
   useEffect(() => {
     let alive = true;
@@ -504,8 +525,12 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     (async () => {
       if (!silent && !profile) setLoading(true);
 
-      const targetId = userId || author?.id || author?.author_id || null;
-      const targetEmail = resolvedEmail || author?.email || author?.createdBy || null;
+      let targetId = cleanUserId || cleanId(safeAuthor?.id) || cleanId(safeAuthor?.author_id) || cleanId(safeAuthor?.user_id) || cleanId(profile?.id) || null;
+      const targetEmail = resolvedEmail || safeAuthor?.email || safeAuthor?.createdBy || null;
+
+      if (!targetId && targetEmail) {
+        targetId = await UserStore.resolveUserIdByEmail(targetEmail);
+      }
 
       // ✅ SPEED: Priority 1 — Fetch critical profile and follow state first!
       const profilePromise = targetId
@@ -1436,8 +1461,19 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       followers: Math.max(0, Number(prev.followers || 0) + (nextFollowing ? 1 : -1)),
     }));
     try {
-      const targetId = profile?.id ?? userId ?? author?.id ?? author?.author_id ?? author?.user_id ?? null;
-      const targetEmail = resolvedEmail || profile?.email || author?.email || author?.createdBy || author?.author_email || '';
+      let targetId = cleanId(profile?.id) || cleanUserId || cleanId(safeAuthor?.id) || cleanId(safeAuthor?.author_id) || cleanId(safeAuthor?.user_id) || null;
+      const targetEmail = resolvedEmail || profile?.email || safeAuthor?.email || safeAuthor?.createdBy || safeAuthor?.author_email || '';
+
+      if (!targetId && targetEmail) {
+        targetId = await UserStore.resolveUserIdByEmail(targetEmail);
+      }
+
+      if (!targetId) {
+        setIsFollowing(!nextFollowing);
+        setFollowStats((prev) => ({ ...prev, followers: Math.max(0, Number(prev.followers || 0) + (nextFollowing ? -1 : 1)) }));
+        showToast('User ID is required to follow.', 'error');
+        return;
+      }
 
       let result;
       if (nextFollowing) {
@@ -1695,7 +1731,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       paddingHorizontal: 24, paddingVertical: 14,
       backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: '#dbdbdb',
     },
-    backBtn: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f1f5f9' },
+    backBtn: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f1f5f9', ...(Platform.OS === 'web' ? { cursor: 'pointer' } : null) },
     topBarTitle: { fontSize: 16, fontWeight: '700', color: '#0f172a' },
     menuBtn: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
     scroll: { flex: 1 },
@@ -1812,7 +1848,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
         {/* Top Bar */}
         <ImageBackground source={profileTier.bgImage} resizeMode="cover" imageStyle={RED_HEADER_IMG} style={[styles.topBar, { backgroundColor: profileTier.gradientDark?.[1] || profileTier.accent, borderBottomColor: profileTier.gradientDark?.[2] || profileTier.accent, overflow: 'hidden' }]}>
-          <TouchableOpacity style={[styles.backBtn, { backgroundColor: 'rgba(255,255,255,0.22)' }]} onPress={() => navigation.goBack()} activeOpacity={0.8}>
+          <TouchableOpacity style={[styles.backBtn, { backgroundColor: 'rgba(255,255,255,0.22)' }]} onPress={handleBack} activeOpacity={0.8}>
             <Feather name="arrow-left" size={20} color="#FFFFFF" />
           </TouchableOpacity>
           <Text style={[styles.topBarTitle, { color: '#FFFFFF' }]} numberOfLines={1}>{name}</Text>
@@ -2033,7 +2069,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
         {/* ── Top Bar ── */}
                   <ImageBackground source={profileTier.bgImage} resizeMode="cover" imageStyle={RED_HEADER_IMG} style={[webSt.topBar, { backgroundColor: profileTier.gradientDark?.[1] || profileTier.accent, borderBottomColor: profileTier.gradientDark?.[2] || profileTier.accent, overflow: 'hidden' }]}>
-          <TouchableOpacity style={[webSt.backBtn, { backgroundColor: 'rgba(255,255,255,0.22)' }]} onPress={() => navigation.goBack()} activeOpacity={0.8}>
+          <TouchableOpacity style={[webSt.backBtn, { backgroundColor: 'rgba(255,255,255,0.22)' }]} onPress={handleBack} activeOpacity={0.8}>
             <Feather name="arrow-left" size={20} color="#FFFFFF" />
           </TouchableOpacity>
           <Text style={[webSt.topBarTitle, { color: '#FFFFFF' }]}>Profile</Text>
@@ -2042,7 +2078,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           </TouchableOpacity>
         </ImageBackground>
 
-        <ScrollView style={webSt.scroll} contentContainerStyle={webSt.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView style={webSt.scroll} contentContainerStyle={webSt.scrollContent} showsVerticalScrollIndicator={Platform.OS === 'web'}>
           <View style={webSt.col}>
 
             {/* ── Profile Header Card (professional) ── */}
@@ -2248,7 +2284,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           imageStyle={ProfileStyles.greenHeaderImage}
         >
           <View style={[ProfileStyles.greenHeaderTop, { paddingTop: insets.top + 8 }]}>
-            <TouchableOpacity style={ProfileStyles.greenHeaderIcon} onPress={() => navigation.goBack()} activeOpacity={0.8}>
+            <TouchableOpacity style={ProfileStyles.greenHeaderIcon} onPress={handleBack} activeOpacity={0.8}>
               <Feather name="arrow-left" size={20} color="#FFFFFF" />
             </TouchableOpacity>
             <TouchableOpacity style={ProfileStyles.greenHeaderIcon} onPress={() => setMenuVisible(true)} activeOpacity={0.8}>

@@ -11,6 +11,9 @@ import { UserStore } from '../store/UserStore';
 import { useToast } from '../components/ui/ToastProvider';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
+import { getFileSize } from '../utils/mediaCompressor';
+import AdVideoPlayer from '../components/AdVideoPlayer';
 
 // ── Theme ──────────────────────────────────────────────────────────────────────
 //   • Font family: "Roboto" everywhere
@@ -216,12 +219,21 @@ const sh = StyleSheet.create({
 // ── Main Screen ────────────────────────────────────────────────────────────────
 function ChoosePlanScreen__Inner({ navigation, route }) {
   const { showToast } = useToast();
-  const adData = route?.params?.adData || {};
-const { width: winWidth } = useWindowDimensions();
-const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
+  const [adData, setAdData] = useState(route?.params?.adData || {});
+  const [showVideoModal, setShowVideoModal] = useState(false);
+  const [isChangingVideo, setIsChangingVideo] = useState(false);
+
+  React.useEffect(() => {
+    if (route?.params?.adData) {
+      setAdData(route?.params?.adData);
+    }
+  }, [route?.params?.adData]);
+
+  const { width: winWidth } = useWindowDimensions();
+  const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
 
   const [selState,    setSelState]    = useState('');
-    const [selDistrict, setSelDistrict] = useState('');
+  const [selDistrict, setSelDistrict] = useState('');
   React.useEffect(() => {
     (async () => {
       try {
@@ -231,6 +243,187 @@ const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
       } catch (e) {}
     })();
   }, []);
+
+  const ensureLibraryAccess = async () => {
+    if (Platform.OS === 'web') return true;
+    try {
+      const cur = await ImagePicker.getMediaLibraryPermissionsAsync();
+      if (cur?.granted || cur?.accessPrivileges === 'limited') return true;
+      if (Platform.OS === 'android' && Number(Platform.Version) >= 33) return true;
+      const req = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      return Boolean(req?.granted || req?.accessPrivileges === 'limited');
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const pickerTypes = (kind) => {
+    if (ImagePicker.MediaTypeOptions) {
+      if (kind === 'video') return ImagePicker.MediaTypeOptions.Videos;
+      if (kind === 'all') return ImagePicker.MediaTypeOptions.All;
+      return ImagePicker.MediaTypeOptions.Images;
+    }
+    if (kind === 'video') return ['videos'];
+    if (kind === 'all') return ['images', 'videos'];
+    return ['images'];
+  };
+
+  const getVideoBytes = async (asset, uri) => {
+    const fromAsset = Number(asset?.fileSize || asset?.file?.size || asset?.size || 0);
+    if (fromAsset) return fromAsset;
+    let n = 0;
+    try { n = Number(await getFileSize(uri)) || 0; } catch { n = 0; }
+    if (n) return n;
+    try {
+      const blob = await fetch(uri).then((r) => r.blob());
+      return Number(blob?.size) || 0;
+    } catch { return 0; }
+  };
+
+  const MAX_VIDEO_MB = 10;
+  const videoTooLargeMsg = (bytes) => {
+    const mb = bytes ? (bytes / (1024 * 1024)).toFixed(1) : '>10';
+    return `Video is ${mb} MB. Maximum allowed size is ${MAX_VIDEO_MB} MB. Please select a smaller video.`;
+  };
+
+  const handleChangeVideo = async () => {
+    try {
+      setIsChangingVideo(true);
+      if (!(await ensureLibraryAccess())) {
+        Alert.alert('Permission needed', 'Please allow access to your media library.');
+        setIsChangingVideo(false);
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: pickerTypes('video'),
+        allowsMultipleSelection: false,
+      });
+      if (result.canceled || !result.assets?.length) {
+        setIsChangingVideo(false);
+        return;
+      }
+      const asset = result.assets[0];
+      const size = await getVideoBytes(asset, asset.uri);
+      if (size > MAX_VIDEO_MB * 1024 * 1024) {
+        showToast(videoTooLargeMsg(size), 'error', { title: 'Video too large' });
+        setIsChangingVideo(false);
+        return;
+      }
+      const updatedAd = {
+        ...adData,
+        video: asset.uri,
+        photo: null,
+        images: [],
+      };
+      setAdData(updatedAd);
+      try {
+        await AsyncStorage.setItem('rti-advertisement-draft', JSON.stringify({
+          photo: null,
+          extraPhotos: [],
+          adVideo: asset.uri,
+          title: updatedAd.title,
+          description: updatedAd.description,
+          selectedRedirect: updatedAd.redirect,
+          extraValues: updatedAd.extraValues,
+          allowCalls: updatedAd.allowCalls,
+          leadFormFields: updatedAd.extraValues?.lead_form_fields,
+          leadFormSubmitAction: updatedAd.extraValues?.lead_form_submit_action,
+        }));
+      } catch (e) {}
+      setShowVideoModal(false);
+      showToast('Video updated successfully!', 'success');
+    } catch (e) {
+      console.error('[ChoosePlanScreen.handleChangeVideo]', e);
+      Alert.alert('Video error', 'Could not select the video. Please try again.');
+    } finally {
+      setIsChangingVideo(false);
+    }
+  };
+
+  const handleGoBackToEdit = async () => {
+    try {
+      await AsyncStorage.setItem('rti-advertisement-draft', JSON.stringify({
+        photo: adData.photo,
+        extraPhotos: (adData.images || []).filter((img) => img !== adData.photo),
+        adVideo: adData.video,
+        title: adData.title,
+        description: adData.description,
+        selectedRedirect: adData.redirect,
+        extraValues: adData.extraValues,
+        allowCalls: adData.allowCalls,
+        leadFormFields: adData.extraValues?.lead_form_fields,
+        leadFormSubmitAction: adData.extraValues?.lead_form_submit_action,
+      }));
+    } catch (e) {}
+    setShowVideoModal(false);
+    navigation.navigate('Advertise', { editAdDraft: adData });
+  };
+
+  const renderVideoModal = () => (
+    <Modal
+      visible={showVideoModal}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setShowVideoModal(false)}
+    >
+      <View style={vpm.overlay}>
+        <TouchableOpacity style={vpm.backdrop} activeOpacity={1} onPress={() => setShowVideoModal(false)} />
+        <View style={vpm.card}>
+          <View style={vpm.header}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="videocam" size={20} color={C.primary} />
+              <Text style={vpm.title}>Video Preview</Text>
+            </View>
+            <TouchableOpacity onPress={() => setShowVideoModal(false)} style={vpm.closeBtn}>
+              <Ionicons name="close" size={18} color="#555" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={vpm.videoWrap}>
+            {adData.video ? (
+              <AdVideoPlayer
+                key={adData.video}
+                uri={adData.video}
+                autoPlay={false}
+                style={vpm.player}
+              />
+            ) : null}
+          </View>
+
+          <Text style={vpm.hintText}>
+            Review your advertisement video. If this is the wrong video or you want to update it, tap &quot;Change Video&quot; to pick another video or &quot;Edit Ad Details&quot; to modify the ad in the form.
+          </Text>
+
+          <View style={vpm.btnRow}>
+            <TouchableOpacity
+              style={vpm.changeBtn}
+              onPress={handleChangeVideo}
+              disabled={isChangingVideo}
+              activeOpacity={0.85}
+            >
+              {isChangingVideo ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <>
+                  <Ionicons name="videocam" size={16} color="#fff" />
+                  <Text style={vpm.changeBtnText}>Change Video</Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={vpm.editBtn}
+              onPress={handleGoBackToEdit}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="create-outline" size={16} color={C.primary} />
+              <Text style={vpm.editBtnText}>Edit Ad Details</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
   const [stateModal,  setStateModal]  = useState(false);
   const [distModal,   setDistModal]   = useState(false);
   const [promoteScope, setPromoteScope] = useState('district');
@@ -381,6 +574,27 @@ const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
                 <View style={ws.card}>
                   <View style={ws.cardTitleRow}>
                     <View style={ws.previewBadge}><Text style={ws.previewBadgeText}>Preview</Text></View>
+                    <View style={ws.previewActionsRow}>
+                      {adData.video ? (
+                        <TouchableOpacity
+                          style={ws.changeVideoChip}
+                          onPress={handleChangeVideo}
+                          disabled={isChangingVideo}
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons name="videocam-outline" size={13} color={C.primary} />
+                          <Text style={ws.changeVideoChipText}>{isChangingVideo ? 'Changing...' : 'Change Video'}</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                      <TouchableOpacity
+                        style={ws.editChip}
+                        onPress={handleGoBackToEdit}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="create-outline" size={13} color={C.primary} />
+                        <Text style={ws.editChipText}>Edit Ad</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                   <View style={ws.previewInner}>
                     <View style={{ flex: 1, paddingRight: 12 }}>
@@ -388,9 +602,16 @@ const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
                       <Text style={ws.previewDesc} numberOfLines={2}>{adData.description || 'Ad Description'}</Text>
                     </View>
                     {adData.video && !adData.photo ? (
-                      <View style={[ws.previewThumbEmpty, { backgroundColor: '#000' }]}>
-                        <Ionicons name="play-circle" size={30} color="#fff" />
-                      </View>
+                      <TouchableOpacity
+                        style={[ws.previewThumbEmpty, { backgroundColor: '#000', position: 'relative' }]}
+                        onPress={() => setShowVideoModal(true)}
+                        activeOpacity={0.85}
+                      >
+                        <Ionicons name="play-circle" size={32} color="#fff" />
+                        <View style={ws.tapToPlayBadge}>
+                          <Text style={ws.tapToPlayText}>Preview</Text>
+                        </View>
+                      </TouchableOpacity>
                     ) : adData.photo ? (
                       <Image source={{ uri: adData.photo }} style={ws.previewThumb} resizeMode="cover" />
                     ) : (
@@ -398,6 +619,39 @@ const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
                         <Ionicons name="image-outline" size={24} color="#CCCCCC" />
                       </View>
                     )}
+                  </View>
+
+                  {/* Web quick action footer row */}
+                  <View style={ws.previewFooterRow}>
+                    {adData.video ? (
+                      <TouchableOpacity
+                        style={ws.previewFooterBtn}
+                        onPress={() => setShowVideoModal(true)}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="play-outline" size={15} color={C.primary} />
+                        <Text style={ws.previewFooterBtnText}>Play / Check Video</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    {adData.video ? (
+                      <TouchableOpacity
+                        style={ws.previewFooterBtnPrimary}
+                        onPress={handleChangeVideo}
+                        disabled={isChangingVideo}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="videocam-outline" size={15} color="#fff" />
+                        <Text style={ws.previewFooterBtnPrimaryText}>{isChangingVideo ? 'Changing...' : 'Change Video'}</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    <TouchableOpacity
+                      style={adData.video ? ws.previewFooterBtn : ws.previewFooterBtnPrimary}
+                      onPress={handleGoBackToEdit}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons name="create-outline" size={15} color={adData.video ? C.primary : '#fff'} />
+                      <Text style={adData.video ? ws.previewFooterBtnText : ws.previewFooterBtnPrimaryText}>Edit Full Ad</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
 
@@ -626,6 +880,7 @@ const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
           onSelect={(v) => { setSelDistrict(v); setPromoteScope('district'); }}
           onClose={() => setDistModal(false)}
         />
+        {renderVideoModal()}
       </View>
     );
   }
@@ -656,8 +911,31 @@ const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
 
         {/* ── Ad Preview Card ── */}
         <View style={s.previewCard}>
-          <View style={s.previewBadge}>
-            <Text style={s.previewBadgeText}>Preview</Text>
+          <View style={s.previewCardHeader}>
+            <View style={s.previewBadge}>
+              <Text style={s.previewBadgeText}>Preview</Text>
+            </View>
+            <View style={s.previewActionsRow}>
+              {adData.video ? (
+                <TouchableOpacity
+                  style={s.changeVideoChip}
+                  onPress={handleChangeVideo}
+                  disabled={isChangingVideo}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="videocam-outline" size={13} color={C.primary} />
+                  <Text style={s.changeVideoChipText}>{isChangingVideo ? 'Changing...' : 'Change Video'}</Text>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity
+                style={s.editChip}
+                onPress={handleGoBackToEdit}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="create-outline" size={13} color={C.primary} />
+                <Text style={s.editChipText}>Edit Ad</Text>
+              </TouchableOpacity>
+            </View>
           </View>
           <View style={s.previewInner}>
             <View style={s.previewTextWrap}>
@@ -665,9 +943,16 @@ const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
               <Text style={s.previewDesc}  numberOfLines={2}>{adData.description || 'Ad Description'}</Text>
             </View>
             {adData.video && !adData.photo ? (
-              <View style={[s.previewThumbPlaceholder, { backgroundColor: '#000' }]}>
-                <Ionicons name="play-circle" size={30} color="#fff" />
-              </View>
+              <TouchableOpacity
+                style={[s.previewThumbPlaceholder, { backgroundColor: '#000', position: 'relative' }]}
+                onPress={() => setShowVideoModal(true)}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="play-circle" size={32} color="#fff" />
+                <View style={s.tapToPlayBadge}>
+                  <Text style={s.tapToPlayText}>Preview</Text>
+                </View>
+              </TouchableOpacity>
             ) : adData.photo ? (
               <Image source={{ uri: adData.photo }} style={s.previewThumb} resizeMode="cover" />
             ) : (
@@ -675,6 +960,39 @@ const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
                 <Ionicons name="image-outline" size={24} color={C.textSub} />
               </View>
             )}
+          </View>
+
+          {/* Quick action helper buttons below preview */}
+          <View style={s.previewFooterRow}>
+            {adData.video ? (
+              <TouchableOpacity
+                style={s.previewFooterBtn}
+                onPress={() => setShowVideoModal(true)}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="play-outline" size={14} color={C.primary} />
+                <Text style={s.previewFooterBtnText}>Play / Check Video</Text>
+              </TouchableOpacity>
+            ) : null}
+            {adData.video ? (
+              <TouchableOpacity
+                style={s.previewFooterBtnPrimary}
+                onPress={handleChangeVideo}
+                disabled={isChangingVideo}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="videocam-outline" size={14} color="#fff" />
+                <Text style={s.previewFooterBtnPrimaryText}>{isChangingVideo ? 'Changing...' : 'Change Video'}</Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity
+              style={adData.video ? s.previewFooterBtn : s.previewFooterBtnPrimary}
+              onPress={handleGoBackToEdit}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="create-outline" size={14} color={adData.video ? C.primary : '#fff'} />
+              <Text style={adData.video ? s.previewFooterBtnText : s.previewFooterBtnPrimaryText}>Edit Full Ad</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -882,6 +1200,7 @@ const isMobileWeb = Platform.OS === 'web' && winWidth < 768;
         </TouchableOpacity>
       </View>
 
+      {renderVideoModal()}
       <DropdownModal
         visible={stateModal} title="Select State" items={INDIAN_STATES}
         selected={selState}
@@ -952,13 +1271,55 @@ const s = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
   },
+  previewCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  previewActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  changeVideoChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: RADIUS.pill,
+    backgroundColor: C.orangeLight,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  changeVideoChipText: {
+    fontSize: 11,
+    fontFamily: FONT.semiBold,
+    color: C.primary,
+  },
+  editChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: RADIUS.pill,
+    backgroundColor: C.orangeLight,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  editChipText: {
+    fontSize: 11,
+    fontFamily: FONT.semiBold,
+    color: C.primary,
+  },
   previewBadge: {
     backgroundColor: C.primary,
     alignSelf: 'flex-start',
     borderRadius: RADIUS.pill,
     paddingHorizontal: 12,
     paddingVertical: 4,
-    marginBottom: 10,
   },
   previewBadgeText:        { color: '#fff', fontSize: 12, fontFamily: FONT.bold },
   previewInner:            { flexDirection: 'row', alignItems: 'center' },
@@ -967,6 +1328,59 @@ const s = StyleSheet.create({
   previewDesc:             { fontSize: 12, fontFamily: FONT.regular, color: C.textSub },
   previewThumb:            { width: 80, height: 70, borderRadius: RADIUS.input },
   previewThumbPlaceholder: { width: 80, height: 70, borderRadius: RADIUS.input, backgroundColor: C.orangeLight, alignItems: 'center', justifyContent: 'center' },
+  tapToPlayBadge: {
+    position: 'absolute',
+    bottom: 4,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  tapToPlayText: {
+    color: '#fff',
+    fontSize: 9,
+    fontFamily: FONT.bold,
+  },
+  previewFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: C.orangeLight,
+    flexWrap: 'wrap',
+  },
+  previewFooterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: RADIUS.input,
+    backgroundColor: C.orangeLight,
+    borderWidth: 1,
+    borderColor: C.border,
+  },
+  previewFooterBtnText: {
+    fontSize: 12,
+    fontFamily: FONT.semiBold,
+    color: C.primary,
+  },
+  previewFooterBtnPrimary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: RADIUS.input,
+    backgroundColor: C.primary,
+  },
+  previewFooterBtnPrimaryText: {
+    fontSize: 12,
+    fontFamily: FONT.bold,
+    color: '#ffffff',
+  },
 
   section: { paddingHorizontal: 16, paddingTop: 24 },
 
@@ -1117,20 +1531,101 @@ const ws = StyleSheet.create({
   rightCol: { flex:0.9, gap:16 },
 
   card:        { backgroundColor:'#ffffff', borderRadius: RADIUS.card, padding:20, borderWidth:1, borderColor: C.border },
-  cardTitleRow:{ marginBottom:12 },
+  cardTitleRow:{ flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:12 },
+  previewActionsRow: { flexDirection:'row', alignItems:'center', gap:8 },
+  changeVideoChip: {
+    flexDirection:'row',
+    alignItems:'center',
+    gap:5,
+    paddingHorizontal:10,
+    paddingVertical:5,
+    borderRadius: RADIUS.pill,
+    backgroundColor: C.orangeLight,
+    borderWidth:1,
+    borderColor: C.border,
+    cursor:'pointer',
+  },
+  changeVideoChipText: { fontSize:12, fontFamily: FONT.semiBold, color: C.primary },
+  editChip: {
+    flexDirection:'row',
+    alignItems:'center',
+    gap:5,
+    paddingHorizontal:10,
+    paddingVertical:5,
+    borderRadius: RADIUS.pill,
+    backgroundColor: C.orangeLight,
+    borderWidth:1,
+    borderColor: C.border,
+    cursor:'pointer',
+  },
+  editChipText: { fontSize:12, fontFamily: FONT.semiBold, color: C.primary },
 
   stepRow:   { flexDirection:'row', alignItems:'center', gap:10, marginBottom:16 },
   stepBadge: { width:28, height:28, borderRadius:14, backgroundColor: C.primary, alignItems:'center', justifyContent:'center' },
   stepNum:   { color:'#ffffff', fontSize:13, fontFamily: FONT.bold },
   stepTitle: { fontSize:15, fontFamily: FONT.bold, color:'#111111' },
 
-  previewBadge:     { backgroundColor: C.primary, alignSelf:'flex-start', borderRadius: RADIUS.pill, paddingHorizontal:12, paddingVertical:4, marginBottom:10 },
+  previewBadge:     { backgroundColor: C.primary, alignSelf:'flex-start', borderRadius: RADIUS.pill, paddingHorizontal:12, paddingVertical:4 },
   previewBadgeText: { color:'#fff', fontSize:12, fontFamily: FONT.bold },
   previewInner:     { flexDirection:'row', alignItems:'center' },
   previewTitle:     { fontSize:15, fontFamily: FONT.bold, color:'#111111', marginBottom:4 },
   previewDesc:      { fontSize:12, fontFamily: FONT.regular, color:'#888888' },
   previewThumb:     { width:80, height:70, borderRadius: RADIUS.input },
   previewThumbEmpty:{ width:80, height:70, borderRadius: RADIUS.input, backgroundColor: C.orangeLight, alignItems:'center', justifyContent:'center' },
+  tapToPlayBadge: {
+    position: 'absolute',
+    bottom: 4,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  tapToPlayText: {
+    color: '#fff',
+    fontSize: 9,
+    fontFamily: FONT.bold,
+  },
+  previewFooterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: C.orangeLight,
+  },
+  previewFooterBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: RADIUS.input,
+    backgroundColor: C.orangeLight,
+    borderWidth: 1,
+    borderColor: C.border,
+    cursor: 'pointer',
+  },
+  previewFooterBtnText: {
+    fontSize: 12,
+    fontFamily: FONT.semiBold,
+    color: C.primary,
+  },
+  previewFooterBtnPrimary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: RADIUS.input,
+    backgroundColor: C.primary,
+    cursor: 'pointer',
+  },
+  previewFooterBtnPrimaryText: {
+    fontSize: 12,
+    fontFamily: FONT.bold,
+    color: '#ffffff',
+  },
 
   fieldLabel:       { fontSize:12, fontFamily: FONT.semiBold, color:'#111111', marginBottom:6 },
   fieldLabelSpaced: { fontSize:12, fontFamily: FONT.semiBold, color:'#111111', marginBottom:6, marginTop:14 },
@@ -1198,6 +1693,23 @@ const ws = StyleSheet.create({
   summaryTotalPrice: { fontSize:22, fontFamily: FONT.bold, color: C.primary },
   buyBtn:            { flexDirection:'row', alignItems:'center', justifyContent:'center', gap:8, backgroundColor: C.primary, borderRadius: RADIUS.pill, paddingVertical:14 },
   buyBtnText:        { color:'#ffffff', fontSize:15, fontFamily: FONT.bold },
+});
+
+const vpm = StyleSheet.create({
+  overlay:    { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', alignItems: 'center', justifyContent: 'center', padding: 16 },
+  backdrop:   { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  card:       { width: '100%', maxWidth: 480, backgroundColor: '#ffffff', borderRadius: 16, padding: 18, overflow: 'hidden', elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+  header:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  title:      { fontSize: 16, fontFamily: FONT.bold, color: '#111111' },
+  closeBtn:   { width: 32, height: 32, borderRadius: 16, backgroundColor: '#f3f4f6', alignItems: 'center', justifyContent: 'center' },
+  videoWrap:  { width: '100%', height: 240, backgroundColor: '#000000', borderRadius: 10, overflow: 'hidden', marginBottom: 12 },
+  player:     { width: '100%', height: '100%' },
+  hintText:   { fontSize: 12, fontFamily: FONT.regular, color: '#666666', marginBottom: 16, lineHeight: 18 },
+  btnRow:     { flexDirection: 'row', gap: 10 },
+  changeBtn:  { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: C.primary, paddingVertical: 12, borderRadius: 8 },
+  changeBtnText: { color: '#ffffff', fontSize: 13, fontFamily: FONT.bold },
+  editBtn:    { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: C.orangeLight, borderWidth: 1, borderColor: C.border, paddingVertical: 12, borderRadius: 8 },
+  editBtnText:   { color: C.primary, fontSize: 13, fontFamily: FONT.bold },
 });
 
 

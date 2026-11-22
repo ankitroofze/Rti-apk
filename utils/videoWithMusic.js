@@ -29,11 +29,33 @@ export function toCorsSafeMediaUrl(url) {
   if (!s) return s;
   if (/^(blob:|data:|file:|content:)/i.test(s)) return s;
 
-  // Map any /storage/ url to /storage-proxy/ so that storage-proxy.php adds CORS and forwards to backend
-  if (s.includes('/storage/')) {
-    s = s.replace(/^https?:\/\/[^/]+\/storage\//i, '/storage-proxy/');
-    if (s.startsWith('/storage/')) {
-      s = s.replace(/^\/storage\//, '/storage-proxy/');
+  // Upgrade http to https on secure pages to avoid mixed content
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && s.startsWith('http://189.72.144.238')) {
+    s = s.replace(/^http:\/\/189\.72\.144\.238/i, 'https://189.72.144.238');
+  }
+
+  const hostname = typeof window !== 'undefined' ? (window.location.hostname || '') : '';
+  const isLocalhost = hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+  const isVercel = typeof hostname === 'string' && hostname.endsWith('.vercel.app');
+
+  // Only rewrite to /storage-proxy/ if running on local dev (Metro proxy) or Vercel (vercel.json proxy)
+  if (isLocalhost || isVercel) {
+    if (s.includes('/storage/')) {
+      s = s.replace(/^https?:\/\/[^/]+\/storage\//i, '/storage-proxy/');
+      if (s.startsWith('/storage/')) {
+        s = s.replace(/^\/storage\//, '/storage-proxy/');
+      }
+    }
+  } else {
+    // On production server (e.g. 189.72.144.238 or custom production domain):
+    // The server does NOT have /storage-proxy/ (returns 200 index.html, breaking media playback).
+    // Ensure any /storage-proxy/ is converted back to /storage/
+    if (s.startsWith('/storage-proxy/')) {
+      s = s.replace(/^\/storage-proxy\//, '/storage/');
+    }
+    // If running directly on the backend server origin (e.g. 189.72.144.238), use same-origin relative /storage/
+    if (hostname === '189.72.144.238') {
+      s = s.replace(/^https?:\/\/189\.72\.144\.238\/storage\//i, '/storage/');
     }
   }
   return s;
@@ -255,13 +277,16 @@ async function composeOnWeb(videoSrc, { musicSrc, voiceSrc, musicVolume, muteOri
       try {
         const vr = await fetch(vSrc, { mode: 'cors', cache: 'no-store' });
         if (vr && vr.ok) {
-          videoBlobUrl = URL.createObjectURL(await vr.blob());
-          toRevoke.push(videoBlobUrl);
-          fetched = true;
+          const cType = vr.headers.get('content-type') || '';
+          if (!cType.includes('text/html')) {
+            videoBlobUrl = URL.createObjectURL(await vr.blob());
+            toRevoke.push(videoBlobUrl);
+            fetched = true;
+          }
         }
       } catch (_) {}
 
-      // Fallback 1: Agar /storage-proxy/ 404 de to direct /storage/ ya full url try karo
+      // Fallback 1: Agar /storage-proxy/ 404 ya HTML de to direct /storage/ ya full url try karo
       if (!fetched) {
         const alt = vSrc.includes('/storage-proxy/')
           ? vSrc.replace('/storage-proxy/', '/storage/')
@@ -270,9 +295,12 @@ async function composeOnWeb(videoSrc, { musicSrc, voiceSrc, musicVolume, muteOri
           try {
             const vr2 = await fetch(alt, { mode: 'cors', cache: 'no-store' });
             if (vr2 && vr2.ok) {
-              videoBlobUrl = URL.createObjectURL(await vr2.blob());
-              toRevoke.push(videoBlobUrl);
-              fetched = true;
+              const cType2 = vr2.headers.get('content-type') || '';
+              if (!cType2.includes('text/html')) {
+                videoBlobUrl = URL.createObjectURL(await vr2.blob());
+                toRevoke.push(videoBlobUrl);
+                fetched = true;
+              }
             }
           } catch (_) {}
         }

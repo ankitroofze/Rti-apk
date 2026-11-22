@@ -29,6 +29,7 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { openExternalUrl } from '../utils/adRedirect';
 import { useAdsHidden } from '../utils/adsVisibility';
 import { safePause, safePlay, safeSetMuted } from '../utils/videoPlayerSafe';
+import { toCorsSafeMediaUrl } from '../utils/videoWithMusic';
 
 const AD_SECONDS = 5;          // har ad ka fixed time (image + video)
 const AD_FIT = 'contain';      // ad poora dikhta hai (crop nahi); khaali jagah BLUR background se bharti hai
@@ -36,6 +37,8 @@ const IS_WEB = Platform.OS === 'web';
 
 // ── WEB video: asli <video> tag ──────────────────────────────────────────────
 function PromoVideoWeb({ uri, onSize, muted, onToggleMute }) {
+  if (!uri) return null;
+  const safeUri = toCorsSafeMediaUrl(uri);
   // muted = popup ka apna state (default false => ads hamesha AWAZ ke saath). Sirf user button se mute karega.
   const elRef = useRef(null);
   const mutedRef = useRef(muted);
@@ -137,7 +140,7 @@ function PromoVideoWeb({ uri, onSize, muted, onToggleMute }) {
     <View style={StyleSheet.absoluteFill}>
       {React.createElement('video', {
         ref: elRef,
-        src: uri,
+        src: safeUri,
         autoPlay: true,
         loop: true,
         playsInline: true,

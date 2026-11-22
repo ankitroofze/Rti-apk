@@ -363,6 +363,7 @@ import KeyboardAwareScroll from './KeyboardAwareScroll';
 import { Ionicons } from '@expo/vector-icons';
 import { UserStore } from '../store/UserStore';
 import { useToast } from './ui/ToastProvider';
+import { openExternalUrl, buildWhatsappUrl } from '../utils/adRedirect';
 
 const C = {
   primary: '#ea580c',
@@ -432,9 +433,21 @@ export default function AdLeadFormModal({ visible, ad, onClose }) {
     }
     setSubmitted(true);
     showToast('Form submitted successfully!', 'success');
+
+    if (ad?.extraValues?.lead_form_submit_action === 'whatsapp') {
+      const waUrl = buildWhatsappUrl(ad);
+      if (waUrl) {
+        setTimeout(() => {
+          onClose?.();
+          openExternalUrl(waUrl);
+        }, 800);
+      }
+    }
   };
 
   if (!ad) return null;
+
+  const waAvailable = Boolean(buildWhatsappUrl(ad));
 
   const thankYouBody = (
     <View style={styles.thankYouWrap}>
@@ -445,7 +458,20 @@ export default function AdLeadFormModal({ visible, ad, onClose }) {
       <Text style={styles.thankYouText}>
         Your response has been submitted successfully.{'\n'}We will get back to you soon.
       </Text>
-      <TouchableOpacity style={styles.doneBtn} onPress={onClose} activeOpacity={0.85}>
+      {waAvailable ? (
+        <TouchableOpacity
+          style={[styles.doneBtn, { backgroundColor: '#16a34a', marginTop: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8 }]}
+          onPress={() => {
+            onClose?.();
+            openExternalUrl(buildWhatsappUrl(ad));
+          }}
+          activeOpacity={0.85}
+        >
+          <Ionicons name="logo-whatsapp" size={18} color="#fff" />
+          <Text style={styles.doneBtnText}>Chat on WhatsApp</Text>
+        </TouchableOpacity>
+      ) : null}
+      <TouchableOpacity style={[styles.doneBtn, waAvailable && { marginTop: 10, backgroundColor: '#475569' }]} onPress={onClose} activeOpacity={0.85}>
         <Text style={styles.doneBtnText}>Done</Text>
       </TouchableOpacity>
     </View>
