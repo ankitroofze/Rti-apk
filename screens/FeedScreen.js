@@ -230,8 +230,133 @@ function persistPendingComments() {
     AsyncStorage.setItem(PENDING_STORAGE_KEY, str).catch(() => {});
   } catch (_) {}
 }
+const feedEditedComments = new Map(); // commentId -> { text, edited_at, postId }
+const EDITED_STORAGE_KEY = '@rti_feed_edited_comments_v2';
+
+function loadPersistedEditedComments() {
+  try {
+    let saved = null;
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      saved = window.sessionStorage?.getItem(EDITED_STORAGE_KEY) || window.localStorage?.getItem(EDITED_STORAGE_KEY);
+    }
+    if (saved) {
+      const obj = JSON.parse(saved);
+      Object.entries(obj).forEach(([k, val]) => {
+        if (val && typeof val === 'object' && val.text) {
+          feedEditedComments.set(String(k), val);
+        }
+      });
+    }
+  } catch (_) {}
+}
+
+async function loadPersistedEditedCommentsAsync() {
+  loadPersistedEditedComments();
+  try {
+    const saved = await AsyncStorage.getItem(EDITED_STORAGE_KEY);
+    if (saved) {
+      const obj = JSON.parse(saved);
+      Object.entries(obj).forEach(([k, val]) => {
+        if (val && typeof val === 'object' && val.text) {
+          feedEditedComments.set(String(k), val);
+        }
+      });
+    }
+  } catch (_) {}
+}
+
+function persistEditedComments() {
+  try {
+    const obj = {};
+    feedEditedComments.forEach((val, key) => {
+      if (val && val.text) obj[key] = val;
+    });
+    const str = JSON.stringify(obj);
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.sessionStorage) {
+      window.sessionStorage.setItem(EDITED_STORAGE_KEY, str);
+      window.localStorage?.setItem(EDITED_STORAGE_KEY, str);
+    }
+    AsyncStorage.setItem(EDITED_STORAGE_KEY, str).catch(() => {});
+  } catch (_) {}
+}
+
 loadPersistedPendingComments();
 loadPersistedPendingCommentsAsync().catch(() => {});
+loadPersistedEditedComments();
+loadPersistedEditedCommentsAsync().catch(() => {});
+
+function applyEditedComments(comment) {
+  if (!comment) return comment;
+  loadPersistedEditedComments();
+  let text = comment.text;
+  let edited_at = comment.edited_at;
+
+  for (const [eId, editData] of feedEditedComments.entries()) {
+    if (isSameCommentId(eId, comment.id)) {
+      text = editData.text;
+      edited_at = editData.edited_at || edited_at || new Date().toISOString();
+      break;
+    }
+  }
+
+  const updatedReplies = Array.isArray(comment.replies)
+    ? comment.replies.map(applyEditedComments)
+    : [];
+
+  if (text !== comment.text || edited_at !== comment.edited_at || updatedReplies !== comment.replies) {
+    return {
+      ...comment,
+      text,
+      edited_at,
+      replies: updatedReplies,
+    };
+  }
+  return comment;
+}
+
+function updateCommentTextLocally(postId, commentId, newText) {
+  const sId = String(commentId);
+  const nowIso = new Date().toISOString();
+  feedEditedComments.set(sId, { text: newText, edited_at: nowIso, postId: postId ? String(postId) : null });
+  persistEditedComments();
+
+  loadPersistedPendingComments();
+  feedPendingComments.forEach((arr, pKey) => {
+    let changed = false;
+    const updated = arr.map((item) => {
+      if (!item || !item.comment) return item;
+      if (isSameCommentId(item.comment.id, commentId)) {
+        changed = true;
+        return {
+          ...item,
+          comment: { ...item.comment, text: newText, edited_at: nowIso },
+        };
+      }
+      if (Array.isArray(item.comment.replies)) {
+        let replyChanged = false;
+        const newReplies = item.comment.replies.map((r) => {
+          if (isSameCommentId(r.id, commentId)) {
+            replyChanged = true;
+            return { ...r, text: newText, edited_at: nowIso };
+          }
+          return r;
+        });
+        if (replyChanged) {
+          changed = true;
+          return {
+            ...item,
+            comment: { ...item.comment, replies: newReplies },
+          };
+        }
+      }
+      return item;
+    });
+    if (changed) {
+      feedPendingComments.set(pKey, updated);
+    }
+  });
+  persistPendingComments();
+}
 
 function addPendingComment(postId, comment, replyToId) {
   const key = String(postId);
@@ -251,6 +376,8 @@ function removePendingComment(postId, commentId) {
   );
   if (arr.length) feedPendingComments.set(key, arr); else feedPendingComments.delete(key);
   persistPendingComments();
+  feedEditedComments.delete(String(commentId));
+  persistEditedComments();
 }
 
 function hasRecentPending(postId) {
@@ -261,17 +388,35 @@ function hasRecentPending(postId) {
 
 function mergePendingComments(postId, serverList) {
   loadPersistedPendingComments();
+  loadPersistedEditedComments();
   const key = String(postId);
   const pend = feedPendingComments.get(key);
-  let out = Array.isArray(serverList) ? [...serverList] : [];
+  let out = (Array.isArray(serverList) ? [...serverList] : []).map(applyEditedComments);
   if (!pend || !pend.length) return out;
   const still = [];
   pend.forEach((p) => {
     if (!p || !p.comment) return;
-    if (listHasComment(out, p.comment)) {
-      return; // server list me aa gaya
+    const pComment = applyEditedComments(p.comment);
+    if (listHasComment(out, pComment)) {
+      out = out.map((c) => {
+        if (isSameCommentId(c.id, pComment.id) || pendKey(c) === pendKey(pComment)) {
+          return { ...c, text: pComment.text, edited_at: pComment.edited_at || c.edited_at };
+        }
+        if (Array.isArray(c.replies)) {
+          return {
+            ...c,
+            replies: c.replies.map((r) =>
+              isSameCommentId(r.id, pComment.id) || pendKey(r) === pendKey(pComment)
+                ? { ...r, text: pComment.text, edited_at: pComment.edited_at || r.edited_at }
+                : r
+            ),
+          };
+        }
+        return c;
+      });
+      return; // server list me aa gaya aur text sync ho gaya
     }
-    still.push(p);
+    still.push({ ...p, comment: pComment });
     if (p.replyToId) {
       let attached = false;
       out = out.map((c) => {
@@ -280,10 +425,12 @@ function mergePendingComments(postId, serverList) {
         if (matchesParent) {
           attached = true;
           const replies = Array.isArray(c.replies) ? c.replies : [];
-          const exists = replies.some((r) => isSameCommentId(r.id, p.comment.id) || pendKey(r) === pendKey(p.comment));
+          const exists = replies.some((r) => isSameCommentId(r.id, pComment.id) || pendKey(r) === pendKey(pComment));
           return {
             ...c,
-            replies: exists ? replies : [...replies, p.comment],
+            replies: exists
+              ? replies.map((r) => (isSameCommentId(r.id, pComment.id) || pendKey(r) === pendKey(pComment)) ? { ...r, text: pComment.text, edited_at: pComment.edited_at || r.edited_at } : r)
+              : [...replies, pComment],
           };
         }
         return c;
@@ -292,16 +439,20 @@ function mergePendingComments(postId, serverList) {
       if (!attached && out.length > 0) {
         out = out.map((c, idx) => idx === 0 ? {
           ...c,
-          replies: (Array.isArray(c.replies) ? c.replies : []).some((r) => isSameCommentId(r.id, p.comment.id) || pendKey(r) === pendKey(p.comment))
-            ? c.replies
-            : [...(c.replies || []), p.comment],
+          replies: (Array.isArray(c.replies) ? c.replies : []).some((r) => isSameCommentId(r.id, pComment.id) || pendKey(r) === pendKey(pComment))
+            ? c.replies.map((r) => (isSameCommentId(r.id, pComment.id) || pendKey(r) === pendKey(pComment)) ? { ...r, text: pComment.text, edited_at: pComment.edited_at || r.edited_at } : r)
+            : [...(c.replies || []), pComment],
         } : c);
       } else if (!attached) {
-        out = [...out, p.comment];
+        out = [...out, pComment];
       }
     } else {
-      const exists = out.some((c) => isSameCommentId(c.id, p.comment.id) || pendKey(c) === pendKey(p.comment));
-      if (!exists) out = [...out, p.comment];
+      const exists = out.some((c) => isSameCommentId(c.id, pComment.id) || pendKey(c) === pendKey(pComment));
+      if (!exists) {
+        out = [...out, pComment];
+      } else {
+        out = out.map((c) => (isSameCommentId(c.id, pComment.id) || pendKey(c) === pendKey(pComment)) ? { ...c, text: pComment.text, edited_at: pComment.edited_at || c.edited_at } : c);
+      }
     }
   });
   if (still.length) feedPendingComments.set(key, still); else feedPendingComments.delete(key);
@@ -2065,19 +2216,19 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
   //         re-initializes when the blob URL becomes available.
   //         On web, IDB URIs wait for the resolved blob URL.
   //         On native, use mediaUri directly.
-  const videoSource = useMemo(() => {
-    if (safePost.type !== 'video') return null;
-
+  const targetVideoUri = useMemo(() => {
+    if (safePost.type !== 'video') return '';
     if (Platform.OS === 'web' && isIdbMediaUri(mediaUri)) {
-      // Wait until IDB has been resolved to a blob URL
-      if (!resolvedMediaUri) return null;
-      return { uri: resolvedMediaUri };
+      return resolvedMediaUri || '';
     }
-
-    if (!mediaUri || !isPlayableVideoSource(mediaUri)) return null;
-    const finalUri = Platform.OS === 'web' ? toCorsSafeMediaUrl(mediaUri) : mediaUri;
-    return { uri: finalUri };
+    if (!mediaUri || !isPlayableVideoSource(mediaUri)) return '';
+    return Platform.OS === 'web' ? toCorsSafeMediaUrl(mediaUri) : mediaUri;
   }, [safePost.type, mediaUri, resolvedMediaUri]);
+
+  const videoSource = useMemo(() => {
+    if (!targetVideoUri) return null;
+    return { uri: targetVideoUri };
+  }, [targetVideoUri]);
 
   // ✅ FIX: canPlayVideo derived from videoSource (not effectiveMediaUri)
   const canPlayVideo = Boolean(videoSource);
@@ -2109,9 +2260,11 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
       p.volume = 1;
       p.autoplay = false;
       p.addListener('statusChange', ({ status, error }) => {
-        if (status === 'readyToPlay' && mountedRef.current) {
-          setPlayerReady(true);
-          setShowPoster(false);
+        if ((status === 'readyToPlay' || status === 'idle') && mountedRef.current) {
+          if (status === 'readyToPlay') {
+            setPlayerReady(true);
+            setShowPoster(false);
+          }
         } else if (status === 'error' && mountedRef.current) {
           console.warn('[FeedScreen] video player error:', error);
           setPlayerReady(false);
@@ -2140,11 +2293,33 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
     return { w, h, boxed: true };
   })();
 
-  // Reset poster/ready when video source changes
+  const lastSourceUriRef = useRef('');
+  // Reset poster/ready ONLY when video URI actually changes to a different video
   useEffect(() => {
-    setShowPoster(true);
-    setPlayerReady(false);
+    const currentUri = activeSource?.uri || '';
+    if (!currentUri) {
+      lastSourceUriRef.current = '';
+      setPlayerReady(false);
+      setShowPoster(true);
+      return;
+    }
+    if (currentUri !== lastSourceUriRef.current) {
+      lastSourceUriRef.current = currentUri;
+      setShowPoster(true);
+      setPlayerReady(false);
+    }
   }, [activeSource]);
+
+  // If player is already ready (status === 'readyToPlay' or playing), ensure ready state
+  useEffect(() => {
+    if (!player || !canPlayVideo || !activeSource) return;
+    try {
+      if (player.status === 'readyToPlay' || player.playing) {
+        if (!playerReady) setPlayerReady(true);
+        if (player.playing) setShowPoster(false);
+      }
+    } catch (_) {}
+  }, [player, canPlayVideo, activeSource, playerReady]);
 
   useEffect(() => { setCaptionExpanded(false); }, [postId]);
 
@@ -2155,12 +2330,12 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
     try { if (player.playbackRate !== 1) player.playbackRate = 1; } catch (_) { /* ignore */ }   // mute se speed nahi badlegi
   }, [canPlayVideo, activeSource, muted, player, safePost.localMuteOriginal]);
 
-  // ✅ FIX (beech me ruk jaana): video chalte chalte ruk jaaye (buffering / audio focus) to khud dobara chalao.
+  // ✅ FIX (beech me ruk jaana / refresh par atkana): video chalte chalte ruk jaaye ya refresh par stuck ho to khud dobara chalao.
   // User ne pause kiya ho (paused=true) to kuch nahi karta.
   const pausedRef = useRef(false);
   useEffect(() => { pausedRef.current = paused; }, [paused]);
   useEffect(() => {
-    if (!isActive || !canPlayVideo || !player || !activeSource || !playerReady) return undefined;
+    if (!isActive || !canPlayVideo || !player || !activeSource) return undefined;
     let lastT = -1;
     let stuck = 0;
     const id = setInterval(() => {
@@ -2170,12 +2345,25 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
         // har second ka play() buffering ko restart karke video ko atkata tha.
         if (player.status === 'loading') { stuck = 0; return; }
         const t = Number(player.currentTime) || 0;
-        if (!player.playing) { stuck += 1; if (stuck >= 2) { safePlay(player); stuck = 0; } }
-        else if (t === lastT) { stuck += 1; if (stuck >= 5) { safePlay(player); stuck = 0; } }
-        else stuck = 0;
+        if (!player.playing) {
+          stuck += 1;
+          if (stuck >= 1) {
+            safePlay(player);
+            setShowPoster(false);
+            stuck = 0;
+          }
+        } else {
+          setShowPoster(false);
+          if (t === lastT && t > 0) {
+            stuck += 1;
+            if (stuck >= 3) { safePlay(player); stuck = 0; }
+          } else {
+            stuck = 0;
+          }
+        }
         lastT = t;
       } catch (_) { /* released player */ }
-    }, 1000);
+    }, 600);
     return () => clearInterval(id);
   }, [isActive, canPlayVideo, player, activeSource, playerReady]);
 
@@ -2193,7 +2381,9 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
 
   // Handle play/pause based on active state + player readiness
   useEffect(() => {
-    if (!canPlayVideo || !player || !activeSource || !playerReady) return;
+    if (!canPlayVideo || !player || !activeSource) return;
+    const isReady = playerReady || player.status === 'readyToPlay' || player.playing;
+    if (!isReady) return;
 
     const playVideo = async () => {
       if (isActive && !paused) {
@@ -2896,7 +3086,9 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       }
 
       const normalizedComments = rawComments.map((comment, index) =>
-        normalizeFeedComment(comment, `cmt-${index + 1}`, commentProfilesByEmail)
+        applyEditedComments(
+          normalizeFeedComment(comment, `cmt-${index + 1}`, commentProfilesByEmail)
+        )
       );
 
       setPosts((prev) => prev.map((post) => {
@@ -3120,8 +3312,19 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     if (!id) return;
     setSharePost(id);
     // Optimistic UI update
-    setPosts(prev => prev.map(p => String(p.id) === String(id) ? { ...p, shares: (Number(p.shares) || 0) + 1 } : p));
+    setPosts(prev => prev.map(p => {
+      if (String(p.id) === String(id)) {
+        const next = (Number(p.shares) || 0) + 1;
+        publishEngagement(id, { shares: next }, 'reels');
+        return { ...p, shares: next };
+      }
+      return p;
+    }));
     try {
+      AuthAPI.clearApiGetCache?.('/news');
+      AuthAPI.clearApiGetCache?.('/feeds');
+      AuthAPI.shareNews(id).catch(() => {});
+      UserStore.updateNewsFeedItem(id, 'share').catch(() => {});
       const res = await UserStore.recordShare(id);
       if (res?.ok && Number.isFinite(res.shareCount)) {
         setPosts(prev => prev.map(p => String(p.id) === String(id) ? { ...p, shares: res.shareCount } : p));
@@ -3246,6 +3449,17 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
   }, [commentPost, currentUser.avatar, currentUser.name, currentUser.profile_image, currentUserEmail, descPost, syncPostComments, commentProfilesByEmail, requireLogin]);
 
   const handleEditComment = useCallback(async (commentId, newText) => {
+    let targetPostId = commentPost || descPost;
+    if (!targetPostId) {
+      const foundPost = posts.find(p =>
+        Array.isArray(p.comments) && p.comments.some(c =>
+          isSameCommentId(c.id, commentId) ||
+          (Array.isArray(c.replies) && c.replies.some(r => isSameCommentId(r.id, commentId)))
+        )
+      );
+      if (foundPost) targetPostId = foundPost.id;
+    }
+    updateCommentTextLocally(targetPostId, commentId, newText);
     setPosts(prev =>
       prev.map(p => ({
         ...p,
@@ -3262,9 +3476,11 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       }))
     );
     try {
-      await UserStore.editNewsComment(commentPost, commentId, newText);
+      if (targetPostId) {
+        await UserStore.editNewsComment(targetPostId, commentId, newText);
+      }
     } catch {}
-  }, [commentPost]);
+  }, [commentPost, descPost, posts]);
 
   const handleDeleteComment = useCallback(async (commentId) => {
     const targetId = commentPost || descPost;
@@ -3649,7 +3865,7 @@ const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
     ),
     bookmarked: Boolean(item.bookmarked),
     likes: Number(item.likes) || 0,
-    shares: Number(item.shares) || 0,
+    shares: Number(item.shares_count ?? item.share_count ?? item.shares ?? 0),
   };
 });
             const cleanedPosts = sourceItems.map((item) => {
@@ -3657,7 +3873,9 @@ const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
                 ? item.comments_list
                 : (Array.isArray(item.comments) ? item.comments : []);
               const normalizedComments = rawComments.map((comment, index) =>
-                normalizeFeedComment(comment, `cmt-${item.id || 'post'}-${index + 1}`, nextProfileMap)
+                applyEditedComments(
+                  normalizeFeedComment(comment, `cmt-${item.id || 'post'}-${index + 1}`, nextProfileMap)
+                )
               );
 
               return {
@@ -3676,7 +3894,7 @@ image: item.image || null,
     countFeedComments(normalizedComments)
   ),
   likes: Number(item.likes) || 0,
-  shares: Number(item.shares) || 0,
+  shares: Number(item.shares_count ?? item.share_count ?? item.shares ?? 0),
   liked: Boolean(item.liked),
   bookmarked: Boolean(item.bookmarked),
 };
@@ -3692,7 +3910,7 @@ image: item.image || null,
                 let merged = (old && Array.isArray(old.comments) && old.comments.length && !(np.comments && np.comments.length))
                   ? { ...np, comments: old.comments }
                   : np;
-                if (hasRecentPending(np.id)) {
+                if (hasRecentPending(np.id) || (feedEditedComments && feedEditedComments.size > 0)) {
                   merged = { ...merged, comments: mergePendingComments(np.id, merged.comments), commentsCount: Math.max(Number(merged.commentsCount || 0), Number(old?.commentsCount || 0)) };
                 }
                 return overlayFeedEngagement(merged);

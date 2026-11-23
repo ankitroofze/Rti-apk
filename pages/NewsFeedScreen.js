@@ -1,10 +1,10 @@
 import NameWithTick from '../components/NameWithTick';
 import React, { useCallback, useState, useEffect } from 'react';
 import {
-  Image, ImageBackground, KeyboardAvoidingView, Linking, Modal, Platform, ScrollView, Share,
-  StatusBar, Text, TextInput, TouchableOpacity, View, Alert, BackHandler, StyleSheet, useWindowDimensions,
-  ActivityIndicator
+  ActivityIndicator, Image, ImageBackground, KeyboardAvoidingView, Linking, Modal, Platform, RefreshControl, ScrollView, Share,
+  StatusBar, Text, TextInput, TouchableOpacity, View, Alert, BackHandler, StyleSheet, useWindowDimensions
 } from 'react-native';
+import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import KeyboardAwareScroll from '../components/KeyboardAwareScroll';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -600,6 +600,7 @@ export default function NewsFeedScreen({ navigation }) {
   const successMessage = '';
   const [loading, setLoading] = useState(true);
   const [commentModalVisible, setCommentModalVisible] = useState(false);
+  const [commentsLoading, setCommentsLoading] = useState(false);
   const [activeCommentItem, setActiveCommentItem] = useState(null);
   const [commentText, setCommentText] = useState('');
   const [localComments, setLocalComments] = useState([]);
@@ -640,14 +641,8 @@ export default function NewsFeedScreen({ navigation }) {
   const isLocationState = (value = '') => INDIAN_STATES.includes(value);
 
   const applyLocationFilter = (items = [], user = null) => {
-    if (!user || !UserStore.hasPremiumAccess(user) || !user.location_complete || !user.state) return items;
-    return items.filter((item) => {
-      if (!isLocationState(item.state)) return true;
-      if (item.state && item.state !== user.state) return false;
-      if (item.district && user.district && item.district !== user.district) return false;
-      if (item.taluka && user.taluka && item.taluka !== user.taluka) return false;
-      return true;
-    });
+    // In My News, user's own posts must all be visible; do not filter out by user's home location
+    return items;
   };
 
   const applyUIFilters = (items = []) => {
@@ -703,11 +698,12 @@ export default function NewsFeedScreen({ navigation }) {
     if (!Array.isArray(comments)) return [];
     return comments.map((comment) => ({
       id: String(comment.id || ''),
-      text: String(comment.text || comment.comment || ''),
-      author: String(comment.author || comment.user?.name || 'User'),
+      text: String(comment.text || comment.comment || comment.sub_comment || comment.body || comment.content || '').trim(),
+      author: String(comment.author || comment.user?.name || comment.author_name || 'User'),
       author_email: String(comment.author_email || comment.user?.email || ''),
-      author_avatar: String(comment.author_avatar || comment.authorAvatar || comment.user?.profile_image_url || comment.user?.profile_image || ''),
-      author_has_blue_tick: Boolean(comment.author_has_blue_tick || comment.has_blue_tick),
+      author_avatar: String(comment.author_avatar || comment.authorAvatar || comment.user?.profile_image_url || comment.user?.profile_image || comment.user?.avatar || ''),
+      author_id: comment.author_id || comment.userId || comment.user_id || null,
+      author_has_blue_tick: Boolean(comment.author_has_blue_tick || comment.has_blue_tick || comment.user?.has_blue_tick),
       is_mine: Boolean(comment.is_mine),
       date: comment.date || (comment.created_at ? new Date(comment.created_at).toLocaleDateString('en-IN') : ''),
       edited_at: comment.edited_at || null,
@@ -749,10 +745,21 @@ const syncFeed = useCallback(async (focusItemId = null, { silent = false } = {})
     if (focusItemId) {
       const target = filteredItems.find((item) => item.id === focusItemId);
       setActiveCommentItem(target || null);
-      setLocalComments(formatCommentsForView(target?.comments_list || []));
+      if (target?.id) {
+        loadCommentsFor(target.id);
+      }
     }
     return payload;
   }, [formatCommentsForView, navigation]);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    AuthAPI.clearApiGetCache?.('/news');
+    AuthAPI.clearApiGetCache?.('/my-news');
+    await syncFeed();
+    setRefreshing(false);
+  }, [syncFeed]);
 
   const loadNewsFeed = useCallback(async () => { await syncFeed(); }, [syncFeed]);
 
@@ -812,14 +819,21 @@ const syncFeed = useCallback(async (focusItemId = null, { silent = false } = {})
   const handleShareSuccess = async () => {
     if (!selectedShareItem?.id) return;
     const itemId = String(selectedShareItem.id);
+    const prevShares = Number(selectedShareItem.shares || 0);
+    const nextShares = prevShares + 1;
+    setSelectedShareItem((prev) => prev ? { ...prev, shares: nextShares } : prev);
     setNewsData((prev) => ({
       ...prev,
       items: (prev.items || []).map((entry) =>
-        String(entry.id) === itemId ? { ...entry, shares: Number(entry.shares || 0) + 1 } : entry
+        String(entry.id) === itemId ? { ...entry, shares: nextShares } : entry
       ),
     }));
+    publishEngagement(itemId, { shares: nextShares }, 'newsfeed-share');
     try {
+      AuthAPI.clearApiGetCache?.('/news');
+      AuthAPI.clearApiGetCache?.('/my-news');
       await UserStore.updateNewsFeedItem(itemId, 'share');
+      await AuthAPI.shareNews(itemId);
     } catch {}
   };
 
@@ -958,21 +972,36 @@ const handleLike = async (item) => {
     setExpandedReplyThreads({});
   };
 
-  // Dedicated comments API (UserStore.getNewsCommentsPage) se comments load karo (same as front page)
+  // Dedicated comments API (UserStore.getNewsCommentsPage) se comments load karo
   const loadCommentsFor = async (itemId) => {
     if (!itemId) return;
     setCommentsLoading(true);
     try {
-      const res = await UserStore.getNewsCommentsPage(itemId, { perPage: 50 });
-      if (res?.ok && Array.isArray(res.comments)) {
-        setLocalComments(formatCommentsForView(res.comments));
-      } else {
-        const data = await UserStore.getNewsFeedSummary({ focusItemId: itemId });
-        const match = Array.isArray(data?.items) ? data.items.find((it) => String(it.id) === String(itemId)) : null;
-        if (match) {
-          const raw = Array.isArray(match.comments_list) ? match.comments_list : (Array.isArray(match.comments) ? match.comments : []);
-          setLocalComments(formatCommentsForView(raw));
+      const pageRes = await UserStore.getNewsCommentsPage(itemId, { perPage: 50 });
+      if (pageRes?.ok && Array.isArray(pageRes.comments) && pageRes.comments.length > 0) {
+        setLocalComments(formatCommentsForView(pageRes.comments));
+        return;
+      }
+      try {
+        const singleNews = await AuthAPI.getNewsById(itemId);
+        const rawNews = singleNews?.ok ? (singleNews.news || {}) : {};
+        const fallbackList = Array.isArray(rawNews.comments) ? rawNews.comments : (Array.isArray(rawNews.comments_list) ? rawNews.comments_list : []);
+        if (fallbackList.length > 0) {
+          setLocalComments(formatCommentsForView(fallbackList));
+          return;
         }
+      } catch (_) {}
+      const data = await UserStore.getNewsFeedSummary({ focusItemId: itemId });
+      const match = Array.isArray(data?.items) ? data.items.find((it) => String(it.id) === String(itemId)) : null;
+      if (match) {
+        const raw = Array.isArray(match.comments_list) ? match.comments_list : (Array.isArray(match.comments) ? match.comments : []);
+        if (raw.length > 0) {
+          setLocalComments(formatCommentsForView(raw));
+          return;
+        }
+      }
+      if (pageRes?.ok && Array.isArray(pageRes.comments)) {
+        setLocalComments(formatCommentsForView(pageRes.comments));
       }
     } catch (e) {
       console.warn('loadCommentsFor error:', e);
@@ -984,13 +1013,16 @@ const handleLike = async (item) => {
   const openComments = async (item) => {
     if (commentModalVisible && activeCommentItem?.id === item?.id) { closeComments(); return; }   // dubara dabane par band
     setActiveCommentItem(item);
-    setLocalComments(formatCommentsForView(Array.isArray(item?.comments_list) ? item.comments_list : []));
     setCommentText('');
     setEditingCommentId(null);
     setEditingCommentText('');
     setReplyingToCommentId(null);
     setReplyText('');
     setExpandedReplyThreads({});
+    const initialList = Array.isArray(item?.comments_list) ? item.comments_list : (Array.isArray(item?.comments) ? item.comments : []);
+    if (initialList.length > 0) {
+      setLocalComments(formatCommentsForView(initialList));
+    }
     setCommentModalVisible(true);
     await loadCommentsFor(item?.id);
   };
@@ -1124,8 +1156,6 @@ const handleLike = async (item) => {
     if (!activeCommentItem || !editingCommentId) return;
     const trimmed = editingCommentText.trim();
     if (!trimmed) return;
-    const result = await UserStore.editNewsComment(activeCommentItem.id, editingCommentId, trimmed);
-    if (!result.ok) { showToast(result.message, 'error'); return; }
     setLocalComments((prev) =>
       prev.map((comment) => {
         if (comment.id === editingCommentId) return { ...comment, text: trimmed, edited_at: new Date().toISOString() };
@@ -1140,7 +1170,14 @@ const handleLike = async (item) => {
         return comment;
       })
     );
+    const result = await UserStore.editNewsComment(activeCommentItem.id, editingCommentId, trimmed);
+    if (!result.ok) {
+      showToast(result.message, 'error');
+      await loadCommentsFor(activeCommentItem.id);
+      return;
+    }
     handleCancelEdit();
+    showToast('Comment updated successfully.', 'success');
   };
 
   const handleDeleteComment = async (commentId) => {
@@ -1288,8 +1325,8 @@ const handleLike = async (item) => {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {commentsLoading ? (
-            <View style={{ paddingVertical: 24, alignItems: 'center', justifyContent: 'center' }}>
+          {commentsLoading && !localComments.length ? (
+            <View style={{ paddingVertical: 20, alignItems: 'center', justifyContent: 'center' }}>
               <ActivityIndicator size="small" color={C.primary} />
             </View>
           ) : localComments.length ? (
@@ -1380,6 +1417,14 @@ const handleLike = async (item) => {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#b91c1c']}
+            tintColor="#b91c1c"
+          />
+        }
       >
         {/* 👇 Web par content ko bounded/centered rakhne ke liye wrapper — header ke maxWidth (720) se match */}
         <View style={styles.webContentWrap}>
@@ -1825,7 +1870,7 @@ const handleLike = async (item) => {
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.actionIconButton} onPress={() => handleShare(item)}>
                     <Feather name="share-2" size={15} color={C.textSub} />
-                    <Text style={styles.actionIconText}>{item.shares != null ? item.shares : 0}</Text>
+                    <Text style={styles.actionIconText}>{Math.max(Number(item.shares != null ? item.shares : 0), Number(getEngagement(item.id)?.shares || 0))}</Text>
                   </TouchableOpacity>
                          </View>
                 {renderCommentsPanel(item)}

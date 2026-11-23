@@ -119,6 +119,15 @@ $requestHeaders[] = 'Expect:';
 if (!in_array($method, ['GET', 'HEAD', 'OPTIONS'])) {
     if ($isMultipart && (!empty($_POST) || !empty($_FILES))) {
         $postData = $_POST;
+        if (!empty($postData['quantity']) && empty($postData['qty'])) {
+            $postData['qty'] = $postData['quantity'];
+        }
+        if (!empty($postData['qty']) && empty($postData['quantity'])) {
+            $postData['quantity'] = $postData['qty'];
+        }
+        if (!empty($postData['quantity']) && empty($postData['order_qty'])) {
+            $postData['order_qty'] = $postData['quantity'];
+        }
         foreach ($_FILES as $fileKey => $fileInfo) {
             if (is_array($fileInfo['name'])) {
                 foreach ($fileInfo['name'] as $idx => $fname) {
@@ -144,6 +153,16 @@ if (!in_array($method, ['GET', 'HEAD', 'OPTIONS'])) {
     } else {
         $rawInput = file_get_contents('php://input');
         if ($rawInput !== false && strlen($rawInput) > 0) {
+            $decodedJson = json_decode($rawInput, true);
+            if (is_array($decodedJson)) {
+                $qVal = $decodedJson['quantity'] ?? $decodedJson['qty'] ?? $decodedJson['order_qty'] ?? null;
+                if ($qVal !== null) {
+                    $decodedJson['qty'] = (string)$qVal;
+                    $decodedJson['quantity'] = (string)$qVal;
+                    $decodedJson['order_qty'] = (string)$qVal;
+                    $rawInput = json_encode($decodedJson);
+                }
+            }
             curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
             $requestHeaders[] = 'Content-Length: ' . strlen($rawInput);
             if (!$hasContentType) {
@@ -200,6 +219,33 @@ foreach ($headerLines as $line) {
 header("Cache-Control: no-cache, no-store, must-revalidate");
 header("Pragma: no-cache");
 header("Expires: 0");
+
+// Ensure quantity/qty is always present in ecom-enquiries response
+if (stripos($endpoint, 'ecom-enquiries') !== false && !empty($body)) {
+    $respJson = json_decode($body, true);
+    if (is_array($respJson)) {
+        $sentQty = $_POST['quantity'] ?? $_POST['qty'] ?? $_POST['order_qty'] ?? null;
+        if ($sentQty === null && !empty($rawInput)) {
+            $inJson = json_decode($rawInput, true);
+            $sentQty = $inJson['quantity'] ?? $inJson['qty'] ?? $inJson['order_qty'] ?? null;
+        }
+        if ($sentQty !== null) {
+            if (isset($respJson['data']) && is_array($respJson['data'])) {
+                if (empty($respJson['data']['qty'])) $respJson['data']['qty'] = (string)$sentQty;
+                if (empty($respJson['data']['quantity'])) $respJson['data']['quantity'] = (string)$sentQty;
+                if (empty($respJson['data']['order_qty'])) $respJson['data']['order_qty'] = (string)$sentQty;
+            }
+            if (isset($respJson['enquiry']) && is_array($respJson['enquiry'])) {
+                if (empty($respJson['enquiry']['qty'])) $respJson['enquiry']['qty'] = (string)$sentQty;
+                if (empty($respJson['enquiry']['quantity'])) $respJson['enquiry']['quantity'] = (string)$sentQty;
+                if (empty($respJson['enquiry']['order_qty'])) $respJson['enquiry']['order_qty'] = (string)$sentQty;
+            }
+            if (empty($respJson['qty'])) $respJson['qty'] = (string)$sentQty;
+            if (empty($respJson['quantity'])) $respJson['quantity'] = (string)$sentQty;
+            $body = json_encode($respJson);
+        }
+    }
+}
 
 echo $body;
 

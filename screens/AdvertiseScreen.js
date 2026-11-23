@@ -14,6 +14,7 @@ import { Asset } from 'expo-asset';
 import ModuleWebHeader from '../components/Modulewebheader';
 import AppNavbar from '../components/AppNavbar';
 import { HEADER_BG_IMAGE } from '../constants/subscriptionThemes';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import AdVideoPlayer from '../components/AdVideoPlayer';
 import { getResponsiveWindowWidth } from '../utils/webDevice';
@@ -157,7 +158,7 @@ const PREVIEW_CTA_BY_REDIRECT = {
 const getPreviewCta = (redirect) => PREVIEW_CTA_BY_REDIRECT[redirect] || PREVIEW_CTA_BY_REDIRECT.profile;
 
 // ── Ad Preview Modal ────────────────────────────────────────────────────────────
-function AdPreviewModal({ visible, onClose, onNext, adData, userMobile }) {
+function AdPreviewModal({ visible, onClose, onNext, adData, userMobile, isEditing = false }) {
   const isWeb = Platform.OS === 'web';
   // ✅ FIX: call button ab hardcoded nahi hai — jis number se user ne apna
   // account/login banaya hai (userMobile), preview me call button sirf tabhi
@@ -217,7 +218,7 @@ function AdPreviewModal({ visible, onClose, onNext, adData, userMobile }) {
                 <Text style={wpm.changeBtnText}>Change</Text>
               </TouchableOpacity>
               <TouchableOpacity style={wpm.nextBtn} onPress={onNext} activeOpacity={0.85}>
-                <Text style={wpm.nextBtnText}>Next  →</Text>
+                <Text style={wpm.nextBtnText}>{isEditing ? 'Update Advertisement' : 'Post Advertisement'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -274,7 +275,7 @@ function AdPreviewModal({ visible, onClose, onNext, adData, userMobile }) {
               <Text style={pm.changeBtnText}>Change</Text>
             </TouchableOpacity>
             <TouchableOpacity style={pm.nextBtn} onPress={onNext} activeOpacity={0.85}>
-              <Text style={pm.nextBtnText}>Next  →</Text>
+              <Text style={pm.nextBtnText}>{isEditing ? 'Update Advertisement' : 'Post Advertisement'}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -594,6 +595,32 @@ const editAd = route?.params?.editAd || null;
     })();
     return () => { active = false; };
   }, []);
+
+  const todayDate = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
+  const [selectedDate, setSelectedDate] = useState(todayDate);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [selState, setSelState] = useState('');
+  const [selDistrict, setSelDistrict] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const me = await UserStore.getCurrentUser();
+        if (me?.state) setSelState(me.state);
+        if (me?.district) setSelDistrict(me.district);
+      } catch (_) {}
+    })();
+  }, []);
+
+  const formatDateStr = (d) =>
+    `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
+  const toInputDateValue = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const startDate = formatDateStr(selectedDate);
 
   const [leadFormFields, setLeadFormFields] = useState(
     editAd?.extraValues?.lead_form_fields || []
@@ -1029,30 +1056,34 @@ const editAd = route?.params?.editAd || null;
     setShowPreview(false);
     await new Promise(resolve => setTimeout(resolve, 300));
 
-    if (isEditing) {
-      const spendAdCredit = UserStore.useAdCredit;
-      const result = await spendAdCredit('edit', {
-        id:          editAd.id,
-        title:       title.trim(),
-        description: description.trim(),
-        photo,
-        video:       adVideo,
-        redirect:    selectedRedirect,
-        extraValues: {
-          ...extraValues,
-          lead_form_fields: leadFormFields,
-          lead_form_submit_action: leadFormSubmitAction,
-        },
-        allowCalls,
-      });
+    const spendAdCredit = UserStore.useAdCredit;
+    const result = await spendAdCredit(isEditing ? 'edit' : 'post', {
+      ...(isEditing ? { id: editAd.id } : {}),
+      title:       title.trim(),
+      description: description.trim(),
+      photo,
+      images:      [photo, ...extraPhotos].filter(Boolean),
+      video:       adVideo,
+      redirect:    selectedRedirect,
+      adsSubId:    1,
+      redirection: selectedRedirect || 'profile',
+      extraValues: {
+        ...extraValues,
+        lead_form_fields: leadFormFields,
+        lead_form_submit_action: leadFormSubmitAction,
+      },
+      allowCalls,
+      scope:        'district',
+      placement:    'home',
+      duration:     '30d',
+      durationDays: 30,
+      startDate:    toInputDateValue(selectedDate),
+      state:        selState,
+      district:     selDistrict,
+    });
 
-      if (!result.ok) {
-        Alert.alert('Unable to Update', result.message || 'Unable to update ad.');
-        return;
-      }
-
-      showToast('Ad updated successfully. 1 credit has been used.', 'success');
-      navigation.navigate('MyAds');
+    if (!result.ok) {
+      Alert.alert(isEditing ? 'Unable to Update' : 'Unable to Post', result.message || 'Unable to save advertisement.');
       return;
     }
 
@@ -1255,9 +1286,48 @@ const editAd = route?.params?.editAd || null;
               </TouchableOpacity>
             </View>
 
+            {/* 5. Starting date of promotion */}
+            <View style={ws.section}>
+              <SectionLabel number="5" title="Starting date of promotion" />
+              <View style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF7ED', borderWidth: 1.5, borderColor: '#FFE8D6', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10 }}>
+                <Ionicons name="calendar-outline" size={18} color="#ea580c" />
+                <Text style={{ fontSize: 14, fontWeight: '500', color: '#0f172a', marginLeft: 8 }}>{startDate}</Text>
+                {Platform.OS === 'web' ? (
+                  <input
+                    type="date"
+                    value={toInputDateValue(selectedDate)}
+                    min={toInputDateValue(todayDate)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (!val) return;
+                      const [y, m, d] = val.split('-').map(Number);
+                      setSelectedDate(new Date(y, m - 1, d));
+                    }}
+                    style={{
+                      marginLeft: 'auto',
+                      border: '1.5px solid #FFE8D6',
+                      borderRadius: 6,
+                      padding: '6px 10px',
+                      fontSize: 13,
+                      fontFamily: "'Roboto', sans-serif",
+                      color: '#111111',
+                      backgroundColor: '#ffffff',
+                    }}
+                  />
+                ) : (
+                  <TouchableOpacity
+                    onPress={() => setShowDatePicker(true)}
+                    style={{ marginLeft: 'auto', padding: 4 }}
+                  >
+                    <Ionicons name="calendar" size={20} color="#ea580c" />
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+
             <TouchableOpacity style={[ws.nextBtn, isWebSmall && ws.nextBtnFull, adv.nextBtn]} onPress={handleNext} activeOpacity={0.85}>
 <LinearGradient colors={ADV_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
-              <Text style={ws.nextBtnText}>Next</Text>
+              <Text style={ws.nextBtnText}>{isEditing ? 'Update Advertisement' : 'Post Advertisement'}</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -1268,6 +1338,7 @@ const editAd = route?.params?.editAd || null;
           onNext={handlePreviewNext}
           adData={{ photo, video: adVideo, title, description, redirect: selectedRedirect }}
           userMobile={userMobile}
+          isEditing={isEditing}
         />
 
         <LeadFormBuilderModal
@@ -1402,9 +1473,61 @@ const editAd = route?.params?.editAd || null;
           </TouchableOpacity>
         </View>
 
+        {/* 5. Starting date of promotion */}
+        <View style={s.section}>
+          <SectionLabel number="5" title="Starting date of promotion" />
+          <View style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF7ED', borderWidth: 1.5, borderColor: '#FFE8D6', borderRadius: 8, paddingHorizontal: 14, paddingVertical: 10 }}>
+            <Ionicons name="calendar-outline" size={18} color="#ea580c" />
+            <Text style={{ fontSize: 14, fontWeight: '500', color: '#0f172a', marginLeft: 8 }}>{startDate}</Text>
+            {Platform.OS === 'web' ? (
+              <input
+                type="date"
+                value={toInputDateValue(selectedDate)}
+                min={toInputDateValue(todayDate)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (!val) return;
+                  const [y, m, d] = val.split('-').map(Number);
+                  setSelectedDate(new Date(y, m - 1, d));
+                }}
+                style={{
+                  marginLeft: 'auto',
+                  border: '1.5px solid #FFE8D6',
+                  borderRadius: 6,
+                  padding: '6px 10px',
+                  fontSize: 13,
+                  fontFamily: "'Roboto', sans-serif",
+                  color: '#111111',
+                  backgroundColor: '#ffffff',
+                }}
+              />
+            ) : (
+              <TouchableOpacity
+                onPress={() => setShowDatePicker(true)}
+                style={{ marginLeft: 'auto', padding: 4 }}
+              >
+                <Ionicons name="calendar" size={20} color="#ea580c" />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        {showDatePicker && (
+          <DateTimePicker
+            value={selectedDate}
+            mode="date"
+            display="default"
+            minimumDate={todayDate}
+            onChange={(event, date) => {
+              setShowDatePicker(false);
+              if (date) setSelectedDate(date);
+            }}
+          />
+        )}
+
         <TouchableOpacity style={[s.nextBtn, adv.nextBtn]} onPress={handleNext} activeOpacity={0.85}>
          <LinearGradient colors={ADV_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={StyleSheet.absoluteFill} />
-          <Text style={s.nextBtnText}>Next</Text>
+          <Text style={s.nextBtnText}>{isEditing ? 'Update Advertisement' : 'Post Advertisement'}</Text>
         </TouchableOpacity>
       </KeyboardAwareScroll>
 
@@ -1414,6 +1537,7 @@ const editAd = route?.params?.editAd || null;
         onNext={handlePreviewNext}
         adData={{ photo, video: adVideo, title, description, redirect: selectedRedirect }}
         userMobile={userMobile}
+        isEditing={isEditing}
       />
 
       <LeadFormBuilderModal

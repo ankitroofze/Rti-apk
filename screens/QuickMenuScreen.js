@@ -453,7 +453,6 @@ const CARD_DESCS = {
 // (pehle ye "My Subscription" page ke andar 4 rows the, ab sidebar se direct).
 const SUBSCRIPTION_SUBMENU = [
   { label: 'Role / Membership Plans', icon: 'ribbon-outline', screen: 'Subscription Plans' },
-  { label: 'Quiz Subscription Plans', icon: 'checkbox-outline', screen: 'My Quiz Subscription' },
   { label: 'Ads Subscription Plans', icon: 'trending-up-outline', screen: 'AdPlans' },
   { label: 'Ecom Subscription Plans', icon: 'bag-handle-outline', screen: 'My Ecom Subscription' },
 ];
@@ -488,7 +487,6 @@ const ENQUIRY_SUBMENU = [
 const ENQUIRY_GROUP_SCREENS = ['MyEnquiries', 'AdsEnquiries'];
 // ✅ "Certification" par hover => Quiz Subscription Plans / Start Quiz / My Attempts
 const CERT_SUBMENU = [
-  { label: 'Quiz Subscription Plans', icon: 'card-outline', screen: 'My Quiz Subscription' },
   { label: 'Start Quiz', icon: 'play-circle-outline', screen: 'Certification' },
   { label: 'My Attempts', icon: 'list-outline', screen: 'MyAttempts' },
 ];

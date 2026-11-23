@@ -589,7 +589,7 @@ function NewsSectionBlock({ title, items, onPress, onLike, onOpenComments, onSha
 // ✅ NEW: UserStore ke mapped comment -> card ke comment shape
 const toCardComment = (c = {}) => ({
   id: String(c.id || ''),
-  text: String(c.text || ''),
+  text: String(c.text || c.comment || c.sub_comment || c.body || c.content || ''),
   author: String(c.author || 'User'),
   authorInitial: String(c.author || 'U').charAt(0).toUpperCase(),
   authorAvatar: String(c.author_avatar || ''),
@@ -738,6 +738,10 @@ function NewsFeedCardInner({
       setViewsCount((prev) => Math.max(prev, srvViews));
     }
   }, [story.id, story.likes, story.comments, story.shares, story.views]);
+
+  useEffect(() => {
+    setPreviewComments(mapPreviewComments(story.latest_comments));
+  }, [story.latest_comments]);
 
   useEffect(() => {
     if (!isScreenFocused || !isCardVisible || isAdStory || !story.id) return undefined;
@@ -1412,12 +1416,21 @@ const handleLike = async () => {
       }
       setLocalComments((prev) =>
         prev.map((comment) => {
-          if (comment.id === editingCommentId) return { ...comment, text: trimmed, edited_at: new Date().toISOString() };
+          if (comment.id === editingCommentId) return { ...comment, text: trimmed, comment: trimmed, edited_at: new Date().toISOString() };
           if (Array.isArray(comment.replies)) {
-            return { ...comment, replies: comment.replies.map((r) => r.id === editingCommentId ? { ...r, text: trimmed, edited_at: new Date().toISOString() } : r) };
+            return { ...comment, replies: comment.replies.map((r) => r.id === editingCommentId ? { ...r, text: trimmed, reply: trimmed, comment: trimmed, edited_at: new Date().toISOString() } : r) };
           }
           return comment;
         })
+      );
+      setPreviewComments((prev) =>
+        Array.isArray(prev)
+          ? prev.map((c) =>
+              (String(c.id) === String(editingCommentId) || String(c.id) === `cmt-${editingCommentId}`)
+                ? { ...c, text: trimmed, comment: trimmed }
+                : c
+            )
+          : prev
       );
       setEditingCommentId(null);
       setEditingCommentText('');
@@ -1571,14 +1584,24 @@ const handleLike = async () => {
 
   const countShare = async () => {
     if (isAdStory) return;
-    const res = await AuthAPI.shareNews(story.id);
-    if (res?.ok) {
-      const nextShares = Number.isFinite(res.shareCount) ? res.shareCount : sharesCount + 1;
-      setSharesCount(nextShares);   // backend ka count
-      publishEngagement(story.id, { shares: nextShares }, engId);
-    } else if (res?.rateLimited) {
-      showToast('Please try again later.', 'info');
-    }
+    const nextShares = sharesCount + 1;
+    setSharesCount(nextShares);
+    publishEngagement(story.id, { shares: nextShares }, engId);
+    try {
+      AuthAPI.clearApiGetCache?.('/news');
+      AuthAPI.clearApiGetCache?.('/my-news');
+      AuthAPI.clearApiGetCache?.('/feeds');
+      const res = await AuthAPI.shareNews(story.id);
+      if (res?.ok) {
+        if (Number.isFinite(res.shareCount)) {
+          setSharesCount(res.shareCount);
+          publishEngagement(story.id, { shares: res.shareCount }, engId);
+        }
+      } else if (res?.rateLimited) {
+        showToast('Please try again later.', 'info');
+      }
+      await UserStore.updateNewsFeedItem(story.id, 'share');
+    } catch (_) {}
   };
 
   const handleShare = () => {

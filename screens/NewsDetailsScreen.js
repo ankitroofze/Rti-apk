@@ -4,6 +4,7 @@ import {
   Image,
   Linking,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -270,20 +271,24 @@ function buildArticleParagraphs(article) {
 
 function normalizeComment(rawComment) {
   const comment = rawComment || {};
-  const author = String(comment.author || comment.user || 'User').trim() || 'User';
-  const authorEmail = String(comment.author_email || comment.user_email || '').trim().toLowerCase();
-  const authorAvatar = String(comment.authorAvatar || comment.author_avatar || comment.userAvatar || '').trim();
+  const author = String(comment.author || comment.user?.name || comment.user_name || comment.user || 'User').trim() || 'User';
+  const authorEmail = String(comment.author_email || comment.user?.email || comment.user_email || comment.email || '').trim().toLowerCase();
+  const authorAvatar = String(comment.authorAvatar || comment.author_avatar || comment.user?.profile_image_url || comment.user?.profile_image || comment.userAvatar || comment.avatar || '').trim();
+  const text = String(comment.text ?? comment.comment ?? comment.sub_comment ?? comment.body ?? comment.content ?? '').trim();
   return {
     id: String(comment.id || ''),
-    text: String(comment.text || '').trim(),
+    text,
     author,
     author_email: authorEmail,
+    author_id: comment.author_id != null ? String(comment.author_id) : (comment.user_id != null ? String(comment.user_id) : ''),
+    is_mine: Boolean(comment.is_mine),
     authorAvatar,
     authorInitial: author.charAt(0).toUpperCase(),
     time: String(comment.date || comment.timestamp || comment.created_at || ''),
-    edited_at: comment.edited_at || null,
-    likes: Number(comment.likes || 0),
+    edited_at: comment.edited_at || comment.updated_at || null,
+    likes: Number(comment.likes_count ?? comment.likes ?? 0),
     liked_by: Array.isArray(comment.liked_by) ? comment.liked_by : [],
+    liked_by_me: Boolean(comment.liked_by_me),
     replies: Array.isArray(comment.replies) ? comment.replies.map(normalizeComment) : [],
   };
 }
@@ -295,7 +300,9 @@ function countNestedComments(comments = []) {
   );
 }
 
-function isCommentOwner(comment, currentUserEmail, currentUserName) {
+function isCommentOwner(comment, currentUserEmail, currentUserName, currentUserId = null) {
+  if (comment?.is_mine) return true;
+  if (comment?.author_id && currentUserId && String(comment.author_id) === String(currentUserId)) return true;
   const ownerEmail = String(comment?.author_email || '').trim().toLowerCase();
   const ownerName = String(comment?.author || '').trim().toLowerCase();
   const safeUserEmail = String(currentUserEmail || '').trim().toLowerCase();
@@ -359,6 +366,7 @@ function CommentThreadItem({
   comment,
   currentUserEmail,
   currentUserName,
+  currentUserId,
   expandedReplyThreads,
   editingCommentId,
   editingCommentText,
@@ -378,7 +386,7 @@ function CommentThreadItem({
   formatCommentTime,
   isReply = false,
 }) {
-  const isOwner = isCommentOwner(comment, currentUserEmail, currentUserName);
+  const isOwner = isCommentOwner(comment, currentUserEmail, currentUserName, currentUserId);
   const isEditing = editingCommentId === comment.id;
   const isReplying = replyingToCommentId === comment.id;
   const replyCount = Array.isArray(comment.replies) ? comment.replies.length : 0;
@@ -528,6 +536,7 @@ function CommentThreadItem({
                     comment={reply}
                     currentUserEmail={currentUserEmail}
                     currentUserName={currentUserName}
+                    currentUserId={currentUserId}
                     expandedReplyThreads={expandedReplyThreads}
                     editingCommentId={editingCommentId}
                     editingCommentText={editingCommentText}
@@ -619,6 +628,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
   const [comments, setComments] = useState([]);
   const [expandedReplyThreads, setExpandedReplyThreads] = useState({});
   const [showCommentsModal, setShowCommentsModal] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [commentText, setCommentText] = useState('');
   const [editingCommentId, setEditingCommentId] = useState(null);
   const [editingCommentText, setEditingCommentText] = useState('');
@@ -758,10 +768,20 @@ export default function NewsDetailsScreen({ route, navigation }) {
       if (!matchedItem && articleId) {
         try {
           const single = await AuthAPI.getNewsById(articleId);
-          if (single?.ok && single.news && !Array.isArray(single.news)) {
-            matchedItem = UserStore.mapApiNewsItem(single.news);
+          if (single?.ok && single.news) {
+            const raw = single.news?.data ? single.news.data : (Array.isArray(single.news) ? single.news[0] : single.news);
+            if (raw) matchedItem = UserStore.mapApiNewsItem(raw);
           }
         } catch (_) { /* neeche wala fallback chalega */ }
+        if (!matchedItem) {
+          try {
+            const mySingle = await AuthAPI.getMyNewsById(articleId);
+            if (mySingle?.ok && mySingle.news) {
+              const raw = mySingle.news?.data ? mySingle.news.data : (Array.isArray(mySingle.news) ? mySingle.news[0] : mySingle.news);
+              if (raw) matchedItem = UserStore.mapApiNewsItem(raw);
+            }
+          } catch (_) {}
+        }
       }
 
       if (!matchedItem) {
@@ -773,7 +793,15 @@ export default function NewsDetailsScreen({ route, navigation }) {
         const localSaved = user?.email ? await getLikedLocal(user.email) : {};
         setIsLiked(likedFallback || Boolean(localSaved[articleId]));
         applyEngagement(getEngagement(articleId));
-        setComments([]);
+        if (articleId) {
+          try {
+            const cRes = await UserStore.getNewsCommentsPage(articleId);
+            if (cRes?.ok && Array.isArray(cRes.comments)) {
+              setComments(cRes.comments.map(normalizeComment));
+              setCommentCount(cRes.comments.length);
+            }
+          } catch (_) {}
+        }
         return;
       }
 
@@ -811,30 +839,50 @@ export default function NewsDetailsScreen({ route, navigation }) {
       setLikeCount(Number(matchedItem.likes || 0));
       setShareCount(Number(matchedItem.shares || 0));
       setViewCount(Number(matchedItem.views || 0));
-      const rawComments = Array.isArray(matchedItem.comments_list)
-        ? matchedItem.comments_list
-        : (Array.isArray(matchedItem.comments) ? matchedItem.comments : []);
-      const normalizedComments = rawComments.map(normalizeComment);
-      setComments(normalizedComments);
-      setCommentCount(Number(
-        matchedItem.comments ??
-        matchedItem.comments_count ??
-        countNestedComments(normalizedComments)
-      ));
+
+      // ✅ Load live comments from dedicated backend endpoint
+      let loadedComments = [];
+      try {
+        const commentsRes = await UserStore.getNewsCommentsPage(articleId);
+        if (commentsRes?.ok && Array.isArray(commentsRes.comments)) {
+          loadedComments = commentsRes.comments.map(normalizeComment);
+        }
+      } catch (_) {}
+
+      if (loadedComments.length > 0) {
+        setComments(loadedComments);
+        setCommentCount(Number(matchedItem.comments ?? loadedComments.length));
+      } else {
+        const rawComments = Array.isArray(matchedItem.comments_list)
+          ? matchedItem.comments_list
+          : (Array.isArray(matchedItem.comments) ? matchedItem.comments : []);
+        const fallbackNormalized = rawComments.map(normalizeComment);
+        setComments((prev) => (prev.length > 0 && fallbackNormalized.length === 0 ? prev : fallbackNormalized));
+        setCommentCount(Number(
+          matchedItem.comments ??
+          matchedItem.comments_count ??
+          countNestedComments(fallbackNormalized)
+        ));
+      }
       // card par like karne se server summary me liked na aaye to phone me saved like bhi maano
       const localSavedLikes = user?.email ? await getLikedLocal(user.email) : {};
       if (!likedByCurrentUser && localSavedLikes[articleId]) setIsLiked(true);
       // taza shared count (card / yahin ka abhi ka action) stale server count se upar
       applyEngagement(getEngagement(articleId));
-    } catch {
-      setCurrentUser(null);
-      setComments([]);
-      setIsLiked(false);
-      setIsFollowingAuthor(false);
+    } catch (err) {
+      console.warn('[NewsDetailsScreen.loadArticleDetails] Error:', err);
     } finally {
       setHydrated(true);
     }
   }, [articleId, refreshAuthorFollowState, routeArticle]);
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    AuthAPI.clearApiGetCache?.('/news');
+    AuthAPI.clearApiGetCache?.('/comments');
+    await loadArticleDetails();
+    setRefreshing(false);
+  }, [loadArticleDetails]);
 
   // article jab bhi (route se ya server se) mile => refresh ke liye save
   useEffect(() => { writeCachedArticle(article); }, [article]);
@@ -1015,13 +1063,19 @@ export default function NewsDetailsScreen({ route, navigation }) {
   }, []);
 
   const handleShareSuccess = useCallback(async () => {
+    const nextShares = Number(shareCount || 0) + 1;
+    setShareCount(nextShares);
+    publishEngagement(article.id, { shares: nextShares }, engId);
     try {
+      AuthAPI.clearApiGetCache?.('/news');
+      AuthAPI.clearApiGetCache?.('/my-news');
+      AuthAPI.clearApiGetCache?.('/feeds');
       const shareResult = await UserStore.updateNewsFeedItem(article.id, 'share');
-      if (shareResult?.ok) {
-        const nextShares = Number(shareCount || 0) + 1;
-        setShareCount(nextShares);
-        publishEngagement(article.id, { shares: nextShares }, engId);
+      if (shareResult?.ok && Number.isFinite(shareResult.shareCount)) {
+        setShareCount(shareResult.shareCount);
+        publishEngagement(article.id, { shares: shareResult.shareCount }, engId);
       }
+      await AuthAPI.shareNews(article.id);
     } catch (_) {}
   }, [article.id, shareCount, engId]);
 
@@ -1078,13 +1132,13 @@ export default function NewsDetailsScreen({ route, navigation }) {
       text: trimmed,
       author: currentUserName || 'User',
       author_email: currentUserEmail || '',
+      is_mine: true,
     });
-    setComments((prev) => [addedComment, ...prev]);
+    setComments((prev) => [addedComment, ...prev.filter((c) => c.id !== addedComment.id)]);
     const nextComments = Number.isFinite(result.commentsCount) ? result.commentsCount : Number(commentCount || 0) + 1;
     setCommentCount(nextComments);
     publishEngagement(article.id, { comments: nextComments }, engId);   // ✅ card par bhi
-    await loadArticleDetails();
-  }, [article.id, commentText, commentCount, currentUserEmail, currentUserName, loadArticleDetails, engId, showToast]);
+  }, [article.id, commentText, commentCount, currentUserEmail, currentUserName, engId, showToast]);
 
   const handleStartEditComment = useCallback((commentId, currentText) => {
     setEditingCommentId(commentId);
@@ -1101,12 +1155,42 @@ export default function NewsDetailsScreen({ route, navigation }) {
   const handleSubmitEditComment = useCallback(async () => {
     const trimmed = editingCommentText.trim();
     if (!editingCommentId || !trimmed) return;
+    // 1. Optimistic update
+    setComments((prev) =>
+      prev.map((comment) => {
+        if (comment.id === editingCommentId) {
+          return { ...comment, text: trimmed, edited_at: new Date().toISOString() };
+        }
+        if (Array.isArray(comment.replies)) {
+          return {
+            ...comment,
+            replies: comment.replies.map((reply) =>
+              reply.id === editingCommentId
+                ? { ...reply, text: trimmed, edited_at: new Date().toISOString() }
+                : reply
+            ),
+          };
+        }
+        return comment;
+      })
+    );
     const result = await UserStore.editNewsComment(article.id, editingCommentId, trimmed);
-    if (!result?.ok) { showToast(result?.message || 'Could not edit comment', 'error'); return; }
+    if (!result?.ok) {
+      showToast(result?.message || 'Could not edit comment', 'error');
+      if (article.id) {
+        try {
+          const res = await UserStore.getNewsCommentsPage(article.id);
+          if (res?.ok && Array.isArray(res.comments)) {
+            setComments(res.comments.map(normalizeComment));
+          }
+        } catch (_) {}
+      }
+      return;
+    }
     setEditingCommentId(null);
     setEditingCommentText('');
-    await loadArticleDetails();
-  }, [article.id, editingCommentId, editingCommentText, loadArticleDetails, showToast]);
+    showToast('Comment updated successfully.', 'success');
+  }, [article.id, editingCommentId, editingCommentText, showToast]);
 
   const handleStartReplyComment = useCallback((commentId, options = {}) => {
     if (options?.toggleOnly) {
@@ -1134,11 +1218,12 @@ export default function NewsDetailsScreen({ route, navigation }) {
       text: trimmed,
       author: currentUserName || 'User',
       author_email: currentUserEmail || '',
+      is_mine: true,
     });
     setComments((prev) =>
       prev.map((comment) =>
         comment.id === replyingToCommentId
-          ? { ...comment, replies: [addedReply, ...(Array.isArray(comment.replies) ? comment.replies : [])] }
+          ? { ...comment, replies: [addedReply, ...(Array.isArray(comment.replies) ? comment.replies.filter((r) => r.id !== addedReply.id) : [])] }
           : comment
       )
     );
@@ -1148,14 +1233,40 @@ export default function NewsDetailsScreen({ route, navigation }) {
     publishEngagement(article.id, { comments: nextComments }, engId);
     setReplyingToCommentId(null);
     setReplyText('');
-    await loadArticleDetails();
-  }, [article.id, commentCount, currentUserEmail, currentUserName, engId, loadArticleDetails, replyingToCommentId, replyText, showToast]);
+  }, [article.id, commentCount, currentUserEmail, currentUserName, engId, replyingToCommentId, replyText, showToast]);
 
   const handleLikeComment = useCallback(async (commentId) => {
+    const currentEmail = String(currentUserEmail || '').trim().toLowerCase();
+    setComments((prev) =>
+      prev.map((comment) => {
+        if (comment.id === commentId) {
+          const wasLiked = Array.isArray(comment.liked_by) && currentEmail && comment.liked_by.includes(currentEmail);
+          return {
+            ...comment,
+            likes: Math.max(0, Number(comment.likes || 0) + (wasLiked ? -1 : 1)),
+            liked_by: wasLiked ? comment.liked_by.filter((e) => e !== currentEmail) : [...(comment.liked_by || []), currentEmail],
+          };
+        }
+        if (Array.isArray(comment.replies)) {
+          return {
+            ...comment,
+            replies: comment.replies.map((reply) => {
+              if (reply.id !== commentId) return reply;
+              const wasLiked = Array.isArray(reply.liked_by) && currentEmail && reply.liked_by.includes(currentEmail);
+              return {
+                ...reply,
+                likes: Math.max(0, Number(reply.likes || 0) + (wasLiked ? -1 : 1)),
+                liked_by: wasLiked ? reply.liked_by.filter((e) => e !== currentEmail) : [...(reply.liked_by || []), currentEmail],
+              };
+            }),
+          };
+        }
+        return comment;
+      })
+    );
     const result = await UserStore.likeNewsComment(article.id, commentId);
-    if (!result?.ok) { showToast(result?.message || 'Could not update comment like', 'error'); return; }
-    await loadArticleDetails();
-  }, [article.id, loadArticleDetails, showToast]);
+    if (!result?.ok) { showToast(result?.message || 'Could not update comment like', 'error'); }
+  }, [article.id, currentUserEmail, showToast]);
 
   // ✅ Apni post / reel ko detail page ke 3-dot menu se delete karo
   const canDeleteArticle = useMemo(() => {
@@ -1297,11 +1408,15 @@ export default function NewsDetailsScreen({ route, navigation }) {
     showToast('Comment deleted successfully.', 'success');
     if (editingCommentId === commentId) { setEditingCommentId(null); setEditingCommentText(''); }
     if (replyingToCommentId === commentId) { setReplyingToCommentId(null); setReplyText(''); }
+    setComments((prev) =>
+      prev
+        .filter((c) => c.id !== commentId)
+        .map((c) => (Array.isArray(c.replies) ? { ...c, replies: c.replies.filter((r) => r.id !== commentId) } : c))
+    );
     const nextComments = Math.max(0, Number(commentCount || 0) - 1);
     setCommentCount(nextComments);
     publishEngagement(article.id, { comments: nextComments }, engId);
-    await loadArticleDetails();
-  }, [article.id, commentCount, editingCommentId, engId, loadArticleDetails, replyingToCommentId, showPopup, showToast]);
+  }, [article.id, commentCount, editingCommentId, engId, replyingToCommentId, showPopup, showToast]);
 
   const handleOpenAttachment = useCallback(async () => {
     const fileUri = article?.file?.uri;
@@ -1375,6 +1490,14 @@ export default function NewsDetailsScreen({ route, navigation }) {
           !IS_WEB && styles.pageScrollContentWithMobileNav,
         ]}
         showsVerticalScrollIndicator={Platform.OS === 'web'}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={['#f97316']}
+            tintColor="#f97316"
+          />
+        }
       >
         <View style={styles.pageBodyShell}>
           <View style={[styles.pageBodyInner, isCompactLayout && styles.pageBodyInnerCompact]}>
@@ -1624,7 +1747,18 @@ export default function NewsDetailsScreen({ route, navigation }) {
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.storyStatItem}
-                    onPress={async () => { setShowCommentsModal(true); await loadArticleDetails(); }}
+                    onPress={async () => {
+                      setShowCommentsModal(true);
+                      if (articleId) {
+                        try {
+                          const cRes = await UserStore.getNewsCommentsPage(articleId);
+                          if (cRes?.ok && Array.isArray(cRes.comments) && cRes.comments.length > 0) {
+                            setComments(cRes.comments.map(normalizeComment));
+                            setCommentCount(cRes.comments.length);
+                          }
+                        } catch (_) {}
+                      }
+                    }}
                     activeOpacity={0.7}
                   >
                     <Ionicons name="chatbubble-outline" size={21} color="#64748b" />
@@ -1815,6 +1949,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
                   comment={comment}
                   currentUserEmail={currentUserEmail}
                   currentUserName={currentUserName}
+                  currentUserId={currentUser?.id}
                   expandedReplyThreads={expandedReplyThreads}
                   editingCommentId={editingCommentId}
                   editingCommentText={editingCommentText}

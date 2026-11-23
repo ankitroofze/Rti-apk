@@ -34,11 +34,11 @@ const toIndiaIsoString = (date) => {
 };
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 const isExpoGo = Constants.appOwnership === 'expo';
-const hasNativePublisher = Platform.OS === 'android' && !isExpoGo;
+const hasNativePublisher = Platform.OS === 'android';
 // Web par browser se RTMP push nahi ho sakta, lekin YouTube broadcast bana kar
 // RTMP URL + Stream Key de sakte hain (OBS / encoder me paste karne ke liye).
 const isWeb = Platform.OS === 'web';
-const canStartHere = hasNativePublisher || isWeb;
+const canStartHere = true;
 
 // Camera + Microphone runtime permission request (Android 6+ requires this
 // even when the manifest already declares the permissions).
@@ -196,10 +196,6 @@ const publishUrl = useMemo(() => {
     setForm((current) => ({ ...current, [key]: value }));
   };
 const handleStartLive = async () => {
-  if (isExpoGo || !canStartHere) {
-    showToast('Start Live works only in a native Android build or on web. Expo Go can watch live streams only.', 'error');
-    return;
-  }
   if (!form.stream_title.trim()) {
     showToast('Enter a stream title before going live.', 'error');
     return;
@@ -300,15 +296,11 @@ setIsSaving(true);
     showToast('Live session stopped.', 'success');
   };
   // Start Live button kyun disabled hai — screen par saaf dikhane ke liye
-  const startBlockReason = isExpoGo
-    ? 'Start Live does not work in Expo Go. A native Android APK build is required.'
-    : !canStartHere
-      ? `Start Live works only on the Android APK or on web (current platform: ${Platform.OS}).`
-      : isPublishing
-        ? 'A live stream is already running or is stuck. Tap "Stop Live", then start the live stream again.'
-        : isSaving
-          ? 'A request is in progress, please wait...'
-          : '';
+  const startBlockReason = isPublishing
+    ? 'A live stream is already running or is stuck. Tap "Stop Live", then start the live stream again.'
+    : isSaving
+      ? 'A request is in progress, please wait...'
+      : '';
 
   if (redirectingToSidebar) return null;
 
@@ -355,14 +347,6 @@ setIsSaving(true);
           <Text style={[LiveStreamingStyles.heroSubtitle, fontsLoaded && { fontFamily: 'Roboto_400Regular' }]}>
             Configure the YouTube Live encoder target and keep the demo playback URL ready for viewer-side testing.
           </Text>
-          {isExpoGo || !hasNativePublisher ? (
-            <View style={LiveStreamingStyles.infoBox}>
-              <Text style={[LiveStreamingStyles.infoTitle, fontsLoaded && { fontFamily: 'Roboto_700Bold' }]}>Native build required</Text>
-              <Text style={[LiveStreamingStyles.infoText, fontsLoaded && { fontFamily: 'Roboto_400Regular' }]}>
-                This screen can preview configuration in Expo Go, but actual RTMP broadcasting works only in a native Android app build.
-              </Text>
-            </View>
-          ) : null}
         </View>
 
       <View style={LiveStreamingStyles.card}>
@@ -599,16 +583,14 @@ setIsSaving(true);
             <TouchableOpacity
               style={[
                 LiveStreamingStyles.playBtn,
-                (isSaving || isPublishing || isExpoGo || !canStartHere || (isWeb && Boolean(broadcastId))) && LiveStreamingStyles.buttonDisabled,
+                (isSaving || isPublishing || (isWeb && Boolean(broadcastId))) && LiveStreamingStyles.buttonDisabled,
               ]}
               onPress={handleStartLive}
-           disabled={
-  isSaving ||
-  isPublishing ||
-  isExpoGo ||
-  !canStartHere ||
-  (isWeb && Boolean(broadcastId))
-}
+              disabled={
+                isSaving ||
+                isPublishing ||
+                (isWeb && Boolean(broadcastId))
+              }
             >
               <Feather name="radio" size={16} color="#fff" />
               <Text style={[LiveStreamingStyles.playBtnText, fontsLoaded && { fontFamily: 'Roboto_700Bold' }]}>

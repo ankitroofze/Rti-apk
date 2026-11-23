@@ -335,19 +335,21 @@ const EnquiryFormModal = ({ product, onClose, onSaved }) => {
       return;
     }
     setSaving(true);
-    const qtyVal = quantity.trim();
+    const qVal = quantity.trim();
     const result = await UserStore.createEcomeEnquiry(product.id, {
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       email: email.trim(),
       contact: normalizedContact,
-      quantity: qtyVal,
-      qty: qtyVal,
+      quantity: qVal,
+      qty: qVal,
+      order_qty: qVal,
       message: message.trim(),
     });
     setSaving(false);
     if (!result.ok) { showToast(result.message || 'Unable to submit enquiry.', 'error'); return; }
-    showToast('Your enquiry has been submitted.', 'success');
+    const displayQty = result.qty || result.enquiry?.quantity || result.enquiry?.qty || qVal;
+    showToast(`Your enquiry has been submitted${displayQty ? ` (Qty: ${displayQty})` : ''}.`, 'success');
     onSaved?.();
     onClose();
   };

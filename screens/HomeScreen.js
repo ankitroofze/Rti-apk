@@ -10,6 +10,7 @@ import AppNavbar from '../components/AppNavbar';
 import AppFooter from '../components/AppFooter';
 import WebLayout from '../components/WebLayout';
 import { UserStore } from '../store/UserStore';
+import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useToast } from '../components/ui/ToastProvider';
 import AdLeadFormModal from '../components/AdLeadFormModal';
@@ -886,14 +887,15 @@ export default function HomeScreen({ navigation, route }) {
       }).catch(() => {});
     }
 
-    // Ads non-blocking background load
-    UserStore.getActiveAdsFeed().then((ads) => {
-      if (!alive) return;
-      if (!Array.isArray(ads) || !ads.length) return;
-      const adStories = ads.map(homeStoryFromAd);
+    // ✅ SPEED: If ads are already in memory, display them instantly (0ms) without any network request.
+    // We do NOT call getActiveAdsFeed() here on initial mount because the page's primary News API
+    // (loadNewsStories) must run first without network competition.
+    // Fresh ads are smoothly fetched in the background right after news completes in loadNewsStories().
+    if (UserStore._adsCache?.data?.length) {
+      const adStories = UserStore._adsCache.data.map(homeStoryFromAd);
       adStoriesRef.current = adStories;
       setActiveAds(adStories);
-    }).catch(() => {});
+    }
 
     return () => { alive = false; clearTimeout(safetyTimer); };
   }, []);
@@ -1030,6 +1032,9 @@ export default function HomeScreen({ navigation, route }) {
   // ✅ Pull-to-refresh: cursor reset, list replace, page 1 dobara
   const handleRefreshNews = useCallback(async () => {
     setRefreshing(true);
+    AuthAPI.clearApiGetCache?.('/news');
+    AuthAPI.clearApiGetCache?.('/ads');
+    if (UserStore._adsCache) UserStore._adsCache = null;
     newsCursorRef.current = null;
     newsHasMoreRef.current = true;
     await loadNewsStories();

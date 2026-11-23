@@ -13,6 +13,7 @@ import WebLayout from './WebLayout';
 import NewsFeedCard from './NewsFeedCard';
 import AdLeadFormModal from './AdLeadFormModal';
 import { UserStore } from '../store/UserStore';
+import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useToast } from './ui/ToastProvider';
 import { getSiteCopy } from '../constants/siteCopy';
@@ -92,6 +93,9 @@ export default function AllFeedPage({ navigation, kind = 'news' }) {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    AuthAPI.clearApiGetCache?.('/news');
+    AuthAPI.clearApiGetCache?.('/ads');
+    if (UserStore._adsCache) UserStore._adsCache = null;
     cursorRef.current = null;
     hasMoreRef.current = true;
     await load();

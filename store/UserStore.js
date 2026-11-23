@@ -731,25 +731,32 @@ const mapApiCommentToLocal = (raw = {}, me = null) => {
     liked_by_me: likedByMe,
     is_mine: isMine,
     replies_count: Number(raw.replies_count || 0),
-    parent_comment_id: raw.parent_id || raw.parent_comment_id || raw.parent_comment || raw.reply_to || raw.parent?.id
-      || (raw.comment_id && String(raw.comment_id) !== String(raw.id) ? raw.comment_id : null) || null,
+    parent_comment_id: (() => {
+      const p = raw.parent_id ?? raw.parent_comment_id ?? raw.parent_comment ?? raw.reply_to ?? raw.parent?.id;
+      const num = Number(p);
+      return Number.isFinite(num) && num > 0 ? String(num) : null;
+    })(),
   };
 };
 
 // ✅ NEW: reply ka id comment id se clash na kare isliye `rpl-` prefix. rpl-id -> parent comment id yaha yaad rakhte hain.
 const REPLY_PARENT_MAP = new Map();
 const mapApiReplyToLocal = (raw = {}, me = null) => {
-  const base = mapApiCommentToLocal({ ...raw, id: null, comment: raw.reply, comment_id: null }, me);
+  const base = mapApiCommentToLocal({ ...raw, id: null, comment: raw.reply ?? raw.comment ?? raw.sub_comment ?? raw.text, comment_id: null }, me);
   const id = raw.id ? `rpl-${raw.id}` : `rpl-${Date.now()}`;
-  if (raw.id && raw.comment_id) REPLY_PARENT_MAP.set(id, String(raw.comment_id));
-  return { ...base, id, replies_count: 0, parent_comment_id: raw.comment_id ?? null, is_reply: true };
+  const parentId = raw.comment_id ?? raw.parent_id ?? null;
+  if (raw.id && parentId) REPLY_PARENT_MAP.set(id, String(parentId));
+  return { ...base, id, replies_count: 0, parent_comment_id: parentId ? String(parentId) : null, is_reply: true };
 };
 
-// ✅ NEW: 'cmt-12' / 'rpl-5' / 12 -> { kind, id }
+// ✅ NEW: 'cmt-12' / 'rpl-5' / 12 / 'cmt-post-12' -> { kind, id }
 const parseCommentRef = (value) => {
   const s = String(value ?? '').trim();
-  if (s.startsWith('rpl-')) return { kind: 'reply', id: Number(s.slice(4)) };
-  return { kind: 'comment', id: s.startsWith('cmt-') ? Number(s.slice(4)) : Number(s) };
+  const isReply = s.startsWith('rpl-');
+  const clean = s.replace(/^(rpl-|cmt-)/i, '');
+  const numMatch = clean.match(/\d+/g);
+  const idNum = numMatch ? Number(numMatch[numMatch.length - 1]) : Number(clean);
+  return { kind: isReply ? 'reply' : 'comment', id: Number.isFinite(idNum) ? idNum : Number(clean) };
 };
 
 // Backend kabhi replies parent ke andar (replies/sub_comments/children) bhejta hai, kabhi flat.
@@ -789,8 +796,14 @@ const buildCommentTreeFromApi = (rawList = [], { sort = true, me = null } = {}) 
     if (!c.parent_comment_id) return;
     const parentKey = `cmt-${c.parent_comment_id}`;
     const parent = topMap.get(parentKey);
-    if (parent) parent.replies.push({ ...c });
-    else if (__DEV__) console.log('[COMMENTS-ORPHAN-REPLY-SKIPPED]', c.id, c.parent_comment_id); // reply ko top-level comment mat banao, replies /comments/{id}/replies se aate hain
+    if (parent) {
+      parent.replies.push({ ...c });
+    } else {
+      // ✅ RESILIENCE: Parent not found (e.g. orphan reply or parent ID mismatch).
+      // DO NOT DISCARD THE COMMENT! Keep it visible as top-level so it never disappears on refresh!
+      topLevel.push({ ...c, replies: [] });
+      topMap.set(c.id, c);
+    }
   });
 
   if (sort) {
@@ -805,8 +818,17 @@ const fetchBackendCommentsForPost = async (postId) => {
   try {
     const me = await UserStore.getCurrentUser().catch(() => null);
     const res = await AuthAPI.getCommentsDetailed(postId);
-    if (!res.ok || !Array.isArray(res.comments)) return [];
-    const tree = buildCommentTreeFromApi(res.comments, { sort: false, me });
+    let commentsList = res?.ok && Array.isArray(res.comments) ? res.comments : [];
+    if (commentsList.length === 0) {
+      try {
+        const newsRes = await AuthAPI.getNewsById(postId);
+        const rawNews = newsRes?.ok ? (newsRes.news || {}) : {};
+        const fallbackList = Array.isArray(rawNews.comments) ? rawNews.comments : (Array.isArray(rawNews.comments_list) ? rawNews.comments_list : []);
+        if (fallbackList.length > 0) commentsList = fallbackList;
+      } catch (_) {}
+    }
+    if (commentsList.length === 0) return [];
+    const tree = buildCommentTreeFromApi(commentsList, { sort: false, me });
     // detail screens ko nested replies chahiye — jin comments par replies hain unki pehli page laao
     await Promise.all(
       tree.filter((c) => c.replies_count > 0).map(async (c) => {
@@ -1066,18 +1088,19 @@ const normalizeComments = (comments = []) => {
   if (!Array.isArray(comments)) return [];
   return comments.map((c, i) => {
     const likedBy = Array.isArray(c.liked_by) ? c.liked_by : [];
-    const likes = Number(c.likes ?? likedBy.length) || 0;
+    const likes = Number(c.likes_count ?? c.likes ?? likedBy.length) || 0;
     return {
       id: c.id || `cmt-${i + 1}`,
-      text: String(c.text || '').trim(),
-      author: c.author || c.author_name || 'User',
-      author_email: c.author_email || c.email || c.authorEmail || '',
-      date: c.date || '2026-03-24',
-      edited_at: c.edited_at || null,
+      text: String(c.comment ?? c.text ?? c.sub_comment ?? c.body ?? c.content ?? '').trim(),
+      author: c.author || c.author_name || c.user?.name || c.user_name || 'User',
+      author_email: c.author_email || c.email || c.user?.email || c.authorEmail || '',
+      author_avatar: c.author_avatar || c.authorAvatar || c.user?.profile_image_url || c.user?.profile_image || c.avatar || '',
+      date: toSafeDateString(c.created_at ?? c.date) || 'Recent',
+      edited_at: c.edited_at || c.updated_at || null,
       parent_comment_id: c.parent_comment_id || c.parentCommentId || null,
       liked_by: likedBy,
       likes,
-      replies: normalizeComments(c.replies),
+      replies: normalizeComments(c.replies || c.sub_comments || c.children),
     };
   });
 };
@@ -1357,9 +1380,10 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
     // The API's view total is authoritative. Different deployments use
     // different field names, so preserve all common response variants.
     views: toApiCount(apiItem.views, apiItem.views_count, apiItem.view_count, apiItem.total_views),
-    shares: Number(apiItem.share_count ?? apiItem.shares ?? 0),
+    shares: Number(apiItem.shares_count ?? apiItem.share_count ?? apiItem.shares ?? apiItem.share ?? 0),
     likes: Number(apiItem.likes || apiItem.likes_count || 0),
     comments: Number(apiItem.comments || apiItem.comments_count || 0),
+    comments_list: Array.isArray(apiItem.comments_list) ? apiItem.comments_list : (Array.isArray(apiItem.comments) ? apiItem.comments : []),
     liked_by: Array.isArray(apiItem.liked_by) ? apiItem.liked_by : [],
     liked_by_me: apiItem.liked_by_me === undefined ? undefined : Boolean(apiItem.liked_by_me),
     latest_comments: Array.isArray(apiItem.latest_comments) ? apiItem.latest_comments.slice(0, 2) : [],
@@ -5080,12 +5104,16 @@ export const UserStore = {
       const feedContentType = options?.type === 1 || options?.type === 2 ? options.type : undefined; // 1 news, 2 reels
       const feedPerPage = options?.perPage || 10;
       let feedPagination = null;
-      // ✅ SPEED: blocked-users request news request ke saath hi shuru, baad me sirf await
-      const blockedPromise = skipBlockedUsers
+      // ✅ SPEED: Instant synchronous current-user check if in memory
+      const cachedCurrentUser = UserStore.getCachedCurrentUser?.();
+      const hasCurrentUser = Boolean(cachedCurrentUser);
+      // ✅ SPEED: Guest visitors have no blocked users; skip blocked-users request entirely for guests
+      const blockedPromise = (skipBlockedUsers || !hasCurrentUser)
         ? Promise.resolve({ ok: true, list: [] })
         : UserStore.getBlockedUsers().catch(() => ({ ok: true, list: [] }));
-      // ✅ SPEED: current-user lookup ab news API ke saath parallel chalta hai (pehle news request isi ka wait karti thi)
-      const currentUserPromise = UserStore.getCurrentUser();
+      const currentUserPromise = cachedCurrentUser
+        ? Promise.resolve(cachedCurrentUser)
+        : UserStore.getCurrentUser();
 
       // ── Real news ab yahan se aati hai (dummy defaultNewsFeed hata diya) ──
       let apiItems = [];
@@ -5339,9 +5367,8 @@ export const UserStore = {
         if (focusItemId && id === focusItemId) {
           // ✅ FIX: comments ab local SQLite/AsyncStorage se nahi, seedha backend /comments/{newsId} se
           next.comments_list = focusItemComments;
-        } else {
-          // Ensure we don't accidentally show stale in-item comments.
-          if (next.comments_list) delete next.comments_list;
+        } else if (!next.comments_list && Array.isArray(item.comments)) {
+          next.comments_list = item.comments;
         }
 
         return next;
@@ -5511,6 +5538,23 @@ export const UserStore = {
         }
         publishEngagement(postId, { liked: Boolean(res.liked), ...(Number.isFinite(res.likesCount) ? { likes: res.likesCount } : {}) }, 'userstore');
         return { ok: true, liked: Boolean(res.liked), likesCount: Number.isFinite(res.likesCount) ? res.likesCount : null };
+      }
+
+      if (action === 'share') {
+        let serverShares = null;
+        try {
+          const res = await AuthAPI.shareNews(postId);
+          if (res?.ok && Number.isFinite(res.shareCount)) {
+            serverShares = res.shareCount;
+          }
+        } catch (_) {}
+        const currentEng = getEngagement(postId);
+        const nextShares = serverShares !== null ? serverShares : (Number(currentEng?.shares || 0) + 1);
+        publishEngagement(postId, { shares: nextShares }, 'userstore');
+        AuthAPI.clearApiGetCache?.('/news');
+        AuthAPI.clearApiGetCache?.('/my-news');
+        AuthAPI.clearApiGetCache?.('/feeds');
+        return { ok: true, shares: nextShares };
       }
 
       const user = await UserStore.getCurrentUser();
@@ -5745,9 +5789,22 @@ export const UserStore = {
   getNewsCommentsPage: async (newsId, { cursor = null, perPage = 20 } = {}) => {
     try {
       const me = await UserStore.getCurrentUser().catch(() => null);
-      const res = await AuthAPI.getCommentsDetailed(newsId, { cursor, perPage });
-      if (!res.ok) return { ok: false, notFound: Boolean(res.notFound), message: res.message };
-      const tree = buildCommentTreeFromApi(res.comments, { sort: false, me });
+      let res = await AuthAPI.getCommentsDetailed(newsId, { cursor, perPage });
+      let commentsList = res?.ok && Array.isArray(res.comments) ? res.comments : [];
+
+      if (commentsList.length === 0) {
+        try {
+          const newsRes = await AuthAPI.getNewsById(newsId);
+          const rawNews = newsRes?.ok ? (newsRes.news || {}) : {};
+          const fallbackList = Array.isArray(rawNews.comments) ? rawNews.comments : (Array.isArray(rawNews.comments_list) ? rawNews.comments_list : []);
+          if (fallbackList.length > 0) {
+            commentsList = fallbackList;
+          }
+        } catch (_) {}
+      }
+
+      if (commentsList.length === 0 && !res?.ok) return { ok: false, notFound: Boolean(res?.notFound), message: res?.message || 'Unable to load comments.' };
+      const tree = buildCommentTreeFromApi(commentsList, { sort: false, me });
       // Fetch nested replies for comments with replies_count > 0 so they are immediately visible
       await Promise.all(
         tree.filter((c) => Number(c.replies_count || 0) > 0 && (!Array.isArray(c.replies) || c.replies.length === 0)).map(async (c) => {
@@ -5763,8 +5820,8 @@ export const UserStore = {
       return {
         ok: true,
         comments: tree,
-        hasMore: res.hasMore,
-        nextCursor: res.nextCursor,
+        hasMore: res?.hasMore,
+        nextCursor: res?.nextCursor,
       };
     } catch { return { ok: false, message: 'Unable to load comments.' }; }
   },
@@ -5920,6 +5977,10 @@ export const UserStore = {
       const text = String(nextText || '').trim();
       if (!text) return { ok: false, message: 'Please enter a comment.' };
       if (text.length > 1000) return { ok: false, message: 'Comment can be at most 1000 characters.' };
+      const rawIdStr = String(commentId || '').trim();
+      if (rawIdStr.startsWith('rpl-local-') || rawIdStr.startsWith('temp-') || rawIdStr.includes('cmt-temp')) {
+        return { ok: true };
+      }
       const ref = parseCommentRef(commentId);
       if (!Number.isFinite(ref.id) || ref.id <= 0) return { ok: false, message: 'Invalid comment id.' };
 
@@ -7164,11 +7225,15 @@ export const UserStore = {
       // start_date/end_date le aao. 4 sec me jawab na aaye to skip (page slow na ho).
       let backendAdsList = [];
       try {
-        const backendRes = await Promise.race([
-          AuthAPI.getAdsDetails(),
-          new Promise((resolve) => setTimeout(() => resolve(null), 4000)),
-        ]);
-        if (backendRes?.ok && Array.isArray(backendRes.ads)) backendAdsList = backendRes.ads;
+        if (UserStore._adsCache?.data?.length) {
+          backendAdsList = UserStore._adsCache.data;
+        } else {
+          const backendRes = await Promise.race([
+            AuthAPI.getAdsDetails(),
+            new Promise((resolve) => setTimeout(() => resolve(null), 2500)),
+          ]);
+          if (backendRes?.ok && Array.isArray(backendRes.ads)) backendAdsList = backendRes.ads;
+        }
       } catch (e) { /* ignore */ }
       const backendAdsById = new Map(backendAdsList.map((b) => [String(b.id), b]));
       const adsWithViews = (Array.isArray(user.ads) ? user.ads : [])
@@ -7210,9 +7275,11 @@ export const UserStore = {
       });
 
       try {
-        const res = await AuthAPI.getAdsDetails();
-        if (res?.ok && Array.isArray(res.ads)) {
-          res.ads.forEach((ad) => {
+        const adsList = UserStore._adsCache?.data?.length
+          ? UserStore._adsCache.data
+          : (await AuthAPI.getAdsDetails())?.ads;
+        if (Array.isArray(adsList)) {
+          adsList.forEach((ad) => {
             if (ad?.id == null) return;
             const ownerId = (ad.owner_id ?? ad.user_id) != null ? String(ad.owner_id ?? ad.user_id) : '';
             const ownerEmail = String(ad.owner_email || '').trim().toLowerCase();
@@ -7320,156 +7387,173 @@ export const UserStore = {
 
   getActiveAdsFeed: async (options = {}) => {
     try {
-      if (!options?.skipCache && UserStore._adsCache && (Date.now() - UserStore._adsCache.timestamp < 20000)) {
+      const ADS_CACHE_TTL = 180000; // 3 minutes cache for ultra-fast screen transitions
+      if (!options?.skipCache && UserStore._adsCache && (Date.now() - UserStore._adsCache.timestamp < ADS_CACHE_TTL)) {
         return UserStore._adsCache.data;
       }
-      // ✅ SPEED: ads API, blocked-users aur current-user teeno ek saath (pehle ek ke baad ek chalte the)
-      const [res, blockedResRaw, currentUserForAds] = await Promise.all([
-        AuthAPI.getAdsDetails(), // GET /ads-details — no login required
-        options?.skipBlockedUsers
-          ? Promise.resolve({ ok: true, list: [] })
-          : UserStore.getBlockedUsers().catch(() => ({ ok: true, list: [] })),
-        UserStore.getCurrentUser().catch(() => null),
-      ]);
-      // ✅ hide_ads (ad-free subscription) => sirf POPUP band hota hai (HomePromoPopup khud handle karta hai).
-      //    Side / center feed ads yahan se normal aate rahenge.
-      if (!res.ok || !Array.isArray(res.ads)) {
-        console.log('[ADS-DEBUG] ads-details fail/empty -> ok:', res?.ok, '| message:', res?.message, '| adsHidden:', res?.adsHidden);
-        return [];
+      if (!options?.skipCache && UserStore._activeAdsPromise) {
+        return await UserStore._activeAdsPromise;
       }
-      console.log('[ADS-DEBUG] backend ads:', res.ads.length, '| adsHidden(popup only):', Boolean(res?.adsHidden));
 
-      const today = new Date().toISOString().slice(0, 10);
+      const fetchPromise = (async () => {
+        const cachedUser = UserStore.getCachedCurrentUser?.();
+        const hasUser = Boolean(cachedUser);
 
-      const blockedRes = blockedResRaw;
-      const blockedEmailsForAds = new Set((blockedRes?.list || []).map((u) => u.email).filter(Boolean));
-      const blockedIdsForAds = new Set((blockedRes?.list || []).map((u) => (u.id != null ? String(u.id) : '')).filter(Boolean));
-      const currentUserEmailForAds = String(currentUserForAds?.email || '').trim().toLowerCase();
-      const currentUserHasBlueTickForAds = Boolean(currentUserForAds && hasBlueTick(currentUserForAds));
-      const isBlockedAdOwner = (ad) => {
-        const ownerEmail = String(ad?.owner_email || '').trim().toLowerCase();
-        const ownerId = (ad?.owner_id ?? ad?.user_id) != null ? String(ad.owner_id ?? ad.user_id) : '';
-        if (ownerEmail && blockedEmailsForAds.has(ownerEmail)) return true;
-        if (ownerId && blockedIdsForAds.has(ownerId)) return true;
-        return false;
-      };
+        // ✅ SPEED: ads API, blocked-users (only if logged in) & current-user in parallel
+        const [res, blockedResRaw, currentUserForAds] = await Promise.all([
+          AuthAPI.getAdsDetails({ force: Boolean(options?.skipCache) }), // GET /ads-details — no login required
+          (options?.skipBlockedUsers || !hasUser)
+            ? Promise.resolve({ ok: true, list: [] })
+            : UserStore.getBlockedUsers().catch(() => ({ ok: true, list: [] })),
+          cachedUser ? Promise.resolve(cachedUser) : UserStore.getCurrentUser().catch(() => null),
+        ]);
+        // ✅ hide_ads (ad-free subscription) => sirf POPUP band hota hai (HomePromoPopup khud handle karta hai).
+        //    Side / center feed ads yahan se normal aate rahenge.
+        if (!res.ok || !Array.isArray(res.ads)) {
+          console.log('[ADS-DEBUG] ads-details fail/empty -> ok:', res?.ok, '| message:', res?.message, '| adsHidden:', res?.adsHidden);
+          return [];
+        }
+        console.log('[ADS-DEBUG] backend ads:', res.ads.length, '| adsHidden(popup only):', Boolean(res?.adsHidden));
 
-      const finalSortedAds = res.ads
-        // ✅ FIX: same ad id do baar aaye (edit ke baad) to sirf ek rakho
-        .filter((ad, idx, arr) => ad?.id == null || arr.findIndex((x) => String(x?.id) === String(ad.id)) === idx)
-        .filter((ad) => Number(ad?.status ?? 1) === 1)
-        // ✅ FIX: expired ads (end_date guzar chuki) ko Home feed pe mat dikhao
-        .filter((ad) => !ad?.end_date || String(ad.end_date) >= today)
-        .filter((ad) => !isBlockedAdOwner(ad))
-        .map((ad) => {
-          // ✅ FIX: actual field "redirection_url" hai ("url" nahi), aur usi
-          // deep-link (rti-news://profile/<email>) se owner ka email nikal rahe hain
-          const redirectionUrl = ad.redirection_url || ad.url || ad.redirect_url || '';
-          const adOwnerObj = ad.owner || ad.user || ad.advertiser || ad.author || {};
-          let ownerEmail = ad.owner_email || adOwnerObj.email || '';
-          const profileMatch = redirectionUrl.match(/profile\/([^/?]+)/);
-          if (!ownerEmail && profileMatch?.[1]) {
-            try { ownerEmail = decodeURIComponent(profileMatch[1]); } catch { ownerEmail = profileMatch[1]; }
-          }
+        const today = new Date().toISOString().slice(0, 10);
 
-          const rawRedir = String(ad.redirection ?? ad.redirect ?? '').trim().toLowerCase();
-          let redirectType = 'profile';
-          if (rawRedir === '5' || rawRedir === 'whatsapp' || rawRedir === 'my whatsapp number') {
-            redirectType = 'whatsapp';
-          } else if (rawRedir === '4' || rawRedir === 'lead_form' || rawRedir === 'lead form' || rawRedir === 'lead') {
-            redirectType = 'lead_form';
-          } else if (rawRedir === '3' || rawRedir === 'shop' || rawRedir === 'my shop') {
-            redirectType = 'shop';
-          } else if (rawRedir === '2' || rawRedir === 'website' || rawRedir === 'my website') {
-            redirectType = 'website';
-          } else if (rawRedir === '1' || rawRedir === 'profile' || rawRedir === 'my rti profile') {
-            redirectType = 'profile';
-          } else if (redirectionUrl.includes('wa.me') || redirectionUrl.includes('whatsapp.com')) {
-            redirectType = 'whatsapp';
-          } else if (redirectionUrl.includes('lead-form')) {
-            redirectType = 'lead_form';
-          } else if (redirectionUrl.startsWith('http://') || redirectionUrl.startsWith('https://')) {
-            redirectType = 'website';
-          }
+        const blockedRes = blockedResRaw;
+        const blockedEmailsForAds = new Set((blockedRes?.list || []).map((u) => u.email).filter(Boolean));
+        const blockedIdsForAds = new Set((blockedRes?.list || []).map((u) => (u.id != null ? String(u.id) : '')).filter(Boolean));
+        const currentUserEmailForAds = String(currentUserForAds?.email || '').trim().toLowerCase();
+        const currentUserHasBlueTickForAds = Boolean(currentUserForAds && hasBlueTick(currentUserForAds));
+        const isBlockedAdOwner = (ad) => {
+          const ownerEmail = String(ad?.owner_email || '').trim().toLowerCase();
+          const ownerId = (ad?.owner_id ?? ad?.user_id) != null ? String(ad.owner_id ?? ad.user_id) : '';
+          if (ownerEmail && blockedEmailsForAds.has(ownerEmail)) return true;
+          if (ownerId && blockedIdsForAds.has(ownerId)) return true;
+          return false;
+        };
 
-          const extraValues = { ...(ad.extraValues || {}) };
-          if (redirectType === 'website') extraValues.website_url = extraValues.website_url || redirectionUrl;
-          if (redirectType === 'shop') extraValues.shop_url = extraValues.shop_url || redirectionUrl;
+        const finalSortedAds = res.ads
+          // ✅ FIX: same ad id do baar aaye (edit ke baad) to sirf ek rakho
+          .filter((ad, idx, arr) => ad?.id == null || arr.findIndex((x) => String(x?.id) === String(ad.id)) === idx)
+          .filter((ad) => Number(ad?.status ?? 1) === 1)
+          // ✅ FIX: expired ads (end_date guzar chuki) ko Home feed pe mat dikhao
+          .filter((ad) => !ad?.end_date || String(ad.end_date) >= today)
+          .filter((ad) => !isBlockedAdOwner(ad))
+          .map((ad) => {
+            // ✅ FIX: actual field "redirection_url" hai ("url" nahi), aur usi
+            // deep-link (rti-news://profile/<email>) se owner ka email nikal rahe hain
+            const redirectionUrl = ad.redirection_url || ad.url || ad.redirect_url || '';
+            const adOwnerObj = ad.owner || ad.user || ad.advertiser || ad.author || {};
+            let ownerEmail = ad.owner_email || adOwnerObj.email || '';
+            const profileMatch = redirectionUrl.match(/profile\/([^/?]+)/);
+            if (!ownerEmail && profileMatch?.[1]) {
+              try { ownerEmail = decodeURIComponent(profileMatch[1]); } catch { ownerEmail = profileMatch[1]; }
+            }
 
-          const waFromUrl = (String(redirectionUrl).match(/wa\.me\/\+?(\d+)/i) || String(ad.url || '').match(/wa\.me\/\+?(\d+)/i) || [])[1] || '';
-          const resolvedPhone = String(
-            ad.owner_mobile ||
-            ad.contact_number ||
-            ad.mobile ||
-            ad.phone ||
-            ad.contact ||
-            ad.conatct ||
-            adOwnerObj.mobile ||
-            adOwnerObj.phone ||
-            adOwnerObj.contact_number ||
-            adOwnerObj.contact ||
-            ad.whatsapp_number ||
-            ad.whatsapp ||
-            extraValues.whatsapp_number ||
-            waFromUrl ||
-            ''
-          ).trim();
+            const rawRedir = String(ad.redirection ?? ad.redirect ?? '').trim().toLowerCase();
+            let redirectType = 'profile';
+            if (rawRedir === '5' || rawRedir === 'whatsapp' || rawRedir === 'my whatsapp number') {
+              redirectType = 'whatsapp';
+            } else if (rawRedir === '4' || rawRedir === 'lead_form' || rawRedir === 'lead form' || rawRedir === 'lead') {
+              redirectType = 'lead_form';
+            } else if (rawRedir === '3' || rawRedir === 'shop' || rawRedir === 'my shop') {
+              redirectType = 'shop';
+            } else if (rawRedir === '2' || rawRedir === 'website' || rawRedir === 'my website') {
+              redirectType = 'website';
+            } else if (rawRedir === '1' || rawRedir === 'profile' || rawRedir === 'my rti profile') {
+              redirectType = 'profile';
+            } else if (redirectionUrl.includes('wa.me') || redirectionUrl.includes('whatsapp.com')) {
+              redirectType = 'whatsapp';
+            } else if (redirectionUrl.includes('lead-form')) {
+              redirectType = 'lead_form';
+            } else if (redirectionUrl.startsWith('http://') || redirectionUrl.startsWith('https://')) {
+              redirectType = 'website';
+            }
 
-          if (redirectType === 'whatsapp' || waFromUrl) {
-            extraValues.whatsapp_number = String(waFromUrl || extraValues.whatsapp_number || resolvedPhone);
-          }
+            const extraValues = { ...(ad.extraValues || {}) };
+            if (redirectType === 'website') extraValues.website_url = extraValues.website_url || redirectionUrl;
+            if (redirectType === 'shop') extraValues.shop_url = extraValues.shop_url || redirectionUrl;
 
-          return {
-            id: ad.id,
-            feed_id: `ad-feed-${ad.id}`,
-            title: ad.title || 'Sponsored Advertisement',
-            description: ad.description || '',
-            photo: ad.image || '',
-            image: ad.image || '',
-            images: (() => {
-              const rawList = Array.isArray(ad.images) ? ad.images : [];
-              const urls = rawList
-                .map((x) => (typeof x === 'string' ? x : (x?.url || x?.image_url || x?.image || '')))
-                .filter(Boolean);
-              return Array.from(new Set([ad.image, ...urls].filter(Boolean)));
-            })(),
-            // ✅ video ad (media_type 2): backend `video` (ya `media`) me URL deta hai, image null hoti hai
-            video: ad.video || ad.video_url || (Number(ad.media_type) === 2 ? (ad.media || '') : ''),
-            media_type: Number(ad.media_type) || ((ad.video || ad.video_url) ? 2 : 1),
-            url: redirectionUrl,
-            redirect: redirectType,
-            extraValues,
-            state: ad.state || '',
-            district: ad.district || '',
-            owner_email: ownerEmail,
-            owner_id: ad.owner_id ?? ad.user_id ?? null,
-            // Real advertiser name: backend field -> nested owner/user object -> logged-in user (own ad) -> email id
-            owner_name: (() => {
-              const pick = (...v) => v.map((x) => String(x ?? '').trim()).find(Boolean) || '';
-              const mine = ownerEmail && currentUserEmailForAds && String(ownerEmail).trim().toLowerCase() === currentUserEmailForAds;
-              return pick(
-                ad.owner_name, ad.user_name, ad.advertiser_name, ad.author_name,
-                adOwnerObj.name, adOwnerObj.full_name, adOwnerObj.username,
-                mine ? currentUserForAds?.name : '',
-              ) || (ownerEmail ? String(ownerEmail).split('@')[0] : '') || 'Advertiser';
-            })(),
-            owner_profile_image: ad.owner_profile_image || adOwnerObj.profile_image || adOwnerObj.avatar || adOwnerObj.photo
-              || ((ownerEmail && currentUserEmailForAds && String(ownerEmail).trim().toLowerCase() === currentUserEmailForAds) ? (currentUserForAds?.profile_image || currentUserForAds?.avatar || '') : ''),
-            owner_has_blue_tick: Boolean(
-              ad.owner_has_blue_tick ||
-              ad.has_blue_tick ||
-              hasBlueTick(ad.owner || ad.user || {}) ||
-              (ownerEmail && currentUserEmailForAds && String(ownerEmail).trim().toLowerCase() === currentUserEmailForAds && currentUserHasBlueTickForAds)
-            ),
-            owner_mobile: resolvedPhone,
-            allowCalls: ad.allowCalls !== false,
-            created_at: ad.created_at || '',
-            updated_at: ad.updated_at || '',
-          };
-        })
-        .sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
-      UserStore._adsCache = { timestamp: Date.now(), data: finalSortedAds };
-      return finalSortedAds;
+            const waFromUrl = (String(redirectionUrl).match(/wa\.me\/\+?(\d+)/i) || String(ad.url || '').match(/wa\.me\/\+?(\d+)/i) || [])[1] || '';
+            const resolvedPhone = String(
+              ad.owner_mobile ||
+              ad.contact_number ||
+              ad.mobile ||
+              ad.phone ||
+              ad.contact ||
+              ad.conatct ||
+              adOwnerObj.mobile ||
+              adOwnerObj.phone ||
+              adOwnerObj.contact_number ||
+              adOwnerObj.contact ||
+              ad.whatsapp_number ||
+              ad.whatsapp ||
+              extraValues.whatsapp_number ||
+              waFromUrl ||
+              ''
+            ).trim();
+
+            if (redirectType === 'whatsapp' || waFromUrl) {
+              extraValues.whatsapp_number = String(waFromUrl || extraValues.whatsapp_number || resolvedPhone);
+            }
+
+            return {
+              id: ad.id,
+              feed_id: `ad-feed-${ad.id}`,
+              title: ad.title || 'Sponsored Advertisement',
+              description: ad.description || '',
+              photo: ad.image || '',
+              image: ad.image || '',
+              images: (() => {
+                const rawList = Array.isArray(ad.images) ? ad.images : [];
+                const urls = rawList
+                  .map((x) => (typeof x === 'string' ? x : (x?.url || x?.image_url || x?.image || '')))
+                  .filter(Boolean);
+                return Array.from(new Set([ad.image, ...urls].filter(Boolean)));
+              })(),
+              // ✅ video ad (media_type 2): backend `video` (ya `media`) me URL deta hai, image null hoti hai
+              video: ad.video || ad.video_url || (Number(ad.media_type) === 2 ? (ad.media || '') : ''),
+              media_type: Number(ad.media_type) || ((ad.video || ad.video_url) ? 2 : 1),
+              url: redirectionUrl,
+              redirect: redirectType,
+              extraValues,
+              state: ad.state || '',
+              district: ad.district || '',
+              owner_email: ownerEmail,
+              owner_id: ad.owner_id ?? ad.user_id ?? null,
+              // Real advertiser name: backend field -> nested owner/user object -> logged-in user (own ad) -> email id
+              owner_name: (() => {
+                const pick = (...v) => v.map((x) => String(x ?? '').trim()).find(Boolean) || '';
+                const mine = ownerEmail && currentUserEmailForAds && String(ownerEmail).trim().toLowerCase() === currentUserEmailForAds;
+                return pick(
+                  ad.owner_name, ad.user_name, ad.advertiser_name, ad.author_name,
+                  adOwnerObj.name, adOwnerObj.full_name, adOwnerObj.username,
+                  mine ? currentUserForAds?.name : '',
+                ) || (ownerEmail ? String(ownerEmail).split('@')[0] : '') || 'Advertiser';
+              })(),
+              owner_profile_image: ad.owner_profile_image || adOwnerObj.profile_image || adOwnerObj.avatar || adOwnerObj.photo
+                || ((ownerEmail && currentUserEmailForAds && String(ownerEmail).trim().toLowerCase() === currentUserEmailForAds) ? (currentUserForAds?.profile_image || currentUserForAds?.avatar || '') : ''),
+              owner_has_blue_tick: Boolean(
+                ad.owner_has_blue_tick ||
+                ad.has_blue_tick ||
+                hasBlueTick(ad.owner || ad.user || {}) ||
+                (ownerEmail && currentUserEmailForAds && String(ownerEmail).trim().toLowerCase() === currentUserEmailForAds && currentUserHasBlueTickForAds)
+              ),
+              owner_mobile: resolvedPhone,
+              allowCalls: ad.allowCalls !== false,
+              created_at: ad.created_at || '',
+              updated_at: ad.updated_at || '',
+            };
+          })
+          .sort((a, b) => String(b.updated_at || b.created_at || '').localeCompare(String(a.updated_at || a.created_at || '')));
+        UserStore._adsCache = { timestamp: Date.now(), data: finalSortedAds };
+        return finalSortedAds;
+      })();
+
+      UserStore._activeAdsPromise = fetchPromise;
+      try {
+        return await fetchPromise;
+      } finally {
+        UserStore._activeAdsPromise = null;
+      }
     } catch (e) { console.log('[DEBUG getActiveAdsFeed] failed:', e); return []; }
   },
   // getAdsDetailsFeed ab isi ko point kare — same function, ek jagah se maintain hoga
@@ -8484,23 +8568,40 @@ export const UserStore = {
       if (!currentUser) return { ok: false, message: 'Please login again.' };
 
       const rawQty = enquiryData.quantity ?? enquiryData.qty ?? '';
+      const fullName = [enquiryData.firstName, enquiryData.lastName].filter(Boolean).join(' ') || currentUser.name || '';
+      const phoneVal = enquiryData.contact || enquiryData.phone || currentUser.mobile || '';
+      const emailVal = enquiryData.email || currentUser.email || '';
+      let finalMessage = (enquiryData.message || '').trim();
+      if (rawQty && !/(?:qty|quantity)/i.test(finalMessage)) {
+        finalMessage = finalMessage ? `${finalMessage} (Qty: ${rawQty})` : `Qty: ${rawQty}`;
+      }
+
       const res = await AuthAPI.createEcomEnquiry({
         ecom_id: productId,
         type: 'ecom',
-        message: enquiryData.message || '',
+        message: finalMessage,
         quantity: rawQty,
         qty: rawQty,
         product_qty: rawQty,
         enquiry_qty: rawQty,
         order_qty: rawQty,
+        name: fullName,
         first_name: enquiryData.firstName || '',
         last_name: enquiryData.lastName || '',
-        email: enquiryData.email || currentUser.email,
-        contact: enquiryData.contact || currentUser.mobile || '',
+        email: emailVal,
+        phone: phoneVal,
+        contact: phoneVal,
       });
 
       if (!res.ok) return { ok: false, message: res.message || 'Unable to send enquiry.' };
-      return { ok: true, enquiry: res.enquiry };
+      const enquiry = {
+        ...(res.enquiry || {}),
+        qty: res.enquiry?.qty ?? res.enquiry?.quantity ?? qtyVal,
+        quantity: res.enquiry?.quantity ?? res.enquiry?.qty ?? qtyVal,
+        order_qty: res.enquiry?.order_qty ?? qtyVal,
+        message: res.enquiry?.message || finalMessage,
+      };
+      return { ok: true, enquiry, data: enquiry, qty: qtyVal, quantity: qtyVal, message: res.message || 'Enquiry sent successfully.' };
     } catch {
       return { ok: false, message: 'Unable to send enquiry.' };
     }

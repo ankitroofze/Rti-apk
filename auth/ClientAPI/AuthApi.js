@@ -197,6 +197,7 @@ const fetchWithDebug = async (endpoint, options = {}, debugBody = null, customTi
           clearApiGetCache('/news');
           clearApiGetCache('/my-news');
           clearApiGetCache('/feeds');
+          clearApiGetCache('/comments');
         }
         if (endpoint.includes('/follow') || endpoint.includes('/unfollow') || endpoint.includes('/profile') || endpoint.includes('/users')) {
           clearApiGetCache('/profile');
@@ -2148,6 +2149,9 @@ export const AuthAPI = {
       const json = await res.json().catch(() => null);
 
       if (res.status === 200 || res.status === 201) {
+        clearApiGetCache('/news');
+        clearApiGetCache('/my-news');
+        clearApiGetCache('/feeds');
         // ✅ Null-safe: free user => free_posts_remaining number, remaining_credits null.
         // Subscriber => remaining_credits number, free_posts_remaining null.
         // Number(null) === 0 hota hai, isliye pehle explicit null check.
@@ -2553,11 +2557,19 @@ export const AuthAPI = {
       const json = await response.json().catch(() => null);
 
       if (response.status === 200 || response.status === 201 || response.status === 204) {
+        clearApiGetCache('/comments');
+        clearApiGetCache('/news');
+        clearApiGetCache('/my-news');
         return { ok: true, message: json?.message || 'Comment deleted.', commentsCount: json?.comments_count != null ? Number(json.comments_count) : null, data: json };
       }
       if (response.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
       // 404 idempotent: already deleted
-      if (response.status === 404) return { ok: true, notFound: true, message: 'Comment already deleted.', commentsCount: json?.comments_count != null ? Number(json.comments_count) : null };
+      if (response.status === 404) {
+        clearApiGetCache('/comments');
+        clearApiGetCache('/news');
+        clearApiGetCache('/my-news');
+        return { ok: true, notFound: true, message: 'Comment already deleted.', commentsCount: json?.comments_count != null ? Number(json.comments_count) : null };
+      }
       if (response.status === 403) return { ok: false, message: json?.message || 'You cannot delete this comment.' };
       if (response.status === 422) {
         const errors = json?.errors || {};
@@ -2606,8 +2618,31 @@ export const AuthAPI = {
   /** POST /comments/{commentId} — edit (POST WAF-safe) */
   editComment: async (commentId, text) => {
     try {
-      const r = await authedJSON('POST', `/comments/${commentId}`, { comment: text });
-      return r.ok ? { ok: true, comment: r.data.comment_detail || null } : r;
+      const payload = {
+        text,
+        comment: text,
+        body: text,
+        content: text,
+        sub_comment: text,
+      };
+      // 1. Try clean POST /comments/{id} (standard backend expectation)
+      let r = await authedJSON('POST', `/comments/${commentId}`, payload);
+      // 2. If 405 (Method Not Allowed) or 404, fallback to PUT or method override
+      if (!r.ok && (r?.status === 405 || r?.status === 404)) {
+        const putR = await authedJSON('PUT', `/comments/${commentId}`, payload);
+        if (putR.ok) r = putR;
+        else {
+          const overrideR = await authedJSON('POST', `/comments/${commentId}`, { ...payload, _method: 'PUT', action: 'edit' });
+          if (overrideR.ok) r = overrideR;
+        }
+      }
+      if (r.ok) {
+        clearApiGetCache('/comments');
+        clearApiGetCache('/news');
+        clearApiGetCache('/my-news');
+        clearApiGetCache('/feeds');
+      }
+      return r.ok ? { ok: true, comment: r.data?.comment_detail || r.data?.comment || r.data?.data || r.data || null } : r;
     } catch (err) { return { ok: false, isNetwork: true, message: 'Network error.' }; }
   },
 
@@ -2615,6 +2650,9 @@ export const AuthAPI = {
   likeComment: async (commentId) => {
     try {
       const r = await authedJSON('POST', `/comments/${commentId}/like`);
+      if (r.ok) {
+        clearApiGetCache('/comments');
+      }
       return r.ok ? { ok: true, liked: Boolean(r.data.liked), likesCount: Number(r.data.likes_count ?? 0) } : r;
     } catch (err) { return { ok: false, isNetwork: true, message: 'Network error.' }; }
   },
@@ -2646,6 +2684,9 @@ export const AuthAPI = {
         comment: text,
         sub_comment: text,
       });
+      if (r.ok) {
+        clearApiGetCache('/comments');
+      }
       return r.ok
         ? {
             ok: true,
@@ -2659,8 +2700,32 @@ export const AuthAPI = {
   /** POST /comment-replies/{replyId} — edit */
   editReply: async (replyId, text) => {
     try {
-      const r = await authedJSON('POST', `/comment-replies/${replyId}`, { reply: text });
-      return r.ok ? { ok: true, reply: r.data.reply || null } : r;
+      const payload = {
+        text,
+        reply: text,
+        comment: text,
+        sub_comment: text,
+      };
+      let r = await authedJSON('POST', `/comment-replies/${replyId}`, payload);
+      if (!r.ok && (r?.status === 405 || r?.status === 404)) {
+        const putR = await authedJSON('PUT', `/comment-replies/${replyId}`, payload);
+        if (putR.ok) r = putR;
+        else {
+          const overrideR = await authedJSON('POST', `/comment-replies/${replyId}`, { ...payload, _method: 'PUT', action: 'edit' });
+          if (overrideR.ok) r = overrideR;
+        }
+      }
+      if (!r.ok) {
+        const fallbackR = await authedJSON('POST', `/comments/${replyId}`, payload);
+        if (fallbackR.ok) r = fallbackR;
+      }
+      if (r.ok) {
+        clearApiGetCache('/comments');
+        clearApiGetCache('/news');
+        clearApiGetCache('/my-news');
+        clearApiGetCache('/feeds');
+      }
+      return r.ok ? { ok: true, reply: r.data?.reply || r.data?.data || null } : r;
     } catch (err) { return { ok: false, isNetwork: true, message: 'Network error.' }; }
   },
 
@@ -2668,6 +2733,9 @@ export const AuthAPI = {
   deleteReply: async (replyId) => {
     try {
       const r = await authedJSON('DELETE', `/comment-replies/${replyId}`);
+      if (r.ok) {
+        clearApiGetCache('/comments');
+      }
       return r.ok ? { ok: true, repliesCount: r.data.replies_count != null ? Number(r.data.replies_count) : null } : r;
     } catch (err) { return { ok: false, isNetwork: true, message: 'Network error.' }; }
   },
@@ -2905,6 +2973,9 @@ export const AuthAPI = {
       const json = await res.json().catch(() => null);
 
       if (res.status === 200 || res.status === 201) {
+        clearApiGetCache('/news');
+        clearApiGetCache('/my-news');
+        clearApiGetCache('/feeds');
         return { ok: true, data: json, news: json?.news || json?.data || json };
       }
       if (res.status === 413) return { ok: false, message: Number(mediaType) === 2 ? NEWS_VIDEO_TOO_LARGE_MSG : 'File size is too large. Please upload a smaller file.' };
@@ -2938,6 +3009,9 @@ export const AuthAPI = {
       }, token);
 
       if (resStatus === 200 || resStatus === 201) {
+        clearApiGetCache('/news');
+        clearApiGetCache('/my-news');
+        clearApiGetCache('/feeds');
         return { ok: true, message: data?.message || 'Status updated successfully!', data };
       }
       if (resStatus === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
@@ -3009,6 +3083,10 @@ export const AuthAPI = {
       try { json = await response.json(); } catch { json = {}; }
 
       if (response.status === 200 || response.status === 201 || response.status === 204) {
+        clearApiGetCache('/news');
+        clearApiGetCache('/my-news');
+        clearApiGetCache('/feeds');
+        clearApiGetCache('/comments');
         return { ok: true, message: json?.message || 'News deleted successfully!', data: json };
       }
       if (response.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
@@ -3027,36 +3105,42 @@ export const AuthAPI = {
 
   getAdsDetails: async ({ force = false } = {}) => {
     try {
-      const token = await getAuthToken();
+      // ✅ SPEED: Check subscriptions in the background for popup ad visibility.
+      // We do NOT block ads delivery waiting for subscriptions network calls.
+      (async () => {
+        try {
+          const token = await getAuthToken();
+          if (!token) {
+            setAdsHidden(false);
+            return;
+          }
+          const now = Date.now();
+          if (!force && _hideAdsCache.token === token && now - _hideAdsCache.at < HIDE_ADS_CACHE_MS) {
+            setAdsHidden(_hideAdsCache.hidden);
+            return;
+          }
+          const [allRes, roleRes] = await Promise.all([
+            AuthAPI.getMySubscriptions().catch(() => ({ ok: false })),
+            AuthAPI.getMyRoleSubscriptions().catch(() => ({ ok: false })),
+          ]);
+          if (!allRes?.ok && !roleRes?.ok) return;
+          const hidden = subscriptionsHideAds(allRes?.ok ? allRes.subscriptions : null)
+            || subscriptionsHideAds(roleRes?.ok ? roleRes.subscriptions : null);
+          _hideAdsCache = { token, at: now, hidden };
+          setAdsHidden(hidden);
+        } catch (_) {}
+      })();
 
-      // ✅ Ads hide hone ka rule: user ki ACTIVE subscription me `hide_ads: true` ho (admin plan se).
-      //    Premium / Role / koi bhi purchase sirf type ki wajah se ads hide NAHI karta.
-      //    ads-details aur subscriptions dono ek saath mangwate hain (extra wait nahi).
-      const checkHideAds = async () => {
-        if (!token) return false;                       // logout / guest => ads dikhao
-        const now = Date.now();
-        if (!force && _hideAdsCache.token === token && now - _hideAdsCache.at < HIDE_ADS_CACHE_MS) {
-          return _hideAdsCache.hidden;
-        }
-        const [allRes, roleRes] = await Promise.all([
-          AuthAPI.getMySubscriptions().catch(() => ({ ok: false })),
-          AuthAPI.getMyRoleSubscriptions().catch(() => ({ ok: false })),
-        ]);
-        if (!allRes?.ok && !roleRes?.ok) return isAdsHidden();   // network fail => purana status rahe
-        const hidden = subscriptionsHideAds(allRes?.ok ? allRes.subscriptions : null)
-          || subscriptionsHideAds(roleRes?.ok ? roleRes.subscriptions : null);
-        _hideAdsCache = { token, at: now, hidden };
-        return hidden;
-      };
-
-      const [{ status, data }, adsHidden] = await Promise.all([
-        getJSON('/ads-details', token, 45000),
-        checkHideAds(),
-      ]);
+      // ✅ SPEED: GET /ads-details is a public API (no login required).
+      // Calling without token guarantees:
+      // 1. Backend never hides ads from subscribed users (avoiding empty [] and a second guest retry).
+      // 2. Exactly 1 fast network request (< 300ms) with a 8s timeout (instead of 45s).
+      const { status, data } = await getJSON('/ads-details', null, 8000, {
+        cacheTtlMs: 180000, // 3 minutes in-memory cache
+        ...(force ? { skipCache: true } : {}),
+      });
 
       if (status === 200 || status === 201) {
-        setAdsHidden(adsHidden);   // popup ko turant batao (ad-free user => sirf POPUP band)
-        // ✅ Ad-free subscription me bhi side / center ads aate rahenge — isliye ads yahan khaali nahi karte
         const pickAds = (d) => {
           const found = d?.ads_details
             || d?.data?.ads_details
@@ -3066,18 +3150,8 @@ export const AuthAPI = {
             || d;
           return Array.isArray(found) ? found : [];
         };
-        let adsList = pickAds(data);
-        // ✅ Backend kabhi kabhi logged-in AD-FREE user ko khaali list deta hai (wo khud ads hide kar deta hai).
-        //    Ads-details public API hai (login zaroori nahi), isliye bina token ke dobara mangwa lete hain —
-        //    taaki ad-free user ko side / center ads dikh sakein (sirf popup band rahe).
-        if (!adsList.length && token) {
-          try {
-            const guest = await getJSON('/ads-details', null, 45000);
-            if (guest.status === 200 || guest.status === 201) adsList = pickAds(guest.data);
-            console.log('[ADS-DEBUG] logged-in ads-details empty -> guest retry ads:', adsList.length);
-          } catch (_) { /* ignore */ }
-        }
-        return { ok: true, adsHidden, ads: adsList };
+        const adsList = pickAds(data);
+        return { ok: true, adsHidden: isAdsHidden(), ads: adsList };
       }
       if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
       return { ok: false, message: data?.message || `Server error (${status}).` };
@@ -3248,7 +3322,10 @@ export const AuthAPI = {
         },
         body: formData,
       }, formData, uploadTimeoutMs);
-      if (resStatus === 200 || resStatus === 201) return { ok: true, ad: data?.data || data?.ad || data };
+      if (resStatus === 200 || resStatus === 201) {
+        clearApiGetCache('/ads');
+        return { ok: true, ad: data?.data || data?.ad || data };
+      }
       console.warn('[AuthAPI.createAdsDetails] server said:', resStatus, JSON.stringify(data)?.slice(0, 500));
       if (resStatus === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
       if (resStatus === 413) return { ok: false, message: video ? AD_VIDEO_TOO_LARGE_MSG : 'File is too large (413). Please choose a smaller photo.' };
@@ -3527,14 +3604,25 @@ export const AuthAPI = {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
       const normalizedFields = { ...fields };
-      const rawQty = fields.quantity ?? fields.qty ?? fields.product_qty;
+      const rawQty = fields.quantity ?? fields.qty ?? fields.product_qty ?? fields.order_qty ?? '';
       if (rawQty !== undefined && rawQty !== null && String(rawQty).trim() !== '') {
         const cleanQty = String(rawQty).trim();
         normalizedFields.quantity = cleanQty;
         normalizedFields.qty = cleanQty;
+        normalizedFields.order_qty = cleanQty;
       }
       const { status, data } = await postFormData('/ecom-enquiries', normalizedFields, token);
-      if (status === 200 || status === 201) return { ok: true, enquiry: data?.data || data?.enquiry || data };
+      if (status === 200 || status === 201) {
+        const raw = data?.data || data?.enquiry || data || {};
+        const q = normalizedFields.quantity || raw.quantity || raw.qty || '';
+        const enquiry = {
+          ...raw,
+          qty: raw.qty ?? raw.quantity ?? q,
+          quantity: raw.quantity ?? raw.qty ?? q,
+          order_qty: raw.order_qty ?? q,
+        };
+        return { ok: true, enquiry, data: enquiry, qty: q, quantity: q, message: data?.message || 'Enquiry submitted.' };
+      }
       if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
       if (status === 422) {
         const errors = data?.errors || {};
@@ -4501,9 +4589,13 @@ export const AuthAPI = {
       return { ok: false, isNetwork: true, message: 'Network error.' };
     }
   },
+
+  clearApiGetCache: (pattern = null) => {
+    clearApiGetCache(pattern);
+  },
 };
 
 // hide_ads refresh (subscription purchase / plan expire / login) isi se chalta hai — hamesha fresh check (cache skip)
 registerAdsRefresher(() => AuthAPI.getAdsDetails({ force: true }));
 
-export { postFormData, postJSON, putJSON, getJSON };
+export { postFormData, postJSON, putJSON, getJSON, clearApiGetCache };

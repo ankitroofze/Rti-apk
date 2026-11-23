@@ -60,6 +60,28 @@ const toPhone = (raw) => {
   return digits.length === 10 ? `91${digits}` : digits;
 };
 
+// Quantity resolve helper (checks qty, quantity, order_qty, and parses message like "Qty 2" or "Quantity: 5")
+const resolveQty = (e = {}) => {
+  if (e.qty !== undefined && e.qty !== null && String(e.qty).trim() !== '' && String(e.qty).trim() !== '—') {
+    return String(e.qty).trim();
+  }
+  if (e.quantity !== undefined && e.quantity !== null && String(e.quantity).trim() !== '' && String(e.quantity).trim() !== '—') {
+    return String(e.quantity).trim();
+  }
+  if (e.order_qty !== undefined && e.order_qty !== null && String(e.order_qty).trim() !== '') {
+    return String(e.order_qty).trim();
+  }
+  if (e.enquiry_qty !== undefined && e.enquiry_qty !== null && String(e.enquiry_qty).trim() !== '') {
+    return String(e.enquiry_qty).trim();
+  }
+  const msg = String(e.message || '').trim();
+  if (msg) {
+    const match = msg.match(/(?:qty|quantity)\s*[:=-]?\s*([0-9]+(?:\s*[a-zA-Z]+)?)/i);
+    if (match && match[1]) return match[1].trim();
+  }
+  return '—';
+};
+
 // Ads wali enquiry me item `ad` / `advertisement` key me bhi aa sakta hai — dono handle
 const isAdsEnquiry = (e = {}) => {
   const t = String(e.type || e.enquiry_type || '').toLowerCase();
@@ -616,7 +638,8 @@ export default function MyEnquiriesScreen({ navigation, route }) {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await (tab === 'received' ? loadReceived(true) : loadSent());
+    AuthAPI.clearApiGetCache?.('/ecom-enquiries');
+    await Promise.allSettled([loadReceived(true), loadSent()]);
     setRefreshing(false);
   };
 

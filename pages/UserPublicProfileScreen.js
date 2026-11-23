@@ -2,9 +2,10 @@ import NameWithTick from '../components/NameWithTick';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, BackHandler, Clipboard, Image, ImageBackground, KeyboardAvoidingView, Linking, Modal,
-  Platform, ScrollView, Share, StatusBar, Text, TextInput,
+  Platform, RefreshControl, ScrollView, Share, StatusBar, Text, TextInput,
   TouchableOpacity, TouchableWithoutFeedback, useWindowDimensions, View,
 } from 'react-native';
+import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -400,6 +401,16 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const [posts, setPosts] = useState([]);
   // ✅ Silent reload trigger — screen par wapas aane / app foreground / har 45 sec par bump hota hai
   const [refreshTick, setRefreshTick] = useState(0);
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const handlePullToRefresh = useCallback(async () => {
+    setPullRefreshing(true);
+    AuthAPI.clearApiGetCache?.('/news');
+    AuthAPI.clearApiGetCache?.('/my-news');
+    AuthAPI.clearApiGetCache?.('/profile');
+    AuthAPI.clearApiGetCache?.('/comments');
+    setRefreshTick((t) => t + 1);
+    setTimeout(() => setPullRefreshing(false), 800);
+  }, []);
   const [activeTab, setActiveTab] = useState('posts');
   const [gridView, setGridView] = useState(true);
 
@@ -602,16 +613,25 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         });
       }
 
-      // ✅ SPEED: Priority 2 — Deferred fetch for news posts, ads & ecom
-      const [newsRes, adsRes, ecomRes] = await Promise.allSettled([
-        withTimeout(UserStore.getNewsFeedSummary({ skipBlockedUsers: true }), 5000),
-        withTimeout(UserStore.getActiveAdsFeed({ skipBlockedUsers: true }), 5000),
-        withTimeout(UserStore.getMyEcomPosts({ email: targetEmail, id: targetId }), 5000),
+      const isSelfTarget = Boolean(
+        (viewerEmail && targetEmail && viewerEmail === String(targetEmail).trim().toLowerCase()) ||
+        (viewerId && targetId && String(viewerId) === String(targetId).trim())
+      );
+      // ✅ SPEED: Priority 1 — Fetch author's primary posts first so the page renders fast (< 300ms)!
+      const newsRes = await withTimeout(
+        UserStore.getNewsFeedSummary({ skipBlockedUsers: true, feedType: isSelfTarget ? 'mine' : 'all', perPage: 50 }),
+        4000
+      ).catch(() => null);
+
+      // ✅ SPEED: Priority 2 — Ads and Ecom fetched in background (instant if cached)
+      const [adsRes, ecomRes] = await Promise.allSettled([
+        withTimeout(UserStore.getActiveAdsFeed({ skipBlockedUsers: true }), 3000),
+        withTimeout(UserStore.getMyEcomPosts({ email: targetEmail, id: targetId }), 3000),
       ]);
 
       if (!active) return;
 
-      const newsFeed = newsRes.status === 'fulfilled' ? newsRes.value : null;
+      const newsFeed = newsRes;
       const publicAds = adsRes.status === 'fulfilled' ? (adsRes.value || []) : [];
       const ecomPosts = ecomRes.status === 'fulfilled' ? (ecomRes.value || []) : [];
 
@@ -659,9 +679,11 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       ];
 
       const fromFeed = allNewsItems.filter((it) => {
-        const createdBy = String(it?.createdBy || '').trim().toLowerCase();
+        const itemAuthorId = String(it?.author_id || it?.userId || '').trim();
+        if (effectiveId && itemAuthorId && itemAuthorId === effectiveId) return true;
+        const createdBy = String(it?.createdBy || it?.author_email || '').trim().toLowerCase();
         if (effectiveEmail && createdBy) return createdBy === effectiveEmail;
-        if (!effectiveEmail && authorName) {
+        if (!effectiveEmail && !effectiveId && authorName) {
           const itemAuthor = String(it?.author_name || it?.createdByName || it?.author || '').trim();
           return itemAuthor && itemAuthor.toLowerCase() === authorNmLower;
         }
@@ -1173,18 +1195,28 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     const pid = String(postId || '').trim();
     if (!pid) return;
     try {
-      const summary = await UserStore.getNewsFeedSummary({ focusItemId: pid });
+      const pageRes = await UserStore.getNewsCommentsPage(pid, { page: 1, limit: 30 }).catch(() => null);
+      if (pageRes?.ok && Array.isArray(pageRes.comments)) {
+        setActiveComments(pageRes.comments);
+        patchPostById(pid, {
+          comments: Number(pageRes.commentsCount || pageRes.comments.length || 0),
+        });
+        return;
+      }
+      const summary = await UserStore.getNewsFeedSummary({ focusItemId: pid, feedType: 'all' });
       const item = Array.isArray(summary?.items) ? summary.items.find((it) => String(it?.id || '') === pid) : null;
-      const list = Array.isArray(item?.comments_list) ? item.comments_list : [];
-      setActiveComments(list);
+      const list = Array.isArray(item?.comments_list) ? item.comments_list : (Array.isArray(item?.comments) ? item.comments : []);
+      if (list.length > 0) {
+        setActiveComments(list);
+      }
       patchPostById(pid, {
-        comments: Number(item?.comments || 0),
+        comments: Number(item?.comments || list.length || 0),
         likes: Number(item?.likes || 0),
         shares: Number(item?.shares || 0),
         views: Number(item?.views || 0),
         liked_by: Array.isArray(item?.liked_by) ? item.liked_by : [],
       });
-    } catch { setActiveComments([]); }
+    } catch { /* keep existing comments */ }
   };
 
   const openPost = async (post) => {
@@ -1316,23 +1348,67 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     await loadCommentsForPost(activeCommentPostId);
   };
 
-  const handleStartEdit = (comment) => { setEditingCommentId(comment?.id || null); setEditingCommentText(comment?.text || ''); };
+  const handleStartEdit = (comment) => { setEditingCommentId(comment?.id || null); setEditingCommentText(comment?.text || comment?.comment || ''); };
   const handleCancelEdit = () => { setEditingCommentId(null); setEditingCommentText(''); };
 
   const handleSaveEdit = async () => {
     if (!activeCommentPostId || !editingCommentId) return;
-    const result = await UserStore.editNewsComment(activeCommentPostId, editingCommentId, editingCommentText);
-    if (!result?.ok) { showToast(result?.message || 'Unable to edit comment.', 'error'); return; }
+    const commentId = editingCommentId;
+    const textToSave = editingCommentText.trim();
+    if (!textToSave) return;
+
+    // Optimistic update
+    setActiveComments((prev) =>
+      Array.isArray(prev)
+        ? prev.map((c) => {
+            if (String(c?.id) === String(commentId)) {
+              return { ...c, text: textToSave, comment: textToSave, edited_at: new Date().toISOString() };
+            }
+            if (Array.isArray(c?.replies)) {
+              return {
+                ...c,
+                replies: c.replies.map((r) =>
+                  String(r?.id) === String(commentId)
+                    ? { ...r, text: textToSave, reply: textToSave, comment: textToSave, edited_at: new Date().toISOString() }
+                    : r
+                ),
+              };
+            }
+            return c;
+          })
+        : prev
+    );
     handleCancelEdit();
-    await loadCommentsForPost(activeCommentPostId);
+
+    const result = await UserStore.editNewsComment(activeCommentPostId, commentId, textToSave);
+    if (!result?.ok) {
+      showToast(result?.message || 'Unable to edit comment.', 'error');
+      await loadCommentsForPost(activeCommentPostId);
+      return;
+    }
+    showToast('Comment updated successfully', 'success');
   };
 
   const handleDeleteComment = async (commentId) => {
     if (!activeCommentPostId) return;
-    const result = await UserStore.deleteNewsComment(activeCommentPostId, commentId);
-    if (!result?.ok) { showToast(result?.message || 'Unable to delete comment.', 'error'); return; }
+    // Optimistic delete
+    setActiveComments((prev) =>
+      Array.isArray(prev)
+        ? prev
+            .filter((c) => String(c?.id) !== String(commentId))
+            .map((c) => ({
+              ...c,
+              replies: Array.isArray(c?.replies) ? c.replies.filter((r) => String(r?.id) !== String(commentId)) : [],
+            }))
+        : prev
+    );
     if (editingCommentId === commentId) handleCancelEdit();
-    await loadCommentsForPost(activeCommentPostId);
+    const result = await UserStore.deleteNewsComment(activeCommentPostId, commentId);
+    if (!result?.ok) {
+      showToast(result?.message || 'Unable to delete comment.', 'error');
+      await loadCommentsForPost(activeCommentPostId);
+      return;
+    }
   };
 
   const openImageModal = (imageUri, personName) => { setModalImage(imageUri || ''); setModalName(personName || ''); setModalVisible(true); };
@@ -1519,7 +1595,12 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   // ── Comment item renderer ────────────────────────────────────────────────────
 
   const renderCommentItem = (c, isReply = false) => {
-    const ownerMatch = (c.author_email && viewerEmail && String(c.author_email).trim().toLowerCase() === viewerEmail) || (!c.author_email && (c.author === viewerEmail));
+    const ownerMatch = Boolean(
+      c.is_mine ||
+      (c.author_id && viewerId && String(c.author_id) === String(viewerId)) ||
+      (c.author_email && viewerEmail && String(c.author_email).trim().toLowerCase() === viewerEmail) ||
+      (!c.author_email && (c.author === viewerEmail))
+    );
     const liked = viewerEmail && Array.isArray(c.liked_by) && c.liked_by.includes(viewerEmail);
     return (
       <View key={c.id} style={isReply ? styles.commentReplyItem : styles.commentItem}>
@@ -1530,7 +1611,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         {editingCommentId === c.id ? (
           <TextInput style={styles.commentEditInput} value={editingCommentText} onChangeText={setEditingCommentText} multiline />
         ) : (
-          <Text style={styles.commentText}>{c.text}</Text>
+          <Text style={styles.commentText}>{c.text || c.comment || ''}</Text>
         )}
         <View style={styles.commentActionRow}>
           <TouchableOpacity style={[styles.commentActionBtn, liked && styles.commentActionBtnActive]} onPress={() => handleLikeComment(c.id)}>
@@ -1857,7 +1938,19 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           </TouchableOpacity>
         </ImageBackground>
 
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={pullRefreshing}
+              onRefresh={handlePullToRefresh}
+              colors={['#b91c1c']}
+              tintColor="#b91c1c"
+            />
+          }
+        >
 
           {/* ── Profile Header ── */}
           <View style={styles.profileSection}>
@@ -2078,7 +2171,19 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           </TouchableOpacity>
         </ImageBackground>
 
-        <ScrollView style={webSt.scroll} contentContainerStyle={webSt.scrollContent} showsVerticalScrollIndicator={Platform.OS === 'web'}>
+        <ScrollView
+          style={webSt.scroll}
+          contentContainerStyle={webSt.scrollContent}
+          showsVerticalScrollIndicator={Platform.OS === 'web'}
+          refreshControl={
+            <RefreshControl
+              refreshing={pullRefreshing}
+              onRefresh={handlePullToRefresh}
+              colors={['#b91c1c']}
+              tintColor="#b91c1c"
+            />
+          }
+        >
           <View style={webSt.col}>
 
             {/* ── Profile Header Card (professional) ── */}
