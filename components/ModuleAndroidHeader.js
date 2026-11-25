@@ -9,15 +9,15 @@
 //                           'cover' = crop hogi)
 // ═══════════════════════════════════════════════════════════════════════════
 import React from 'react';
-import { Image, StatusBar, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { Image, Platform, StatusBar, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Feather } from '@expo/vector-icons';
 import { smartGoBack } from '../utils/smartBack';
 
 const RED_IMAGE = require('../assets/images/profile-red.png');
 
-// Status bar ke neeche header ki height (pehle 56 thi -> ab 68, image zyada dikhegi)
-const ANDROID_HEADER_CONTENT_HEIGHT = 68;
+// Status bar ke neeche header ki compact height (52px web, 54px mobile)
+const ANDROID_HEADER_CONTENT_HEIGHT = Platform.OS === 'web' ? 52 : 54;
 
 // 'stretch' => poori red image header me fit (kam crop). 'cover' => purane jaisa.
 const IMAGE_RESIZE_MODE = 'stretch';
@@ -33,7 +33,8 @@ export default function ModuleAndroidHeader({
 }) {
   const insets = useSafeAreaInsets();
   const { width: screenW } = useWindowDimensions();
-  const safeTop = insets.top || StatusBar.currentHeight || 24;
+  const isWeb = Platform.OS === 'web';
+  const safeTop = isWeb ? 0 : (insets.top || StatusBar.currentHeight || 0);
   const totalH = safeTop + ANDROID_HEADER_CONTENT_HEIGHT;
 
   const handleBack = () => {
@@ -53,7 +54,7 @@ export default function ModuleAndroidHeader({
           backgroundColor: '#b91c1c',
           height: totalH,
           paddingTop: safeTop,
-          paddingHorizontal: 16,
+          paddingHorizontal: 14,
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -91,10 +92,10 @@ export default function ModuleAndroidHeader({
 
 const S = {
   bgImg: { position: 'absolute', top: 0, left: 0 },
-  left: { flexDirection: 'row', alignItems: 'center', width: 36 },
+  left: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', width: 36, height: 36 },
   right: { flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 36, justifyContent: 'flex-end' },
   backBtn: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  titleWrap: { flex: 1, alignItems: 'flex-start', marginLeft: 10 },
-  title: { fontSize: 18, fontWeight: '700', color: '#ffffff', fontFamily: 'Roboto' },
-  subtitle: { fontSize: 12, color: 'rgba(255,255,255,0.88)', marginTop: 1, fontFamily: 'Roboto' },
+  titleWrap: { flex: 1, alignItems: 'flex-start', justifyContent: 'center', marginLeft: 8 },
+  title: { fontSize: 17, fontWeight: '700', lineHeight: 21, color: '#ffffff', fontFamily: 'Roboto' },
+  subtitle: { fontSize: 11.5, lineHeight: 15, color: 'rgba(255,255,255,0.92)', marginTop: 1, fontFamily: 'Roboto' },
 };

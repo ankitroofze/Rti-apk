@@ -14,7 +14,7 @@ import { Ionicons, Feather } from '@expo/vector-icons';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { useIsFocused, useFocusEffect } from '@react-navigation/native';
 import { CATEGORY_COLOR_MAP } from '../constants/homeData';
-import { isValidImageUrl, buildPlaceholderImage, getLocalizedCategoryLabel, getLocalizedSeatLabel } from '../utils/storyHelpers';
+import { isValidImageUrl, buildPlaceholderImage, getLocalizedCategoryLabel, getLocalizedSeatLabel, resolveMediaUrl } from '../utils/storyHelpers';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 import { safePause, safePlay, safeSetMuted } from '../utils/videoPlayerSafe';
 import { subscribeUserScroll } from '../utils/feedScrollBus';
@@ -287,71 +287,23 @@ function CommentItem({
   );
 }
 
+// newsId -> video URL ('' = is news me video nahi) — ek news ke liye fallback fetch sirf ek baar
+const FEED_VIDEO_FALLBACK_CACHE = new Map();
+
 function isPlayableVideoSource(uri) {
   if (typeof uri !== 'string' || !uri.trim()) return false;
   if (/(youtube\.com|youtu\.be)/i.test(uri)) return false;
   if (Platform.OS !== 'web') return true;
-  if (/^(blob:|data:)/i.test(uri)) return true;
-  // Android se upload hue video ke URL me extension na ho ya alag ho (.3gp, bina extension) to bhi web par
-  // chalna chahiye. Ye function sirf video items ke liye bulaya jaata hai, isliye sirf saaf-saaf image/pdf URL reject karo.
-  return /^https?:/i.test(uri) && !/\.(jpe?g|png|gif|webp|bmp|svg|heic|avif|pdf)(\?.*)?(#.*)?$/i.test(uri);
+  if (/^(blob:|data:|idb:)/i.test(uri)) return true;
+  if (/^\/storage(-proxy)?\//i.test(uri)) return true;
+  if (isIdbMediaUri(uri)) return true;
+  if (uri.startsWith('/') || uri.startsWith('./')) {
+    return !/\.(jpe?g|png|gif|webp|bmp|svg|heic|avif|pdf)(\?.*)?(#.*)?$/i.test(uri);
+  }
+  return (/^https?:/i.test(uri) || /^\/\w+/i.test(uri)) && !/\.(jpe?g|png|gif|webp|bmp|svg|heic|avif|pdf)(\?.*)?(#.*)?$/i.test(uri);
 }
 
-function useVideoThumbnail(videoUri) {
-  const [thumbnail, setThumbnail] = useState(null);
-  const [capturing, setCapturing] = useState(false);
 
-  useEffect(() => {
-    setThumbnail(null);
-    setCapturing(false);
-    if (!videoUri || Platform.OS !== 'web') return;
-    if (!/^https?:|^blob:|^data:/i.test(videoUri)) return;
-    let cancelled = false;
-    setCapturing(true);
-    const video = document.createElement('video');
-    video.src = videoUri;
-    video.crossOrigin = 'anonymous';
-    video.muted = true;
-    video.preload = 'metadata';
-    const cleanup = () => { video.src = ''; video.load(); };
-    video.addEventListener('loadedmetadata', () => {
-      if (cancelled) { cleanup(); return; }
-      video.currentTime = Math.min(0.1, video.duration * 0.05 || 0.1);
-    });
-    video.addEventListener('seeked', () => {
-      if (cancelled) { cleanup(); return; }
-      try {
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth || 640;
-        canvas.height = video.videoHeight || 360;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-        if (dataUrl && dataUrl !== 'data:,' && dataUrl.length > 100) {
-          if (!cancelled) setThumbnail(dataUrl);
-        }
-      } catch {}
-      if (!cancelled) setCapturing(false);
-      cleanup();
-    });
-    video.addEventListener('error', () => {
-      if (!cancelled) { setCapturing(false); setThumbnail(null); }
-      cleanup();
-    });
-    const timeout = setTimeout(() => {
-      if (!cancelled) { setCapturing(false); setThumbnail(null); }
-      cleanup();
-    }, 8000);
-    video.load();
-    return () => {
-      cancelled = true;
-      clearTimeout(timeout);
-      cleanup();
-    };
-  }, [videoUri]);
-
-  return { thumbnail, capturing };
-}
 
 // Video chal raha ho aur user scroll kare => pause. SIRF asli scroll par (position sach me badli ho);
 // bina scroll kiye video kabhi pause nahi hota.
@@ -650,7 +602,8 @@ function NewsFeedCardInner({
   commonCopy,
   currentUser,
   displayedItems,
-    altShade = false,
+  altShade = false,
+  onDeleteStory,
 }) {
   const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const { isLoggedIn } = useAuth();
@@ -961,7 +914,60 @@ function NewsFeedCardInner({
     return isValidImageUrl(avatar) ? avatar : '';
   }, [currentUser?.profile_image]);
 
-  const videoUri = String(typeof story.video === 'string' ? story.video : story.video?.uri || '').trim();
+  const isVidExt = (u) => /\.(mp4|m4v|webm|mov|mkv|3gp|avi|flv)(\?.*)?(#.*)?$/i.test(String(u || ''));
+  const baseVideoUri = String(
+    typeof story.video === 'string'
+      ? story.video
+      : (story.video?.uri
+          || (story.mediaType === 'Video' || isVidExt(story.media) ? story.media : '')
+          || '')
+  ).trim();
+  // ✅ FIX: /news list kabhi video ka URL nahi bhejta (My News me aata hai) — tab single news (GET /news/{id}) se video le aao
+  const [fetchedVideoUri, setFetchedVideoUri] = useState('');
+  useEffect(() => {
+    if (isAdStory || baseVideoUri || story.file) return undefined;
+    const idNum = Number(story.id);
+    if (!Number.isFinite(idNum) || idNum <= 0) return undefined;
+    const isVideoStory = story.mediaType === 'Video' || Number(story.media_type) === 2 || Number(story.type) === 2;
+    if (!isVideoStory) {
+      const createdMs = new Date(story.createdAt || story.date || 0).getTime();
+      const isRecent = Number.isFinite(createdMs) && createdMs > 0 && Date.now() - createdMs < 7 * 24 * 60 * 60 * 1000;
+      if (!isRecent) return undefined;
+    }
+    const cached = FEED_VIDEO_FALLBACK_CACHE.get(idNum);
+    if (cached !== undefined) {
+      if (cached) setFetchedVideoUri(cached);
+      return undefined;
+    }
+    let alive = true;
+    (async () => {
+      let found = '';
+      try {
+        let singleNews = null;
+        const res = await AuthAPI.getNewsById(idNum);
+        if (res?.ok && res.news) {
+          singleNews = res.news?.data ? res.news.data : (Array.isArray(res.news) ? res.news[0] : res.news);
+        }
+        if (!singleNews || (!singleNews.media && !singleNews.video && !singleNews.video_url)) {
+          const myRes = await AuthAPI.getMyNewsById(idNum).catch(() => null);
+          if (myRes?.ok && myRes.news) {
+            singleNews = myRes.news?.data ? myRes.news.data : (Array.isArray(myRes.news) ? myRes.news[0] : myRes.news);
+          }
+        }
+        if (singleNews) {
+          const mapped = UserStore.mapApiNewsItem(singleNews);
+          const rawV = singleNews.video || singleNews.video_url || singleNews.videoUrl || singleNews.media || singleNews.media_url || '';
+          found = String(typeof mapped?.video === 'string' ? mapped.video : mapped?.video?.uri || resolveMediaUrl(rawV) || '').trim();
+        }
+      } catch (_) { /* ignore */ }
+      if (found) {
+        FEED_VIDEO_FALLBACK_CACHE.set(idNum, found);
+        if (alive) setFetchedVideoUri(found);
+      }
+    })();
+    return () => { alive = false; };
+  }, [isAdStory, baseVideoUri, story.file, story.id, story.createdAt, story.date, story.mediaType, story.media_type, story.type]);
+  const videoUri = baseVideoUri || fetchedVideoUri;
   const [resolvedVideoUri, setResolvedVideoUri] = useState(null);
 
   useEffect(() => {
@@ -999,10 +1005,7 @@ function NewsFeedCardInner({
   }, [rawImageUri]);
 
   const effectiveVideoUri = useMemo(() => {
-    if (Platform.OS === 'web') {
-      if (isIdbMediaUri(videoUri)) return resolvedVideoUri || '';
-      return toCorsSafeMediaUrl(videoUri);
-    }
+    if (Platform.OS === 'web' && isIdbMediaUri(videoUri)) return resolvedVideoUri || '';
     return videoUri;
   }, [resolvedVideoUri, videoUri]);
 
@@ -1063,177 +1066,8 @@ function NewsFeedCardInner({
 
   // ✅ Single image (news + ads): poori image apne asli ratio me dikhe — crop / zoom nahi
   const singleFitImage = !framed && !canPlayVideo && !isFileAttachment && !hasImageGallery && Boolean(safeImage);
-  const { thumbnail: videoThumbnail, capturing: thumbnailCapturing } = useVideoThumbnail(
-    canPlayVideo ? effectiveVideoUri : null
-  );
-
-  const [videoPaused, setVideoPaused] = useState(true);
-  const [videoEnded, setVideoEnded] = useState(false); // video poora dekh liya -> Replay button
-  const [showVideoPoster, setShowVideoPoster] = useState(true);
-
-  // ✅ SPEED: video player (aur uska download/buffering) ab tabhi banta hai jab user play dabaye.
-  // Pehle feed ke har video card par turant player ban jata tha — 10 video = 10 players ek saath
-  // network + memory kha rahe the, isliye images aur baaki feed slow load hoti thi.
-  const [videoActivated, setVideoActivated] = useState(false);
-  const [videoBuffering, setVideoBuffering] = useState(false);
-  const player = useVideoPlayer(canPlayVideo && videoActivated ? { uri: effectiveVideoUri } : null, (p) => {
-    p.loop = false;
-    p.muted = getGlobalMuted();
-    try { p.playbackRate = 1; } catch (_) {}              // video kabhi tez nahi chalna chahiye
-    try { p.preservesPitch = true; } catch (_) {}
-    try { p.bufferOptions = { preferredForwardBufferDuration: 15, minBufferForPlayback: 1.5, waitsToMinimizeStalling: true }; } catch (_) {} // ruk-ruk kar chalna kam
-  });
-
-  // Global mute: feed me kisi bhi video par mute/unmute -> yahan bhi turant lagta hai
-  const [globalMuted, , toggleGlobalMuted] = useGlobalMuted(canPlayVideo);
-  useEffect(() => {
-    if (!canPlayVideo || !player) return;
-    safeSetMuted(player, globalMuted);
-    // mute karne se video ki speed nahi badalni chahiye — user ki chuni speed (agar koi) wapas lagao, warna 1x
-    try {
-      const want = Number(player.__userSpeed) || 1;
-      if (player.playbackRate !== want) player.playbackRate = want;
-    } catch (_) { /* ignore */ }
-  }, [canPlayVideo, globalMuted, player]);
-
-  useEffect(() => {
-    if (!canPlayVideo) return;
-    if (!isScreenFocused) {
-      safePause(player);
-      restartOnPlayRef.current = true;
-      setVideoPaused(true);
-      setShowVideoPoster(true);
-    }
-  }, [canPlayVideo, isScreenFocused, player]);
-
-  // Scroll karte hi video pause (position wahi rehti hai, dobara play dabane par wahin se chalega)
-  usePauseOnScroll(cardRef, canPlayVideo && !videoPaused, () => {
-    safePause(player);
-    setVideoPaused(true);
-  });
-
-  useEffect(() => {
-    // sirf video URL badalne par reset (player naya banne par nahi — warna play turant ruk jata)
-    setVideoPaused(true);
-    setShowVideoPoster(true);
-    setVideoActivated(false);
-    setVideoBuffering(false);
-    setVideoEnded(false);
-  }, [canPlayVideo, effectiveVideoUri]);
-
-  useEffect(() => {
-    if (!canPlayVideo || !player) return;
-    if (videoPaused) {
-      safePause(player);
-    } else {
-      const ok = safePlay(player);
-      if (!ok) setVideoPaused(true);
-    }
-  }, [canPlayVideo, videoPaused, player]);
-
-   useEffect(() => {
-    return () => { safePause(player); };
-  }, [player]);
-
-  // ✅ FIX: video poora chalne ke baad state "playing" hi atka rehta tha aur player end par khada tha,
-  // isliye pause/play ke baad dobara play nahi hota tha. End par start par rewind + paused state.
-  useEffect(() => {
-    if (!canPlayVideo || !player || typeof player.addListener !== 'function') return undefined;
-    // Video khatam hone par: paused state + play button wapas. Kuch platforms par `playToEnd`
-    // nahi aata, isliye `playingChange` se bhi end pakadte hain (playing band + time end ke paas).
-    const onEnded = () => {
-      setVideoEnded(true);   // Replay button dikhao
-      setVideoPaused(true);
-      setShowVideoPoster(false); // last frame dikhe, upar Replay button
-    };
-    const subEnd = player.addListener('playToEnd', onEnded);
-    const subPlay = player.addListener('playingChange', (e) => {
-      const playingNow = typeof e === 'object' ? e?.isPlaying : e;
-      if (playingNow) return;
-      try {
-        const dur = Number(player.duration || 0);
-        if (dur > 0 && Number(player.currentTime || 0) >= dur - 0.3) onEnded();
-      } catch (_) {}
-    });
-    return () => {
-      try { subEnd?.remove?.(); } catch (_) {}
-      try { subPlay?.remove?.(); } catch (_) {}
-    };
-  }, [canPlayVideo, player]);
 
   const [showVideoModal, setShowVideoModal] = useState(false);
-
-  const handleVideoPress = () => {
-    // Asli player state dekho (sirf React state par bharosa nahi) — taaki pause ke baad play hamesha chale
-    let playingNow = false;
-    try { playingNow = Boolean(player?.playing); } catch (_) { playingNow = !videoPaused; }
-    if (!videoEnded && !videoPaused && playingNow) {
-      safePause(player);
-      setVideoPaused(true);
-      return;
-    }
-    if (restartOnPlayRef.current) {
-      // scroll out ke baad dobara play => shuru se
-      restartOnPlayRef.current = false;
-      setVideoEnded(false);
-      try { if (player) player.currentTime = 0; } catch (_) { /* ignore */ }
-    }
-    if (videoEnded) {
-      // ✅ REPLAY: video khatam ho chuka hai -> shuru se dobara chalao
-      setVideoEnded(false);
-      try {
-        player.currentTime = 0;
-      } catch (_) { /* ignore */ }
-      try {
-        if (typeof player?.replay === 'function') player.replay();
-      } catch (_) { /* ignore */ }
-    }
-    if (!videoActivated) { setVideoActivated(true); setVideoBuffering(true); } // pehli baar: player ab banega
-    setShowVideoPoster(false);
-    setVideoPaused(false);
-    safePlay(player); // state pehle se false ho tab bhi seedha play karo
-  };
-
-  // ── Video controls (prev / -5 / play / +15 / next / progress / time / fullscreen) ──
-  const [controlsVisible, setControlsVisible] = useState(true);
-  const controlsTimer = useRef(null);
-  const pausedRef = useRef(true);
-  pausedRef.current = videoPaused;
-  const pokeControls = useCallback(() => {
-    setControlsVisible(true);
-    if (controlsTimer.current) clearTimeout(controlsTimer.current);
-    // paused me controls chhupte nahi; sirf chalte video me auto-hide
-    if (!pausedRef.current) {
-      controlsTimer.current = setTimeout(() => setControlsVisible(false), 3500);
-    }
-  }, []);
-  useEffect(() => {
-    // paused => controls hamesha dikhen; chalte time kuch second baad chhup jayen
-    if (videoPaused) {
-      if (controlsTimer.current) clearTimeout(controlsTimer.current);
-      setControlsVisible(true);
-    } else {
-      pokeControls();
-    }
-  }, [videoPaused, pokeControls]);
-  useEffect(() => () => { if (controlsTimer.current) clearTimeout(controlsTimer.current); }, []);
-
-  const handleHeroVideoTap = () => {
-    if (videoPaused) { handleVideoPress(); return; } // paused video par tap = play
-    if (isHoverDevice()) { handleVideoPress(); return; } // laptop (hover) par: click = pause, controls hover se aate hain
-    if (controlsVisible) {
-      if (controlsTimer.current) clearTimeout(controlsTimer.current);
-      setControlsVisible(false);
-    } else {
-      pokeControls();
-    }
-  };
-
-  const openVideoFullscreen = () => {
-    safePause(player);
-    setVideoPaused(true);
-    setShowVideoModal(true);
-  };
 
   const handleAdPress = useCallback(() => {
     if (!isAdStory) return false;
@@ -1747,7 +1581,7 @@ const handleLike = async () => {
       if (res?.ok) {
         setIsDeletedLocally(true);
         showActionResult('Post Deleted', 'Your post has been deleted successfully.');
-        if (typeof props?.onDeleteStory === 'function') props.onDeleteStory(story.id);
+        if (typeof onDeleteStory === 'function') onDeleteStory(story.id);
       } else {
         showActionResult('Delete Failed', res?.message || 'Unable to delete post.');
       }
@@ -1822,9 +1656,7 @@ const handleLike = async () => {
     });
   };
 
-  const showPosterOverlay = videoPaused && showVideoPoster;
-  const posterReady = videoThumbnail !== null;
-  const stillCapturing = thumbnailCapturing && !posterReady;
+
   const currentUserEmail = String(currentUser?.email || '').trim().toLowerCase();
   const currentUserHasBlueTick = Boolean(currentUser && UserStore.hasBlueTick(currentUser));
   const [liveAuthorProfile, setLiveAuthorProfile] = useState(null);
@@ -1915,12 +1747,12 @@ const handleLike = async () => {
         ? Boolean(liveAuthorProfile.is_subscribed)
         : Boolean(story.author_is_subscribed || story.author_is_subscriber || story.author_is_premium)),
   });
-  const useGalleryWrap = hasImageGallery && !canPlayVideo && !isFileAttachment;
+  const useGalleryWrap = (hasImageGallery || canPlayVideo) && !isFileAttachment;
   const HeroWrap = useGalleryWrap ? View : TouchableOpacity;
   const heroWrapProps = useGalleryWrap
     ? {}
     : {
-        onPress: canPlayVideo ? handleHeroVideoTap : (isFileAttachment ? handleFileOpen : handleImagePress),
+        onPress: isFileAttachment ? handleFileOpen : handleImagePress,
         activeOpacity: 0.95,
       };
   const authorAvatarUri = (() => {
@@ -2073,13 +1905,11 @@ const handleLike = async () => {
      <HeroWrap
        style={[
          styles.storyHeroImageWrap,
-         hasImageGallery
-           ? { height: undefined, backgroundColor: '#ffffff' }
+         (hasImageGallery || canPlayVideo)
+           ? { height: undefined, backgroundColor: '#000' }
            : null,
          singleFitImage ? { height: undefined, backgroundColor: '#0f172a' } : null,
          framed ? { height: frameBoxH || 200, backgroundColor: '#000', borderRadius: 8 } : null,
-         // video poora dikhe (crop nahi): 16:9 frame + contain
-         canPlayVideo && !framed && mediaWidth ? { height: Math.round(mediaWidth * 9 / 16), backgroundColor: '#000' } : null,
        ]}
        onLayout={(event) => {
          const w = Math.round(event.nativeEvent.layout.width);
@@ -2090,49 +1920,21 @@ const handleLike = async () => {
           <View ref={heroMeasureRef} collapsable={false} pointerEvents="none" style={StyleSheet.absoluteFill} />
           <MediaBox {...mediaBoxProps}>
           {canPlayVideo ? (
-            <>
-              {player && story.musicUrl ? (
-                <NewsMusicSync player={player} musicUrl={story.musicUrl} volume={story.musicVolume} muted={globalMuted} muteOriginal={story.muteOriginal} />
-              ) : null}
-              {player ? (
-                <VideoView player={player} style={[StyleSheet.absoluteFill, { width: '100%', height: '100%', backgroundColor: '#000' }, Platform.OS === 'web' ? { objectFit: 'contain' } : null]} contentFit="contain" nativeControls={false} fullscreenOptions={{ enabled: false }} playsInline onFirstFrameRender={() => { setShowVideoPoster(false); setVideoBuffering(false); }} />
-              ) : null}
-              {videoBuffering && !videoPaused ? (
-                <View style={styles.videoLoadingOverlay} pointerEvents="none"><ActivityIndicator size="large" color="#ffffff" /></View>
-              ) : null}
-              {showPosterOverlay && (
-                posterReady && videoThumbnail ? (
-                  <Image source={{ uri: videoThumbnail }} style={StyleSheet.absoluteFill} resizeMode="contain" />
-                ) : stillCapturing ? (
-                  <View style={styles.videoLoadingOverlay}>
-                    <View style={styles.videoLoadingBadge}><Text style={styles.videoLoadingText}>⏳</Text></View>
-                  </View>
-                ) : (
-                  <View style={styles.videoLoadingOverlay} />
-                )
-              )}
-              {/* Controls: ad player jaisa (prev / -5 / play / +15 / next + progress + time). Bada alag play button hata diya. */}
-              <NewsVideoControls
-                player={player}
-                visible={controlsVisible}
-                paused={videoPaused}
-                ended={videoEnded}
-                buffering={videoBuffering}
-                bottomInset={framed ? getLowerBannerHeight(frameTpl, mediaWidth) : 0}
-                onTogglePlay={handleVideoPress}
-                onFullscreen={openVideoFullscreen}
-                onInteract={pokeControls}
-              />
-              <TouchableOpacity
-                style={{ position: 'absolute', top: 10, right: 10, width: 32, height: 32, borderRadius: 16, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', zIndex: 5 }}
-                onPress={(e) => { e?.stopPropagation?.(); toggleGlobalMuted(); }}
-                activeOpacity={0.8}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Ionicons name={globalMuted ? 'volume-mute' : 'volume-high'} size={18} color="#ffffff" />
-              </TouchableOpacity>
-            </>
-        ) : isFileAttachment ? (
+            <MediaGallery
+              key={effectiveVideoUri}
+              images={[]}
+              video={effectiveVideoUri}
+              musicUrl={story.musicUrl}
+              voiceUri={story.voiceUri || story.voice_url || null}
+              musicVolume={story.musicVolume}
+              muteOriginal={story.muteOriginal}
+              width={framed ? Math.round(mediaWidth * frameWin.width) : (mediaWidth || 360)}
+              maxHeight={framed ? Math.round(frameBoxH * frameWin.height) : 420}
+              bannerH={framed ? getLowerBannerHeight(frameTpl, mediaWidth) : 0}
+              downloadable={!isAdStory}
+              frame={framed ? exportOptsFromStory(story).frame : null}
+            />
+          ) : isFileAttachment ? (
             <View style={styles.fileAttachmentBox}>
               <Ionicons
                 name={fileKind === 'pdf' ? 'document-text' : 'document'}
@@ -2172,10 +1974,10 @@ const handleLike = async () => {
             </View>
           )}
           </MediaBox>
-          {/* ⬇ Download: news ki video / image (gallery me MediaGallery ka apna button hai) */}
-          {!isAdStory && !isFileAttachment && !(hasImageGallery && mediaWidth) && (canPlayVideo || isValidImageUrl(effectiveImageUri)) ? (
-            <View pointerEvents="box-none" style={{ position: 'absolute', top: canPlayVideo ? 52 : 10, right: 10, zIndex: 20, elevation: 20 }}>
-              <MediaDownloadButton uri={canPlayVideo ? effectiveVideoUri : effectiveImageUri} type={canPlayVideo ? 'video' : 'image'} size={32} musicUrl={canPlayVideo ? story.musicUrl : ''} musicVolume={story.musicVolume} muteOriginal={story.muteOriginal} voiceUri={story.voiceUri || story.voice_url || null} frame={exportOptsFromStory(story).frame} />
+          {/* ⬇ Download: news ki single image (gallery / video me MediaGallery ka apna button hai) */}
+          {!isAdStory && !isFileAttachment && !canPlayVideo && !(hasImageGallery && mediaWidth) && isValidImageUrl(effectiveImageUri) ? (
+            <View pointerEvents="box-none" style={{ position: 'absolute', top: 10, right: 10, zIndex: 20, elevation: 20 }}>
+              <MediaDownloadButton uri={effectiveImageUri} type="image" size={32} frame={exportOptsFromStory(story).frame} />
             </View>
           ) : null}
           {/* ✅ Frame select hai => red frame + scrolling title/description; warna purana logo + ticker */}
@@ -2301,8 +2103,6 @@ const handleLike = async () => {
               if (handleAdPress()) return;
               // video news: detail page ki jagah popup me video kholo
               if (canPlayVideo) {
-                safePause(player);
-                setVideoPaused(true);
                 setShowVideoModal(true);
                 return;
               }

@@ -32,7 +32,7 @@ import { useGlobalMuted, getGlobalMuted, setGlobalMuted } from '../utils/Globalm
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
 import { getAdRedirectMeta, openAdRedirect } from '../utils/adRedirect';
 import { compressImage, compressVideo } from '../utils/mediaCompressor';
-import { getEngagement, subscribeEngagement } from '../utils/newsEngagementStore';
+import { getEngagement, publishEngagement, subscribeEngagement } from '../utils/newsEngagementStore';
 import useLiveRefresh from '../utils/useLiveRefresh';
 import { useAuth } from '../contexts/AuthContext';
 import { downloadMedia } from '../utils/downloadMedia';
@@ -1416,13 +1416,33 @@ function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditC
     setEditingCommentText('');
   };
 
-  const handleSaveEdit = async () => {
-    if (!editingCommentText.trim()) return;
-    if (onEditComment) {
-      await onEditComment(editingCommentId, editingCommentText.trim());
-    }
+  // ✅ FIX: Save dabate hi edit box turant band karo (network ka wait nahi). Pehle server call ke baad band hota tha,
+  // is dauran user dubara Save dabata tha aur wahi jagah par aa chuka "Delete" button dab jaata tha => comment delete.
+  const savingEditRef = useRef(false);
+  const handleSaveEdit = () => {
+    const nextText = editingCommentText.trim();
+    const targetId = editingCommentId;
+    if (!nextText || targetId == null || savingEditRef.current) return;
+    savingEditRef.current = true;
     setEditingCommentId(null);
     setEditingCommentText('');
+    Promise.resolve(onEditComment ? onEditComment(targetId, nextText) : null)
+      .catch(() => {})
+      .finally(() => { setTimeout(() => { savingEditRef.current = false; }, 600); });
+  };
+
+  // ✅ FIX: Delete se pehle confirm — galti se tap par comment delete na ho
+  const askDeleteComment = (commentId) => {
+    if (!onDeleteComment || savingEditRef.current) return;
+    const doDelete = () => onDeleteComment(commentId);
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      if (window.confirm('Delete this comment?')) doDelete();
+      return;
+    }
+    Alert.alert('Delete comment', 'Are you sure you want to delete this comment?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: doDelete },
+    ]);
   };
 
   const handleReplyComment = (commentId, userHint = null) => {
@@ -1584,7 +1604,7 @@ function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditC
                             <TouchableOpacity style={styles.commentMiniBtn} onPress={() => handleStartEdit(c)}>
                               <Text style={styles.commentMiniBtnText}>Edit</Text>
                             </TouchableOpacity>
-                            <TouchableOpacity style={styles.commentMiniBtn} onPress={() => onDeleteComment && onDeleteComment(c.id)}>
+                            <TouchableOpacity style={styles.commentMiniBtn} onPress={() => askDeleteComment(c.id)}>
                               <Text style={[styles.commentMiniBtnText, { color: '#ef4444' }]}>Delete</Text>
                             </TouchableOpacity>
                           </>
@@ -1704,7 +1724,7 @@ function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditC
                                           <TouchableOpacity style={styles.commentMiniBtn} onPress={() => handleStartEdit(reply)}>
                                             <Text style={styles.commentMiniBtnText}>Edit</Text>
                                           </TouchableOpacity>
-                                          <TouchableOpacity style={styles.commentMiniBtn} onPress={() => onDeleteComment && onDeleteComment(reply.id)}>
+                                          <TouchableOpacity style={styles.commentMiniBtn} onPress={() => askDeleteComment(reply.id)}>
                                             <Text style={[styles.commentMiniBtnText, { color: '#ef4444' }]}>Delete</Text>
                                           </TouchableOpacity>
                                         </>
@@ -2135,7 +2155,7 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
     const next = !isFollowing;
     setIsFollowing(next);
     try {
-      const activeUser = currentUser || UserStore.getCachedCurrentUser?.() || await UserStore.getCurrentUser().catch(() => null);
+      const activeUser = UserStore.getCachedCurrentUser?.() || await UserStore.getCurrentUser().catch(() => null);
       if (activeUser && authorEmail && activeUser.email && String(activeUser.email).trim().toLowerCase() === authorEmail) {
         setIsFollowing(!next);
         showToast('You cannot follow yourself.', 'info');
@@ -3477,10 +3497,16 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     );
     try {
       if (targetPostId) {
-        await UserStore.editNewsComment(targetPostId, commentId, newText);
+        const res = await UserStore.editNewsComment(targetPostId, commentId, newText);
+        if (res && res.ok === false) {
+          // server ne edit accept nahi kiya — local fake edit hatao aur server ki asli list wapas lao
+          feedEditedComments.delete(String(commentId));
+          persistEditedComments();
+          await syncPostComments(targetPostId, { keepIfEmpty: true });
+        }
       }
     } catch {}
-  }, [commentPost, descPost, posts]);
+  }, [commentPost, descPost, posts, syncPostComments]);
 
   const handleDeleteComment = useCallback(async (commentId) => {
     const targetId = commentPost || descPost;

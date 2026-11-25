@@ -4,6 +4,7 @@
 import React, { forwardRef } from 'react';
 import { Image, Platform, StyleSheet, Text, View } from 'react-native';
 import { getFrameTemplate } from '../constants/frameTemplates';
+import { MediaLogo } from './MediaBrandOverlay';
 
 export const EXPORT_W = 640;   // logical px — capture 2x => 1280 x 720
 export const EXPORT_H = 360;
@@ -43,6 +44,8 @@ const FramedExportView = forwardRef(function FramedExportView({ imageUri, frame 
           })}
         </>
       ) : null}
+      {/* ✅ logo top-left — news card ke MediaLogo jaisa, share / download image me bhi dikhe */}
+      <MediaLogo size={64} />
     </View>
   );
 });

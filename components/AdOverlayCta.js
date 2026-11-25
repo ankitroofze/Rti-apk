@@ -77,17 +77,25 @@ export default function AdOverlayCta({ ad, onOpenLeadForm, navigation, bottom = 
 
   return (
     <View pointerEvents="box-none" style={[styles.strip, { bottom, right }]}>
-      {items.map((it, i) => (
-        <TouchableOpacity
-          key={it.key}
-          style={[styles.half, i < items.length - 1 && styles.halfBordered]}
-          activeOpacity={0.85}
-          onPress={it.onPress}
-        >
-          <Ionicons name={it.icon} size={16} color="#ffffff" />
-          <Text style={styles.text} numberOfLines={1}>{it.label}</Text>
-        </TouchableOpacity>
-      ))}
+      {items.map((it, i) => {
+        const isItemWa = it.key === 'link' && isWa;
+        const isItemCall = it.key === 'call';
+        return (
+          <TouchableOpacity
+            key={it.key}
+            style={[
+              styles.half,
+              isItemWa && styles.halfWa,
+              isItemCall && styles.halfCall,
+            ]}
+            activeOpacity={0.85}
+            onPress={it.onPress}
+          >
+            <Ionicons name={it.icon} size={16} color="#ffffff" />
+            <Text style={styles.text} numberOfLines={1}>{it.label}</Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
@@ -99,10 +107,16 @@ const styles = StyleSheet.create({
     elevation: 30,
     flexDirection: 'row',
     gap: 8,
-    backgroundColor: 'rgba(0,0,0,0.65)',
-    borderRadius: 6,
-    padding: 8,
-    maxWidth: '94%',
+    backgroundColor: '#0f172a',
+    borderRadius: 8,
+    padding: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.25)',
+    maxWidth: '96%',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
   },
   half: {
     ...(Platform.OS === 'web' ? { cursor: 'pointer' } : null),
@@ -110,10 +124,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: 6,
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor: '#1e293b',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  halfWa: {
+    backgroundColor: '#166534',
+    borderColor: '#22c55e',
+  },
+  halfCall: {
+    backgroundColor: '#1e3a8a',
+    borderColor: '#3b82f6',
   },
   halfBordered: { borderRightWidth: 1, borderRightColor: 'rgba(255,255,255,0.2)' },
-  text: { color: '#ffffff', fontSize: 11, fontWeight: '600', fontFamily: FONT },
+  text: { color: '#ffffff', fontSize: 12, fontWeight: '700', fontFamily: FONT },
 });

@@ -17,7 +17,7 @@ import { getScoreText } from '../utils/quizResultLogic';
 import { makePasswordVerifier, verifyPasswordVerifier } from '../utils/localCredential';
 import { getPostKind } from '../components/profileContent';
 import { normalizeFrameTemplateId } from '../constants/frameTemplates';
-import { publishEngagement, reconcileServerCounts, resetEngagement } from '../utils/newsEngagementStore';
+import { getEngagement, publishEngagement, reconcileServerCounts, resetEngagement } from '../utils/newsEngagementStore';
 import { clearIdCardVerification } from '../utils/idCardService';
 import { clearReferralInfo } from '../utils/Referralservice';
 
@@ -26,7 +26,11 @@ function resolveMediaUrl(path) {
   const value = String(path || '').trim();
   if (!value) return '';
   if (/^(https?:|blob:|data:|file:|content:|ph:|asset:)/i.test(value)) return value;
-  return `${MEDIA_ORIGIN}/storage/${value.replace(/^\/+/, '')}`;
+  const clean = value.replace(/^\/+/, '');
+  if (clean.startsWith('storage/')) {
+    return `${MEDIA_ORIGIN}/${clean}`;
+  }
+  return `${MEDIA_ORIGIN}/storage/${clean}`;
 }
 
 const USERS_KEY = 'users';
@@ -1139,11 +1143,6 @@ const normalizeNewsFeed = (items = []) => {
     title: cleanRichTextToPlain(item.title || '') || 'News Update',
     description: cleanRichTextToPlain(item.description || item.subtitle || ''),
     subtitle: cleanRichTextToPlain(item.subtitle || ''),
-    media: item.media || (item.mediaType === 'Image'
-      ? `${item.images?.length || 0} image(s)`
-      : item.mediaType === 'Video' ? 'video attached'
-        : item.mediaType === 'File' ? (item.file?.name ? `file: ${item.file.name}` : 'file attached')
-          : 'no media'),
     category: item.category || item.state || 'General',
     report_type: item.report_type || item.category || '',
     language: String(item.language || item.lang || item.news_language || '').trim().toLowerCase(),
@@ -1180,6 +1179,8 @@ const normalizeNewsFeed = (items = []) => {
     images: Array.isArray(item.images) ? item.images : [],
     video: item.video || null,
     file: item.file || null,
+    media: item.media || item.video || null,
+    media_type: item.media_type ?? (item.mediaType === 'Video' ? 2 : item.mediaType === 'File' ? 3 : item.mediaType === 'Image' ? 1 : 0),
     date: item.date || '2026-03-24',
     createdAt: item.createdAt || item.created_at || item.date || '',
     views: Number(item.views || 0),
@@ -1256,7 +1257,11 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
     mediaType = mediaTypeMap[Number(mediaTypeRaw)] || 'None';
   }
 
-  const rawVideo = apiItem.video || apiItem.video_url || '';
+  const rawVideo = apiItem.video || apiItem.video_url || apiItem.videoUrl || apiItem.videoUri || '';
+  // ✅ FIX: kuch responses (/news list) me video ka URL media/video ke bajay doosri key me aata hai — fallback ke taur par lo
+  const altVideoRaw = apiItem.branded_video || apiItem.brandedVideo || apiItem.processed_video || apiItem.video_path
+    || (Array.isArray(apiItem.videos) ? (typeof apiItem.videos[0] === 'string' ? apiItem.videos[0] : (apiItem.videos[0]?.url || apiItem.videos[0]?.path || '')) : '')
+    || '';
   const isVideoExt = (u) => {
     const raw = String(u || '').split('?')[0].split('#')[0].toLowerCase();
     return /\.(mp4|m4v|webm|mov|mkv|3gp|avi|flv)$/i.test(raw);
@@ -1265,8 +1270,8 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
   // ✅ Video ke liye backend ka `media` hi final processed video hai (music/voice/frame apply ho chuka) —
   // wahi URL player me use hota hai. Local selected video ka URL kabhi dobara nahi banate.
   const mediaUrl = (mediaType === 'Video'
-    ? (apiItem.media || apiItem.media_url || rawVideo)
-    : (apiItem.media_url || apiItem.media || rawVideo)) || '';
+    ? (apiItem.media || apiItem.media_url || rawVideo || altVideoRaw)
+    : (apiItem.media_url || apiItem.media || rawVideo || (isVideoExt(altVideoRaw) ? altVideoRaw : ''))) || '';
 
   // Agar media_type 0/None ho lekin URL me video ho ya rawVideo ho, to mediaType Video treat karo
   if (mediaType === 'None' && (isVideoExt(mediaUrl) || isVideoExt(rawVideo) || Boolean(rawVideo))) {
@@ -1348,6 +1353,7 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
     frameMerged: [1, '1', true, 'true'].includes(apiItem.frame_merged ?? apiItem.is_frame_merged),
     voiceUri: apiItem.voice_url ? resolveMediaUrl(apiItem.voice_url) : (apiItem.voice ? resolveMediaUrl(apiItem.voice) : (apiItem.voiceUri || null)),
     mediaType,
+    media_type: Number(mediaTypeRaw) || (mediaType === 'Video' ? 2 : mediaType === 'File' ? 3 : mediaType === 'Image' ? 1 : 0),
     media: mediaType === 'Image' ? undefined : mediaUrl,
     images: mediaType === 'Image' ? collectedImages : [],
     // video hamesha plain string URL (cards String(video) karte hain; object => "[object Object]")
@@ -1517,11 +1523,7 @@ const normalizeUserNewsItems = (items = []) => {
       title: cleanRichTextToPlain(item.title || ''),
       description: cleanRichTextToPlain(item.description || item.subtitle || ''),
       subtitle: cleanRichTextToPlain(item.subtitle || ''),
-      media: item.media || (item.mediaType === 'Image'
-        ? `${item.images?.length || 0} image(s)`
-        : item.mediaType === 'Video' ? 'video attached'
-          : item.mediaType === 'File' ? (item.file?.name ? `file: ${item.file.name}` : 'file attached')
-            : 'no media'),
+      media: item.media || item.video || null,
       category: item.category || item.state || 'General',
       language: String(item.language || item.lang || item.news_language || '').trim().toLowerCase(),
       mediaType: item.mediaType || 'None',
@@ -8596,12 +8598,12 @@ export const UserStore = {
       if (!res.ok) return { ok: false, message: res.message || 'Unable to send enquiry.' };
       const enquiry = {
         ...(res.enquiry || {}),
-        qty: res.enquiry?.qty ?? res.enquiry?.quantity ?? qtyVal,
-        quantity: res.enquiry?.quantity ?? res.enquiry?.qty ?? qtyVal,
-        order_qty: res.enquiry?.order_qty ?? qtyVal,
+        qty: res.enquiry?.qty ?? res.enquiry?.quantity ?? rawQty,
+        quantity: res.enquiry?.quantity ?? res.enquiry?.qty ?? rawQty,
+        order_qty: res.enquiry?.order_qty ?? rawQty,
         message: res.enquiry?.message || finalMessage,
       };
-      return { ok: true, enquiry, data: enquiry, qty: qtyVal, quantity: qtyVal, message: res.message || 'Enquiry sent successfully.' };
+      return { ok: true, enquiry, data: enquiry, qty: rawQty, quantity: rawQty, message: res.message || 'Enquiry sent successfully.' };
     } catch {
       return { ok: false, message: 'Unable to send enquiry.' };
     }

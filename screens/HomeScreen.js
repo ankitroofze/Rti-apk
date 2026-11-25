@@ -1155,12 +1155,6 @@ export default function HomeScreen({ navigation, route }) {
       // asli payment verify nahi hota tha isliye referral commission trigger hi nahi
       // hoti thi. Ab SubscriptionPlansScreen jaisa hi real Razorpay order+verify flow.
       navigation.navigate('Subscription Plans', { preselectedPlanId: plan.plan_id, seatId });
-      return;
-      if (!subscriptionResult?.ok) throw new Error(subscriptionResult?.message || 'Subscription could not be saved.');
-      setCurrentUser((await UserStore.getCurrentUser()) || null);
-      setShowSubscriptionModal(false);
-      setPendingPlan(null);
-      showToast(`${plan.plan_name} Subscription Successful! 🎉`, 'success');
     } catch (err) {
       console.error('Subscription save failed:', err);
       showToast(err?.message || 'Something went wrong. Please try again.', 'error');
@@ -1434,12 +1428,12 @@ const handleOpenLeadForm = useCallback(async (story) => {
   const renderSearchField = viewMode === 'states' ? null : (
     <View style={[styles.sectionSearchRow, isCompactLayout && styles.sectionSearchRowCompact]}>
       <View style={styles.sectionSearchField}>
-        <Ionicons name="search-outline" size={16} color="#94a3b8" />
+        <Ionicons name="search-outline" size={17} color="#334155" />
         <TextInput
           value={searchQuery}
           onChangeText={setSearchQuery}
           placeholder={homeCopy.searchFeedPlaceholder}
-          placeholderTextColor="#94a3b8"
+          placeholderTextColor="#64748b"
           style={styles.sectionSearchInput}
           autoCapitalize="none"
           autoCorrect={false}
@@ -1447,7 +1441,7 @@ const handleOpenLeadForm = useCallback(async (story) => {
         />
         {Boolean(String(searchQuery || '').trim()) && (
           <TouchableOpacity onPress={() => setSearchQuery('')} activeOpacity={0.7} style={{ padding: 4 }}>
-            <Ionicons name="close-circle" size={18} color="#94a3b8" />
+            <Ionicons name="close-circle" size={18} color="#64748b" />
           </TouchableOpacity>
         )}
       </View>
@@ -1908,20 +1902,22 @@ const styles = StyleSheet.create({
   sectionSearchRowCompact: { flexDirection: 'column', alignItems: 'stretch' },
   sectionSearchField: {
     flex: 1,
-    minHeight: Platform.OS === 'web' ? 42 : 36,
+    minHeight: Platform.OS === 'web' ? 42 : 38,
     borderRadius: 999,
     backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#dbe3ee',
+    borderWidth: 1.5,
+    borderColor: '#94a3b8',
     paddingHorizontal: Platform.OS === 'web' ? 14 : 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-    sectionSearchInput: {
+  sectionSearchInput: {
     flex: 1,
-    fontSize: Platform.OS === 'web' ? 13 : 12,
+    fontSize: Platform.OS === 'web' ? 13 : 12.5,
+    fontWeight: '600',
     color: '#0f172a',
+    paddingVertical: Platform.OS === 'android' ? 2 : 0,
     fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
     ...Platform.select({ web: { outlineStyle: 'none' } }),
   },

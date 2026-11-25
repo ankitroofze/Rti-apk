@@ -18,6 +18,7 @@ import { INDIAN_STATES, getDistricts, getTalukas, getVillages } from './location
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { SUPPORTED_LANGUAGES, languageDisplay } from '../constants/indianLanguages';
 
 
@@ -139,8 +140,9 @@ function SectionHeader({ title }) {
 function SettingsScreen__Inner({ navigation }) {
   const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const { showToast } = useToast();
-    const insets = useSafeAreaInsets();
+  const insets = useSafeAreaInsets();
   const { logout } = useAuth();
+  const { isDark, toggleTheme } = useTheme();
   const { language: appLanguage, changeLanguage } = useLanguage();
   const [languageModal, setLanguageModal] = useState(false);
   const languageItems = SUPPORTED_LANGUAGES.map(languageDisplay);
@@ -423,7 +425,14 @@ function SettingsScreen__Inner({ navigation }) {
         {/* ── Preferences ── */}
         <SectionHeader title="Preferences" />
         <View style={s.card}>
-                <SettingsItem icon="language-outline" label="Change Language"         onPress={() => setLanguageModal(true)} />
+          <SettingsItem
+            icon={isDark ? "moon" : "moon-outline"}
+            label="Dark Mode"
+            isToggle
+            toggleValue={isDark}
+            onToggleChange={toggleTheme}
+          />
+          <SettingsItem icon="language-outline" label="Change Language"         onPress={() => setLanguageModal(true)} />
          <SettingsItem icon="card-outline" label="Payment History"      onPress={() => navigation.navigate('PaymentHistory')} />
          <SettingsItem icon="ban-outline" label="People you blocked"      onPress={() => navigation.navigate('BlockedUsersScreen')} />
           <SettingsItem icon="trending-up-outline" label="Get Famous On The RTI" onPress={() => showToast('Coming soon', 'success')} />

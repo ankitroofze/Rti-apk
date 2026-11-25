@@ -380,6 +380,21 @@ const UserPublicProfileStyles = StyleSheet.create({
   followUserName: { fontSize: 14, fontWeight: '700', color: C.text },
   followUserEmail: { marginTop: 2, fontSize: 11, color: C.textMuted },
   followEmptyText: { textAlign: 'center', color: C.textMuted, fontSize: 13, paddingVertical: 28 },
+  unfollowBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#fca5a5',
+    backgroundColor: '#fff1f2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unfollowBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#e11d48',
+  },
 
   feedList: {
     padding: 12,

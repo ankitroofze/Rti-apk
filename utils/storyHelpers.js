@@ -99,9 +99,9 @@ export function normalizeStoryItem(item, index = 0) {
   if (!title) return null;
 
   const mediaTypeNum = Number(item.media_type ?? item.mediaType);
-  const isVideoMediaType = mediaTypeNum === 2;
-  const isFileMediaType = mediaTypeNum === 3;
-  const isImageMediaType = mediaTypeNum === 1;
+  const isVideoMediaType = mediaTypeNum === 2 || String(item.mediaType || '').toLowerCase() === 'video' || String(item.media_type || '').toLowerCase() === 'video';
+  const isFileMediaType = mediaTypeNum === 3 || String(item.mediaType || '').toLowerCase() === 'file' || String(item.media_type || '').toLowerCase() === 'file';
+  const isImageMediaType = mediaTypeNum === 1 || String(item.mediaType || '').toLowerCase() === 'image' || String(item.media_type || '').toLowerCase() === 'image';
 
   const isVideoExt = (u) => {
     const raw = String(u || '').split('?')[0].split('#')[0].toLowerCase();
@@ -112,7 +112,7 @@ export function normalizeStoryItem(item, index = 0) {
     return /\.(pdf|docx?|xlsx?|txt|csv)$/i.test(raw);
   };
 
-  const rawVideo = item.video || item.video_url || (isVideoMediaType ? item.media : null) || (isVideoExt(item.media) ? item.media : null);
+  const rawVideo = item.video || item.video_url || item.videoUrl || item.videoUri || (isVideoMediaType ? (item.media || item.media_url) : null) || (isVideoExt(item.media) ? item.media : null);
   const rawFile = item.file || item.file_url || (isFileMediaType ? item.media : null) || (isFileExt(item.media) ? item.media : null);
 
   const resolvedVideo = rawVideo ? resolveMediaUrl(typeof rawVideo === 'string' ? rawVideo : (rawVideo?.uri || '')) : null;
@@ -125,8 +125,8 @@ export function normalizeStoryItem(item, index = 0) {
   const storyImage = rawImage || '';
 
   let resolvedMediaType = 'None';
-  if (resolvedVideo) resolvedMediaType = 'Video';
-  else if (resolvedFile) resolvedMediaType = 'File';
+  if (resolvedVideo || isVideoMediaType) resolvedMediaType = 'Video';
+  else if (resolvedFile || isFileMediaType) resolvedMediaType = 'File';
   else if (storyImage || (Array.isArray(item.images) && item.images.length > 0)) resolvedMediaType = 'Image';
   else if (item.mediaType && typeof item.mediaType === 'string') resolvedMediaType = item.mediaType;
 
@@ -159,6 +159,8 @@ export function normalizeStoryItem(item, index = 0) {
       : (storyImage ? [storyImage] : []),
     video: resolvedVideo || null,
     file: resolvedFile || null,
+    media: resolvedVideo || (item.media ? resolveMediaUrl(item.media) : ''),
+    media_type: isVideoMediaType ? 2 : isFileMediaType ? 3 : isImageMediaType ? 1 : (item.media_type ? Number(item.media_type) : 0),
     mediaType: resolvedMediaType,
     // Frame / template (Home, All Feed, Details sab jagah same dikhe) — backend snake_case aur camelCase dono support
     useFrame: [1, '1', true, 'true'].includes(item.use_frame ?? item.useFrame),

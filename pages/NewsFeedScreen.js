@@ -604,7 +604,6 @@ export default function NewsFeedScreen({ navigation }) {
   const [activeCommentItem, setActiveCommentItem] = useState(null);
   const [commentText, setCommentText] = useState('');
   const [localComments, setLocalComments] = useState([]);
-  const [commentsLoading, setCommentsLoading] = useState(false);
   const [editingCommentId, setEditingCommentId] = useState(null);
   const [editingCommentText, setEditingCommentText] = useState('');
   const [replyingToCommentId, setReplyingToCommentId] = useState(null);

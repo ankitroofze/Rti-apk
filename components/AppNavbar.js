@@ -19,6 +19,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { subscribeBadgeRefresh } from '../utils/Pushnotifications';
 import useLiveRefresh from '../utils/useLiveRefresh';
 import { getSiteCopy } from '../constants/siteCopy';
@@ -553,6 +554,7 @@ function GallerySlider({ handleNavigate, handleHomeShortcut }) {
 function MobileTopHeader({ navigation, handleNavigate, handleHomeShortcut }) {
   const insets = useSafeAreaInsets();
   const { language } = useLanguage();
+  const { isDark, toggleTheme } = useTheme();
   const hc = useMemo(() => getHeaderCopy(language), [language]);
 
   return (
@@ -567,10 +569,18 @@ function MobileTopHeader({ navigation, handleNavigate, handleHomeShortcut }) {
             <Text style={styles.mobileBrandSubtitle} numberOfLines={2}>{hc.brandSubtitle}</Text>
           </View>
         </View>
-              <View style={styles.mobileTopHeaderActions}>
+        <View style={styles.mobileTopHeaderActions}>
           <NavbarLanguageSelector compact />
-<RefreshButton style={styles.mobileRefreshBtn} />
-<NotificationBell navigation={navigation} style={styles.mobileBellBtn} />
+          <TouchableOpacity
+            style={styles.mobileThemeToggleBtn}
+            onPress={toggleTheme}
+            activeOpacity={0.8}
+            accessibilityLabel="Toggle Dark/Light Mode"
+          >
+            <Ionicons name={isDark ? 'sunny' : 'moon-outline'} size={19} color={isDark ? '#f59e0b' : '#334155'} />
+          </TouchableOpacity>
+          <RefreshButton style={styles.mobileRefreshBtn} />
+          <NotificationBell navigation={navigation} style={styles.mobileBellBtn} />
           <ProfileDropdown navigation={navigation} />
         </View>
       </View>
@@ -600,7 +610,7 @@ function MobileBottomBar({ activeScreen, handleNavigate }) {
     <View style={[styles.mobileBottomBar, { paddingBottom: bottomPad }]}>
       {MOBILE_NAV_ITEMS.map((item) => {
         const isActive = activeScreen === item.screen;
-        const iconColor = isActive ? '#000000' : '#94a3b8';
+        const iconColor = isActive ? '#0f172a' : '#334155';
         const iconName = isActive ? item.icon.replace('-outline', '') : item.icon;
 
            if (item.isCreateBtn) {
@@ -676,6 +686,7 @@ function MobileBottomBar({ activeScreen, handleNavigate }) {
 // ─── Main Export ──────────────────────────────────────────────────────────
 export default function AppNavbar({ activeScreen, navigation, hideTopHeader = false, hideBottomBar = false }) {
   const { language } = useLanguage();
+  const { isDark, toggleTheme } = useTheme();
   const copy = useMemo(() => getSiteCopy(language), [language]);
   const hc = useMemo(() => getHeaderCopy(language), [language]);
   const isDesktop = useIsDesktop();
@@ -743,7 +754,15 @@ export default function AppNavbar({ activeScreen, navigation, hideTopHeader = fa
 
         <View style={styles.desktopUtilityRow}>
           <NavbarLanguageSelector />
-<NotificationBell navigation={navigation} style={{ marginRight: 0 }} />
+          <TouchableOpacity
+            style={[styles.notificationBellBtn, { marginHorizontal: 0 }]}
+            onPress={toggleTheme}
+            activeOpacity={0.85}
+            accessibilityLabel="Toggle Dark/Light Mode"
+          >
+            <Ionicons name={isDark ? 'sunny' : 'moon-outline'} size={20} color={isDark ? '#f59e0b' : '#0f172a'} />
+          </TouchableOpacity>
+          <NotificationBell navigation={navigation} style={{ marginRight: 0 }} />
           {/* Bell ke just right side me: sirf Subscription icon (naam nahi) */}
           <TouchableOpacity
             style={[styles.notificationBellBtn, { marginHorizontal: 0 }]}
@@ -961,7 +980,7 @@ const styles = StyleSheet.create({
     galleryItem: {
     alignItems: 'center',
     gap: IS_WEB ? 1 : 2,
-    width: IS_WEB ? 60 : 68,
+    width: IS_WEB ? 64 : 72,
   },
    galleryIconRing: {
     width: IS_WEB ? 48 : 70,
@@ -997,11 +1016,11 @@ const styles = StyleSheet.create({
     right: -1,
   },
        galleryItemLabel: {
-    fontSize: IS_WEB ? 11.5 : 12.5,
-    fontWeight: '600',
-    color: '#334155',
+    fontSize: IS_WEB ? 11.5 : 12,
+    fontWeight: '700',
+    color: '#0f172a',
     textAlign: 'center',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_400Regular',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
   },
   liveDot: {
     backgroundColor: '#e11d48',
@@ -1013,6 +1032,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 2,
     flexShrink: 0,
+  },
+  mobileThemeToggleBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
   },
   // ─── Web overlay ───────────────────────────────────────────────────────
   webOverlay: {
@@ -1391,15 +1418,15 @@ mobileBrandSubtitle: {
   },
 
     mobileTabLabel: {
-    color: '#94a3b8',
-    fontSize: 10,
-    fontWeight: '600',
+    color: '#334155',
+    fontSize: 10.5,
+    fontWeight: '700',
     textAlign: 'center',
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
+    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold',
   },
   mobileTabLabelActive: {
-    color: '#000000',
-    fontWeight: '700',
+    color: '#0f172a',
+    fontWeight: '900',
   },
 
   // FAB-style button for the center tab (matching image's blue circle)
@@ -1410,7 +1437,9 @@ mobileBrandSubtitle: {
     
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#686262',
+    backgroundColor: '#ffffff',
+    borderWidth: 2,
+    borderColor: '#334155',
     marginTop: IS_WEB ? -20 : -24,
     ...Platform.select({
       default: {

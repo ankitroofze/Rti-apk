@@ -1,7 +1,7 @@
 import NameWithTick from '../components/NameWithTick';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, BackHandler, Clipboard, Image, ImageBackground, KeyboardAvoidingView, Linking, Modal,
+  ActivityIndicator, Alert, BackHandler, Clipboard, Image, ImageBackground, KeyboardAvoidingView, Linking, Modal,
   Platform, RefreshControl, ScrollView, Share, StatusBar, Text, TextInput,
   TouchableOpacity, TouchableWithoutFeedback, useWindowDimensions, View,
 } from 'react-native';
@@ -420,8 +420,67 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   });
   const [followLoading, setFollowLoading] = useState(false);
   const [followStats, setFollowStats] = useState({ followers: 0, following: 0 });
- const [followLists, setFollowLists] = useState({ followers: [], following: [] });
+  const [followLists, setFollowLists] = useState({ followers: [], following: [] });
   const [followModalType, setFollowModalType] = useState('');
+  const [followModalLoading, setFollowModalLoading] = useState(false);
+  const [unfollowingId, setUnfollowingId] = useState(null);
+
+  const openFollowListModal = useCallback(async (type) => {
+    setFollowModalType(type);
+    const targetId = cleanUserId || cleanId(profile?.id) || cleanId(safeAuthor?.id);
+
+    if (!followLists[type] || followLists[type].length === 0) {
+      setFollowModalLoading(true);
+      try {
+        const res = type === 'followers'
+          ? await AuthAPI.getFollowersApi(targetId)
+          : await AuthAPI.getFollowingApi(targetId);
+        if (res?.ok && Array.isArray(res.list) && res.list.length > 0) {
+          setFollowLists((prev) => ({
+            ...prev,
+            [type]: res.list,
+          }));
+        }
+      } catch (err) {
+        console.error('Error fetching follow list:', err);
+      } finally {
+        setFollowModalLoading(false);
+      }
+    }
+  }, [cleanUserId, profile, safeAuthor, followLists]);
+
+  const handleUnfollowUser = useCallback(async (targetUser) => {
+    const targetId = targetUser?.id ?? targetUser?.user_id;
+    const targetEmail = targetUser?.email;
+    const key = String(targetId ?? targetEmail);
+    setUnfollowingId(key);
+    try {
+      const res = await UserStore.unfollowUser(targetEmail, targetId);
+      if (res?.ok !== false) {
+        setFollowLists((prev) => ({
+          ...prev,
+          following: (prev.following || []).filter((u) => {
+            const uId = u.id ?? u.user_id;
+            const uEmail = u.email;
+            if (targetId && uId && String(uId) === String(targetId)) return false;
+            if (targetEmail && uEmail && String(uEmail).toLowerCase() === String(targetEmail).toLowerCase()) return false;
+            return true;
+          }),
+        }));
+        setFollowStats((prev) => ({
+          ...prev,
+          following: Math.max(0, (Number(prev.following) || 1) - 1),
+        }));
+        showToast('Unfollowed successfully', 'success');
+      } else {
+        showToast(res?.message || 'Failed to unfollow', 'error');
+      }
+    } catch {
+      showToast('Failed to unfollow', 'error');
+    } finally {
+      setUnfollowingId(null);
+    }
+  }, [showToast]);
   const selfFollowActionRef = useRef(false);
   const followActionInFlightRef = useRef(false);
 
@@ -582,7 +641,14 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           followers: profileFollowers,
           following: profileFollowing,
         });
-        setFollowLists({ followers: [], following: [] });
+        const initialFollowers = Array.isArray(user?.followers) ? user.followers : [];
+        const initialFollowing = Array.isArray(user?.following) ? user.following : [];
+        if (initialFollowers.length || initialFollowing.length) {
+          setFollowLists((prev) => ({
+            followers: initialFollowers.length ? initialFollowers : (prev.followers || []),
+            following: initialFollowing.length ? initialFollowing : (prev.following || []),
+          }));
+        }
       }
 
       if (active && (summary || !silent) && !(silent && followActionInFlightRef.current)) {
@@ -592,7 +658,10 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         setIsFollowing(Boolean(finalIsFollowing));
 
         if (summary) {
-          setFollowLists({ followers: summary.followers || [], following: summary.following || [] });
+          setFollowLists((prev) => ({
+            followers: (Array.isArray(summary.followers) && summary.followers.length > 0) ? summary.followers : (prev.followers || []),
+            following: (Array.isArray(summary.following) && summary.following.length > 0) ? summary.following : (prev.following || []),
+          }));
         }
 
         setFollowStats((prev) => {
@@ -1874,17 +1943,54 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                 </TouchableOpacity>
               </View>
               <ScrollView style={styles.followModalList} contentContainerStyle={styles.followModalListContent}>
-                {(followLists[followModalType] || []).length ? (
-                  (followLists[followModalType] || []).map((item) => (
-                                        <TouchableOpacity key={String(item.id ?? item.user_id ?? item.email)} style={styles.followUserRow} activeOpacity={0.8} onPress={() => { setFollowModalType(''); navigation.push('UserPublicProfile', { email: item.email, userId: item.id || item.user_id || undefined, author: item }); }}>
-                      <ProfileAvatar uri={item.profile_image || ''} size={42} style={styles.followUserAvatar} />
-                      <View style={styles.followUserInfo}>
-                        <NameWithTick name={item.name || 'User'} user={item} style={styles.followUserName} />
-                        <Text style={styles.followUserEmail} numberOfLines={1}>{item.email || ''}</Text>
+                {followModalLoading ? (
+                  <View style={{ paddingVertical: 32, alignItems: 'center' }}>
+                    <ActivityIndicator size="small" color="#e8732a" />
+                    <Text style={[styles.followEmptyText, { marginTop: 8 }]}>Loading...</Text>
+                  </View>
+                ) : (followLists[followModalType] || []).length ? (
+                  (followLists[followModalType] || []).map((item) => {
+                    const itKey = String(item.id ?? item.user_id ?? item.email);
+                    const isRemoving = unfollowingId === itKey;
+                    return (
+                      <View key={itKey} style={styles.followUserRow}>
+                        <TouchableOpacity
+                          style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+                          activeOpacity={0.8}
+                          onPress={() => {
+                            setFollowModalType('');
+                            navigation.push('UserPublicProfile', {
+                              email: item.email,
+                              userId: item.id || item.user_id || undefined,
+                              author: item,
+                            });
+                          }}
+                        >
+                          <ProfileAvatar uri={item.profile_image || ''} size={42} style={styles.followUserAvatar} />
+                          <View style={styles.followUserInfo}>
+                            <NameWithTick name={item.name || 'User'} user={item} style={styles.followUserName} />
+                            <Text style={styles.followUserEmail} numberOfLines={1}>{item.email || ''}</Text>
+                          </View>
+                        </TouchableOpacity>
+                        {followModalType === 'following' ? (
+                          <TouchableOpacity
+                            style={styles.unfollowBtn}
+                            activeOpacity={0.8}
+                            onPress={() => handleUnfollowUser(item)}
+                            disabled={isRemoving}
+                          >
+                            {isRemoving ? (
+                              <ActivityIndicator size="small" color="#e11d48" />
+                            ) : (
+                              <Text style={styles.unfollowBtnText}>Unfollow</Text>
+                            )}
+                          </TouchableOpacity>
+                        ) : (
+                          <Feather name="chevron-right" size={18} color="#cbd5e1" />
+                        )}
                       </View>
-                      <Feather name="chevron-right" size={18} color="#cbd5e1" />
-                    </TouchableOpacity>
-                  ))
+                    );
+                  })
                 ) : (
                   <Text style={styles.followEmptyText}>{followModalType === 'followers' ? 'No followers yet.' : 'Not following anyone yet.'}</Text>
                 )}
@@ -1976,13 +2082,13 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                     <Text style={styles.statValue}>{postsCount}</Text>
                     <Text style={styles.statLabel}>posts</Text>
                   </View>
-                  <TouchableOpacity style={styles.statBox} onPress={() => setFollowModalType('followers')} activeOpacity={0.75}>
+                  <TouchableOpacity style={styles.statBox} onPress={() => openFollowListModal('followers')} activeOpacity={0.75}>
                     <Text style={styles.statValue}>
                       {followersCount > 999 ? `${(followersCount / 1000).toFixed(1)}k` : String(followersCount)}
                     </Text>
                     <Text style={styles.statLabel}>followers</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.statBox} onPress={() => setFollowModalType('following')} activeOpacity={0.75}>
+                  <TouchableOpacity style={styles.statBox} onPress={() => openFollowListModal('following')} activeOpacity={0.75}>
                     <Text style={styles.statValue}>{String(followingCount)}</Text>
                     <Text style={styles.statLabel}>following</Text>
                   </TouchableOpacity>
@@ -2231,11 +2337,11 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                       <Text style={webSt.statNum}>{postsCount}</Text>
                       <Text style={webSt.statLabel}>posts</Text>
                     </View>
-                    <TouchableOpacity style={webSt.statItem} onPress={() => setFollowModalType('followers')} activeOpacity={0.75}>
+                    <TouchableOpacity style={webSt.statItem} onPress={() => openFollowListModal('followers')} activeOpacity={0.75}>
                       <Text style={webSt.statNum}>{followersCount > 999 ? `${(followersCount / 1000).toFixed(1)}k` : followersCount}</Text>
                       <Text style={webSt.statLabel}>followers</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={webSt.statItem} onPress={() => setFollowModalType('following')} activeOpacity={0.75}>
+                    <TouchableOpacity style={webSt.statItem} onPress={() => openFollowListModal('following')} activeOpacity={0.75}>
                       <Text style={webSt.statNum}>{followingCount}</Text>
                       <Text style={webSt.statLabel}>following</Text>
                     </TouchableOpacity>
@@ -2435,11 +2541,11 @@ export default function UserPublicProfileScreen({ route, navigation }) {
               <Text style={ProfileStyles.profileStatNumberExact}>{postsCount}</Text>
               <Text style={ProfileStyles.profileStatLabelExact}>Posts</Text>
             </View>
-            <TouchableOpacity style={ProfileStyles.profileStatExact} onPress={() => setFollowModalType('followers')} activeOpacity={0.75}>
+            <TouchableOpacity style={ProfileStyles.profileStatExact} onPress={() => openFollowListModal('followers')} activeOpacity={0.75}>
               <Text style={ProfileStyles.profileStatNumberExact}>{followersCount > 999 ? `${(followersCount / 1000).toFixed(1)}k` : String(followersCount)}</Text>
               <Text style={ProfileStyles.profileStatLabelExact}>Followers</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={ProfileStyles.profileStatExact} onPress={() => setFollowModalType('following')} activeOpacity={0.75}>
+            <TouchableOpacity style={ProfileStyles.profileStatExact} onPress={() => openFollowListModal('following')} activeOpacity={0.75}>
               <Text style={ProfileStyles.profileStatNumberExact}>{String(followingCount)}</Text>
               <Text style={ProfileStyles.profileStatLabelExact}>Following</Text>
             </TouchableOpacity>

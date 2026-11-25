@@ -103,11 +103,13 @@ function isPlayableVideoSource(uri) {
   if (typeof uri !== 'string' || !uri.trim()) return false;
   if (/(youtube\.com|youtu\.be)/i.test(uri)) return false;
   if (Platform.OS !== 'web') return true;
-  if (/^(blob:|data:)/i.test(uri)) return true;
+  if (/^(blob:|data:|idb:)/i.test(uri)) return true;
   if (isIdbMediaUri(uri)) return true;
-  // Android se upload hue video ke URL me extension na ho ya alag ho (.3gp, bina extension) to bhi web par
-  // chalna chahiye. Ye function sirf video items ke liye bulaya jaata hai, isliye sirf saaf-saaf image/pdf URL reject karo.
-  return /^https?:/i.test(uri) && !/\.(jpe?g|png|gif|webp|bmp|svg|heic|avif|pdf)(\?.*)?(#.*)?$/i.test(uri);
+  if (/^\/storage(-proxy)?\//i.test(uri)) return true;
+  if (uri.startsWith('/') || uri.startsWith('./')) {
+    return !/\.(jpe?g|png|gif|webp|bmp|svg|heic|avif|pdf)(\?.*)?(#.*)?$/i.test(uri);
+  }
+  return (/^https?:/i.test(uri) || /^\/\w+/i.test(uri)) && !/\.(jpe?g|png|gif|webp|bmp|svg|heic|avif|pdf)(\?.*)?(#.*)?$/i.test(uri);
 }
 
 function buildPlaceholderImage(seedKey) {

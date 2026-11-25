@@ -904,15 +904,52 @@ function ProfileScreenInner({ navigation, route }) {
 
   // Post News button removed from profile screen
 
+  const [unfollowingId, setUnfollowingId] = useState(null);
+
   const openFollowList = async (type) => {
     if (!isLoggedIn) return;
     setFollowModalType(type);
-    const followSummary = await UserStore.getFollowSummary(savedProfile.email);   // fresh API call click pe
-    setFollowLists((prev) => ({
-      ...prev,
-      followers: Array.isArray(followSummary?.followers) ? followSummary.followers : [],
-      following: Array.isArray(followSummary?.following) ? followSummary.following : [],
-    }));
+    const followSummary = await UserStore.getFollowSummary(savedProfile?.email, savedProfile?.id);
+    if (followSummary) {
+      setFollowLists((prev) => ({
+        ...prev,
+        followers: Array.isArray(followSummary.followers) ? followSummary.followers : (prev.followers || []),
+        following: Array.isArray(followSummary.following) ? followSummary.following : (prev.following || []),
+      }));
+    }
+  };
+
+  const handleUnfollowUser = async (targetUser) => {
+    const targetId = targetUser?.id ?? targetUser?.user_id;
+    const targetEmail = targetUser?.email;
+    const key = String(targetId ?? targetEmail);
+    setUnfollowingId(key);
+    try {
+      const res = await UserStore.unfollowUser(targetEmail, targetId);
+      if (res?.ok !== false) {
+        setFollowLists((prev) => ({
+          ...prev,
+          following: (prev.following || []).filter((u) => {
+            const uId = u.id ?? u.user_id;
+            const uEmail = u.email;
+            if (targetId && uId && String(uId) === String(targetId)) return false;
+            if (targetEmail && uEmail && String(uEmail).toLowerCase() === String(targetEmail).toLowerCase()) return false;
+            return true;
+          }),
+        }));
+        setProfileStats((prev) => ({
+          ...prev,
+          following: Math.max(0, (Number(prev.following) || 1) - 1),
+        }));
+        showToast('Unfollowed successfully', 'success');
+      } else {
+        showToast(res?.message || 'Failed to unfollow', 'error');
+      }
+    } catch {
+      showToast('Failed to unfollow', 'error');
+    } finally {
+      setUnfollowingId(null);
+    }
   };
   const closeFollowList = () => setFollowModalType('');
   const closeDocumentPreview = () => { setDocumentPreviewType(''); setIdCardSide('front'); };
@@ -1412,18 +1449,44 @@ const handlePickImage = async () => {
           </View>
           <ScrollView style={ProfileStyles.followModalList} contentContainerStyle={ProfileStyles.followModalListContent}>
             {(followLists[followModalType] || []).length ? (
-                        (followLists[followModalType] || []).map((item) => (
-                <TouchableOpacity key={item.id || item.email} style={ProfileStyles.followUserRow} activeOpacity={0.8}
-                                  onPress={() => { closeFollowList(); navigation.navigate('UserPublicProfile', { userId: item.id || undefined, email: item.email, author: item }); }}
-                >
-                  <ProfileAvatar uri={item.profile_image} size={42} style={[ProfileStyles.followUserAvatar, { borderRadius: 21 }]} />
-                  <View style={ProfileStyles.followUserInfo}>
-                    <NameWithTick name={item.name || 'User'} user={item} style={ProfileStyles.followUserName} />
-                    <Text style={ProfileStyles.followUserEmail} numberOfLines={1}>{item.email || ''}</Text>
+              (followLists[followModalType] || []).map((item) => {
+                const itKey = String(item.id || item.user_id || item.email);
+                const isRemoving = unfollowingId === itKey;
+                return (
+                  <View key={itKey} style={ProfileStyles.followUserRow}>
+                    <TouchableOpacity
+                      style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+                      activeOpacity={0.8}
+                      onPress={() => {
+                        closeFollowList();
+                        navigation.navigate('UserPublicProfile', { userId: item.id || undefined, email: item.email, author: item });
+                      }}
+                    >
+                      <ProfileAvatar uri={item.profile_image} size={42} style={[ProfileStyles.followUserAvatar, { borderRadius: 21 }]} />
+                      <View style={ProfileStyles.followUserInfo}>
+                        <NameWithTick name={item.name || 'User'} user={item} style={ProfileStyles.followUserName} />
+                        <Text style={ProfileStyles.followUserEmail} numberOfLines={1}>{item.email || ''}</Text>
+                      </View>
+                    </TouchableOpacity>
+                    {followModalType === 'following' ? (
+                      <TouchableOpacity
+                        style={ProfileStyles.unfollowBtn}
+                        activeOpacity={0.8}
+                        onPress={() => handleUnfollowUser(item)}
+                        disabled={isRemoving}
+                      >
+                        {isRemoving ? (
+                          <ActivityIndicator size="small" color="#e11d48" />
+                        ) : (
+                          <Text style={ProfileStyles.unfollowBtnText}>Unfollow</Text>
+                        )}
+                      </TouchableOpacity>
+                    ) : (
+                      <Feather name="chevron-right" size={18} color="#BBBBBB" />
+                    )}
                   </View>
-                  <Feather name="chevron-right" size={18} color="#BBBBBB" />
-                </TouchableOpacity>
-              ))
+                );
+              })
             ) : (
               <Text style={ProfileStyles.followEmptyText}>
                 {followModalType === 'followers' ? 'No followers yet.' : 'Not following anyone yet.'}

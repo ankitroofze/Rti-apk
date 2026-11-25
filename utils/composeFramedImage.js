@@ -7,6 +7,7 @@ import { getFrameTemplate } from '../constants/frameTemplates';
 import { FRAME_DATA_URIS } from '../constants/frameBase64';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from './webMediaStore';
 import { toCorsSafeMediaUrl } from './videoWithMusic';
+import { loadShareLogo, drawShareLogo } from './shareLogo';
 
 const OUT_W = 1280;
 const OUT_H = 720; // app ka media box 16:9 hai — download bhi wahi dikhta hai
@@ -61,7 +62,8 @@ function fitText(ctx, text, maxW) {
   return `${t.trimEnd()}…`;
 }
 
-export async function composeFramedImageWeb(imageSrc, frame) {
+// opts.keepAspect: frame nahi hai to image ko apne original aspect me rakho (letterbox nahi), sirf logo lagao
+export async function composeFramedImageWeb(imageSrc, frame, opts = {}) {
   const toRevoke = [];
   try {
     let src = toCorsSafeMediaUrl(String(imageSrc || ''));
@@ -85,6 +87,14 @@ export async function composeFramedImageWeb(imageSrc, frame) {
     }
     const img = await loadImage(src);
 
+    const keepAspect = Boolean(opts.keepAspect) && !frame;
+    let OUT_W = 1280;
+    let OUT_H = 720;
+    if (keepAspect) {
+      const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+      OUT_W = Math.max(2, Math.round(img.width * k));
+      OUT_H = Math.max(2, Math.round(img.height * k));
+    }
     const canvas = document.createElement('canvas');
     canvas.width = OUT_W;
     canvas.height = OUT_H;
@@ -185,6 +195,9 @@ export async function composeFramedImageWeb(imageSrc, frame) {
         ctx.restore();
       }
     }
+
+    // ✅ Logo top-left (news card jaisa) — share / download image me bhi dikhe
+    try { drawShareLogo(ctx, await loadShareLogo(), OUT_W); } catch (_) { /* logo fail => image bina logo ke */ }
 
     const blob = await new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error('Image export fail.'))), 'image/jpeg', 0.92));
     return { uri: URL.createObjectURL(blob), blob, ext: 'jpg' };

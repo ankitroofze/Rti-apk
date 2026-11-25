@@ -193,7 +193,11 @@ async function prepareWebFile({ kind, mediaUrl, opts, frame }) {
     if (!m.merged || !m.blob) throw new Error(m.error || 'video merge failed');
     return { blob: m.blob, ext: m.ext || 'mp4', cleanup: () => { try { if (m.owned) URL.revokeObjectURL(m.uri); } catch (_) { /* ignore */ } } };
   }
-  if (!frame) {   // frame nahi => original image hi (letterbox / re-encode nahi)
+  if (!frame) {   // frame nahi => original aspect me image + logo (top-left). Fail ho to original image
+    try {
+      const c = await composeFramedImageWeb(safeMediaUrl, null, { keepAspect: true });
+      return { blob: c.blob, ext: c.ext, cleanup: () => { try { URL.revokeObjectURL(c.uri); } catch (_) { /* ignore */ } } };
+    } catch (_) { /* niche original image */ }
     const r = await fetch(safeMediaUrl, { mode: 'cors', cache: 'no-store' });
     if (!r.ok) throw new Error('image fetch failed');
     return { blob: await r.blob(), ext: extFromUrl(safeMediaUrl, 'jpg'), cleanup: () => {} };

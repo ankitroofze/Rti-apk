@@ -4346,24 +4346,35 @@ export const AuthAPI = {
 
   getFollowersApi: async (userId) => {
     try {
-      const token = await getAuthToken();
-      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+      const token = await getAuthToken().catch(() => null);
       const cleanUid = (userId != null && String(userId) !== '' && String(userId) !== 'null' && String(userId) !== 'undefined') ? String(userId).trim() : null;
-      const endpoint = cleanUid ? `/users/followers?user_id=${cleanUid}` : '/users/followers';
-      const { status, data } = await getJSON(endpoint, token);
-      if (status === 200 || status === 201) {
-        // Backend kabhi { followers: [...] }, kabhi { data: [...] }, kabhi seedha [...] bhejta hai — teeno handle karo
-        const list = Array.isArray(data) ? data
-          : Array.isArray(data?.followers) ? data.followers
-            : Array.isArray(data?.data) ? data.data
-              : [];
-        const count = typeof data?.count === 'number' ? data.count
-          : typeof data?.total === 'number' ? data.total
-            : typeof data?.followers_count === 'number' ? data.followers_count
-              : list.length;
-        return { ok: true, list, count };
+      if (!token && !cleanUid) return { ok: false, isAuth: true, message: 'Not logged in.' };
+      const endpoints = cleanUid
+        ? [`/users/followers?user_id=${cleanUid}`, `/users/${cleanUid}/followers`, `/user/${cleanUid}/followers`]
+        : ['/users/followers'];
+
+      let lastRes = null;
+      for (const endpoint of endpoints) {
+        const { status, data } = await getJSON(endpoint, token);
+        lastRes = { status, data };
+        if (status === 200 || status === 201) {
+          const list = Array.isArray(data) ? data
+            : Array.isArray(data?.followers) ? data.followers
+              : Array.isArray(data?.data) ? data.data
+                : Array.isArray(data?.users) ? data.users
+                  : Array.isArray(data?.items) ? data.items
+                    : Array.isArray(data?.list) ? data.list
+                      : Array.isArray(data?.data?.followers) ? data.data.followers
+                        : Array.isArray(data?.data?.users) ? data.data.users
+                          : [];
+          const count = typeof data?.count === 'number' ? data.count
+            : typeof data?.total === 'number' ? data.total
+              : typeof data?.followers_count === 'number' ? data.followers_count
+                : list.length;
+          return { ok: true, list, count };
+        }
       }
-      return { ok: false, message: data?.message || `Server error (${status}).` };
+      return { ok: false, message: lastRes?.data?.message || `Server error (${lastRes?.status}).` };
     } catch (err) {
       console.error('[AuthAPI.getFollowersApi] Error:', err);
       return { ok: false, isNetwork: true, message: 'Network error.' };
@@ -4372,24 +4383,36 @@ export const AuthAPI = {
 
   getFollowingApi: async (userId) => {
     try {
-      const token = await getAuthToken();
-      if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
+      const token = await getAuthToken().catch(() => null);
       const cleanUid = (userId != null && String(userId) !== '' && String(userId) !== 'null' && String(userId) !== 'undefined') ? String(userId).trim() : null;
-      const endpoint = cleanUid ? `/users/following?user_id=${cleanUid}` : '/users/following';
-      const { status, data } = await getJSON(endpoint, token);
-      if (status === 200 || status === 201) {
-        // Backend kabhi { following: [...] }, kabhi { data: [...] }, kabhi seedha [...] bhejta hai — teeno handle karo
-        const list = Array.isArray(data) ? data
-          : Array.isArray(data?.following) ? data.following
-            : Array.isArray(data?.data) ? data.data
-              : [];
-        const count = typeof data?.count === 'number' ? data.count
-          : typeof data?.total === 'number' ? data.total
-            : typeof data?.following_count === 'number' ? data.following_count
-              : list.length;
-        return { ok: true, list, count };
+      if (!token && !cleanUid) return { ok: false, isAuth: true, message: 'Not logged in.' };
+      const endpoints = cleanUid
+        ? [`/users/following?user_id=${cleanUid}`, `/users/${cleanUid}/following`, `/user/${cleanUid}/following`]
+        : ['/users/following'];
+
+      let lastRes = null;
+      for (const endpoint of endpoints) {
+        const { status, data } = await getJSON(endpoint, token);
+        lastRes = { status, data };
+        if (status === 200 || status === 201) {
+          const list = Array.isArray(data) ? data
+            : Array.isArray(data?.following) ? data.following
+              : Array.isArray(data?.data) ? data.data
+                : Array.isArray(data?.users) ? data.users
+                  : Array.isArray(data?.following_users) ? data.following_users
+                    : Array.isArray(data?.items) ? data.items
+                      : Array.isArray(data?.list) ? data.list
+                        : Array.isArray(data?.data?.following) ? data.data.following
+                          : Array.isArray(data?.data?.users) ? data.data.users
+                            : [];
+          const count = typeof data?.count === 'number' ? data.count
+            : typeof data?.total === 'number' ? data.total
+              : typeof data?.following_count === 'number' ? data.following_count
+                : list.length;
+          return { ok: true, list, count };
+        }
       }
-      return { ok: false, message: data?.message || `Server error (${status}).` };
+      return { ok: false, message: lastRes?.data?.message || `Server error (${lastRes?.status}).` };
     } catch (err) {
       console.error('[AuthAPI.getFollowingApi] Error:', err);
       return { ok: false, isNetwork: true, message: 'Network error.' };

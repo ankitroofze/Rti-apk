@@ -13,6 +13,7 @@
 import { Image as RNImage, Platform } from 'react-native';
 import { resolveMusicUrl } from '../constants/musicLibrary';
 import { getFrameTemplate } from '../constants/frameTemplates';
+import { loadShareLogo, drawShareLogo } from './shareLogo';
 import { FRAME_DATA_URIS } from '../constants/frameBase64';
 import { mergeAudioOnDevice, getLastMergeError } from './mergeAudioOnDevice';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from './webMediaStore';
@@ -190,10 +191,13 @@ async function prepareFrame(ctx, frame) {
     x.tw = ctx.measureText(x.text).width;
     x.unitW = x.tw + ctx.measureText(SEP).width;
   });
-  return { img, bannerH, bands, SEP };
+  let logo = null;
+  try { logo = await loadShareLogo(); } catch (_) { /* ignore */ }
+  return { img, bannerH, bands, SEP, logo };
 }
 
 function drawFrame(ctx, fr, t) {
+  drawShareLogo(ctx, fr.logo, OUT_W);   // ✅ logo top-left (news card jaisa)
   const bannerH = fr.bannerH || 90;
   const y0 = OUT_H - bannerH;
 

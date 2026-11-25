@@ -119,7 +119,7 @@ export const SITE_COPY = {
       newspaper: 'Newspaper'
     },
     home: {
-      searchFeedPlaceholder: 'Search news, state, category or user name',
+      searchFeedPlaceholder: 'Search news, state or name',
       searchStatePlaceholder: 'Search a state or union territory',
       resetFeed: 'Reset Feed',
       stateDirectoryTitle: 'Explore news from',
