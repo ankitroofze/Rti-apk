@@ -20,6 +20,16 @@ import { normalizeFrameTemplateId } from '../constants/frameTemplates';
 import { getEngagement, publishEngagement, reconcileServerCounts, resetEngagement } from '../utils/newsEngagementStore';
 import { clearIdCardVerification } from '../utils/idCardService';
 import { clearReferralInfo } from '../utils/Referralservice';
+import {
+  ensureCommentPersistenceLoaded,
+  recordEditedComment,
+  clearEditedComment,
+  applyEditedCommentsToTree,
+  recordReplyParent,
+  getReplyParent,
+  removeReplyParent,
+  buildNestedReplies,
+} from '../utils/commentPersistence';
 
 const MEDIA_ORIGIN = process.env.EXPO_PUBLIC_API_ORIGIN || 'https://189.72.144.238';
 function resolveMediaUrl(path) {
@@ -717,8 +727,9 @@ const mapApiCommentToLocal = (raw = {}, me = null) => {
   const myEmail = String(me?.email || '').trim().toLowerCase();
   const isMine = Boolean(raw.is_mine);
   const likedByMe = Boolean(raw.liked_by_me);
+  const rawId = raw.id ?? raw.comment_id;
   return {
-    id: raw.id ? `cmt-${raw.id}` : `cmt-${Date.now()}`,
+    id: rawId ? `cmt-${rawId}` : `cmt-${Date.now()}`,
     text: String(raw.comment ?? raw.sub_comment ?? raw.text ?? raw.body ?? raw.content ?? '').trim(),
     author: authorObj.name || raw.author_name || raw.user_name || raw.name || 'User',
     author_email: String(authorObj.email || raw.author_email || raw.email || (isMine ? myEmail : '')).trim().toLowerCase(),
@@ -740,17 +751,33 @@ const mapApiCommentToLocal = (raw = {}, me = null) => {
       const num = Number(p);
       return Number.isFinite(num) && num > 0 ? String(num) : null;
     })(),
+    parent_reply_id: (() => {
+      const pr = raw.parent_reply_id;
+      const num = Number(pr);
+      return Number.isFinite(num) && num > 0 ? String(num) : null;
+    })(),
   };
 };
 
-// ✅ NEW: reply ka id comment id se clash na kare isliye `rpl-` prefix. rpl-id -> parent comment id yaha yaad rakhte hain.
+// ✅ NEW: reply ka id comment id se clash na kare isliye `rpl-` prefix. rpl-id -> root comment id yaha yaad rakhte hain.
 const REPLY_PARENT_MAP = new Map();
 const mapApiReplyToLocal = (raw = {}, me = null) => {
   const base = mapApiCommentToLocal({ ...raw, id: null, comment: raw.reply ?? raw.comment ?? raw.sub_comment ?? raw.text, comment_id: null }, me);
   const id = raw.id ? `rpl-${raw.id}` : `rpl-${Date.now()}`;
-  const parentId = raw.comment_id ?? raw.parent_id ?? null;
-  if (raw.id && parentId) REPLY_PARENT_MAP.set(id, String(parentId));
-  return { ...base, id, replies_count: 0, parent_comment_id: parentId ? String(parentId) : null, is_reply: true };
+  const parentCommentId = raw.comment_id ?? raw.parent_comment_id ?? null;
+  const parentReplyId = raw.parent_reply_id ?? (raw.parent_id && String(raw.parent_id) !== String(parentCommentId) ? raw.parent_id : null);
+  if (raw.id && parentCommentId) REPLY_PARENT_MAP.set(id, String(parentCommentId));
+  const rawChildReplies = Array.isArray(raw.replies) ? raw.replies : (Array.isArray(raw.sub_comments) ? raw.sub_comments : (Array.isArray(raw.children) ? raw.children : []));
+  const mappedChildren = rawChildReplies.map((child) => mapApiReplyToLocal({ ...child, comment_id: child.comment_id ?? parentCommentId, parent_reply_id: child.parent_reply_id ?? raw.id }, me));
+  return {
+    ...base,
+    id,
+    replies_count: Math.max(Number(raw.replies_count || 0), mappedChildren.length),
+    parent_comment_id: parentCommentId ? String(parentCommentId) : null,
+    parent_reply_id: parentReplyId ? `rpl-${String(parentReplyId).replace(/^rpl-/i, '')}` : null,
+    is_reply: true,
+    replies: mappedChildren,
+  };
 };
 
 // ✅ NEW: 'cmt-12' / 'rpl-5' / 12 / 'cmt-post-12' -> { kind, id }
@@ -789,37 +816,55 @@ const flattenApiComments = (rawList = []) => {
   return order.map((key) => map.get(key));
 };
 
-// ✅ NEW: flat comment list ko top-level + replies tree me convert karta hai
+// ✅ NEW: flat comment list ko multi-level nested replies tree me convert karta hai
 const buildCommentTreeFromApi = (rawList = [], { sort = true, me = null } = {}) => {
   if (__DEV__) console.log('[COMMENTS-RAW]', JSON.stringify((Array.isArray(rawList) ? rawList : []).slice(0, 8)));
-  const normalized = flattenApiComments(rawList).map((c) => mapApiCommentToLocal(c, me));
-  const topLevel = normalized.filter((c) => !c.parent_comment_id).map((c) => ({ ...c, replies: [] }));
-  const topMap = new Map(topLevel.map((c) => [c.id, c]));
+  const normalized = flattenApiComments(rawList).map((c) => ({ ...mapApiCommentToLocal(c, me), replies: [] }));
+  const allById = new Map(normalized.map((c) => [c.id, c]));
+  const topLevel = [];
 
   normalized.forEach((c) => {
-    if (!c.parent_comment_id) return;
-    const parentKey = `cmt-${c.parent_comment_id}`;
-    const parent = topMap.get(parentKey);
-    if (parent) {
-      parent.replies.push({ ...c });
-    } else {
-      // ✅ RESILIENCE: Parent not found (e.g. orphan reply or parent ID mismatch).
-      // DO NOT DISCARD THE COMMENT! Keep it visible as top-level so it never disappears on refresh!
-      topLevel.push({ ...c, replies: [] });
-      topMap.set(c.id, c);
+    const rawParent = c.parent_reply_id || c.parent_comment_id;
+    const stored = getReplyParent(c.id);
+    const parentKey = rawParent
+      ? `cmt-${String(rawParent).replace(/^(cmt-|rpl-)/i, '')}`
+      : (stored?.parentId || null);
+    const parent = parentKey ? (allById.get(parentKey) || allById.get(`cmt-${String(parentKey).replace(/^(cmt-|rpl-)/i, '')}`)) : null;
+    if (parent && parent !== c) {
+      // Prevent cycles
+      let cur = parent;
+      let cycle = false;
+      const seen = new Set([c.id]);
+      while (cur) {
+        if (seen.has(cur.id)) { cycle = true; break; }
+        seen.add(cur.id);
+        const cp = cur.parent_reply_id || cur.parent_comment_id;
+        cur = cp ? allById.get(`cmt-${String(cp).replace(/^(cmt-|rpl-)/i, '')}`) : null;
+      }
+      if (!cycle) {
+        parent.replies.push(c);
+        return;
+      }
     }
+    topLevel.push(c);
   });
 
   if (sort) {
-    topLevel.sort((a, b) => String(b.id).localeCompare(String(a.id)));
-    topLevel.forEach((c) => c.replies.sort((a, b) => String(b.id).localeCompare(String(a.id))));
+    const sortRecursive = (list) => {
+      list.sort((a, b) => String(b.id).localeCompare(String(a.id)));
+      list.forEach((c) => {
+        if (Array.isArray(c.replies) && c.replies.length > 0) sortRecursive(c.replies);
+      });
+    };
+    sortRecursive(topLevel);
   }
-  return topLevel;
+  return applyEditedCommentsToTree(topLevel);
 };
 
 // ✅ NEW: ek post ke comments backend se fetch karta hai (GET /comments/{newsId})
 const fetchBackendCommentsForPost = async (postId) => {
   try {
+    await ensureCommentPersistenceLoaded();
     const me = await UserStore.getCurrentUser().catch(() => null);
     const res = await AuthAPI.getCommentsDetailed(postId);
     let commentsList = res?.ok && Array.isArray(res.comments) ? res.comments : [];
@@ -835,12 +880,19 @@ const fetchBackendCommentsForPost = async (postId) => {
     const tree = buildCommentTreeFromApi(commentsList, { sort: false, me });
     // detail screens ko nested replies chahiye — jin comments par replies hain unki pehli page laao
     await Promise.all(
-      tree.filter((c) => c.replies_count > 0).map(async (c) => {
-        const r = await AuthAPI.getReplies(String(c.id).replace('cmt-', ''));
-        if (r.ok) c.replies = r.replies.map((x) => mapApiReplyToLocal(x, me));
+      tree.filter((c) => c.replies_count > 0 || (Array.isArray(c.replies) && c.replies.length > 0)).map(async (c) => {
+        if (c.replies_count > 0 && (!Array.isArray(c.replies) || c.replies.length === 0)) {
+          const r = await AuthAPI.getReplies(String(c.id).replace('cmt-', ''));
+          if (r.ok) {
+            const mapped = r.replies.map((x) => mapApiReplyToLocal(x, me));
+            c.replies = buildNestedReplies(mapped, c.id);
+          }
+        } else if (Array.isArray(c.replies) && c.replies.length > 0) {
+          c.replies = buildNestedReplies(c.replies, c.id);
+        }
       })
     );
-    return tree;
+    return applyEditedCommentsToTree(tree);
   } catch {
     return [];
   }
@@ -5790,6 +5842,7 @@ export const UserStore = {
   // ✅ NEW: cursor-based comments page (GET /comments/{newsId}) — backend order as-is
   getNewsCommentsPage: async (newsId, { cursor = null, perPage = 20 } = {}) => {
     try {
+      await ensureCommentPersistenceLoaded();
       const me = await UserStore.getCurrentUser().catch(() => null);
       let res = await AuthAPI.getCommentsDetailed(newsId, { cursor, perPage });
       let commentsList = res?.ok && Array.isArray(res.comments) ? res.comments : [];
@@ -5809,19 +5862,24 @@ export const UserStore = {
       const tree = buildCommentTreeFromApi(commentsList, { sort: false, me });
       // Fetch nested replies for comments with replies_count > 0 so they are immediately visible
       await Promise.all(
-        tree.filter((c) => Number(c.replies_count || 0) > 0 && (!Array.isArray(c.replies) || c.replies.length === 0)).map(async (c) => {
+        tree.filter((c) => (Number(c.replies_count || 0) > 0 && (!Array.isArray(c.replies) || c.replies.length === 0)) || (Array.isArray(c.replies) && c.replies.length > 0)).map(async (c) => {
           try {
-            const rawId = String(c.id).replace(/^cmt-/, '');
-            const r = await AuthAPI.getReplies(rawId);
-            if (r?.ok && Array.isArray(r.replies)) {
-              c.replies = r.replies.map((x) => mapApiReplyToLocal(x, me));
+            if (Number(c.replies_count || 0) > 0 && (!Array.isArray(c.replies) || c.replies.length === 0)) {
+              const rawId = String(c.id).replace(/^cmt-/, '');
+              const r = await AuthAPI.getReplies(rawId);
+              if (r?.ok && Array.isArray(r.replies)) {
+                const mapped = r.replies.map((x) => mapApiReplyToLocal(x, me));
+                c.replies = buildNestedReplies(mapped, c.id);
+              }
+            } else if (Array.isArray(c.replies) && c.replies.length > 0) {
+              c.replies = buildNestedReplies(c.replies, c.id);
             }
           } catch (_) { }
         })
       );
       return {
         ok: true,
-        comments: tree,
+        comments: applyEditedCommentsToTree(tree),
         hasMore: res?.hasMore,
         nextCursor: res?.nextCursor,
       };
@@ -5831,13 +5889,15 @@ export const UserStore = {
   // ✅ NEW: ek comment ke replies (cursor pagination)  GET /comments/{commentId}/replies
   getCommentReplies: async (commentId, { cursor = null, perPage = 20 } = {}) => {
     try {
+      await ensureCommentPersistenceLoaded();
       const me = await UserStore.getCurrentUser().catch(() => null);
       const ref = parseCommentRef(commentId);
       const res = await AuthAPI.getReplies(ref.id, { cursor, perPage });
       if (!res.ok) return { ok: false, notFound: Boolean(res.notFound), message: res.message };
+      const mapped = res.replies.map((r) => mapApiReplyToLocal(r, me));
       return {
         ok: true,
-        replies: res.replies.map((r) => mapApiReplyToLocal(r, me)),
+        replies: buildNestedReplies(mapped, commentId),
         hasMore: res.hasMore,
         nextCursor: res.nextCursor,
       };
@@ -5864,7 +5924,7 @@ export const UserStore = {
         return { ok: false, isAuth: Boolean(apiRes.isAuth), message: apiRes.message || 'Unable to add comment.' };
       }
 
-      const rawDetail = apiRes.comment || {};
+      const rawDetail = apiRes.comment && typeof apiRes.comment === 'object' ? apiRes.comment : {};
       const mapped = mapApiCommentToLocal({ ...rawDetail, is_mine: true }, user);
       if (!mapped.text) mapped.text = text;
       if (!rawDetail.user && !rawDetail.author) {
@@ -5880,34 +5940,54 @@ export const UserStore = {
       return { ok: true, comment: mapped, commentsCount: apiRes.commentsCount ?? null };
     } catch { return { ok: false, message: 'Unable to add comment.' }; }
   },
-  // ✅ Reply -> POST /comments/{commentId}/replies (with fallback to POST /comments parent_id & local resilience)
-  replyNewsComment: async (itemId, parentCommentId, replyText) => {
+  // ✅ Reply -> supports nested replies (comment -> sub-comment -> sub-sub-comment)
+  replyNewsComment: async (itemId, parentCommentId, replyText, options = {}) => {
     try {
+      await ensureCommentPersistenceLoaded();
       const user = await UserStore.getCurrentUser();
       if (!user) return { ok: false, isAuth: true, message: 'Please login again.' };
       const text = String(replyText || '').trim();
       if (!text) return { ok: false, message: 'Please enter a reply.' };
       if (text.length > 1000) return { ok: false, message: 'Reply can be at most 1000 characters.' };
 
-      // reply ke upar reply dabaya ho to uske parent comment par bhejo
-      let ref = parseCommentRef(parentCommentId);
-      if (ref.kind === 'reply') {
-        const parent = REPLY_PARENT_MAP.get(`rpl-${ref.id}`);
-        if (parent) ref = { kind: 'comment', id: Number(parent) };
+      const directRef = parseCommentRef(parentCommentId);
+      const explicitRoot = options?.rootCommentId ? parseCommentRef(options.rootCommentId) : null;
+      let rootNumericId = explicitRoot && Number.isFinite(explicitRoot.id) && explicitRoot.id > 0 && explicitRoot.kind === 'comment'
+        ? explicitRoot.id
+        : null;
+
+      if (!rootNumericId) {
+        if (directRef.kind === 'reply') {
+          const fromMem = REPLY_PARENT_MAP.get(`rpl-${directRef.id}`);
+          const fromStore = getReplyParent(parentCommentId);
+          const resolvedRootStr = fromStore?.rootId || fromMem;
+          if (resolvedRootStr) {
+            const parsedRoot = parseCommentRef(resolvedRootStr);
+            if (Number.isFinite(parsedRoot.id) && parsedRoot.id > 0) rootNumericId = parsedRoot.id;
+          }
+        } else if (Number.isFinite(directRef.id) && directRef.id > 0) {
+          rootNumericId = directRef.id;
+        }
       }
 
-      const cleanNumericId = Number.isFinite(Number(ref.id)) && Number(ref.id) > 0 ? Number(ref.id) : null;
-      let res = null;
+      const parentReplyNumericId = directRef.kind === 'reply' && Number.isFinite(directRef.id) && directRef.id > 0
+        ? directRef.id
+        : null;
 
-      if (cleanNumericId) {
-        res = await AuthAPI.addReply(cleanNumericId, text);
-        // Fallback: If POST /comments/{id}/replies fails (404/405/422), try POST /comments with parent_id & sub_comment
-        if (!res?.ok && itemId) {
+      let res = null;
+      if (rootNumericId || parentReplyNumericId) {
+        res = await AuthAPI.addReply(rootNumericId || parentReplyNumericId, text, {
+          parentReplyId: parentReplyNumericId,
+          newsId: itemId,
+        });
+        // Fallback: If POST /comments/{id}/replies fails, try POST /comments with parent_id & sub_comment
+        if (!res?.ok && !res?.isAuth && itemId) {
           try {
             const fallbackRes = await AuthAPI.postComment({
               newsId: itemId,
               text,
-              parentId: cleanNumericId,
+              parentId: rootNumericId || parentReplyNumericId,
+              parentReplyId: parentReplyNumericId,
             });
             if (fallbackRes?.ok) {
               res = {
@@ -5920,9 +6000,16 @@ export const UserStore = {
         }
       }
 
+      const rootIdStr = rootNumericId ? `cmt-${rootNumericId}` : (options?.rootCommentId ? String(options.rootCommentId) : null);
+
       if (res?.ok) {
-        const rawReply = res.reply || {};
-        const mapped = mapApiReplyToLocal({ ...rawReply, comment_id: rawReply.comment_id ?? cleanNumericId ?? parentCommentId, is_mine: true }, user);
+        const rawReply = res.reply && typeof res.reply === 'object' ? res.reply : {};
+        const mapped = mapApiReplyToLocal({
+          ...rawReply,
+          comment_id: rawReply.comment_id ?? rootNumericId ?? parentCommentId,
+          parent_reply_id: rawReply.parent_reply_id ?? parentReplyNumericId,
+          is_mine: true,
+        }, user);
         if (!mapped.text) mapped.text = text;
         if (!rawReply.user) {
           mapped.author = String(user.name || user.email || 'User');
@@ -5930,16 +6017,25 @@ export const UserStore = {
           mapped.author_avatar = user.profile_image || '';
           mapped.author_has_blue_tick = hasBlueTick(user);
         }
+        if (rootNumericId) REPLY_PARENT_MAP.set(mapped.id, String(rootNumericId));
+        if (parentReplyNumericId) {
+          recordReplyParent(mapped.id, String(parentCommentId), rootIdStr, itemId);
+        }
         return { ok: true, comment: mapped, repliesCount: res.repliesCount };
       }
 
       // ✅ RESILIENCE: Server error / offline hone par bhi local reply create karo taaki UI se reply GAYAB NA HO!
       const fallbackId = `rpl-local-${Date.now()}`;
+      if (rootNumericId) REPLY_PARENT_MAP.set(fallbackId, String(rootNumericId));
+      if (parentReplyNumericId) {
+        recordReplyParent(fallbackId, String(parentCommentId), rootIdStr, itemId);
+      }
       const localReply = {
         id: fallbackId,
         text,
-        comment_id: cleanNumericId ?? parentCommentId,
-        parent_comment_id: cleanNumericId ?? parentCommentId,
+        comment_id: rootNumericId ?? parentCommentId,
+        parent_comment_id: rootNumericId ?? parentCommentId,
+        parent_reply_id: parentReplyNumericId ? `rpl-${parentReplyNumericId}` : null,
         is_reply: true,
         is_mine: true,
         user: String(user.name || user.email || 'User'),
@@ -5950,6 +6046,7 @@ export const UserStore = {
         date: new Date().toLocaleDateString('en-IN'),
         likes: 0,
         liked_by: [],
+        replies: [],
       };
       return { ok: true, comment: localReply, isLocalOnly: true };
     } catch {
@@ -5971,8 +6068,8 @@ export const UserStore = {
     } catch { return { ok: false, message: 'Unable to update like.' }; }
   },
 
-  // ✅ Edit -> POST /comments/{id}  ya  /comment-replies/{id}
-  editNewsComment: async (itemId, commentId, nextText) => {
+  // ✅ Edit -> POST /comments/{id}  ya  /comment-replies/{id} + cross-screen edit persistence
+  editNewsComment: async (itemId, commentId, nextText, options = {}) => {
     try {
       const user = await UserStore.getCurrentUser();
       if (!user) return { ok: false, isAuth: true, message: 'Please login again.' };
@@ -5981,13 +6078,22 @@ export const UserStore = {
       if (text.length > 1000) return { ok: false, message: 'Comment can be at most 1000 characters.' };
       const rawIdStr = String(commentId || '').trim();
       if (rawIdStr.startsWith('rpl-local-') || rawIdStr.startsWith('temp-') || rawIdStr.includes('cmt-temp')) {
+        recordEditedComment(commentId, text, itemId);
         return { ok: true };
       }
       const ref = parseCommentRef(commentId);
       if (!Number.isFinite(ref.id) || ref.id <= 0) return { ok: false, message: 'Invalid comment id.' };
 
-      const res = ref.kind === 'reply' ? await AuthAPI.editReply(ref.id, text) : await AuthAPI.editComment(ref.id, text);
-      if (!res.ok) return { ok: false, isAuth: Boolean(res.isAuth), notFound: Boolean(res.notFound), message: res.message || 'Unable to edit comment.' };
+      const res = ref.kind === 'reply'
+        ? await AuthAPI.editReply(ref.id, text, { newsId: itemId, commentId: REPLY_PARENT_MAP.get(rawIdStr) || getReplyParent(rawIdStr)?.rootId?.replace(/^cmt-/, '') })
+        : await AuthAPI.editComment(ref.id, text, { newsId: itemId, adsId: options?.isAd ? itemId : null });
+      if (!res.ok) {
+        if (res.isAuth || res.status === 403 || res.notFound) {
+          return { ok: false, isAuth: Boolean(res.isAuth), notFound: Boolean(res.notFound), message: res.message || 'Unable to edit comment.' };
+        }
+        return { ok: false, message: res.message || 'Unable to edit comment.' };
+      }
+      recordEditedComment(commentId, text, itemId);
       return { ok: true };
     } catch { return { ok: false, message: 'Unable to edit comment.' }; }
   },
@@ -5999,6 +6105,8 @@ export const UserStore = {
       if (!user) return { ok: false, isAuth: true, message: 'Please login again.' };
       const rawIdStr = String(commentId || '').trim();
       if (rawIdStr.startsWith('rpl-local-') || rawIdStr.startsWith('temp-')) {
+        clearEditedComment(commentId);
+        removeReplyParent(commentId);
         return { ok: true, isReply: rawIdStr.startsWith('rpl-local-'), commentsCount: null };
       }
       const ref = parseCommentRef(commentId);
@@ -6006,10 +6114,16 @@ export const UserStore = {
 
       if (ref.kind === 'reply') {
         const res = await AuthAPI.deleteReply(ref.id);
-        if (res.ok) return { ok: true, isReply: true, repliesCount: res.repliesCount ?? null };
+        if (res.ok) {
+          clearEditedComment(commentId);
+          removeReplyParent(commentId);
+          return { ok: true, isReply: true, repliesCount: res.repliesCount ?? null };
+        }
         // Fallback: If DELETE /comment-replies/{id} fails (404/405), try deleting via comment endpoint
         const fallbackRes = await AuthAPI.deleteComment(ref.id, { newsId: itemId });
         if (fallbackRes?.ok || fallbackRes?.notFound) {
+          clearEditedComment(commentId);
+          removeReplyParent(commentId);
           return { ok: true, isReply: true, repliesCount: fallbackRes.commentsCount ?? null };
         }
         return { ok: false, isAuth: Boolean(res.isAuth), notFound: Boolean(res.notFound), message: res.message || 'Unable to delete reply.' };
@@ -6020,11 +6134,15 @@ export const UserStore = {
         adsId: options?.isAd ? itemId : undefined,
       });
       if (apiRes?.notFound) {
+        clearEditedComment(commentId);
+        removeReplyParent(commentId);
         return { ok: true, notFound: true, commentsCount: apiRes.commentsCount ?? null };
       }
       if (!apiRes.ok) {
         return { ok: false, isAuth: Boolean(apiRes.isAuth), notFound: Boolean(apiRes.notFound), message: apiRes.message || 'Unable to delete comment.' };
       }
+      clearEditedComment(commentId);
+      removeReplyParent(commentId);
       if (!options?.isAd && apiRes.commentsCount != null && Number.isFinite(Number(apiRes.commentsCount))) {
         publishEngagement(String(itemId || '').trim(), { comments: Number(apiRes.commentsCount) }, 'userstore');
       }

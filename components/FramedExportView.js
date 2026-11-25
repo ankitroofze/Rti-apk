@@ -22,10 +22,10 @@ const FramedExportView = forwardRef(function FramedExportView({ imageUri, frame 
 
   return (
     <View ref={ref} collapsable={false} style={st.box}>
-      <Image source={{ uri: imageUri }} style={StyleSheet.absoluteFill} resizeMode="contain" onLoad={onImageLoad} onError={onImageError} />
+      <Image source={{ uri: imageUri }} style={StyleSheet.absoluteFill} resizeMode="contain" fadeDuration={0} onLoad={onImageLoad} onError={onImageError} />
       {tpl ? (
         <>
-          <Image source={tpl.asset} style={{ position: 'absolute', left: 0, top: EXPORT_H - bannerH, width: EXPORT_W, height: bannerH }} resizeMode="stretch" />
+          <Image source={tpl.asset} style={{ position: 'absolute', left: 0, top: EXPORT_H - bannerH, width: EXPORT_W, height: bannerH }} resizeMode="stretch" fadeDuration={0} />
           {(tpl.bands || []).map((b, i) => {
             let text = '';
             if (b.source === 'title') text = title.toUpperCase();

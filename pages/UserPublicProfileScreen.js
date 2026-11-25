@@ -35,6 +35,14 @@ import { isValidImageUrl } from '../utils/storyHelpers';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 import styles from '../styles/UserPublicProfileStyles';
 import ProfileStyles from '../styles/ProfileStyles';
+import {
+  applyEditedCommentsToTree,
+  deleteCommentFromTree,
+  findCommentNodeInTree,
+  insertReplyInTree,
+  toggleCommentLikeInTree,
+  updateCommentTextInTree,
+} from '../utils/commentPersistence';
 
 // Red header image ko poore header me fill karne ke liye
 const RED_HEADER_IMG = {
@@ -414,6 +422,20 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const [activeTab, setActiveTab] = useState('posts');
   const [gridView, setGridView] = useState(true);
 
+  // ── Viewer / Current User ──────────────────────────────────────────────────
+  const cachedMe = UserStore.getCachedCurrentUser?.();
+  const [viewerEmail, setViewerEmail] = useState(() => String(cachedMe?.email || '').trim().toLowerCase());
+  const [viewerId, setViewerId] = useState(() => cachedMe?.id ?? cachedMe?.user_id ?? '');
+  const viewerEmailRef = useRef(viewerEmail);
+  viewerEmailRef.current = viewerEmail;
+
+  const profileEmailLc = String(resolvedEmail || profile?.email || '').trim().toLowerCase();
+  const profileIdStr = String(userId ?? profile?.id ?? '').trim();
+  const isOwnProfile = Boolean(
+    (viewerEmail && profileEmailLc && viewerEmail === profileEmailLc)
+    || (viewerId && profileIdStr && viewerId === profileIdStr)
+  );
+
   // ── Follow states ──────────────────────────────────────────────────────────
   const [isFollowing, setIsFollowing] = useState(() => {
     return UserStore.checkIsFollowingSync?.(email, cleanUserId) ?? false;
@@ -423,22 +445,57 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const [followLists, setFollowLists] = useState({ followers: [], following: [] });
   const [followModalType, setFollowModalType] = useState('');
   const [followModalLoading, setFollowModalLoading] = useState(false);
-  const [unfollowingId, setUnfollowingId] = useState(null);
+  const [followOverrides, setFollowOverrides] = useState({});
+  const [followActionInFlightId, setFollowActionInFlightId] = useState(null);
+
+  useEffect(() => {
+    const unsub = UserStore.subscribeFollowState((payload) => {
+      if (!payload) return;
+      const keyId = payload.id != null ? String(payload.id).trim() : '';
+      const keyEmail = String(payload.email || '').trim().toLowerCase();
+      setFollowOverrides((prev) => {
+        const next = { ...prev };
+        if (keyId) next[keyId] = payload.isFollowing;
+        if (keyEmail) next[keyEmail] = payload.isFollowing;
+        return next;
+      });
+    });
+    return unsub;
+  }, []);
 
   const openFollowListModal = useCallback(async (type) => {
     setFollowModalType(type);
-    const targetId = cleanUserId || cleanId(profile?.id) || cleanId(safeAuthor?.id);
+    UserStore.prefetchMyFollowing().catch(() => {});
+    let targetId = cleanUserId || cleanId(profile?.id) || cleanId(safeAuthor?.id) || cleanId(safeAuthor?.author_id) || cleanId(safeAuthor?.user_id) || null;
+    if (!targetId && resolvedEmail) {
+      targetId = await UserStore.resolveUserIdByEmail(resolvedEmail).catch(() => null);
+    }
+    if (!targetId && isOwnProfile) {
+      targetId = viewerId;
+    }
 
     if (!followLists[type] || followLists[type].length === 0) {
+      if (!targetId) return;
       setFollowModalLoading(true);
       try {
         const res = type === 'followers'
           ? await AuthAPI.getFollowersApi(targetId)
           : await AuthAPI.getFollowingApi(targetId);
         if (res?.ok && Array.isArray(res.list) && res.list.length > 0) {
+          const normList = res.list.map((u) => {
+            const rawUser = u?.user || u;
+            const fn = [rawUser.firstname, rawUser.lastname].filter(Boolean).join(' ').trim();
+            return {
+              ...rawUser,
+              id: rawUser.id ?? rawUser.user_id ?? u.id ?? null,
+              name: fn || rawUser.name || rawUser.username || 'User',
+              email: String(rawUser.email || rawUser.user_email || '').trim().toLowerCase(),
+              profile_image: rawUser.profile_image || rawUser.avatar || '',
+            };
+          });
           setFollowLists((prev) => ({
             ...prev,
-            [type]: res.list,
+            [type]: normList,
           }));
         }
       } catch (err) {
@@ -447,40 +504,94 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         setFollowModalLoading(false);
       }
     }
-  }, [cleanUserId, profile, safeAuthor, followLists]);
+  }, [cleanUserId, profile, safeAuthor, resolvedEmail, isOwnProfile, viewerId, followLists]);
 
-  const handleUnfollowUser = useCallback(async (targetUser) => {
+  const handleToggleFollowUser = useCallback(async (targetUser, currentlyFollowing) => {
+    let curEmail = viewerEmailRef.current;
+    if (!curEmail) {
+      const activeMe = await UserStore.getCurrentUser().catch(() => null);
+      curEmail = String(activeMe?.email || '').trim().toLowerCase();
+      if (curEmail) {
+        viewerEmailRef.current = curEmail;
+        setViewerEmail(curEmail);
+        setViewerId(activeMe?.id ?? activeMe?.user_id ?? '');
+      }
+    }
+    if (!curEmail) {
+      showToast(loginMessage('follow'), 'info');
+      return;
+    }
+
     const targetId = targetUser?.id ?? targetUser?.user_id;
     const targetEmail = targetUser?.email;
     const key = String(targetId ?? targetEmail);
-    setUnfollowingId(key);
+    if (!key) return;
+
+    if (followActionInFlightId) return;
+    setFollowActionInFlightId(key);
+
+    const nextFollowing = !currentlyFollowing;
+    setFollowOverrides((prev) => {
+      const next = { ...prev };
+      if (targetId) next[String(targetId)] = nextFollowing;
+      if (targetEmail) next[String(targetEmail).toLowerCase()] = nextFollowing;
+      return next;
+    });
+
     try {
-      const res = await UserStore.unfollowUser(targetEmail, targetId);
-      if (res?.ok !== false) {
-        setFollowLists((prev) => ({
-          ...prev,
-          following: (prev.following || []).filter((u) => {
-            const uId = u.id ?? u.user_id;
-            const uEmail = u.email;
-            if (targetId && uId && String(uId) === String(targetId)) return false;
-            if (targetEmail && uEmail && String(uEmail).toLowerCase() === String(targetEmail).toLowerCase()) return false;
-            return true;
-          }),
-        }));
-        setFollowStats((prev) => ({
-          ...prev,
-          following: Math.max(0, (Number(prev.following) || 1) - 1),
-        }));
-        showToast('Unfollowed successfully', 'success');
+      if (currentlyFollowing) {
+        // UNFOLLOW: viewer unfollows targetUser from viewer's own account
+        const res = await UserStore.unfollowUser(targetEmail, targetId);
+        if (res && res.ok === false) {
+          setFollowOverrides((prev) => {
+            const next = { ...prev };
+            if (targetId) next[String(targetId)] = true;
+            if (targetEmail) next[String(targetEmail).toLowerCase()] = true;
+            return next;
+          });
+          showToast(res?.message || 'Unable to unfollow user.', 'error');
+        } else {
+          // If viewing MY OWN following list:
+          if (isOwnProfile && followModalType === 'following') {
+            setFollowStats((prev) => ({
+              ...prev,
+              following: Math.max(0, (Number(prev.following) || 1) - 1),
+            }));
+          }
+        }
       } else {
-        showToast(res?.message || 'Failed to unfollow', 'error');
+        // FOLLOW: viewer follows targetUser from viewer's own account
+        const res = await UserStore.followUser(targetEmail, targetId);
+        if (res && res.ok === false) {
+          setFollowOverrides((prev) => {
+            const next = { ...prev };
+            if (targetId) next[String(targetId)] = false;
+            if (targetEmail) next[String(targetEmail).toLowerCase()] = false;
+            return next;
+          });
+          showToast(res?.message || 'Unable to follow user.', 'error');
+        } else {
+          // If viewing MY OWN following list (re-following):
+          if (isOwnProfile && followModalType === 'following') {
+            setFollowStats((prev) => ({
+              ...prev,
+              following: (Number(prev.following) || 0) + 1,
+            }));
+          }
+        }
       }
     } catch {
-      showToast('Failed to unfollow', 'error');
+      setFollowOverrides((prev) => {
+        const next = { ...prev };
+        if (targetId) next[String(targetId)] = currentlyFollowing;
+        if (targetEmail) next[String(targetEmail).toLowerCase()] = currentlyFollowing;
+        return next;
+      });
+      showToast('Something went wrong. Please try again.', 'error');
     } finally {
-      setUnfollowingId(null);
+      setFollowActionInFlightId(null);
     }
-  }, [showToast]);
+  }, [isOwnProfile, followModalType, followActionInFlightId, showToast]);
   const selfFollowActionRef = useRef(false);
   const followActionInFlightRef = useRef(false);
 
@@ -519,11 +630,6 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   };
   const [reportVisible, setReportVisible] = useState(false);
   const [shareVisible, setShareVisible] = useState(false);
-  const cachedMe = UserStore.getCachedCurrentUser?.();
-  const [viewerEmail, setViewerEmail] = useState(() => String(cachedMe?.email || '').trim().toLowerCase());
-  const [viewerId, setViewerId] = useState(() => cachedMe?.id ?? cachedMe?.user_id ?? '');
-  const viewerEmailRef = useRef(viewerEmail);
-  viewerEmailRef.current = viewerEmail;
   const [contentTab, setContentTab] = useState('post'); // 'post' | 'reel' | 'ad' | 'ecom'
 
   const [commentModalVisible, setCommentModalVisible] = useState(false);
@@ -1221,14 +1327,6 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const contentTabLabel = ({ post: 'post', reel: 'reel', ad: 'ad', ecom: 'product' })[contentTab] || 'post';
   const contentEmptyText = (CONTENT_TABS.find((t) => t.key === contentTab) || CONTENT_TABS[0]).emptyText;
 
-  // Kya ye profile viewer ki apni hai? (apni profile par, public view me bhi 3-dot delete dikhana hai)
-  const profileEmailLc = String(resolvedEmail || profile?.email || '').trim().toLowerCase();
-  const profileIdStr = String(userId ?? profile?.id ?? '').trim();
-  const isOwnProfile = Boolean(
-    (viewerEmail && profileEmailLc && viewerEmail === profileEmailLc)
-    || (viewerId && profileIdStr && viewerId === profileIdStr)
-  );
-
   const handleDeletePost = async (post) => {
     const result = await UserStore.deleteMyPost(post);
     if (result?.ok) {
@@ -1276,7 +1374,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       const item = Array.isArray(summary?.items) ? summary.items.find((it) => String(it?.id || '') === pid) : null;
       const list = Array.isArray(item?.comments_list) ? item.comments_list : (Array.isArray(item?.comments) ? item.comments : []);
       if (list.length > 0) {
-        setActiveComments(list);
+        setActiveComments(applyEditedCommentsToTree(list));
       }
       patchPostById(pid, {
         comments: Number(item?.comments || list.length || 0),
@@ -1401,9 +1499,14 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
   const handleLikeComment = async (commentId) => {
     if (!activeCommentPostId) return;
+    setActiveComments((prev) => toggleCommentLikeInTree(prev, commentId, viewerEmail));
     const result = await UserStore.likeNewsComment(activeCommentPostId, commentId);
-    if (!result?.ok) { showToast(result?.message || 'Unable to update comment.', 'error'); return; }
-    await loadCommentsForPost(activeCommentPostId);
+    if (!result?.ok) {
+      setActiveComments((prev) => toggleCommentLikeInTree(prev, commentId, viewerEmail));
+      showToast(result?.message || 'Unable to update comment.', 'error');
+      return;
+    }
+    setActiveComments((prev) => toggleCommentLikeInTree(prev, commentId, viewerEmail, result));
   };
 
   const handleReplyComment = (commentId) => { setReplyingToCommentId(commentId); setReplyText(''); setEditingCommentId(null); setEditingCommentText(''); };
@@ -1411,10 +1514,20 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
   const handleSubmitReply = async () => {
     if (!activeCommentPostId || !replyingToCommentId) return;
-    const result = await UserStore.replyNewsComment(activeCommentPostId, replyingToCommentId, replyText);
+    const hit = findCommentNodeInTree(activeComments, replyingToCommentId);
+    const rootCommentId = hit?.rootNode?.id || replyingToCommentId;
+    const targetParentId = replyingToCommentId;
+    const result = await UserStore.replyNewsComment(activeCommentPostId, targetParentId, replyText, {
+      rootCommentId,
+    });
     if (!result?.ok) { showToast(result?.message || 'Unable to add reply.', 'error'); return; }
+    if (result?.comment) {
+      setActiveComments((prev) => insertReplyInTree(prev, targetParentId, result.comment).comments);
+    }
     handleCancelReply();
-    await loadCommentsForPost(activeCommentPostId);
+    if (!result?.isLocalOnly) {
+      await loadCommentsForPost(activeCommentPostId);
+    }
   };
 
   const handleStartEdit = (comment) => { setEditingCommentId(comment?.id || null); setEditingCommentText(comment?.text || comment?.comment || ''); };
@@ -1426,27 +1539,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     const textToSave = editingCommentText.trim();
     if (!textToSave) return;
 
-    // Optimistic update
-    setActiveComments((prev) =>
-      Array.isArray(prev)
-        ? prev.map((c) => {
-            if (String(c?.id) === String(commentId)) {
-              return { ...c, text: textToSave, comment: textToSave, edited_at: new Date().toISOString() };
-            }
-            if (Array.isArray(c?.replies)) {
-              return {
-                ...c,
-                replies: c.replies.map((r) =>
-                  String(r?.id) === String(commentId)
-                    ? { ...r, text: textToSave, reply: textToSave, comment: textToSave, edited_at: new Date().toISOString() }
-                    : r
-                ),
-              };
-            }
-            return c;
-          })
-        : prev
-    );
+    // Optimistic update (supports any nesting depth)
+    setActiveComments((prev) => updateCommentTextInTree(prev, commentId, textToSave));
     handleCancelEdit();
 
     const result = await UserStore.editNewsComment(activeCommentPostId, commentId, textToSave);
@@ -1460,17 +1554,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
   const handleDeleteComment = async (commentId) => {
     if (!activeCommentPostId) return;
-    // Optimistic delete
-    setActiveComments((prev) =>
-      Array.isArray(prev)
-        ? prev
-            .filter((c) => String(c?.id) !== String(commentId))
-            .map((c) => ({
-              ...c,
-              replies: Array.isArray(c?.replies) ? c.replies.filter((r) => String(r?.id) !== String(commentId)) : [],
-            }))
-        : prev
-    );
+    // Optimistic delete (supports any nesting depth)
+    setActiveComments((prev) => deleteCommentFromTree(prev, commentId).nextComments);
     if (editingCommentId === commentId) handleCancelEdit();
     const result = await UserStore.deleteNewsComment(activeCommentPostId, commentId);
     if (!result?.ok) {
@@ -1663,16 +1748,16 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
   // ── Comment item renderer ────────────────────────────────────────────────────
 
-  const renderCommentItem = (c, isReply = false) => {
+  const renderCommentItem = (c, isReply = false, depth = 0) => {
     const ownerMatch = Boolean(
       c.is_mine ||
       (c.author_id && viewerId && String(c.author_id) === String(viewerId)) ||
       (c.author_email && viewerEmail && String(c.author_email).trim().toLowerCase() === viewerEmail) ||
       (!c.author_email && (c.author === viewerEmail))
     );
-    const liked = viewerEmail && Array.isArray(c.liked_by) && c.liked_by.includes(viewerEmail);
+    const liked = Boolean(c.liked_by_me) || (viewerEmail && Array.isArray(c.liked_by) && c.liked_by.includes(viewerEmail));
     return (
-      <View key={c.id} style={isReply ? styles.commentReplyItem : styles.commentItem}>
+      <View key={c.id} style={[isReply ? styles.commentReplyItem : styles.commentItem, depth > 1 && { marginLeft: 0 }]}>
         <View style={styles.commentTopRow}>
           <Text style={styles.commentAuthor}>{c.author || 'User'}</Text>
           <Text style={styles.commentDate}>{c.date || ''}{c.edited_at ? ' • Edited' : ''}</Text>
@@ -1687,12 +1772,10 @@ export default function UserPublicProfileScreen({ route, navigation }) {
             <Feather name="heart" size={13} color={liked ? '#ef4444' : '#e11d48'} />
             <Text style={[styles.commentActionText, liked && styles.commentActionTextActive]}>{liked ? 'Liked' : 'Like'}{c.likes ? ` (${c.likes})` : ''}</Text>
           </TouchableOpacity>
-          {!isReply && (
-            <TouchableOpacity style={styles.commentActionBtn} onPress={() => handleReplyComment(c.id)}>
-              <Feather name="message-circle" size={13} color="#64748b" />
-              <Text style={styles.commentActionText}>Reply</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity style={styles.commentActionBtn} onPress={() => handleReplyComment(c.id)}>
+            <Feather name="message-circle" size={13} color="#64748b" />
+            <Text style={styles.commentActionText}>Reply</Text>
+          </TouchableOpacity>
           {ownerMatch ? (
             editingCommentId === c.id ? (
               <>
@@ -1716,9 +1799,9 @@ export default function UserPublicProfileScreen({ route, navigation }) {
             </View>
           </View>
         )}
-        {!isReply && Array.isArray(c.replies) && c.replies.length > 0 && (
-          <View style={styles.commentReplies}>
-            {c.replies.map((reply) => renderCommentItem(reply, true))}
+        {Array.isArray(c.replies) && c.replies.length > 0 && (
+          <View style={[styles.commentReplies, depth > 1 && { paddingLeft: 8 }]}>
+            {c.replies.map((reply) => renderCommentItem(reply, true, depth + 1))}
           </View>
         )}
       </View>
@@ -1950,8 +2033,32 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                   </View>
                 ) : (followLists[followModalType] || []).length ? (
                   (followLists[followModalType] || []).map((item) => {
-                    const itKey = String(item.id ?? item.user_id ?? item.email);
-                    const isRemoving = unfollowingId === itKey;
+                    const itemUid = item.id != null ? String(item.id).trim() : (item.user_id != null ? String(item.user_id).trim() : '');
+                    const itemEmail = String(item.email || item.user_email || '').trim().toLowerCase();
+                    const itKey = itemUid || itemEmail || String(item.name || 'user');
+
+                    // Logged-in user khud is row me ho to koi follow/unfollow button nahi dikhega
+                    const isMe = Boolean(
+                      (viewerId && itemUid && String(viewerId) === itemUid) ||
+                      (viewerEmail && itemEmail && viewerEmail === itemEmail)
+                    );
+
+                    // Viewer ka is item ke sath follow relation (Instagram model):
+                    // Viewer follow karta hai => 'Following'; nahi karta => 'Follow'
+                    const isFollowedByViewer = (itemUid && itemUid in followOverrides)
+                      ? Boolean(followOverrides[itemUid])
+                      : ((itemEmail && itemEmail in followOverrides)
+                          ? Boolean(followOverrides[itemEmail])
+                          : (UserStore.checkIsFollowingSync?.(itemEmail, itemUid) ?? false));
+
+                    const isBusy = Boolean(
+                      followActionInFlightId && (
+                        followActionInFlightId === itKey ||
+                        (itemUid && followActionInFlightId === itemUid) ||
+                        (itemEmail && followActionInFlightId === itemEmail)
+                      )
+                    );
+
                     return (
                       <View key={itKey} style={styles.followUserRow}>
                         <TouchableOpacity
@@ -1966,28 +2073,30 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                             });
                           }}
                         >
-                          <ProfileAvatar uri={item.profile_image || ''} size={42} style={styles.followUserAvatar} />
+                          <View style={{ marginRight: 14, flexShrink: 0 }}>
+                            <ProfileAvatar uri={item.profile_image || ''} size={44} style={styles.followUserAvatar} />
+                          </View>
                           <View style={styles.followUserInfo}>
                             <NameWithTick name={item.name || 'User'} user={item} style={styles.followUserName} />
                             <Text style={styles.followUserEmail} numberOfLines={1}>{item.email || ''}</Text>
                           </View>
                         </TouchableOpacity>
-                        {followModalType === 'following' ? (
+                        {!isMe ? (
                           <TouchableOpacity
-                            style={styles.unfollowBtn}
+                            style={isFollowedByViewer ? styles.modalFollowingBtn : styles.modalFollowBtn}
                             activeOpacity={0.8}
-                            onPress={() => handleUnfollowUser(item)}
-                            disabled={isRemoving}
+                            onPress={() => handleToggleFollowUser(item, isFollowedByViewer)}
+                            disabled={isBusy}
                           >
-                            {isRemoving ? (
-                              <ActivityIndicator size="small" color="#e11d48" />
+                            {isBusy ? (
+                              <ActivityIndicator size="small" color={isFollowedByViewer ? '#475569' : '#ffffff'} />
+                            ) : isFollowedByViewer ? (
+                              <Text style={styles.modalFollowingBtnText}>Following</Text>
                             ) : (
-                              <Text style={styles.unfollowBtnText}>Unfollow</Text>
+                              <Text style={styles.modalFollowBtnText}>Follow</Text>
                             )}
                           </TouchableOpacity>
-                        ) : (
-                          <Feather name="chevron-right" size={18} color="#cbd5e1" />
-                        )}
+                        ) : null}
                       </View>
                     );
                   })

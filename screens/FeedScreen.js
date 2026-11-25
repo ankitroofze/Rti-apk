@@ -37,6 +37,19 @@ import useLiveRefresh from '../utils/useLiveRefresh';
 import { useAuth } from '../contexts/AuthContext';
 import { downloadMedia } from '../utils/downloadMedia';
 import { useToast } from '../components/ui/ToastProvider';
+import {
+  applyEditedComment,
+  buildNestedReplies,
+  clearEditedComment,
+  deleteCommentFromTree,
+  findCommentNodeInTree,
+  insertReplyInTree,
+  isSameCommentNodeId,
+  recordEditedComment,
+  removeReplyParent,
+  toggleCommentLikeInTree,
+  updateCommentTextInTree,
+} from '../utils/commentPersistence';
 
 const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 const MOBILE_BREAKPOINT = 900;
@@ -121,12 +134,16 @@ function normalizeFeedComment(comment = {}, fallbackId = 'cmt-temp', profileByEm
     user: String(comment.user || comment.author || 'User'),
     author: String(comment.author || comment.user || 'User'),
     author_email: authorEmail,
+    author_id: comment.author_id != null ? String(comment.author_id) : (comment.user_id != null ? String(comment.user_id) : ''),
+    is_mine: Boolean(comment.is_mine),
     author_has_blue_tick: Boolean(comment.author_has_blue_tick || comment.has_blue_tick),
     author_profile_image: authorAvatar,
     avatar: authorAvatar,
     text: String(comment.text || ''),
     likes: Number(comment.likes || 0),
     liked_by: Array.isArray(comment.liked_by) ? comment.liked_by : [],
+    liked_by_me: Boolean(comment.liked_by_me),
+    parent_reply_id: comment.parent_reply_id || null,
     date: String(comment.date || ''),
     edited_at: comment.edited_at || null,
     replies: Array.isArray(comment.replies)
@@ -153,13 +170,7 @@ const feedCommentVerify = new Map(); // postId -> { server, real }
 const feedCommentsConfirmed = new Set();
 
 function isSameCommentId(idA, idB) {
-  if (idA == null || idB == null) return false;
-  const sA = String(idA).trim();
-  const sB = String(idB).trim();
-  if (sA === sB) return true;
-  const cleanA = sA.replace(/^(cmt-|rpl-)/i, '');
-  const cleanB = sB.replace(/^(cmt-|rpl-)/i, '');
-  return cleanA.length > 0 && cleanA === cleanB;
+  return isSameCommentNodeId(idA, idB);
 }
 
 // ✅ FIX (comment/reply gayab nahi hona chahiye jab tak user delete na kare):
@@ -299,19 +310,13 @@ function applyEditedComments(comment) {
     }
   }
 
-  const updatedReplies = Array.isArray(comment.replies)
-    ? comment.replies.map(applyEditedComments)
-    : [];
-
-  if (text !== comment.text || edited_at !== comment.edited_at || updatedReplies !== comment.replies) {
-    return {
-      ...comment,
-      text,
-      edited_at,
-      replies: updatedReplies,
-    };
-  }
-  return comment;
+  const withShared = applyEditedComment({
+    ...comment,
+    text,
+    edited_at,
+    replies: Array.isArray(comment.replies) ? comment.replies.map(applyEditedComments) : [],
+  });
+  return withShared;
 }
 
 function updateCommentTextLocally(postId, commentId, newText) {
@@ -319,35 +324,17 @@ function updateCommentTextLocally(postId, commentId, newText) {
   const nowIso = new Date().toISOString();
   feedEditedComments.set(sId, { text: newText, edited_at: nowIso, postId: postId ? String(postId) : null });
   persistEditedComments();
+  recordEditedComment(commentId, newText, postId);
 
   loadPersistedPendingComments();
   feedPendingComments.forEach((arr, pKey) => {
     let changed = false;
     const updated = arr.map((item) => {
       if (!item || !item.comment) return item;
-      if (isSameCommentId(item.comment.id, commentId)) {
+      const nextArr = updateCommentTextInTree([item.comment], commentId, newText);
+      if (nextArr[0] !== item.comment) {
         changed = true;
-        return {
-          ...item,
-          comment: { ...item.comment, text: newText, edited_at: nowIso },
-        };
-      }
-      if (Array.isArray(item.comment.replies)) {
-        let replyChanged = false;
-        const newReplies = item.comment.replies.map((r) => {
-          if (isSameCommentId(r.id, commentId)) {
-            replyChanged = true;
-            return { ...r, text: newText, edited_at: nowIso };
-          }
-          return r;
-        });
-        if (replyChanged) {
-          changed = true;
-          return {
-            ...item,
-            comment: { ...item.comment, replies: newReplies },
-          };
-        }
+        return { ...item, comment: nextArr[0] };
       }
       return item;
     });
@@ -378,6 +365,8 @@ function removePendingComment(postId, commentId) {
   persistPendingComments();
   feedEditedComments.delete(String(commentId));
   persistEditedComments();
+  clearEditedComment(commentId);
+  removeReplyParent(commentId);
 }
 
 function hasRecentPending(postId) {
@@ -394,56 +383,33 @@ function mergePendingComments(postId, serverList) {
   let out = (Array.isArray(serverList) ? [...serverList] : []).map(applyEditedComments);
   if (!pend || !pend.length) return out;
   const still = [];
+  const syncMatchedText = (list, target) => (Array.isArray(list) ? list : []).map((node) => {
+    const nextReplies = syncMatchedText(node.replies, target);
+    if (isSameCommentId(node.id, target.id) || pendKey(node) === pendKey(target)) {
+      return { ...node, text: target.text, edited_at: target.edited_at || node.edited_at, replies: nextReplies };
+    }
+    return nextReplies !== node.replies ? { ...node, replies: nextReplies } : node;
+  });
   pend.forEach((p) => {
     if (!p || !p.comment) return;
     const pComment = applyEditedComments(p.comment);
     if (listHasComment(out, pComment)) {
-      out = out.map((c) => {
-        if (isSameCommentId(c.id, pComment.id) || pendKey(c) === pendKey(pComment)) {
-          return { ...c, text: pComment.text, edited_at: pComment.edited_at || c.edited_at };
-        }
-        if (Array.isArray(c.replies)) {
-          return {
-            ...c,
-            replies: c.replies.map((r) =>
-              isSameCommentId(r.id, pComment.id) || pendKey(r) === pendKey(pComment)
-                ? { ...r, text: pComment.text, edited_at: pComment.edited_at || r.edited_at }
-                : r
-            ),
-          };
-        }
-        return c;
-      });
+      out = syncMatchedText(out, pComment);
       return; // server list me aa gaya aur text sync ho gaya
     }
     still.push({ ...p, comment: pComment });
     if (p.replyToId) {
-      let attached = false;
-      out = out.map((c) => {
-        const matchesParent = isSameCommentId(c.id, p.replyToId) ||
-          (Array.isArray(c.replies) && c.replies.some((r) => isSameCommentId(r.id, p.replyToId)));
-        if (matchesParent) {
-          attached = true;
-          const replies = Array.isArray(c.replies) ? c.replies : [];
-          const exists = replies.some((r) => isSameCommentId(r.id, pComment.id) || pendKey(r) === pendKey(pComment));
-          return {
-            ...c,
-            replies: exists
-              ? replies.map((r) => (isSameCommentId(r.id, pComment.id) || pendKey(r) === pendKey(pComment)) ? { ...r, text: pComment.text, edited_at: pComment.edited_at || r.edited_at } : r)
-              : [...replies, pComment],
-          };
-        }
-        return c;
-      });
-      // Fallback: If parent not matched by ID, attach to first comment or keep as top-level so NEVER lost
-      if (!attached && out.length > 0) {
+      const ins = insertReplyInTree(out, p.replyToId, pComment);
+      if (ins.inserted) {
+        out = ins.comments;
+      } else if (out.length > 0) {
         out = out.map((c, idx) => idx === 0 ? {
           ...c,
           replies: (Array.isArray(c.replies) ? c.replies : []).some((r) => isSameCommentId(r.id, pComment.id) || pendKey(r) === pendKey(pComment))
             ? c.replies.map((r) => (isSameCommentId(r.id, pComment.id) || pendKey(r) === pendKey(pComment)) ? { ...r, text: pComment.text, edited_at: pComment.edited_at || r.edited_at } : r)
             : [...(c.replies || []), pComment],
         } : c);
-      } else if (!attached) {
+      } else {
         out = [...out, pComment];
       }
     } else {
@@ -1362,6 +1328,192 @@ function UploadModal({ visible, onClose, onPost }) {
   );
 }
 
+// Recursive comment item for Feed CommentsModal (supports comment -> sub-comment -> sub-sub-comment)
+function FeedModalCommentItem({
+  comment,
+  depth = 0,
+  currentUserEmail,
+  currentUserName,
+  editingCommentId,
+  editingCommentText,
+  onEditingTextChange,
+  onStartEdit,
+  onSaveEdit,
+  onCancelEdit,
+  onAskDelete,
+  onLikeComment,
+  replyingToCommentId,
+  replyText,
+  onReplyTextChange,
+  onReplyComment,
+  onSubmitReply,
+  onCancelReply,
+  expandedReplyThreads,
+  onToggleReplies,
+}) {
+  const isReply = depth > 0;
+  const ownerMatch = Boolean(
+    comment.is_mine ||
+    (currentUserEmail && String(comment.author_email || '').trim().toLowerCase() === currentUserEmail) ||
+    (currentUserName && String(comment.user || comment.author || '').trim().toLowerCase() === currentUserName.trim().toLowerCase())
+  );
+  const liked = Boolean(comment.liked_by_me) || (Array.isArray(comment.liked_by) && currentUserEmail && comment.liked_by.includes(currentUserEmail));
+  const replyCount = Array.isArray(comment.replies) ? comment.replies.length : 0;
+  const areRepliesExpanded = Boolean(expandedReplyThreads[comment.id]);
+
+  return (
+    <View style={isReply ? styles.commentReplyItem : styles.commentRow}>
+      <View style={isReply ? styles.commentReplyRow : { flexDirection: 'row', flex: 1, alignItems: 'flex-start' }}>
+        <ProfileAvatar
+          uri={getDisplayCommentAvatar(comment)}
+          size={isReply ? 28 : 34}
+          style={isReply ? styles.commentReplyAvatar : styles.commentAvatar}
+          imageStyle={{ borderWidth: 1, borderColor: isReply ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.08)' }}
+          placeholderStyle={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+          iconColor="#ffffff"
+        />
+        <View style={isReply ? { flex: 1 } : styles.commentBubble}>
+          <View style={styles.commentTopRow}>
+            <NameWithTick
+              name={comment.author || comment.user || 'User'}
+              show={Boolean(comment.author_has_blue_tick)}
+              style={isReply ? styles.commentAuthor : styles.commentUser}
+              badgeSize={isReply ? 12 : 13}
+            />
+            <Text style={styles.commentDate}>{comment.date || ''}{comment.edited_at ? ' • Edited' : ''}</Text>
+          </View>
+
+          {editingCommentId === comment.id ? (
+            <TextInput
+              style={styles.commentEditInput}
+              value={editingCommentText}
+              onChangeText={onEditingTextChange}
+              multiline
+            />
+          ) : (
+            <Text style={styles.commentText}>{comment.text}</Text>
+          )}
+
+          <View style={styles.commentActionRow}>
+            <TouchableOpacity
+              style={[styles.commentActionBtn, liked && styles.commentActionBtnActive]}
+              onPress={() => onLikeComment && onLikeComment(comment.id)}
+            >
+              <Text style={[styles.commentActionText, liked && styles.commentActionTextActive]}>
+                {liked ? '♥' : '♡'} {comment.likes ? `(${comment.likes})` : ''}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.commentActionBtn}
+              onPress={() => onReplyComment(comment.id, comment.author || comment.user)}
+            >
+              <Text style={styles.commentActionText}>Reply</Text>
+            </TouchableOpacity>
+
+            {ownerMatch ? (
+              editingCommentId === comment.id ? (
+                <>
+                  <TouchableOpacity style={styles.commentMiniBtn} onPress={onSaveEdit}>
+                    <Text style={styles.commentMiniBtnText}>Save</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.commentMiniBtn} onPress={onCancelEdit}>
+                    <Text style={styles.commentMiniBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <TouchableOpacity style={styles.commentMiniBtn} onPress={() => onStartEdit(comment)}>
+                    <Text style={styles.commentMiniBtnText}>Edit</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.commentMiniBtn} onPress={() => onAskDelete(comment.id)}>
+                    <Text style={[styles.commentMiniBtnText, { color: '#ef4444' }]}>Delete</Text>
+                  </TouchableOpacity>
+                </>
+              )
+            ) : null}
+          </View>
+
+          {replyingToCommentId === comment.id && (
+            <View style={styles.commentReplyForm}>
+              <TextInput
+                style={styles.commentReplyInput}
+                placeholder={`Reply to ${comment.author || comment.user || 'comment'}...`}
+                placeholderTextColor="#94a3b8"
+                value={replyText}
+                onChangeText={onReplyTextChange}
+                multiline
+              />
+              <View style={styles.commentReplyActions}>
+                <TouchableOpacity
+                  style={styles.commentReplyBtn}
+                  onPress={onSubmitReply}
+                  disabled={!replyText.trim()}
+                >
+                  <Text style={styles.commentReplyBtnText}>Reply</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.commentReplyBtn, styles.commentCancelBtn]}
+                  onPress={onCancelReply}
+                >
+                  <Text style={styles.commentCancelBtnText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {replyCount > 0 && (
+            <View style={styles.commentRepliesWrap}>
+              <TouchableOpacity
+                style={styles.commentRepliesToggle}
+                onPress={() => onToggleReplies(comment.id)}
+                activeOpacity={0.8}
+              >
+                <View style={styles.commentRepliesLine} />
+                <Text style={styles.commentRepliesToggleText}>
+                  {areRepliesExpanded
+                    ? 'Hide replies'
+                    : `View ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`}
+                </Text>
+              </TouchableOpacity>
+
+              {areRepliesExpanded ? (
+                <View style={[styles.commentReplies, depth > 1 && { paddingLeft: 8 }]}>
+                  {comment.replies.map((reply) => (
+                    <FeedModalCommentItem
+                      key={reply.id}
+                      comment={reply}
+                      depth={depth + 1}
+                      currentUserEmail={currentUserEmail}
+                      currentUserName={currentUserName}
+                      editingCommentId={editingCommentId}
+                      editingCommentText={editingCommentText}
+                      onEditingTextChange={onEditingTextChange}
+                      onStartEdit={onStartEdit}
+                      onSaveEdit={onSaveEdit}
+                      onCancelEdit={onCancelEdit}
+                      onAskDelete={onAskDelete}
+                      onLikeComment={onLikeComment}
+                      replyingToCommentId={replyingToCommentId}
+                      replyText={replyText}
+                      onReplyTextChange={onReplyTextChange}
+                      onReplyComment={onReplyComment}
+                      onSubmitReply={onSubmitReply}
+                      onCancelReply={onCancelReply}
+                      expandedReplyThreads={expandedReplyThreads}
+                      onToggleReplies={onToggleReplies}
+                    />
+                  ))}
+                </View>
+              ) : null}
+            </View>
+          )}
+        </View>
+      </View>
+    </View>
+  );
+}
+
 // Comments Modal
 function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditComment, onDeleteComment, onLikeComment, onLoadReplies }) {
   const [text, setText] = useState('');
@@ -1404,7 +1556,7 @@ function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditC
       setExpandedReplyThreads({});
     }
   }, [visible]);
-  const totalCount = safeComments.reduce((sum, c) => sum + 1 + (Array.isArray(c.replies) ? c.replies.length : 0), 0);
+  const totalCount = countFeedComments(safeComments);
 
   const handleStartEdit = (comment) => {
     setEditingCommentId(comment.id);
@@ -1446,12 +1598,14 @@ function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditC
   };
 
   const handleReplyComment = (commentId, userHint = null) => {
-    const nextReplyTarget = safeComments.find((comment) => isSameCommentId(comment.id, commentId)) || null;
+    const hit = findCommentNodeInTree(safeComments, commentId);
+    const nextReplyTarget = hit?.node || null;
+    const rootId = hit?.rootNode?.id || commentId;
     const targetObj = nextReplyTarget
-      ? { ...nextReplyTarget, user: userHint || nextReplyTarget.user }
+      ? { ...nextReplyTarget, user: userHint || nextReplyTarget.author || nextReplyTarget.user }
       : (userHint ? { id: commentId, user: userHint } : { id: commentId, user: 'comment' });
     setReplyTo(targetObj);
-    setExpandedReplyThreads((prev) => ({ ...prev, [commentId]: true }));
+    setExpandedReplyThreads((prev) => ({ ...prev, [rootId]: true, [commentId]: true }));
     setReplyingToCommentId(commentId);
     setReplyText('');
   };
@@ -1466,11 +1620,13 @@ function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditC
     const trimmed = replyText.trim();
     if (!trimmed) return;
     const targetId = replyingToCommentId || replyTo?.id || null;
+    const hit = targetId ? findCommentNodeInTree(safeComments, targetId) : null;
+    const rootId = hit?.rootNode?.id || targetId;
     if (onAddComment) {
       await onAddComment(trimmed, targetId);
     }
     if (targetId) {
-      setExpandedReplyThreads((prev) => ({ ...prev, [targetId]: true }));
+      setExpandedReplyThreads((prev) => ({ ...prev, [rootId]: true, [targetId]: true }));
     }
     setReplyTo(null);
     setReplyingToCommentId(null);
@@ -1483,7 +1639,7 @@ function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditC
       ...prev,
       [commentId]: willExpand,
     }));
-    if (willExpand && onLoadReplies) {
+    if (willExpand && onLoadReplies && !String(commentId).startsWith('rpl-')) {
       const targetComment = safeComments.find((c) => isSameCommentId(c.id, commentId));
       if (!targetComment?.replies || targetComment.replies.length === 0) {
         try {
@@ -1536,214 +1692,31 @@ function CommentsModal({ visible, onClose, post, comments, onAddComment, onEditC
             showsVerticalScrollIndicator={false}
           >
             {safeComments.length === 0 && <Text style={styles.noComments}>No comments yet. Be the first! 👇</Text>}
-            {safeComments.map((c) => {
-              const ownerMatch = (
-                (currentUserEmail && String(c.author_email || '').trim().toLowerCase() === currentUserEmail) ||
-                (currentUserName && String(c.user || c.author || '').trim().toLowerCase() === currentUserName.trim().toLowerCase())
-              );
-              const liked = Array.isArray(c.liked_by) && currentUserEmail && c.liked_by.includes(currentUserEmail);
-              const replyCount = Array.isArray(c.replies) ? c.replies.length : 0;
-              const areRepliesExpanded = Boolean(expandedReplyThreads[c.id]);
-
-              return (
-                <View key={c.id} style={styles.commentRow}>
-                  <ProfileAvatar
-                    uri={getDisplayCommentAvatar(c)}
-                    size={34}
-                    style={styles.commentAvatar}
-                    imageStyle={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' }}
-                    placeholderStyle={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
-                    iconColor="#ffffff"
-                  />
-                  <View style={styles.commentBubble}>
-                    <View style={styles.commentTopRow}>
-                      <NameWithTick name={c.user} show={Boolean(c.author_has_blue_tick)} style={styles.commentUser} badgeSize={13} />
-                      <Text style={styles.commentDate}>{c.date || ''}{c.edited_at ? ' • Edited' : ''}</Text>
-                    </View>
-
-                    {editingCommentId === c.id ? (
-                      <TextInput
-                        style={styles.commentEditInput}
-                        value={editingCommentText}
-                        onChangeText={setEditingCommentText}
-                        multiline
-                      />
-                    ) : (
-                      <Text style={styles.commentText}>{c.text}</Text>
-                    )}
-
-                    <View style={styles.commentActionRow}>
-                      <TouchableOpacity
-                        style={[styles.commentActionBtn, liked && styles.commentActionBtnActive]}
-                        onPress={() => onLikeComment && onLikeComment(c.id)}
-                      >
-                        <Text style={[styles.commentActionText, liked && styles.commentActionTextActive]}>
-                          {liked ? '♥' : '♡'} {c.likes ? `(${c.likes})` : ''}
-                        </Text>
-                      </TouchableOpacity>
-
-                      <TouchableOpacity
-                        style={styles.commentActionBtn}
-                        onPress={() => handleReplyComment(c.id)}
-                      >
-                        <Text style={styles.commentActionText}>Reply</Text>
-                      </TouchableOpacity>
-
-                      {ownerMatch ? (
-                        editingCommentId === c.id ? (
-                          <>
-                            <TouchableOpacity style={styles.commentMiniBtn} onPress={handleSaveEdit}>
-                              <Text style={styles.commentMiniBtnText}>Save</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.commentMiniBtn} onPress={handleCancelEdit}>
-                              <Text style={styles.commentMiniBtnText}>Cancel</Text>
-                            </TouchableOpacity>
-                          </>
-                        ) : (
-                          <>
-                            <TouchableOpacity style={styles.commentMiniBtn} onPress={() => handleStartEdit(c)}>
-                              <Text style={styles.commentMiniBtnText}>Edit</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.commentMiniBtn} onPress={() => askDeleteComment(c.id)}>
-                              <Text style={[styles.commentMiniBtnText, { color: '#ef4444' }]}>Delete</Text>
-                            </TouchableOpacity>
-                          </>
-                        )
-                      ) : null}
-                    </View>
-
-                    {replyingToCommentId === c.id && (
-                      <View style={styles.commentReplyForm}>
-                        <TextInput
-                          style={styles.commentReplyInput}
-                          placeholder="Write a reply..."
-                          placeholderTextColor="#94a3b8"
-                          value={replyText}
-                          onChangeText={setReplyText}
-                          multiline
-                        />
-                        <View style={styles.commentReplyActions}>
-                          <TouchableOpacity
-                            style={styles.commentReplyBtn}
-                            onPress={handleSubmitReply}
-                            disabled={!replyText.trim()}
-                          >
-                            <Text style={styles.commentReplyBtnText}>Reply</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.commentReplyBtn, styles.commentCancelBtn]}
-                            onPress={handleCancelReply}
-                          >
-                            <Text style={styles.commentCancelBtnText}>Cancel</Text>
-                          </TouchableOpacity>
-                        </View>
-                      </View>
-                    )}
-
-                    {replyCount > 0 && (
-                      <View style={styles.commentRepliesWrap}>
-                        <TouchableOpacity
-                          style={styles.commentRepliesToggle}
-                          onPress={() => handleToggleReplies(c.id)}
-                          activeOpacity={0.8}
-                        >
-                          <View style={styles.commentRepliesLine} />
-                          <Text style={styles.commentRepliesToggleText}>
-                            {areRepliesExpanded
-                              ? 'Hide replies'
-                              : `View ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`}
-                          </Text>
-                        </TouchableOpacity>
-
-                        {areRepliesExpanded ? (
-                          <View style={styles.commentReplies}>
-                        {c.replies.map((reply) => {
-                          const replyOwnerMatch = (
-                            (currentUserEmail && String(reply.author_email || '').trim().toLowerCase() === currentUserEmail) ||
-                            (currentUserName && String(reply.user || reply.author || '').trim().toLowerCase() === currentUserName.trim().toLowerCase())
-                          );
-                          const replyLiked = Array.isArray(reply.liked_by) && currentUserEmail && reply.liked_by.includes(currentUserEmail);
-
-                          return (
-                            <View key={reply.id} style={styles.commentReplyItem}>
-                              <View style={styles.commentReplyRow}>
-                                <ProfileAvatar
-                                  uri={getDisplayCommentAvatar(reply)}
-                                  size={28}
-                                  style={styles.commentReplyAvatar}
-                                  imageStyle={{ borderWidth: 1, borderColor: 'rgba(255,255,255,0.06)' }}
-                                  placeholderStyle={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
-                                  iconColor="#ffffff"
-                                />
-                                <View style={{ flex: 1 }}>
-                                  <View style={styles.commentTopRow}>
-                                    <NameWithTick name={reply.author || 'User'} show={Boolean(reply.author_has_blue_tick)} style={styles.commentAuthor} badgeSize={12} />
-                                    <Text style={styles.commentDate}>{reply.date || ''}{reply.edited_at ? ' • Edited' : ''}</Text>
-                                  </View>
-
-                                  {editingCommentId === reply.id ? (
-                                    <TextInput
-                                      style={styles.commentEditInput}
-                                      value={editingCommentText}
-                                      onChangeText={setEditingCommentText}
-                                      multiline
-                                    />
-                                  ) : (
-                                    <Text style={styles.commentText}>{reply.text}</Text>
-                                  )}
-
-                                  <View style={styles.commentActionRow}>
-                                    <TouchableOpacity
-                                      style={[styles.commentActionBtn, replyLiked && styles.commentActionBtnActive]}
-                                      onPress={() => onLikeComment && onLikeComment(reply.id)}
-                                    >
-                                      <Text style={[styles.commentActionText, replyLiked && styles.commentActionTextActive]}>
-                                        {replyLiked ? '♥' : '♡'} {reply.likes ? `(${reply.likes})` : ''}
-                                      </Text>
-                                    </TouchableOpacity>
-
-                                    <TouchableOpacity
-                                      style={styles.commentActionBtn}
-                                      onPress={() => handleReplyComment(c.id, reply.author || reply.user)}
-                                    >
-                                      <Text style={styles.commentActionText}>Reply</Text>
-                                    </TouchableOpacity>
-
-                                    {replyOwnerMatch ? (
-                                      editingCommentId === reply.id ? (
-                                        <>
-                                          <TouchableOpacity style={styles.commentMiniBtn} onPress={handleSaveEdit}>
-                                            <Text style={styles.commentMiniBtnText}>Save</Text>
-                                          </TouchableOpacity>
-                                          <TouchableOpacity style={styles.commentMiniBtn} onPress={handleCancelEdit}>
-                                            <Text style={styles.commentMiniBtnText}>Cancel</Text>
-                                          </TouchableOpacity>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <TouchableOpacity style={styles.commentMiniBtn} onPress={() => handleStartEdit(reply)}>
-                                            <Text style={styles.commentMiniBtnText}>Edit</Text>
-                                          </TouchableOpacity>
-                                          <TouchableOpacity style={styles.commentMiniBtn} onPress={() => askDeleteComment(reply.id)}>
-                                            <Text style={[styles.commentMiniBtnText, { color: '#ef4444' }]}>Delete</Text>
-                                          </TouchableOpacity>
-                                        </>
-                                      )
-                                    ) : null}
-                                  </View>
-                                </View>
-                              </View>
-                            </View>
-                          );
-                        })}
-                          </View>
-                        ) : null}
-                      </View>
-                    )}
-                  </View>
-                </View>
-              );
-            })}
+            {safeComments.map((c) => (
+              <FeedModalCommentItem
+                key={c.id}
+                comment={c}
+                depth={0}
+                currentUserEmail={currentUserEmail}
+                currentUserName={currentUserName}
+                editingCommentId={editingCommentId}
+                editingCommentText={editingCommentText}
+                onEditingTextChange={setEditingCommentText}
+                onStartEdit={handleStartEdit}
+                onSaveEdit={handleSaveEdit}
+                onCancelEdit={handleCancelEdit}
+                onAskDelete={askDeleteComment}
+                onLikeComment={onLikeComment}
+                replyingToCommentId={replyingToCommentId}
+                replyText={replyText}
+                onReplyTextChange={setReplyText}
+                onReplyComment={handleReplyComment}
+                onSubmitReply={handleSubmitReply}
+                onCancelReply={handleCancelReply}
+                expandedReplyThreads={expandedReplyThreads}
+                onToggleReplies={handleToggleReplies}
+              />
+            ))}
           </ScrollView>
           <View style={[styles.commentInputRow, { paddingBottom: Platform.OS === 'android' ? Math.max(12, keyboardInset) : 12 }]}>
             <ProfileAvatar uri={currentUserAvatar} size={32} style={{ marginRight: 10 }} />
@@ -3115,18 +3088,21 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
         if (post.id !== id) return post;
         const prevComments = Array.isArray(post.comments) ? post.comments : [];
 
-        // Merge replies from prevComments into normalizedComments so replies are NEVER wiped out by sync!
+        // Merge replies from prevComments into normalizedComments so nested replies are NEVER wiped out by sync!
+        const flattenReplies = (list) => (Array.isArray(list) ? list : []).flatMap((r) => [r, ...flattenReplies(r.replies)]);
         let baseList = normalizedComments.length > 0 ? normalizedComments.map((newC) => {
           const oldC = prevComments.find((pc) => isSameCommentId(pc.id, newC.id) || pendKey(pc) === pendKey(newC));
           if (oldC && Array.isArray(oldC.replies) && oldC.replies.length > 0) {
-            const combinedReplies = [...(Array.isArray(newC.replies) ? newC.replies : [])];
-            oldC.replies.forEach((or) => {
-              const alreadyHas = combinedReplies.some((nr) => isSameCommentId(nr.id, or.id) || pendKey(nr) === pendKey(or));
-              if (!alreadyHas) combinedReplies.push(or);
+            const newFlat = flattenReplies(newC.replies);
+            const oldFlat = flattenReplies(oldC.replies);
+            const combined = [...newFlat];
+            oldFlat.forEach((or) => {
+              const alreadyHas = combined.some((nr) => isSameCommentId(nr.id, or.id) || pendKey(nr) === pendKey(or));
+              if (!alreadyHas) combined.push(or);
             });
-            return { ...newC, replies: combinedReplies };
+            return { ...newC, replies: buildNestedReplies(combined, newC.id) };
           }
-          return newC;
+          return { ...newC, replies: buildNestedReplies(newC.replies || [], newC.id) };
         }) : prevComments;
 
         let next = mergePendingComments(id, baseList);
@@ -3142,17 +3118,10 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
         if (opts?.ensureReply && opts.ensureReply.reply && opts.ensureReply.parentId) {
           const rep = opts.ensureReply.reply;
           const pId = opts.ensureReply.parentId;
-          let attached = false;
-          next = next.map((c) => {
-            if (isSameCommentId(c.id, pId) || (Array.isArray(c.replies) && c.replies.some((r) => isSameCommentId(r.id, pId)))) {
-              attached = true;
-              const repList = Array.isArray(c.replies) ? c.replies : [];
-              const exists = repList.some((r) => isSameCommentId(r.id, rep.id) || pendKey(r) === pendKey(rep));
-              return { ...c, replies: exists ? repList : [...repList, rep] };
-            }
-            return c;
-          });
-          if (!attached && next.length > 0) {
+          const ins = insertReplyInTree(next, pId, rep);
+          if (ins.inserted) {
+            next = ins.comments;
+          } else if (next.length > 0) {
             next = next.map((c, i) => (i === 0 ? { ...c, replies: [...(Array.isArray(c.replies) ? c.replies : []), rep] } : c));
           }
         }
@@ -3396,7 +3365,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
   const handleAddComment = useCallback(async (text, replyToId = null, targetPostId = commentPost || descPost) => {
     if (!targetPostId) return;
     if (!requireLogin(true)) return;
-    const tempId = `temp-${Date.now()}`;
+    const tempId = replyToId ? `rpl-local-${Date.now()}` : `temp-${Date.now()}`;
     const currentAvatar = String(currentUser.avatar || currentUser.profile_image || '').trim();
     const newComment = {
       id: tempId,
@@ -3405,6 +3374,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       author_email: currentUserEmail || '',
       author_profile_image: currentAvatar,
       avatar: currentAvatar,
+      is_mine: true,
       text,
       date: new Date().toISOString().split('T')[0],
       likes: 0,
@@ -3412,17 +3382,17 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       replies: [],
     };
 
+    const targetPost = posts.find((p) => String(p.id) === String(targetPostId));
+    const replyHit = replyToId ? findCommentNodeInTree(targetPost?.comments || [], replyToId) : null;
+    const rootCommentId = replyHit?.rootNode?.id || replyToId || null;
+
     addPendingComment(targetPostId, newComment, replyToId);
     setPosts(prev =>
       prev.map(p => p.id === targetPostId
         ? {
             ...p,
             comments: replyToId
-              ? (Array.isArray(p.comments) ? p.comments : []).map(c =>
-                  isSameCommentId(c.id, replyToId) || (Array.isArray(c.replies) && c.replies.some(r => isSameCommentId(r.id, replyToId)))
-                    ? { ...c, replies: [...(Array.isArray(c.replies) ? c.replies : []), newComment] }
-                    : c
-                )
+              ? insertReplyInTree(Array.isArray(p.comments) ? p.comments : [], replyToId, newComment).comments
               : [...(Array.isArray(p.comments) ? p.comments : []), newComment],
             commentsCount: (p.commentsCount ?? (Array.isArray(p.comments) ? p.comments.length : 0)) + 1,
           }
@@ -3431,7 +3401,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
 
     try {
       const result = replyToId
-        ? await UserStore.replyNewsComment(targetPostId, replyToId, text)
+        ? await UserStore.replyNewsComment(targetPostId, replyToId, text, { rootCommentId })
         : await UserStore.addNewsComment(targetPostId, text);
 
       // Server ka real comment (real id ke saath) — temp comment ki jagah wahi rakho
@@ -3466,16 +3436,13 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
         ensureReply: replyToId ? { reply: newComment, parentId: replyToId } : null,
       });
     }
-  }, [commentPost, currentUser.avatar, currentUser.name, currentUser.profile_image, currentUserEmail, descPost, syncPostComments, commentProfilesByEmail, requireLogin]);
+  }, [commentPost, currentUser.avatar, currentUser.name, currentUser.profile_image, currentUserEmail, descPost, posts, syncPostComments, commentProfilesByEmail, requireLogin]);
 
   const handleEditComment = useCallback(async (commentId, newText) => {
     let targetPostId = commentPost || descPost;
     if (!targetPostId) {
       const foundPost = posts.find(p =>
-        Array.isArray(p.comments) && p.comments.some(c =>
-          isSameCommentId(c.id, commentId) ||
-          (Array.isArray(c.replies) && c.replies.some(r => isSameCommentId(r.id, commentId)))
-        )
+        Array.isArray(p.comments) && Boolean(findCommentNodeInTree(p.comments, commentId))
       );
       if (foundPost) targetPostId = foundPost.id;
     }
@@ -3483,25 +3450,17 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     setPosts(prev =>
       prev.map(p => ({
         ...p,
-        comments: Array.isArray(p.comments) ? p.comments.map(c => {
-          if (isSameCommentId(c.id, commentId)) return { ...c, text: newText, edited_at: new Date().toISOString() };
-          if (Array.isArray(c.replies)) {
-            return {
-              ...c,
-              replies: c.replies.map(r => isSameCommentId(r.id, commentId) ? { ...r, text: newText, edited_at: new Date().toISOString() } : r)
-            };
-          }
-          return c;
-        }) : p.comments
+        comments: Array.isArray(p.comments) ? updateCommentTextInTree(p.comments, commentId, newText) : p.comments
       }))
     );
     try {
       if (targetPostId) {
         const res = await UserStore.editNewsComment(targetPostId, commentId, newText);
-        if (res && res.ok === false) {
-          // server ne edit accept nahi kiya — local fake edit hatao aur server ki asli list wapas lao
+        if (res && res.ok === false && (res.isAuth || res.notFound)) {
+          // server ne edit accept nahi kiya — local edit hatao aur server ki asli list wapas lao
           feedEditedComments.delete(String(commentId));
           persistEditedComments();
+          clearEditedComment(commentId);
           await syncPostComments(targetPostId, { keepIfEmpty: true });
         }
       }
@@ -3514,13 +3473,9 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     setPosts(prev =>
       prev.map(p => {
         if (String(p.id) !== String(targetId)) return p;
-        const before = countFeedComments(p.comments);
-        const nextComments = (Array.isArray(p.comments) ? p.comments : [])
-          .filter(c => !isSameCommentId(c.id, commentId))
-          .map(c => (Array.isArray(c.replies) ? { ...c, replies: c.replies.filter(r => !isSameCommentId(r.id, commentId)) } : c));
-        const removed = Math.max(0, before - countFeedComments(nextComments));
-        const baseCount = Number(p.commentsCount ?? before);
-        return { ...p, comments: nextComments, commentsCount: Math.max(0, baseCount - removed) };
+        const { nextComments, removedCount } = deleteCommentFromTree(Array.isArray(p.comments) ? p.comments : [], commentId);
+        const baseCount = Number(p.commentsCount ?? countFeedComments(p.comments));
+        return { ...p, comments: nextComments, commentsCount: Math.max(0, baseCount - removedCount) };
       })
     );
     try {
@@ -3542,15 +3497,22 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
             ...p,
             comments: p.comments.map((c) => {
               if (isSameCommentId(c.id, commentId)) {
+                const normalizeRec = (r, idx) => ({
+                  ...normalizeFeedComment(r, `rpl-${r.id || idx}`, commentProfilesByEmail),
+                  replies: Array.isArray(r.replies) ? r.replies.map(normalizeRec) : [],
+                });
                 const existing = Array.isArray(c.replies) ? c.replies : [];
+                const incoming = res.replies.map(normalizeRec);
                 const combined = [...existing];
-                res.replies.forEach((r) => {
-                  const norm = normalizeFeedComment(r, `rpl-${r.id}`, commentProfilesByEmail);
-                  if (!combined.some((x) => isSameCommentId(x.id, norm.id) || pendKey(x) === pendKey(norm))) {
+                const flattenIds = (list) => (list || []).flatMap((x) => [x, ...flattenIds(x.replies)]);
+                const existingFlat = flattenIds(existing);
+                const incomingFlat = flattenIds(incoming);
+                incomingFlat.forEach((norm) => {
+                  if (!existingFlat.some((x) => isSameCommentId(x.id, norm.id) || pendKey(x) === pendKey(norm))) {
                     combined.push(norm);
                   }
                 });
-                return { ...c, replies: combined };
+                return { ...c, replies: buildNestedReplies(combined, c.id) };
               }
               return c;
             }),
@@ -3565,42 +3527,21 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     setPosts(prev =>
       prev.map(p => ({
         ...p,
-        comments: Array.isArray(p.comments) ? p.comments.map(c => {
-          if (c.id === commentId) {
-            const liked = Array.isArray(c.liked_by) && currentUserEmail && c.liked_by.includes(currentUserEmail);
-            return {
-              ...c,
-              liked_by: liked
-                ? c.liked_by.filter(email => email !== currentUserEmail)
-                : [...(c.liked_by || []), currentUserEmail],
-              likes: liked ? (c.likes || 0) - 1 : (c.likes || 0) + 1
-            };
-          }
-          if (Array.isArray(c.replies)) {
-            return {
-              ...c,
-              replies: c.replies.map(r => {
-                if (r.id === commentId) {
-                  const liked = Array.isArray(r.liked_by) && currentUserEmail && r.liked_by.includes(currentUserEmail);
-                  return {
-                    ...r,
-                    liked_by: liked
-                      ? r.liked_by.filter(email => email !== currentUserEmail)
-                      : [...(r.liked_by || []), currentUserEmail],
-                    likes: liked ? (r.likes || 0) - 1 : (r.likes || 0) + 1
-                  };
-                }
-                return r;
-              })
-            };
-          }
-          return c;
-        }) : p.comments
+        comments: Array.isArray(p.comments) ? toggleCommentLikeInTree(p.comments, commentId, currentUserEmail) : p.comments
       }))
     );
     try {
       const res = await UserStore.likeNewsComment(commentPost || descPost, commentId);
-      if (!res?.ok) await syncPostComments(commentPost || descPost, { keepIfEmpty: true });
+      if (!res?.ok) {
+        await syncPostComments(commentPost || descPost, { keepIfEmpty: true });
+      } else {
+        setPosts(prev =>
+          prev.map(p => ({
+            ...p,
+            comments: Array.isArray(p.comments) ? toggleCommentLikeInTree(p.comments, commentId, currentUserEmail, res) : p.comments
+          }))
+        );
+      }
     } catch {
       await syncPostComments(commentPost || descPost, { keepIfEmpty: true });
     }

@@ -43,6 +43,14 @@ import PostMenuButton from '../components/PostMenuButton';
 import { isOwnPost } from '../components/profileContent';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
+import {
+  applyEditedComment,
+  deleteCommentFromTree,
+  findCommentNodeInTree,
+  insertReplyInTree,
+  toggleCommentLikeInTree,
+  updateCommentTextInTree,
+} from '../utils/commentPersistence';
 import { safePause, safePlay } from '../utils/videoPlayerSafe';
 import MediaGallery from '../components/MediaGallery';
 import DocumentThumb, { isImageFile, isPdfFile } from '../components/DocumentThumb';
@@ -277,7 +285,8 @@ function normalizeComment(rawComment) {
   const authorEmail = String(comment.author_email || comment.user?.email || comment.user_email || comment.email || '').trim().toLowerCase();
   const authorAvatar = String(comment.authorAvatar || comment.author_avatar || comment.user?.profile_image_url || comment.user?.profile_image || comment.userAvatar || comment.avatar || '').trim();
   const text = String(comment.text ?? comment.comment ?? comment.sub_comment ?? comment.body ?? comment.content ?? '').trim();
-  return {
+  const replies = Array.isArray(comment.replies) ? comment.replies.map(normalizeComment) : [];
+  return applyEditedComment({
     id: String(comment.id || ''),
     text,
     author,
@@ -291,8 +300,10 @@ function normalizeComment(rawComment) {
     likes: Number(comment.likes_count ?? comment.likes ?? 0),
     liked_by: Array.isArray(comment.liked_by) ? comment.liked_by : [],
     liked_by_me: Boolean(comment.liked_by_me),
-    replies: Array.isArray(comment.replies) ? comment.replies.map(normalizeComment) : [],
-  };
+    parent_reply_id: comment.parent_reply_id || null,
+    replies_count: Math.max(Number(comment.replies_count || 0), replies.length),
+    replies,
+  });
 }
 
 function countNestedComments(comments = []) {
@@ -387,19 +398,20 @@ function CommentThreadItem({
   onOpenProfile,
   formatCommentTime,
   isReply = false,
+  depth = 0,
 }) {
   const isOwner = isCommentOwner(comment, currentUserEmail, currentUserName, currentUserId);
   const isEditing = editingCommentId === comment.id;
   const isReplying = replyingToCommentId === comment.id;
   const replyCount = Array.isArray(comment.replies) ? comment.replies.length : 0;
   const areRepliesExpanded = Boolean(expandedReplyThreads?.[comment.id]);
-  const isLiked = Boolean(
+  const isLiked = Boolean(comment.liked_by_me) || Boolean(
     currentUserEmail
       && Array.isArray(comment.liked_by)
       && comment.liked_by.includes(currentUserEmail)
   );
   return (
-    <View style={[styles.commentItem, isReply && styles.commentReplyItem]}>
+    <View style={[styles.commentItem, isReply && styles.commentReplyItem, depth > 1 && { marginLeft: 0 }]}>
       <TouchableOpacity
         onPress={() => onOpenProfile(comment.author, comment.authorAvatar, comment.author_email || comment.id)}
         activeOpacity={0.7}
@@ -557,6 +569,7 @@ function CommentThreadItem({
                     onOpenProfile={onOpenProfile}
                     formatCommentTime={formatCommentTime}
                     isReply={true}
+                    depth={depth + 1}
                   />
                 ))}
               </View>
@@ -1083,7 +1096,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
 
   // Share popup ka "Video/Image + Link" button: media (frame + music ke saath) + title + news link ek saath
   const shareImageUrl = String(article.image || article.images?.[0] || '').trim();
-  const shareMediaKind = canPlayVideo ? 'video' : (/^https?:/i.test(shareImageUrl) ? 'image' : '');
+  const shareMediaKind = canPlayVideo ? 'video' : (isValidImageUrl(shareImageUrl) ? 'image' : '');
 
   const handleShareMediaPackage = useCallback(async () => {
     try {
@@ -1157,25 +1170,8 @@ export default function NewsDetailsScreen({ route, navigation }) {
   const handleSubmitEditComment = useCallback(async () => {
     const trimmed = editingCommentText.trim();
     if (!editingCommentId || !trimmed) return;
-    // 1. Optimistic update
-    setComments((prev) =>
-      prev.map((comment) => {
-        if (comment.id === editingCommentId) {
-          return { ...comment, text: trimmed, edited_at: new Date().toISOString() };
-        }
-        if (Array.isArray(comment.replies)) {
-          return {
-            ...comment,
-            replies: comment.replies.map((reply) =>
-              reply.id === editingCommentId
-                ? { ...reply, text: trimmed, edited_at: new Date().toISOString() }
-                : reply
-            ),
-          };
-        }
-        return comment;
-      })
-    );
+    // 1. Optimistic update (supports any nesting depth)
+    setComments((prev) => updateCommentTextInTree(prev, editingCommentId, trimmed));
     const result = await UserStore.editNewsComment(article.id, editingCommentId, trimmed);
     if (!result?.ok) {
       showToast(result?.message || 'Could not edit comment', 'error');
@@ -1199,12 +1195,14 @@ export default function NewsDetailsScreen({ route, navigation }) {
       setExpandedReplyThreads((prev) => ({ ...prev, [commentId]: !prev[commentId] }));
       return;
     }
-    setExpandedReplyThreads((prev) => ({ ...prev, [commentId]: true }));
+    const hit = findCommentNodeInTree(comments, commentId);
+    const rootId = hit?.rootNode?.id || commentId;
+    setExpandedReplyThreads((prev) => ({ ...prev, [rootId]: true, [commentId]: true }));
     setReplyingToCommentId(commentId);
     setReplyText('');
     setEditingCommentId(null);
     setEditingCommentText('');
-  }, []);
+  }, [comments]);
 
   const handleCancelReplyComment = useCallback(() => {
     setReplyingToCommentId(null);
@@ -1214,7 +1212,11 @@ export default function NewsDetailsScreen({ route, navigation }) {
   const handleSubmitReplyComment = useCallback(async () => {
     const trimmed = replyText.trim();
     if (!replyingToCommentId || !trimmed) return;
-    const result = await UserStore.replyNewsComment(article.id, replyingToCommentId, trimmed);
+    const hit = findCommentNodeInTree(comments, replyingToCommentId);
+    const rootCommentId = hit?.rootNode?.id || replyingToCommentId;
+    const result = await UserStore.replyNewsComment(article.id, replyingToCommentId, trimmed, {
+      rootCommentId,
+    });
     if (!result?.ok) { showToast(result?.message || 'Could not add reply', 'error'); return; }
     const addedReply = normalizeComment(result.comment || {
       text: trimmed,
@@ -1222,52 +1224,25 @@ export default function NewsDetailsScreen({ route, navigation }) {
       author_email: currentUserEmail || '',
       is_mine: true,
     });
-    setComments((prev) =>
-      prev.map((comment) =>
-        comment.id === replyingToCommentId
-          ? { ...comment, replies: [addedReply, ...(Array.isArray(comment.replies) ? comment.replies.filter((r) => r.id !== addedReply.id) : [])] }
-          : comment
-      )
-    );
-    setExpandedReplyThreads((prev) => ({ ...prev, [replyingToCommentId]: true }));
+    setComments((prev) => insertReplyInTree(prev, replyingToCommentId, addedReply, { prepend: true }).comments);
+    setExpandedReplyThreads((prev) => ({ ...prev, [rootCommentId]: true, [replyingToCommentId]: true }));
     const nextComments = Number(commentCount || 0) + 1;
     setCommentCount(nextComments);
     publishEngagement(article.id, { comments: nextComments }, engId);
     setReplyingToCommentId(null);
     setReplyText('');
-  }, [article.id, commentCount, currentUserEmail, currentUserName, engId, replyingToCommentId, replyText, showToast]);
+  }, [article.id, commentCount, comments, currentUserEmail, currentUserName, engId, replyingToCommentId, replyText, showToast]);
 
   const handleLikeComment = useCallback(async (commentId) => {
     const currentEmail = String(currentUserEmail || '').trim().toLowerCase();
-    setComments((prev) =>
-      prev.map((comment) => {
-        if (comment.id === commentId) {
-          const wasLiked = Array.isArray(comment.liked_by) && currentEmail && comment.liked_by.includes(currentEmail);
-          return {
-            ...comment,
-            likes: Math.max(0, Number(comment.likes || 0) + (wasLiked ? -1 : 1)),
-            liked_by: wasLiked ? comment.liked_by.filter((e) => e !== currentEmail) : [...(comment.liked_by || []), currentEmail],
-          };
-        }
-        if (Array.isArray(comment.replies)) {
-          return {
-            ...comment,
-            replies: comment.replies.map((reply) => {
-              if (reply.id !== commentId) return reply;
-              const wasLiked = Array.isArray(reply.liked_by) && currentEmail && reply.liked_by.includes(currentEmail);
-              return {
-                ...reply,
-                likes: Math.max(0, Number(reply.likes || 0) + (wasLiked ? -1 : 1)),
-                liked_by: wasLiked ? reply.liked_by.filter((e) => e !== currentEmail) : [...(reply.liked_by || []), currentEmail],
-              };
-            }),
-          };
-        }
-        return comment;
-      })
-    );
+    setComments((prev) => toggleCommentLikeInTree(prev, commentId, currentEmail));
     const result = await UserStore.likeNewsComment(article.id, commentId);
-    if (!result?.ok) { showToast(result?.message || 'Could not update comment like', 'error'); }
+    if (!result?.ok) {
+      setComments((prev) => toggleCommentLikeInTree(prev, commentId, currentEmail));
+      showToast(result?.message || 'Could not update comment like', 'error');
+      return;
+    }
+    setComments((prev) => toggleCommentLikeInTree(prev, commentId, currentEmail, result));
   }, [article.id, currentUserEmail, showToast]);
 
   // ✅ Apni post / reel ko detail page ke 3-dot menu se delete karo
@@ -1410,12 +1385,13 @@ export default function NewsDetailsScreen({ route, navigation }) {
     showToast('Comment deleted successfully.', 'success');
     if (editingCommentId === commentId) { setEditingCommentId(null); setEditingCommentText(''); }
     if (replyingToCommentId === commentId) { setReplyingToCommentId(null); setReplyText(''); }
-    setComments((prev) =>
-      prev
-        .filter((c) => c.id !== commentId)
-        .map((c) => (Array.isArray(c.replies) ? { ...c, replies: c.replies.filter((r) => r.id !== commentId) } : c))
-    );
-    const nextComments = Math.max(0, Number(commentCount || 0) - 1);
+    let removedCount = 1;
+    setComments((prev) => {
+      const res = deleteCommentFromTree(prev, commentId);
+      removedCount = res.removedCount || 1;
+      return res.nextComments;
+    });
+    const nextComments = Math.max(0, Number(commentCount || 0) - removedCount);
     setCommentCount(nextComments);
     publishEngagement(article.id, { comments: nextComments }, engId);
   }, [article.id, commentCount, editingCommentId, engId, replyingToCommentId, showPopup, showToast]);

@@ -17,6 +17,7 @@ export function MediaLogo({ size = 56 }) {
         source={require('../assets/images/certificate_logo.jpg')}
         style={{ width: size - 4, height: size - 4, borderRadius: (size - 4) / 2 }}
         resizeMode="contain"
+        fadeDuration={0}
       />
     </View>
   );

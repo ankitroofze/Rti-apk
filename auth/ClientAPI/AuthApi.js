@@ -460,8 +460,8 @@ const authedJSON = async (method, endpoint, body = null) => {
     body
   );
   if (res.status >= 200 && res.status < 300) return { ok: true, status: res.status, data: res.data || {} };
-  if (res.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
-  if (res.status === 404) return { ok: false, notFound: true, message: apiErrorMessage(404, res.data) };
+  if (res.status === 401) return { ok: false, status: res.status, isAuth: true, message: 'Session expired.' };
+  if (res.status === 404) return { ok: false, status: res.status, notFound: true, message: apiErrorMessage(404, res.data) };
   return { ok: false, status: res.status, message: apiErrorMessage(res.status, res.data), errors: res.data?.errors };
 };
 
@@ -2417,7 +2417,7 @@ export const AuthAPI = {
   },
 
 
-  postComment: async ({ newsId, adsId = null, text, parentId = null }) => {
+  postComment: async ({ newsId, adsId = null, text, parentId = null, parentReplyId = null }) => {
     try {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
@@ -2438,16 +2438,26 @@ export const AuthAPI = {
             reply: text || '',
             text: text || '',
             parent_id: String(parentId),
+            ...(parentReplyId ? { parent_reply_id: String(parentReplyId) } : {}),
           }
-        : { ...contentIdField, comment: text || '' };
+        : { ...contentIdField, comment: text || '', text: text || '' };
 
       const { status, data } = await postFormData('/comments', fields, token);
       if (status === 403 || status === 429) return { ok: false, message: apiErrorMessage(status, data) };
 
       if (status === 200 || status === 201) {
+        clearApiGetCache('/comments');
+        clearApiGetCache('/news');
+        clearApiGetCache('/my-news');
+        clearApiGetCache('/feeds');
+        const detailObj = (data?.comment_detail && typeof data.comment_detail === 'object')
+          ? data.comment_detail
+          : ((data?.data && typeof data.data === 'object')
+            ? data.data
+            : ((data?.comment && typeof data.comment === 'object') ? data.comment : data));
         return {
           ok: true,
-          comment: data?.comment_detail || data?.data || data?.comment || data,
+          comment: detailObj,
           commentsCount: data?.comments_count != null ? Number(data.comments_count) : null,
         };
       }
@@ -2615,25 +2625,37 @@ export const AuthAPI = {
     }
   },
 
-  /** POST /comments/{commentId} — edit (POST WAF-safe) */
-  editComment: async (commentId, text) => {
+  /** POST /comments/{commentId} — edit (POST WAF-safe, with PUT/_method fallbacks) */
+  editComment: async (commentId, text, { newsId = null, adsId = null } = {}) => {
     try {
+      const numericNewsId = newsId != null && Number.isFinite(Number(newsId)) && Number(newsId) > 0 ? Number(newsId) : null;
+      const numericAdsId = adsId != null && Number.isFinite(Number(adsId)) && Number(adsId) > 0 ? Number(adsId) : null;
       const payload = {
         text,
         comment: text,
         body: text,
         content: text,
         sub_comment: text,
+        ...(numericAdsId ? { ads_id: numericAdsId } : (numericNewsId ? { news_id: numericNewsId } : {})),
       };
-      // 1. Try clean POST /comments/{id} (standard backend expectation)
+      const isAccidentalDelete = (res) =>
+        res?.ok && /deleted/i.test(String(res?.data?.message || '')) && !res?.data?.comment_detail && !res?.data?.comment;
+
+      // 1. Try clean POST /comments/{id} (API_ENDPOINTS.md: POST /comments/:commentId)
       let r = await authedJSON('POST', `/comments/${commentId}`, payload);
-      // 2. If 405 (Method Not Allowed) or 404, fallback to PUT or method override
-      if (!r.ok && (r?.status === 405 || r?.status === 404)) {
+      // 2. Fallback to PUT, _method:'PUT', or /edit if POST failed (404/405/422) or hit delete
+      if ((!r.ok && !r.isAuth && r.status !== 403) || isAccidentalDelete(r)) {
         const putR = await authedJSON('PUT', `/comments/${commentId}`, payload);
-        if (putR.ok) r = putR;
-        else {
+        if (putR.ok && !isAccidentalDelete(putR)) {
+          r = putR;
+        } else {
           const overrideR = await authedJSON('POST', `/comments/${commentId}`, { ...payload, _method: 'PUT', action: 'edit' });
-          if (overrideR.ok) r = overrideR;
+          if (overrideR.ok && !isAccidentalDelete(overrideR)) {
+            r = overrideR;
+          } else {
+            const altR = await authedJSON('POST', `/comments/${commentId}/edit`, payload);
+            if (altR.ok) r = altR;
+          }
         }
       }
       if (r.ok) {
@@ -2642,7 +2664,12 @@ export const AuthAPI = {
         clearApiGetCache('/my-news');
         clearApiGetCache('/feeds');
       }
-      return r.ok ? { ok: true, comment: r.data?.comment_detail || r.data?.comment || r.data?.data || r.data || null } : r;
+      const detailObj = (r.data?.comment_detail && typeof r.data.comment_detail === 'object')
+        ? r.data.comment_detail
+        : ((r.data?.comment && typeof r.data.comment === 'object')
+          ? r.data.comment
+          : ((r.data?.data && typeof r.data.data === 'object') ? r.data.data : (r.data || null)));
+      return r.ok ? { ok: true, comment: detailObj } : r;
     } catch (err) { return { ok: false, isNetwork: true, message: 'Network error.' }; }
   },
 
@@ -2664,7 +2691,7 @@ export const AuthAPI = {
       if (cursor) params.cursor = cursor;
       const { status, data } = await publicRequest(`/comments/${commentId}/replies?${new URLSearchParams(params).toString()}`);
       if (status === 200 || status === 201) {
-        const list = Array.isArray(data?.replies) ? data.replies : [];
+        const list = Array.isArray(data?.replies) ? data.replies : (Array.isArray(data?.data) ? data.data : []);
         const nextCursor = data?.next_cursor || null;
         return { ok: true, replies: list, hasMore: Boolean(data?.has_more && nextCursor), nextCursor };
       }
@@ -2675,15 +2702,30 @@ export const AuthAPI = {
     }
   },
 
-  /** POST /comments/{commentId}/replies — body: { text, reply, comment, sub_comment } */
-  addReply: async (commentId, text) => {
+  /** POST /comments/{commentId}/replies (or /comment-replies/{parentReplyId}/replies for nested reply) */
+  addReply: async (commentId, text, { parentReplyId = null, newsId = null } = {}) => {
     try {
-      const r = await authedJSON('POST', `/comments/${commentId}/replies`, {
+      const numericNewsId = newsId != null && Number.isFinite(Number(newsId)) && Number(newsId) > 0 ? Number(newsId) : null;
+      const numericParentReplyId = parentReplyId != null && Number.isFinite(Number(parentReplyId)) && Number(parentReplyId) > 0 ? Number(parentReplyId) : null;
+      const payload = {
         text,
         reply: text,
         comment: text,
         sub_comment: text,
-      });
+        ...(numericParentReplyId ? { parent_reply_id: numericParentReplyId, parent_id: numericParentReplyId } : {}),
+        ...(numericNewsId ? { news_id: numericNewsId } : {}),
+      };
+
+      let r = null;
+      if (numericParentReplyId) {
+        r = await authedJSON('POST', `/comment-replies/${numericParentReplyId}/replies`, payload);
+      }
+      if (!r || (!r.ok && !r.isAuth && r.status !== 403 && r.status !== 429)) {
+        if (commentId != null && Number.isFinite(Number(commentId)) && Number(commentId) > 0) {
+          r = await authedJSON('POST', `/comments/${commentId}/replies`, payload);
+        }
+      }
+      if (!r) return { ok: false, message: 'Invalid comment id.' };
       if (r.ok) {
         clearApiGetCache('/comments');
       }
@@ -2698,24 +2740,32 @@ export const AuthAPI = {
   },
 
   /** POST /comment-replies/{replyId} — edit */
-  editReply: async (replyId, text) => {
+  editReply: async (replyId, text, { newsId = null, commentId = null } = {}) => {
     try {
+      const numericNewsId = newsId != null && Number.isFinite(Number(newsId)) && Number(newsId) > 0 ? Number(newsId) : null;
+      const numericCommentId = commentId != null && Number.isFinite(Number(commentId)) && Number(commentId) > 0 ? Number(commentId) : null;
       const payload = {
         text,
         reply: text,
         comment: text,
         sub_comment: text,
+        ...(numericNewsId ? { news_id: numericNewsId } : {}),
+        ...(numericCommentId ? { comment_id: numericCommentId } : {}),
       };
       let r = await authedJSON('POST', `/comment-replies/${replyId}`, payload);
-      if (!r.ok && (r?.status === 405 || r?.status === 404)) {
+      if (!r.ok && !r.isAuth && r.status !== 403) {
         const putR = await authedJSON('PUT', `/comment-replies/${replyId}`, payload);
         if (putR.ok) r = putR;
         else {
           const overrideR = await authedJSON('POST', `/comment-replies/${replyId}`, { ...payload, _method: 'PUT', action: 'edit' });
           if (overrideR.ok) r = overrideR;
+          else {
+            const altR = await authedJSON('POST', `/comment-replies/${replyId}/edit`, payload);
+            if (altR.ok) r = altR;
+          }
         }
       }
-      if (!r.ok) {
+      if (!r.ok && !r.isAuth && r.status !== 403) {
         const fallbackR = await authedJSON('POST', `/comments/${replyId}`, payload);
         if (fallbackR.ok) r = fallbackR;
       }
@@ -2732,11 +2782,22 @@ export const AuthAPI = {
   /** DELETE /comment-replies/{replyId} */
   deleteReply: async (replyId) => {
     try {
-      const r = await authedJSON('DELETE', `/comment-replies/${replyId}`);
+      let r = await authedJSON('DELETE', `/comment-replies/${replyId}`);
+      if (!r.ok && !r.isAuth && r.status !== 403 && (r.status === 405 || r.status === 404 || r.notFound)) {
+        const overrideR = await authedJSON('POST', `/comment-replies/${replyId}`, { _method: 'DELETE', action: 'delete' });
+        if (overrideR.ok) r = overrideR;
+        else {
+          const altR = await authedJSON('POST', `/comment-replies/${replyId}/delete`, { _method: 'DELETE' });
+          if (altR.ok) r = altR;
+        }
+      }
       if (r.ok) {
         clearApiGetCache('/comments');
+        clearApiGetCache('/news');
+        clearApiGetCache('/my-news');
+        clearApiGetCache('/feeds');
       }
-      return r.ok ? { ok: true, repliesCount: r.data.replies_count != null ? Number(r.data.replies_count) : null } : r;
+      return r.ok ? { ok: true, repliesCount: r.data?.replies_count != null ? Number(r.data.replies_count) : null } : r;
     } catch (err) { return { ok: false, isNetwork: true, message: 'Network error.' }; }
   },
 
@@ -2744,6 +2805,9 @@ export const AuthAPI = {
   likeReply: async (replyId) => {
     try {
       const r = await authedJSON('POST', `/comment-replies/${replyId}/like`);
+      if (r.ok) {
+        clearApiGetCache('/comments');
+      }
       return r.ok ? { ok: true, liked: Boolean(r.data.liked), likesCount: Number(r.data.likes_count ?? 0) } : r;
     } catch (err) { return { ok: false, isNetwork: true, message: 'Network error.' }; }
   },

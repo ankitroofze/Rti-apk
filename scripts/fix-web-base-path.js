@@ -157,6 +157,14 @@ async function main() {
     }
   }
 
+  // Ensure share logo exists in dist/assets/images/certificate_logo.jpg (for web canvas & news-share.php)
+  const logoSrc = path.resolve('assets/images/certificate_logo.jpg');
+  const logoDestDir = path.join(distDir, 'assets/images');
+  if (fs.existsSync(logoSrc)) {
+    fs.mkdirSync(logoDestDir, { recursive: true });
+    fs.copyFileSync(logoSrc, path.join(logoDestDir, 'certificate_logo.jpg'));
+  }
+
   // Ensure news-share.php and htaccess exist in dist
   const rootFiles = ['news-share.php', '.htaccess'];
   for (const f of rootFiles) {

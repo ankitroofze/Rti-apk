@@ -75,14 +75,38 @@ export async function composeFramedImageWeb(imageSrc, frame, opts = {}) {
     }
     // same-origin blob (warna canvas "tainted" ho jaata hai)
     if (!/^(blob:|data:)/i.test(src)) {
+      let fetched = false;
       try {
         const r = await fetch(src, { mode: 'cors', cache: 'no-store' });
-        if (r.ok) {
-          src = URL.createObjectURL(await r.blob());
-          toRevoke.push(src);
+        if (r && r.ok) {
+          const ct = r.headers.get('content-type') || '';
+          if (!ct.includes('text/html')) {
+            src = URL.createObjectURL(await r.blob());
+            toRevoke.push(src);
+            fetched = true;
+          }
         }
       } catch (err) {
-        console.warn('[composeFramedImageWeb] fetch blob fallback to direct src:', err);
+        console.warn('[composeFramedImageWeb] fetch blob fallback to proxy/direct src:', err);
+      }
+      if (!fetched) {
+        const alt = src.includes('/storage-proxy/')
+          ? src.replace('/storage-proxy/', '/storage/')
+          : (src.includes('/storage/')
+            ? src.replace(/^https?:\/\/[^/]+\/storage\//i, '/storage-proxy/').replace(/^\/storage\//, '/storage-proxy/')
+            : '');
+        if (alt && alt !== src) {
+          try {
+            const r2 = await fetch(alt, { mode: 'cors', cache: 'no-store' });
+            if (r2 && r2.ok) {
+              const ct2 = r2.headers.get('content-type') || '';
+              if (!ct2.includes('text/html')) {
+                src = URL.createObjectURL(await r2.blob());
+                toRevoke.push(src);
+              }
+            }
+          } catch (_) { /* direct loadImage fallback */ }
+        }
       }
     }
     const img = await loadImage(src);

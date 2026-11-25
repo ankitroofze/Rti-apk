@@ -48,6 +48,16 @@ import SocialShareModal from './SocialShareModal';
 import { useLanguage } from '../contexts/LanguageContext';
 import { shareNewsLink, shareNewsPackage, getMyReferralCode } from '../utils/shareNews';
 import { exportOptsFromStory, toCorsSafeMediaUrl } from '../utils/videoWithMusic';
+import {
+  applyEditedComment,
+  buildNestedReplies,
+  deleteCommentFromTree,
+  findCommentNodeInTree,
+  insertReplyInTree,
+  isSameCommentNodeId,
+  toggleCommentLikeInTree,
+  updateCommentTextInTree,
+} from '../utils/commentPersistence';
 
 // ─────────────────────────────────────────────
 // Like persistence helpers
@@ -108,6 +118,7 @@ function CommentItem({
   onSubmitReply,
   onCancelReply,
   isReply = false,
+  depth = 0,
   mentionNames = [],
 }) {
   const isCurrentUser = Boolean(
@@ -121,9 +132,12 @@ function CommentItem({
   const replyCount = Math.max(Number(comment.replies_count || 0), Array.isArray(comment.replies) ? comment.replies.length : 0);
   const hasReplies = replyCount > 0;
   const areRepliesExpanded = Boolean(expandedReplyThreads?.[comment.id]);
+  const nextMentionNames = Array.from(
+    new Set([...mentionNames, comment.author, ...(Array.isArray(comment.replies) ? comment.replies.map((r) => r.author) : [])].filter(Boolean))
+  );
 
   return (
-    <View style={[styles.commentItem, isReply && styles.commentReplyItem]}>
+    <View style={[styles.commentItem, isReply && styles.commentReplyItem, depth > 1 && { marginLeft: 0 }]}>
       <View style={styles.commentAvatar}>
         {comment.authorAvatar ? (
           <Image source={{ uri: comment.authorAvatar }} style={styles.commentAvatarImg} />
@@ -267,7 +281,8 @@ function CommentItem({
                     onSubmitReply={onSubmitReply}
                     onCancelReply={onCancelReply}
                     isReply={true}
-                    mentionNames={[comment.author, ...(comment.replies || []).map((r) => r.author)].filter(Boolean)}
+                    depth={depth + 1}
+                    mentionNames={nextMentionNames}
                   />
                 ))}
                 {repliesMeta?.[comment.id]?.loading ? (
@@ -559,12 +574,15 @@ const toCardComment = (c = {}) => ({
 });
 
 // ✅ NEW: GET /news ke latest_comments[] (max 2) -> preview rows
-const mapPreviewComments = (list) => (Array.isArray(list) ? list : []).slice(0, 2).map((c) => ({
-  id: c?.id != null ? `cmt-${c.id}` : '',
-  text: String(c?.comment ?? c?.text ?? '').trim(),
-  author: String(c?.user?.name || c?.author || 'User'),
-  avatar: String(c?.user?.profile_image_url || ''),
-})).filter((c) => c.id && c.text);
+const mapPreviewComments = (list) => (Array.isArray(list) ? list : []).slice(0, 2).map((c) => {
+  const mapped = applyEditedComment({
+    id: c?.id != null ? `cmt-${c.id}` : '',
+    text: String(c?.comment ?? c?.text ?? '').trim(),
+    author: String(c?.user?.name || c?.author || 'User'),
+    avatar: String(c?.user?.profile_image_url || ''),
+  });
+  return mapped;
+}).filter((c) => c.id && c.text);
 
 const formatUploadTime = (value) => {
   const date = new Date(value || 0);
@@ -778,6 +796,7 @@ function NewsFeedCardInner({
 
   // GET /comments/{commentId}/replies  (cursor pagination). more=true -> agla page
   const loadReplies = useCallback(async (commentId, { more = false } = {}) => {
+    if (String(commentId).startsWith('rpl-')) return;
     const meta = repliesMetaRef.current[commentId] || {};
     if (meta.loading) return;
     if (more && !meta.hasMore) return;
@@ -789,7 +808,9 @@ function NewsFeedCardInner({
       setLocalComments((prev) => prev.map((c) => {
         if (c.id !== commentId) return c;
         const old = Array.isArray(c.replies) ? c.replies : [];
-        return { ...c, replies: more ? [...old, ...page.filter((p) => !old.some((x) => x.id === p.id))] : page };
+        if (!more) return { ...c, replies: buildNestedReplies(page, commentId) };
+        const mergedFlat = [...old, ...page.filter((p) => !old.some((x) => isSameCommentNodeId(x.id, p.id)))];
+        return { ...c, replies: buildNestedReplies(mergedFlat, commentId) };
       }));
       setReplyMeta(commentId, { loading: false, loaded: true, cursor: res.nextCursor || null, hasMore: Boolean(res.hasMore && res.nextCursor) });
     } catch {
@@ -802,8 +823,10 @@ function NewsFeedCardInner({
   const handleToggleReplies = useCallback((commentId) => {
     const isOpen = Boolean(expandedReplyThreads[commentId]);
     setExpandedReplyThreads((prev) => ({ ...prev, [commentId]: !prev[commentId] }));
-    // pehli baar kholne par hi replies fetch karo
-    if (!isOpen && !repliesMetaRef.current[commentId]?.loaded) loadReplies(commentId);
+    // pehli baar kholne par hi replies fetch karo (top-level comments ke liye)
+    if (!isOpen && !String(commentId).startsWith('rpl-') && !repliesMetaRef.current[commentId]?.loaded) {
+      loadReplies(commentId);
+    }
   }, [expandedReplyThreads, loadReplies]);
 
    useEffect(() => {
@@ -1241,26 +1264,18 @@ const handleLike = async () => {
     const trimmed = editingCommentText.trim();
     if (!trimmed || !editingCommentId) return;
     try {
-      const result = await UserStore.editNewsComment(story.id, editingCommentId, trimmed);
+      const result = await UserStore.editNewsComment(story.id, editingCommentId, trimmed, { isAd: isAdStory });
       if (!result?.ok) {
         if (result?.isAuth) goToLogin();
         else if (result?.notFound) await loadComments({ reset: true });
         else showToast(result?.message || 'Unable to edit comment.', 'error');
         return;
       }
-      setLocalComments((prev) =>
-        prev.map((comment) => {
-          if (comment.id === editingCommentId) return { ...comment, text: trimmed, comment: trimmed, edited_at: new Date().toISOString() };
-          if (Array.isArray(comment.replies)) {
-            return { ...comment, replies: comment.replies.map((r) => r.id === editingCommentId ? { ...r, text: trimmed, reply: trimmed, comment: trimmed, edited_at: new Date().toISOString() } : r) };
-          }
-          return comment;
-        })
-      );
+      setLocalComments((prev) => updateCommentTextInTree(prev, editingCommentId, trimmed));
       setPreviewComments((prev) =>
         Array.isArray(prev)
           ? prev.map((c) =>
-              (String(c.id) === String(editingCommentId) || String(c.id) === `cmt-${editingCommentId}`)
+              isSameCommentNodeId(c.id, editingCommentId)
                 ? { ...c, text: trimmed, comment: trimmed }
                 : c
             )
@@ -1287,22 +1302,9 @@ const handleLike = async () => {
         return;
       }
       showToast('Comment deleted successfully.', 'success');
-      if (String(commentId).startsWith('rpl-')) {
-        // reply delete: sirf replies_count badalta hai, news ka comments_count nahi
-        setLocalComments((prev) =>
-          prev.map((c) => (
-            Array.isArray(c.replies) && c.replies.some((r) => r.id === commentId)
-              ? {
-                  ...c,
-                  replies: c.replies.filter((r) => r.id !== commentId),
-                  replies_count: Number.isFinite(result.repliesCount) ? result.repliesCount : Math.max(0, (c.replies_count || 0) - 1),
-                }
-              : c
-          ))
-        );
-      } else {
-        setLocalComments((prev) => prev.filter((c) => c.id !== commentId));
-        setPreviewComments((prev) => prev.filter((p) => p.id !== commentId));
+      setLocalComments((prev) => deleteCommentFromTree(prev, commentId).nextComments);
+      if (!String(commentId).startsWith('rpl-')) {
+        setPreviewComments((prev) => prev.filter((p) => !isSameCommentNodeId(p.id, commentId)));
         const nextComments = Number.isFinite(result.commentsCount) ? result.commentsCount : Math.max(0, commentsCount - 1);
         setCommentsCount(nextComments);
         publishEngagement(story.id, { comments: nextComments }, engId);
@@ -1313,7 +1315,8 @@ const handleLike = async () => {
   };
   const handleReplyComment = useCallback((commentId) => {
     if (!requireLogin('comment')) return;
-    const parentCommentId = findParentCommentId(localComments, commentId) || commentId;
+    const hit = findCommentNodeInTree(localComments, commentId);
+    const rootCommentId = hit?.rootNode?.id || commentId;
     if (replyingToCommentId === commentId) {
       setReplyingToCommentId(null);
       setReplyText('');
@@ -1321,51 +1324,48 @@ const handleLike = async () => {
       setEditingCommentId(null);
       setEditingCommentText('');
       setReplyingToCommentId(commentId);
-      // 🐞 FIX: reply ke upar reply — jisne sub-comment kiya uska @naam pehle se likha aa jaye
-      const parentForReply = localComments.find((c) => c.id === parentCommentId);
-      const targetReply = parentCommentId !== commentId ? (parentForReply?.replies || []).find((r) => r.id === commentId) : null;
+      const targetReply = rootCommentId !== commentId ? hit?.node : null;
       setReplyText(targetReply?.author ? `@${targetReply.author} ` : '');
-      setExpandedReplyThreads((prev) => ({ ...prev, [parentCommentId]: true }));
-      const parent = localComments.find((c) => c.id === parentCommentId);
-      if (parent && Number(parent.replies_count || 0) > 0 && !repliesMetaRef.current[parentCommentId]?.loaded) loadReplies(parentCommentId);
+      setExpandedReplyThreads((prev) => ({ ...prev, [rootCommentId]: true, [commentId]: true }));
+      const parent = hit?.rootNode;
+      if (parent && Number(parent.replies_count || 0) > 0 && !repliesMetaRef.current[rootCommentId]?.loaded) {
+        loadReplies(rootCommentId);
+      }
     }
-  }, [findParentCommentId, localComments, replyingToCommentId, requireLogin, loadReplies]);
+  }, [localComments, replyingToCommentId, requireLogin, loadReplies]);
 
   const handleSubmitReply = async () => {
     if (!requireLogin('comment')) return;
     const trimmed = replyText.trim().slice(0, 1000);
     if (!trimmed || !replyingToCommentId) return;
     try {
-      // reply hamesha top-level comment par jaata hai (reply ke upar reply = uska parent comment)
-      const parentCommentId = findParentCommentId(localComments, replyingToCommentId) || replyingToCommentId;
-      // Sub-comment par reply ho aur @naam hat gaya ho to wapas laga do taaki pata chale kispe reply hai
+      const hit = findCommentNodeInTree(localComments, replyingToCommentId);
+      const rootCommentId = hit?.rootNode?.id || replyingToCommentId;
       let finalText = trimmed;
-      if (parentCommentId !== replyingToCommentId) {
-        const parentForReply = localComments.find((c) => c.id === parentCommentId);
-        const targetReply = (parentForReply?.replies || []).find((r) => r.id === replyingToCommentId);
-        if (targetReply?.author && finalText.toLowerCase() === `@${targetReply.author}`.toLowerCase()) return; // sirf @naam, reply likha hi nahi
+      if (rootCommentId !== replyingToCommentId) {
+        const targetReply = hit?.node;
+        if (targetReply?.author && finalText.toLowerCase() === `@${targetReply.author}`.toLowerCase()) return;
         if (targetReply?.author && !finalText.toLowerCase().startsWith(`@${targetReply.author}`.toLowerCase())) {
           finalText = `@${targetReply.author} ${finalText}`.slice(0, 1000);
         }
       }
-      const result = await UserStore.replyNewsComment(story.id, parentCommentId, finalText);
+      const result = await UserStore.replyNewsComment(story.id, replyingToCommentId, finalText, {
+        rootCommentId,
+      });
       if (!result?.ok) {
         if (result?.isAuth) goToLogin();
         else if (result?.notFound) await loadComments({ reset: true });
         else showToast(result?.message || 'Unable to add reply.', 'error');
         return;
       }
-      // sirf replies_count badhao — news ka comments_count reply par nahi badalta
-      setLocalComments((prev) => prev.map((c) => (
-        c.id === parentCommentId
-          ? { ...c, replies_count: Number.isFinite(result.repliesCount) ? result.repliesCount : (c.replies_count || 0) + 1 }
-          : c
-      )));
-      setExpandedReplyThreads((prev) => ({ ...prev, [parentCommentId]: true }));
+      const addedReply = toCardComment(result.comment || {});
+      setLocalComments((prev) => insertReplyInTree(prev, replyingToCommentId, addedReply).comments);
+      setExpandedReplyThreads((prev) => ({ ...prev, [rootCommentId]: true, [replyingToCommentId]: true }));
       setReplyingToCommentId(null);
       setReplyText('');
-      // server ke order me thread dobara laao
-      await loadReplies(parentCommentId);
+      if (!result?.isLocalOnly) {
+        await loadReplies(rootCommentId);
+      }
     } catch {}
   };
 
@@ -1376,33 +1376,17 @@ const handleLike = async () => {
     if (likeBusyRef.current.has(commentId)) return;   // double-tap guard
     likeBusyRef.current.add(commentId);
 
-    const patch = (fn) => setLocalComments((prev) => prev.map((c) => {
-      if (c.id === commentId) return fn(c);
-      if (Array.isArray(c.replies) && c.replies.some((r) => r.id === commentId)) {
-        return { ...c, replies: c.replies.map((r) => (r.id === commentId ? fn(r) : r)) };
-      }
-      return c;
-    }));
-    const toggle = (c) => {
-      const was = Boolean(c.liked_by_me);
-      return { ...c, liked_by_me: !was, likes: Math.max(0, (c.likes || 0) + (was ? -1 : 1)) };
-    };
-
-    patch(toggle);                                     // 1) optimistic
+    setLocalComments((prev) => toggleCommentLikeInTree(prev, commentId, currentEmail)); // 1) optimistic
     try {
       const result = await UserStore.likeNewsComment(story.id, commentId);
       if (!result?.ok) {                               // 3) fail -> wapas
-        patch(toggle);
+        setLocalComments((prev) => toggleCommentLikeInTree(prev, commentId, currentEmail));
         if (result?.isAuth) goToLogin();
         return;
       }
-      patch((c) => ({                                  // 2) server se sync
-        ...c,
-        liked_by_me: Boolean(result.liked),
-        likes: Number.isFinite(result.likesCount) ? result.likesCount : c.likes,
-      }));
+      setLocalComments((prev) => toggleCommentLikeInTree(prev, commentId, currentEmail, result)); // 2) server se sync
     } catch {
-      patch(toggle);
+      setLocalComments((prev) => toggleCommentLikeInTree(prev, commentId, currentEmail));
     } finally {
       likeBusyRef.current.delete(commentId);
     }

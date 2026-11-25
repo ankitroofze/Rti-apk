@@ -105,7 +105,7 @@ const w = {
   profileInfo: { flex: 1, paddingTop: 8 },
   profileInfoNarrow: { width: '100%' },
 
-  nameRow:     { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 20, flexWrap: 'wrap' },
+  legacyNameRow:     { flexDirection: 'row', alignItems: 'center', gap: 14, marginBottom: 20, flexWrap: 'wrap' },
   name:        { fontSize: 26, fontWeight: '300', color: '#0f172a', letterSpacing: -0.3, fontFamily: 'Roboto, sans-serif' },
 
   editBtn:     { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 3, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#dbdbdb' },
@@ -115,9 +115,9 @@ const w = {
 
   statsRow:    { flexDirection: 'row', gap: 44, marginBottom: 18 },
   statsRowNarrow: { flexWrap: 'wrap', gap: 20, justifyContent: 'space-between' },
-  statItem:    { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
-  statNum:     { fontSize: 16, fontWeight: '600', color: '#0f172a', fontFamily: 'Roboto, sans-serif' },
-  statLabel:   { fontSize: 16, color: '#0f172a', fontFamily: 'Roboto, sans-serif' },
+  legacyStatItem:    { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
+  legacyStatNum:     { fontSize: 16, fontWeight: '600', color: '#0f172a', fontFamily: 'Roboto, sans-serif' },
+  legacyStatLabel:   { fontSize: 16, color: '#0f172a', fontFamily: 'Roboto, sans-serif' },
 
   bioSection:  { gap: 5 },
   bioName:     { fontSize: 14, fontWeight: '700', color: '#0f172a', fontFamily: 'Roboto, sans-serif' },
@@ -178,9 +178,9 @@ const w = {
   sectionTitle: { fontSize: 14, fontWeight: '700', color: '#0f172a', marginBottom: 12, fontFamily: 'Roboto, sans-serif' },
 
   // Guest
-  guestCard:   { backgroundColor: '#ffffff', borderRadius: 6, padding: 40, alignItems: 'center', gap: 14, borderWidth: 1, borderColor: '#e2e8f0', marginTop: 28 },
-  guestTitle:  { fontSize: 22, fontWeight: '700', color: '#0f172a', fontFamily: 'Roboto, sans-serif' },
-  guestText:   { fontSize: 14, color: '#64748b', textAlign: 'center', fontFamily: 'Roboto, sans-serif' },
+  legacyGuestCard:   { backgroundColor: '#ffffff', borderRadius: 6, padding: 40, alignItems: 'center', gap: 14, borderWidth: 1, borderColor: '#e2e8f0', marginTop: 28 },
+  legacyGuestTitle:  { fontSize: 22, fontWeight: '700', color: '#0f172a', fontFamily: 'Roboto, sans-serif' },
+  legacyGuestText:   { fontSize: 14, color: '#64748b', textAlign: 'center', fontFamily: 'Roboto, sans-serif' },
   
   // Glossy Login Button
   loginBtn:    { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: ORANGE, paddingHorizontal: 28, paddingVertical: 14, borderRadius: 6, borderTopWidth: 1.5, borderTopColor: 'rgba(255, 255, 255, 0.55)', borderWidth: 1, borderColor: 'rgba(0, 0, 0, 0.08)', shadowColor: ORANGE, shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 5, marginTop: 8 },
@@ -904,11 +904,28 @@ function ProfileScreenInner({ navigation, route }) {
 
   // Post News button removed from profile screen
 
-  const [unfollowingId, setUnfollowingId] = useState(null);
+  const [followOverrides, setFollowOverrides] = useState({});
+  const [followActionInFlightId, setFollowActionInFlightId] = useState(null);
+
+  useEffect(() => {
+    const unsub = UserStore.subscribeFollowState((payload) => {
+      if (!payload) return;
+      const keyId = payload.id != null ? String(payload.id).trim() : '';
+      const keyEmail = String(payload.email || '').trim().toLowerCase();
+      setFollowOverrides((prev) => {
+        const next = { ...prev };
+        if (keyId) next[keyId] = payload.isFollowing;
+        if (keyEmail) next[keyEmail] = payload.isFollowing;
+        return next;
+      });
+    });
+    return unsub;
+  }, []);
 
   const openFollowList = async (type) => {
     if (!isLoggedIn) return;
     setFollowModalType(type);
+    UserStore.prefetchMyFollowing().catch(() => {});
     const followSummary = await UserStore.getFollowSummary(savedProfile?.email, savedProfile?.id);
     if (followSummary) {
       setFollowLists((prev) => ({
@@ -919,36 +936,68 @@ function ProfileScreenInner({ navigation, route }) {
     }
   };
 
-  const handleUnfollowUser = async (targetUser) => {
+  const handleToggleFollowUser = async (targetUser, currentlyFollowing) => {
     const targetId = targetUser?.id ?? targetUser?.user_id;
     const targetEmail = targetUser?.email;
     const key = String(targetId ?? targetEmail);
-    setUnfollowingId(key);
+    if (!key) return;
+    if (followActionInFlightId) return;
+    setFollowActionInFlightId(key);
+
+    const nextFollowing = !currentlyFollowing;
+    setFollowOverrides((prev) => {
+      const next = { ...prev };
+      if (targetId) next[String(targetId)] = nextFollowing;
+      if (targetEmail) next[String(targetEmail).toLowerCase()] = nextFollowing;
+      return next;
+    });
+
     try {
-      const res = await UserStore.unfollowUser(targetEmail, targetId);
-      if (res?.ok !== false) {
-        setFollowLists((prev) => ({
-          ...prev,
-          following: (prev.following || []).filter((u) => {
-            const uId = u.id ?? u.user_id;
-            const uEmail = u.email;
-            if (targetId && uId && String(uId) === String(targetId)) return false;
-            if (targetEmail && uEmail && String(uEmail).toLowerCase() === String(targetEmail).toLowerCase()) return false;
-            return true;
-          }),
-        }));
-        setProfileStats((prev) => ({
-          ...prev,
-          following: Math.max(0, (Number(prev.following) || 1) - 1),
-        }));
-        showToast('Unfollowed successfully', 'success');
+      if (currentlyFollowing) {
+        // UNFOLLOW
+        const res = await UserStore.unfollowUser(targetEmail, targetId);
+        if (res && res.ok === false) {
+          setFollowOverrides((prev) => {
+            const next = { ...prev };
+            if (targetId) next[String(targetId)] = true;
+            if (targetEmail) next[String(targetEmail).toLowerCase()] = true;
+            return next;
+          });
+          showToast(res?.message || 'Unable to unfollow user.', 'error');
+        } else {
+          setProfileStats((prev) => ({
+            ...prev,
+            following: Math.max(0, (Number(prev.following) || 1) - 1),
+          }));
+        }
       } else {
-        showToast(res?.message || 'Failed to unfollow', 'error');
+        // FOLLOW
+        const res = await UserStore.followUser(targetEmail, targetId);
+        if (res && res.ok === false) {
+          setFollowOverrides((prev) => {
+            const next = { ...prev };
+            if (targetId) next[String(targetId)] = false;
+            if (targetEmail) next[String(targetEmail).toLowerCase()] = false;
+            return next;
+          });
+          showToast(res?.message || 'Unable to follow user.', 'error');
+        } else {
+          setProfileStats((prev) => ({
+            ...prev,
+            following: (Number(prev.following) || 0) + 1,
+          }));
+        }
       }
     } catch {
-      showToast('Failed to unfollow', 'error');
+      setFollowOverrides((prev) => {
+        const next = { ...prev };
+        if (targetId) next[String(targetId)] = currentlyFollowing;
+        if (targetEmail) next[String(targetEmail).toLowerCase()] = currentlyFollowing;
+        return next;
+      });
+      showToast('Something went wrong. Please try again.', 'error');
     } finally {
-      setUnfollowingId(null);
+      setFollowActionInFlightId(null);
     }
   };
   const closeFollowList = () => setFollowModalType('');
@@ -997,9 +1046,8 @@ const handlePickImage = async () => {
         const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
         if (!p.granted) { showToast('Gallery permission is required.', 'error'); setUploading(false); return; }
       }
-      const mediaType = ImagePicker.MediaType?.Images || ImagePicker.MediaTypeOptions?.Images;
-      const normalizedMediaType = typeof mediaType === 'string' && mediaType.toLowerCase().includes('images') ? ImagePicker.MediaType?.Images || 'images' : mediaType;
-      const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: normalizedMediaType || 'images', allowsEditing: true, aspect: [1, 1], quality: 0.8, base64: false, exif: false, maxWidth: 800, maxHeight: 800 });
+      const mediaType = ImagePicker.MediaTypeOptions?.Images || 'images';
+      const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: mediaType, allowsEditing: true, aspect: [1, 1], quality: 0.8, base64: false, exif: false, maxWidth: 800, maxHeight: 800 });
       if (!r.canceled && r.assets?.length) {
         const asset = r.assets[0];
         if (asset.fileSize && asset.fileSize > MAX_IMAGE_SIZE) { showToast('Image is too large (max 5MB).', 'error'); setUploading(false); return; }
@@ -1450,8 +1498,27 @@ const handlePickImage = async () => {
           <ScrollView style={ProfileStyles.followModalList} contentContainerStyle={ProfileStyles.followModalListContent}>
             {(followLists[followModalType] || []).length ? (
               (followLists[followModalType] || []).map((item) => {
-                const itKey = String(item.id || item.user_id || item.email);
-                const isRemoving = unfollowingId === itKey;
+                const itemUid = item.id != null ? String(item.id).trim() : (item.user_id != null ? String(item.user_id).trim() : '');
+                const itemEmail = String(item.email || item.user_email || '').trim().toLowerCase();
+                const itKey = itemUid || itemEmail || String(item.name || 'user');
+                const myId = savedProfile?.id != null ? String(savedProfile.id).trim() : '';
+                const myEmail = String(savedProfile?.email || '').trim().toLowerCase();
+                const isMe = Boolean((myId && itemUid && myId === itemUid) || (myEmail && itemEmail && myEmail === itemEmail));
+
+                const isFollowed = (itemUid && itemUid in followOverrides)
+                  ? Boolean(followOverrides[itemUid])
+                  : ((itemEmail && itemEmail in followOverrides)
+                      ? Boolean(followOverrides[itemEmail])
+                      : (followModalType === 'following' ? true : (UserStore.checkIsFollowingSync?.(itemEmail, itemUid) ?? false)));
+
+                const isBusy = Boolean(
+                  followActionInFlightId && (
+                    followActionInFlightId === itKey ||
+                    (itemUid && followActionInFlightId === itemUid) ||
+                    (itemEmail && followActionInFlightId === itemEmail)
+                  )
+                );
+
                 return (
                   <View key={itKey} style={ProfileStyles.followUserRow}>
                     <TouchableOpacity
@@ -1462,28 +1529,30 @@ const handlePickImage = async () => {
                         navigation.navigate('UserPublicProfile', { userId: item.id || undefined, email: item.email, author: item });
                       }}
                     >
-                      <ProfileAvatar uri={item.profile_image} size={42} style={[ProfileStyles.followUserAvatar, { borderRadius: 21 }]} />
+                      <View style={{ marginRight: 14, flexShrink: 0 }}>
+                        <ProfileAvatar uri={item.profile_image} size={44} style={[ProfileStyles.followUserAvatar, { borderRadius: 22 }]} />
+                      </View>
                       <View style={ProfileStyles.followUserInfo}>
                         <NameWithTick name={item.name || 'User'} user={item} style={ProfileStyles.followUserName} />
                         <Text style={ProfileStyles.followUserEmail} numberOfLines={1}>{item.email || ''}</Text>
                       </View>
                     </TouchableOpacity>
-                    {followModalType === 'following' ? (
+                    {!isMe ? (
                       <TouchableOpacity
-                        style={ProfileStyles.unfollowBtn}
+                        style={isFollowed ? ProfileStyles.modalFollowingBtn : ProfileStyles.modalFollowBtn}
                         activeOpacity={0.8}
-                        onPress={() => handleUnfollowUser(item)}
-                        disabled={isRemoving}
+                        onPress={() => handleToggleFollowUser(item, isFollowed)}
+                        disabled={isBusy}
                       >
-                        {isRemoving ? (
-                          <ActivityIndicator size="small" color="#e11d48" />
+                        {isBusy ? (
+                          <ActivityIndicator size="small" color={isFollowed ? '#475569' : '#ffffff'} />
+                        ) : isFollowed ? (
+                          <Text style={ProfileStyles.modalFollowingBtnText}>Following</Text>
                         ) : (
-                          <Text style={ProfileStyles.unfollowBtnText}>Unfollow</Text>
+                          <Text style={ProfileStyles.modalFollowBtnText}>Follow</Text>
                         )}
                       </TouchableOpacity>
-                    ) : (
-                      <Feather name="chevron-right" size={18} color="#BBBBBB" />
-                    )}
+                    ) : null}
                   </View>
                 );
               })
@@ -2191,7 +2260,7 @@ const handlePickImage = async () => {
                       <Feather name="file-text" size={26} color={accent} />
                     </View>
                     <Text style={w.emptyTitle}>No posts yet</Text>
-                    <Text style={w.emptySub}>You haven't created any posts yet.</Text>
+                    <Text style={w.emptySub}>You have not created any posts yet.</Text>
                     <TouchableOpacity
                       style={[w.emptyBtn, { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: accent }]}
                       onPress={() => navigation.navigate('Add News')}

@@ -646,13 +646,37 @@ export async function composeFramedImageAsVideoWeb(imageSrc, { frame, musicUrl =
       toRevoke.push(src);
     }
     if (!/^(blob:|data:)/i.test(src)) {
+      let fetched = false;
       try {
         const r = await fetch(src, { mode: 'cors', cache: 'no-store' });
-        if (r.ok) {
-          src = URL.createObjectURL(await r.blob());
-          toRevoke.push(src);
+        if (r && r.ok) {
+          const ct = r.headers.get('content-type') || '';
+          if (!ct.includes('text/html')) {
+            src = URL.createObjectURL(await r.blob());
+            toRevoke.push(src);
+            fetched = true;
+          }
         }
       } catch (_) {}
+      if (!fetched) {
+        const alt = src.includes('/storage-proxy/')
+          ? src.replace('/storage-proxy/', '/storage/')
+          : (src.includes('/storage/')
+            ? src.replace(/^https?:\/\/[^/]+\/storage\//i, '/storage-proxy/').replace(/^\/storage\//, '/storage-proxy/')
+            : '');
+        if (alt && alt !== src) {
+          try {
+            const r2 = await fetch(alt, { mode: 'cors', cache: 'no-store' });
+            if (r2 && r2.ok) {
+              const ct2 = r2.headers.get('content-type') || '';
+              if (!ct2.includes('text/html')) {
+                src = URL.createObjectURL(await r2.blob());
+                toRevoke.push(src);
+              }
+            }
+          } catch (_) {}
+        }
+      }
     }
     const img = await loadImage(src);
 
@@ -724,6 +748,7 @@ export async function composeFramedImageAsVideoWeb(imageSrc, { frame, musicUrl =
     canvas.height = OUT_H;
     const c2d = canvas.getContext('2d');
     const fr = frame ? await prepareFrame(c2d, frame) : null;
+    const fallbackLogo = fr ? fr.logo : await loadShareLogo().catch(() => null);
 
     let t0 = 0;
     const render = () => {
@@ -735,6 +760,7 @@ export async function composeFramedImageAsVideoWeb(imageSrc, { frame, musicUrl =
       try { c2d.drawImage(img, (OUT_W - dw) / 2, (OUT_H - dh) / 2, dw, dh); } catch (_) {}
       const curTime = Math.max(0, (performance.now() - t0) / 1000);
       if (fr) drawFrame(c2d, fr, curTime);
+      else drawShareLogo(c2d, fallbackLogo, OUT_W);
     };
 
     const loop = () => {

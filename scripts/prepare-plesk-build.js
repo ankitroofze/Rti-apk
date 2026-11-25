@@ -51,6 +51,15 @@ if (fs.existsSync(musicSrc)) {
   console.log('[prepare-plesk-build] Copied assets/music into out/assets/music');
 }
 
+// 2a3. Ensure certificate_logo.jpg is copied to out/assets/images (for web share & news-share.php OG image)
+const shareLogoSrc = path.join(rootDir, 'assets', 'images', 'certificate_logo.jpg');
+const shareLogoDestDir = path.join(outDir, 'assets', 'images');
+if (fs.existsSync(shareLogoSrc)) {
+  fs.mkdirSync(shareLogoDestDir, { recursive: true });
+  fs.copyFileSync(shareLogoSrc, path.join(shareLogoDestDir, 'certificate_logo.jpg'));
+  console.log('[prepare-plesk-build] Copied certificate_logo.jpg into out/assets/images');
+}
+
 // 2b. Ensure out/index.html has <base href="/" /> and root-absolute paths for deep route refreshes
 const outIndexHtmlPath = path.join(outDir, 'index.html');
 if (fs.existsSync(outIndexHtmlPath)) {

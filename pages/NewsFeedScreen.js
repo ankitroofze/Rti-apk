@@ -23,6 +23,7 @@ import { useToast } from '../components/ui/ToastProvider';
 import { UserStore } from '../store/UserStore';
 import { INDIAN_STATES, getDistricts, getTalukas } from './locationData';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaStore';
+import { isValidImageUrl } from '../utils/storyHelpers';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getAdRedirectMeta, openAdRedirect } from '../utils/adRedirect';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black } from '@expo-google-fonts/roboto';
@@ -35,6 +36,14 @@ import MediaGallery from '../components/MediaGallery';
 import NewsFrameOverlay from '../components/NewsFrameOverlay';
 import { getFrameTemplate } from '../constants/frameTemplates';
 import ModuleMobileHeader from '../components/ModuleMobileHeader';
+import {
+  applyEditedCommentsToTree,
+  deleteCommentFromTree,
+  findCommentNodeInTree,
+  insertReplyInTree,
+  toggleCommentLikeInTree,
+  updateCommentTextInTree,
+} from '../utils/commentPersistence';
 // ── Design tokens — matched to the Advertise / Add News screens ────────────────
 const C = {
   primary:      '#B91C1C',
@@ -331,12 +340,17 @@ function FeedCommentItem({
   expandedReplyThreads,
   onToggleReplies,
   isReply = false,
+  depth = 0,
 }) {
   const currentEmail = String(currentUser?.email || '').trim().toLowerCase();
-  const ownerMatch =
-    (comment.author_email && currentEmail && String(comment.author_email).trim().toLowerCase() === currentEmail)
-    || (!comment.author_email && (comment.author === currentEmail || comment.author === currentUser?.name));
-  const liked = currentEmail && Array.isArray(comment.liked_by) && comment.liked_by.includes(currentEmail);
+  const currentUserId = currentUser?.id ?? currentUser?.user_id ?? null;
+  const ownerMatch = Boolean(
+    comment.is_mine ||
+    (currentUserId != null && comment.author_id && String(comment.author_id) === String(currentUserId)) ||
+    (comment.author_email && currentEmail && String(comment.author_email).trim().toLowerCase() === currentEmail) ||
+    (!comment.author_email && (comment.author === currentEmail || comment.author === currentUser?.name))
+  );
+  const liked = Boolean(comment.liked_by_me) || (currentEmail && Array.isArray(comment.liked_by) && comment.liked_by.includes(currentEmail));
   const isEditing = editingCommentId === comment.id;
   const isReplying = replyingToCommentId === comment.id;
   const replyCount = Array.isArray(comment.replies) ? comment.replies.length : 0;
@@ -344,7 +358,7 @@ function FeedCommentItem({
   const areRepliesExpanded = Boolean(expandedReplyThreads?.[comment.id]);
 
   return (
-    <View style={[styles.commentItem, isReply && styles.commentReplyItem]}>
+    <View style={[styles.commentItem, isReply && styles.commentReplyItem, depth > 1 && { marginLeft: 8 }]}>
       <View style={styles.commentTopRow}>
         <View style={styles.commentAuthorWrap}>
           {comment.author_avatar ? (
@@ -462,6 +476,7 @@ function FeedCommentItem({
                   expandedReplyThreads={expandedReplyThreads}
                   onToggleReplies={onToggleReplies}
                   isReply={true}
+                  depth={depth + 1}
                 />
               ))}
             </View>
@@ -695,7 +710,7 @@ export default function NewsFeedScreen({ navigation }) {
 
   const formatCommentsForView = useCallback((comments = []) => {
     if (!Array.isArray(comments)) return [];
-    return comments.map((comment) => ({
+    const mapped = comments.map((comment) => ({
       id: String(comment.id || ''),
       text: String(comment.text || comment.comment || comment.sub_comment || comment.body || comment.content || '').trim(),
       author: String(comment.author || comment.user?.name || comment.author_name || 'User'),
@@ -708,9 +723,12 @@ export default function NewsFeedScreen({ navigation }) {
       edited_at: comment.edited_at || null,
       likes: Number(comment.likes || comment.likes_count || 0),
       liked_by: Array.isArray(comment.liked_by) ? comment.liked_by : [],
+      liked_by_me: Boolean(comment.liked_by_me),
       parent_comment_id: comment.parent_comment_id || comment.comment_id || null,
+      parent_reply_id: comment.parent_reply_id || null,
       replies: formatCommentsForView(Array.isArray(comment.replies) ? comment.replies : []),
     }));
+    return applyEditedCommentsToTree(mapped);
   }, []);
 
 const syncFeed = useCallback(async (focusItemId = null, { silent = false } = {}) => {
@@ -844,7 +862,7 @@ const syncFeed = useCallback(async (focusItemId = null, { silent = false } = {})
       const itemVideoUri = (typeof item.video === 'string' ? item.video : item.video?.uri)
         || (item.mediaType === 'Video' || item.mediaType === 2 || Number(item.media_type) === 2 ? (item.media || item.media_url || item.video_url) : null);
       const itemImage = String(item.images?.[0] || item.image || (item.mediaType === 'Image' ? (item.media || item.media_url) : '') || '').trim();
-      const kind = itemVideoUri ? 'video' : (/^https?:/i.test(itemImage) ? 'image' : 'none');
+      const kind = itemVideoUri ? 'video' : (isValidImageUrl(itemImage) ? 'image' : 'none');
       const mediaUrl = kind === 'video' ? itemVideoUri : (kind === 'image' ? itemImage : '');
       const brandedVideo = item.branded_video || item.brandedVideo;
       const imgFrame = imageFrameOptsFromStory(item);
@@ -1107,40 +1125,15 @@ const handleLike = async (item) => {
 
   const handleLikeComment = async (commentId) => {
     if (!activeCommentItem) return;
-    const result = await UserStore.likeNewsComment(activeCommentItem.id, commentId);
-    if (!result.ok) { showToast(result.message, 'error'); return; }
     const currentEmail = String(currentUser?.email || '').trim().toLowerCase();
-    setLocalComments((prev) =>
-      prev.map((comment) => {
-        if (comment.id === commentId) {
-          const wasLiked = Array.isArray(comment.liked_by) && currentEmail && comment.liked_by.includes(currentEmail);
-          return {
-            ...comment,
-            likes: Math.max(0, Number(comment.likes || 0) + (wasLiked ? -1 : 1)),
-            liked_by: wasLiked
-              ? comment.liked_by.filter((email) => email !== currentEmail)
-              : [...(comment.liked_by || []), currentEmail],
-          };
-        }
-        if (Array.isArray(comment.replies)) {
-          return {
-            ...comment,
-            replies: comment.replies.map((reply) => {
-              if (reply.id !== commentId) return reply;
-              const wasLiked = Array.isArray(reply.liked_by) && currentEmail && reply.liked_by.includes(currentEmail);
-              return {
-                ...reply,
-                likes: Math.max(0, Number(reply.likes || 0) + (wasLiked ? -1 : 1)),
-                liked_by: wasLiked
-                  ? reply.liked_by.filter((email) => email !== currentEmail)
-                  : [...(reply.liked_by || []), currentEmail],
-              };
-            }),
-          };
-        }
-        return comment;
-      })
-    );
+    setLocalComments((prev) => toggleCommentLikeInTree(prev, commentId, currentEmail));
+    const result = await UserStore.likeNewsComment(activeCommentItem.id, commentId);
+    if (!result.ok) {
+      setLocalComments((prev) => toggleCommentLikeInTree(prev, commentId, currentEmail));
+      showToast(result.message, 'error');
+      return;
+    }
+    setLocalComments((prev) => toggleCommentLikeInTree(prev, commentId, currentEmail, result));
   };
 
   const handleStartEdit = (comment) => {
@@ -1155,20 +1148,7 @@ const handleLike = async (item) => {
     if (!activeCommentItem || !editingCommentId) return;
     const trimmed = editingCommentText.trim();
     if (!trimmed) return;
-    setLocalComments((prev) =>
-      prev.map((comment) => {
-        if (comment.id === editingCommentId) return { ...comment, text: trimmed, edited_at: new Date().toISOString() };
-        if (Array.isArray(comment.replies)) {
-          return {
-            ...comment,
-            replies: comment.replies.map((reply) =>
-              reply.id === editingCommentId ? { ...reply, text: trimmed, edited_at: new Date().toISOString() } : reply
-            ),
-          };
-        }
-        return comment;
-      })
-    );
+    setLocalComments((prev) => updateCommentTextInTree(prev, editingCommentId, trimmed));
     const result = await UserStore.editNewsComment(activeCommentItem.id, editingCommentId, trimmed);
     if (!result.ok) {
       showToast(result.message, 'error');
@@ -1184,24 +1164,11 @@ const handleLike = async (item) => {
     const result = await UserStore.deleteNewsComment(activeCommentItem.id, commentId);
     if (!result.ok) { showToast(result.message, 'error'); return; }
     let removedCount = 0;
-    setLocalComments((prev) =>
-      prev
-        .map((comment) => {
-          if (comment.id === commentId) {
-            removedCount = 1 + (Array.isArray(comment.replies) ? comment.replies.length : 0);
-            return null;
-          }
-          if (Array.isArray(comment.replies)) {
-            const nextReplies = comment.replies.filter((reply) => reply.id !== commentId);
-            if (nextReplies.length !== comment.replies.length) {
-              removedCount += comment.replies.length - nextReplies.length;
-              return { ...comment, replies: nextReplies };
-            }
-          }
-          return comment;
-        })
-        .filter(Boolean)
-    );
+    setLocalComments((prev) => {
+      const res = deleteCommentFromTree(prev, commentId);
+      removedCount = res.removedCount;
+      return res.nextComments;
+    });
     if (removedCount > 0) {
       const nextCount = Math.max(0, Number(activeCommentItem.comments || 0) - removedCount);
       setActiveCommentItem((prev) => prev ? { ...prev, comments: nextCount } : prev);
@@ -1223,7 +1190,8 @@ const handleLike = async (item) => {
   }, []);
 
   const handleStartReply = useCallback((commentId) => {
-    const parentCommentId = findParentCommentId(localComments, commentId) || commentId;
+    const hit = findCommentNodeInTree(localComments, commentId);
+    const rootCommentId = hit?.rootNode?.id || commentId;
     if (replyingToCommentId === commentId) {
       setReplyingToCommentId(null);
       setReplyText('');
@@ -1233,8 +1201,8 @@ const handleLike = async (item) => {
     setEditingCommentText('');
     setReplyingToCommentId(commentId);
     setReplyText('');
-    setExpandedReplyThreads((prev) => ({ ...prev, [parentCommentId]: true }));
-  }, [findParentCommentId, localComments, replyingToCommentId]);
+    setExpandedReplyThreads((prev) => ({ ...prev, [rootCommentId]: true, [commentId]: true }));
+  }, [localComments, replyingToCommentId]);
 
   const handleCancelReply = () => {
     setReplyingToCommentId(null);
@@ -1244,7 +1212,11 @@ const handleLike = async (item) => {
   const handleSubmitReply = async () => {
     const trimmed = replyText.trim();
     if (!activeCommentItem || !replyingToCommentId || !trimmed) return;
-    const result = await UserStore.replyNewsComment(activeCommentItem.id, replyingToCommentId, trimmed);
+    const hit = findCommentNodeInTree(localComments, replyingToCommentId);
+    const rootCommentId = hit?.rootNode?.id || replyingToCommentId;
+    const result = await UserStore.replyNewsComment(activeCommentItem.id, replyingToCommentId, trimmed, {
+      rootCommentId,
+    });
     if (!result.ok) { showToast(result.message, 'error'); return; }
     const added = result.comment || {};
     const newReply = {
@@ -1253,26 +1225,20 @@ const handleLike = async (item) => {
       author: String(added.author || currentUser?.name || 'User'),
       author_email: String(added.author_email || currentUser?.email || ''),
       author_avatar: String(added.author_avatar || currentUser?.profile_image || currentUser?.avatar || ''),
+      author_id: added.author_id || currentUser?.id || null,
       author_has_blue_tick: Boolean(added.author_has_blue_tick || currentUser?.has_blue_tick),
+      is_mine: true,
       date: added.date || 'Now',
       edited_at: null,
       likes: 0,
       liked_by: [],
-      parent_comment_id: added.parent_comment_id || replyingToCommentId,
+      liked_by_me: false,
+      parent_comment_id: added.parent_comment_id || rootCommentId,
+      parent_reply_id: added.parent_reply_id || null,
+      replies: [],
     };
-    const parentCommentId = findParentCommentId(localComments, replyingToCommentId) || replyingToCommentId;
-    setLocalComments((prev) =>
-      prev.map((comment) => {
-        if (comment.id === replyingToCommentId || comment.id === parentCommentId) {
-          return {
-            ...comment,
-            replies: Array.isArray(comment.replies) ? [newReply, ...comment.replies] : [newReply],
-          };
-        }
-        return comment;
-      })
-    );
-    setExpandedReplyThreads((prev) => ({ ...prev, [parentCommentId]: true }));
+    setLocalComments((prev) => insertReplyInTree(prev, replyingToCommentId, newReply, { prepend: true }).comments);
+    setExpandedReplyThreads((prev) => ({ ...prev, [rootCommentId]: true, [replyingToCommentId]: true }));
     const nextCount = Number(activeCommentItem.comments || 0) + 1;
     setActiveCommentItem((prev) => prev ? { ...prev, comments: nextCount } : prev);
     updateFeedCommentCount(activeCommentItem.id, 1);
