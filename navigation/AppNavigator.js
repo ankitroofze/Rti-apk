@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, BackHandler, Platform } from 'react-native';
-import { NavigationContainer } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { navigationRef } from '../utils/navigationRef';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import PaymentHistoryScreen from '../pages/Paymenthistoryscreen';
@@ -82,6 +82,7 @@ import OtpScreen from '../auth/OtpScreen';
 import InfoPageScreen from '../screens/InfoPageScreen';
 import { linkingConfig } from './linkingConfig';
 import { useAuth } from '../contexts/AuthContext';
+import { useTheme } from '../contexts/ThemeContext';
 
 const MENU_PROTECTED_SCREENS = new Set([
   'QuickMenu',
@@ -133,6 +134,7 @@ const Stack = createNativeStackNavigator();
 const NAVIGATION_STATE_KEY = 'rti-news-navigation-state';
 
 export default function AppNavigator() {
+  const { isDark } = useTheme();
   const exitDialogVisibleRef = useRef(false);
   const [isNavStateReady, setIsNavStateReady] = useState(false);
   const { isLoggedIn, isAuthLoading } = useAuth();
@@ -289,6 +291,7 @@ export default function AppNavigator() {
   return (
     <NavigationContainer
       ref={navigationRef}
+      theme={Platform.OS === 'web' && isDark ? DarkTheme : DefaultTheme}
       linking={linkingConfig}
       onReady={enforceAuth}
       onStateChange={enforceAuth}

@@ -1,3 +1,4 @@
+import { themeWebCss, themeWebStyle } from '../theme/webColors';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import React from 'react';
 import {
@@ -102,7 +103,7 @@ if (typeof document !== 'undefined') {
   if (existing) existing.remove();
   const el = document.createElement('style');
   el.id = id;
-  el.textContent = `
+  el.textContent = themeWebCss(`
     @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700;800;900&display=swap');
     @keyframes ecomeFadeUp {
       from { opacity: 0; transform: translateY(8px); }
@@ -261,7 +262,11 @@ if (typeof document !== 'undefined') {
       .ecome-desc { font-size: 13px; color: #475569; }
       .ecome-go-btn { top: 14px; right: 14px; }
     }
-  `;
+    [data-theme="dark"] .ecome-hero-left,
+    [data-theme="dark"] .ecome-card-body {
+      background: rgba(var(--rti-surface), 0.96);
+    }
+  `);
   document.head.appendChild(el);
 }
 
@@ -366,7 +371,7 @@ function EcomeWeb({ navigation }) {
       >
         <div className="ecome-go-btn">→</div>
         <div className="ecome-card-body">
-          <div className="ecome-icon" style={{ background: ic.bg }}>
+          <div className="ecome-icon" style={themeWebStyle({ background: ic.bg })}>
             {item.emoji}
           </div>
           <div className="ecome-label">{tr(item.label)}</div>

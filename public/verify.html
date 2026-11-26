@@ -8,11 +8,30 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
+<script>
+  try {
+    var savedTheme = localStorage.getItem('app_theme_mode');
+    var darkMode = savedTheme === 'dark' || (savedTheme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.dataset.theme = darkMode ? 'dark' : 'light';
+  } catch (_) {}
+</script>
 <style>
   :root{
     --brand:#EB8C28; --brand-dark:#c96f12; --green:#15803d; --red:#cc2200; --blue:#1d9bf0;
     --ink:#0f172a; --sub:#64748b; --line:#e5e7eb; --bg:#f1f5f9; --card:#ffffff;
   }
+  html[data-theme="dark"]{
+    color-scheme:dark;
+    --ink:#f8fafc; --sub:#b7c5d9; --line:#394862; --bg:#0f172a; --card:#131c31;
+    --green:#86e6b1; --red:#ffa59f;
+  }
+  [data-theme="dark"] .avatar,[data-theme="dark"] .thumb{background:#24324a;color:var(--ink);border-color:var(--card)}
+  [data-theme="dark"] .bio{color:var(--ink)}
+  [data-theme="dark"] .role{background:#312318;color:#ffbb80;border-color:#5f432a}
+  [data-theme="dark"] .status.ok{background:#183120;color:var(--green);border-color:#356149}
+  [data-theme="dark"] .status.no{background:#1b273d;color:var(--sub)}
+  [data-theme="dark"] .cat{background:#311a18;color:var(--red);border-color:#663530}
+  [data-theme="dark"] .vbadge{color:var(--status-dark-ink);background:var(--status-dark-bg);border-color:var(--status-dark-ink)}
   *{box-sizing:border-box;margin:0;padding:0}
   html{-webkit-text-size-adjust:100%}
   body{font-family:'Roboto',system-ui,-apple-system,'Segoe UI',Arial,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5;min-height:100vh;
@@ -88,7 +107,7 @@
   }
 
   /* ID card verification (?token=) */
-  .vbadge{margin-top:16px;border:2px solid;border-radius:14px;padding:14px 12px;text-align:center}
+  .vbadge{margin-top:16px;border:2px solid var(--status-ink);background:var(--status-bg);color:var(--status-ink);border-radius:14px;padding:14px 12px;text-align:center}
   .vbadge .ic{font-size:30px;line-height:1}
   .vbadge .tt{font-size:21px;font-weight:900;margin-top:4px}
   .vbadge .ss{font-size:13px;margin-top:3px}

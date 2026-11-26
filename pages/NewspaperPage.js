@@ -1,3 +1,4 @@
+import { themeWebStyle } from '../theme/webColors';
 import { UserStore } from '../store/UserStore';
 import React, { useState } from 'react';
 import {
@@ -570,7 +571,7 @@ export default function NewspaperPage({ route, navigation }) {
 
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
           <div className="no-print" style={{ width: 150, background: '#1a1a1a', borderRight: '1px solid #333', overflowY: 'auto', padding: '10px 0' }}>
-            <div style={{ color: '#555', fontSize: 9, fontWeight: 700, letterSpacing: 1, padding: '0 12px 8px', textTransform: 'uppercase' }}>Sections</div>
+            <div style={{ color: '#a3a3a3', fontSize: 9, fontWeight: 700, letterSpacing: 1, padding: '0 12px 8px', textTransform: 'uppercase' }}>Sections</div>
             {sectionList.filter(sec => !sec.hidden).map(sec => (
               <div key={sec.id} onClick={() => setActiveSection(sec.id)} style={{
                 display: 'flex', alignItems: 'center', gap: 8,
@@ -586,8 +587,8 @@ export default function NewspaperPage({ route, navigation }) {
             ))}
           </div>
 
-          <div ref={layoutScrollRef} style={{ flex: 1, background: '#e8e4df', overflowY: 'auto', padding: 20 }}>
-            <div className="newspaper-preview-wrap" style={{ maxWidth: 1050, margin: '0 auto', boxShadow: '0 8px 40px rgba(0,0,0,0.3)' }}>
+          <div ref={layoutScrollRef} style={themeWebStyle({ flex: 1, background: '#e8e4df', overflowY: 'auto', padding: 20 })}>
+            <div className="newspaper-preview-wrap" data-color-scheme="light" style={{ maxWidth: 1050, margin: '0 auto', boxShadow: '0 8px 40px rgba(0,0,0,0.3)' }}>
               <Layout
                 sections={sections}
                 activeSection={activeSection}

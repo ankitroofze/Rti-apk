@@ -125,8 +125,7 @@ function PaymentHistoryScreen__Inner({ navigation }) {
     if (invoiceBusyId) return;
     setInvoiceBusyId(key);
     try {
-      const user = (await UserStore.getCurrentUser()) || {};
-      const res = await sendInvoiceEmailCopy(txn, user);
+      const res = await sendInvoiceEmailCopy(txn);
       showToast(res.message || (res.ok ? 'Invoice sent to your email.' : 'Could not send invoice email.'), res.ok ? 'success' : 'error');
     } catch (_) {
       showToast('Could not send invoice email.', 'error');

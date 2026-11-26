@@ -1,3 +1,4 @@
+import { themeWebStyle } from '../theme/webColors';
 import { smartGoBack } from '../utils/smartBack';
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import {
@@ -597,7 +598,7 @@ const [reporterDate, setReporterDate] = useState('');
             type="date"
             value={reporterDate}
             onChange={e=>setReporterDate(e.target.value)}
-            style={{flex:1,fontSize: 14, fontFamily: FONT_FAMILY,color:'#111111',border:'none',outline:'none',backgroundColor:'transparent',cursor:'pointer',width:'100%'}}
+            style={themeWebStyle({flex:1,fontSize: 14, fontFamily: FONT_FAMILY,color:'#111111',border:'none',outline:'none',backgroundColor:'transparent',cursor:'pointer',width:'100%'})}
           />
         ) : (
           <TextInput
@@ -946,7 +947,7 @@ const [reporterDate, setReporterDate] = useState('');
             type="date"
             value={reporterDate}
             onChange={e=>setReporterDate(e.target.value)}
-            style={{flex:1,fontSize: 14, fontFamily: FONT_FAMILY,color:'#111111',border:'none',outline:'none',backgroundColor:'transparent',cursor:'pointer',width:'100%'}}
+            style={themeWebStyle({flex:1,fontSize: 14, fontFamily: FONT_FAMILY,color:'#111111',border:'none',outline:'none',backgroundColor:'transparent',cursor:'pointer',width:'100%'})}
           />
         ) : (
           <TextInput

@@ -282,6 +282,7 @@ export const linkingConfig = {
 
       // Top-level aliases & legacy routes
       if (mappedPath === '/dashboard') mappedPath = '/menu';
+      else if (mappedPath === '/menu/settings' || mappedPath === '/menu/settings/') mappedPath = '/settings';
       else if (mappedPath === '/about-us') mappedPath = '/about';
       else if (mappedPath === '/contact-us') mappedPath = '/contact';
       else if (mappedPath === '/feed' || mappedPath === '/feeds' || mappedPath === '/reels') mappedPath = '/reel';

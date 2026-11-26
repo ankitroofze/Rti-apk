@@ -11,7 +11,7 @@ import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 
 const FONT = Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_700Bold';
 
-export default function AdOverlayCta({ ad, onOpenLeadForm, navigation, bottom = 12, right = 10 }) {
+export default function AdOverlayCta({ ad, onOpenLeadForm, onOpenProfile, navigation, bottom = 12, right = 10, placement = 'overlay' }) {
   if (!ad) return null;
   const isLead = ad.redirect === 'lead_form';
   const hasWa = Boolean(buildWhatsappUrl(ad));
@@ -63,7 +63,8 @@ export default function AdOverlayCta({ ad, onOpenLeadForm, navigation, bottom = 
 
   const onProfilePress = (e) => {
     stop(e);
-    openAdRedirect(ad, navigation, { onOpenLeadForm });
+    if (onOpenProfile) onOpenProfile(ad);
+    else openAdRedirect(ad, navigation, { onOpenLeadForm });
   };
 
   const linkIcon = ad.redirect === 'shop' ? 'storefront-outline' : isWa ? 'logo-whatsapp' : 'globe-outline';
@@ -75,8 +76,9 @@ export default function AdOverlayCta({ ad, onOpenLeadForm, navigation, bottom = 
   if (canCall) items.push({ key: 'call', icon: 'call-outline', label: 'Call Now', onPress: onCallPress });
   if (isProfile) items.push({ key: 'profile', icon: 'person-circle-outline', label: 'View Profile', onPress: onProfilePress });
 
+  const inFeed = placement === 'feed';
   return (
-    <View pointerEvents="box-none" style={[styles.strip, { bottom, right }]}>
+    <View pointerEvents="box-none" style={inFeed ? styles.feedStrip : [styles.strip, { bottom, right }]}>
       {items.map((it, i) => {
         const isItemWa = it.key === 'link' && isWa;
         const isItemCall = it.key === 'call';
@@ -84,15 +86,19 @@ export default function AdOverlayCta({ ad, onOpenLeadForm, navigation, bottom = 
           <TouchableOpacity
             key={it.key}
             style={[
-              styles.half,
+              inFeed ? styles.feedAction : styles.half,
+              inFeed && i > 0 && styles.feedDivider,
               isItemWa && styles.halfWa,
               isItemCall && styles.halfCall,
             ]}
             activeOpacity={0.85}
             onPress={it.onPress}
+            accessibilityRole="button"
+            accessibilityLabel={it.label}
           >
             <Ionicons name={it.icon} size={16} color="#ffffff" />
-            <Text style={styles.text} numberOfLines={1}>{it.label}</Text>
+            <Text style={[styles.text, inFeed && styles.feedText]} numberOfLines={inFeed ? 2 : 1}>{it.label}</Text>
+            {inFeed && <Ionicons name="chevron-forward" size={16} color="#ffffff" />}
           </TouchableOpacity>
         );
       })}
@@ -101,6 +107,22 @@ export default function AdOverlayCta({ ad, onOpenLeadForm, navigation, bottom = 
 }
 
 const styles = StyleSheet.create({
+  feedStrip: { alignSelf: 'stretch', flexDirection: 'row', backgroundColor: '#202c46' },
+  feedAction: {
+    flex: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    minHeight: 46,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  feedDivider: { borderLeftWidth: 1, borderLeftColor: 'rgba(255,255,255,0.3)' },
+  feedText: { flex: 1, fontSize: 13 },
   strip: {
     position: 'absolute',
     zIndex: 30,

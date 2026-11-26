@@ -1,4 +1,3 @@
-import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator, Alert, StatusBar,
@@ -19,6 +18,7 @@ import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useTheme } from '../contexts/ThemeContext';
+import ThemeToggle from '../components/ThemeToggle';
 import { SUPPORTED_LANGUAGES, languageDisplay } from '../constants/indianLanguages';
 
 
@@ -137,12 +137,12 @@ function SectionHeader({ title }) {
 }
 
 // ── Main Screen ───────────────────────────────────────────────────────────────
-function SettingsScreen__Inner({ navigation }) {
+export default function SettingsScreen({ navigation }) {
   const [fontsLoaded] = useFonts({ Roboto_400Regular, Roboto_500Medium, Roboto_700Bold, Roboto_900Black });
   const { showToast } = useToast();
   const insets = useSafeAreaInsets();
   const { logout } = useAuth();
-  const { isDark, toggleTheme } = useTheme();
+  const { isDark, theme, toggleTheme } = useTheme();
   const { language: appLanguage, changeLanguage } = useLanguage();
   const [languageModal, setLanguageModal] = useState(false);
   const languageItems = SUPPORTED_LANGUAGES.map(languageDisplay);
@@ -332,7 +332,7 @@ function SettingsScreen__Inner({ navigation }) {
 
    return (
     <SafeAreaView style={{ flex: 1 }} edges={['bottom']}>
-    <View style={s.root}>
+    <View style={[s.root, Platform.OS === 'web' && isDark && { backgroundColor: theme.pageBg }]}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       {/* Web header — shared red image header, same design as Wallet/Withdraw */}
       <ModuleWebHeader title="Settings" navigation={navigation} />
@@ -425,13 +425,23 @@ function SettingsScreen__Inner({ navigation }) {
         {/* ── Preferences ── */}
         <SectionHeader title="Preferences" />
         <View style={s.card}>
-          <SettingsItem
-            icon={isDark ? "moon" : "moon-outline"}
-            label="Dark Mode"
-            isToggle
-            toggleValue={isDark}
-            onToggleChange={toggleTheme}
-          />
+          {Platform.OS === 'web' ? (
+            <View style={s.item}>
+              <View style={s.iconWrap}>
+                <Ionicons name="moon-outline" size={30} color="#94a3b8" />
+              </View>
+              <Text style={s.itemLabel}>Dark Mode</Text>
+              <ThemeToggle />
+            </View>
+          ) : (
+            <SettingsItem
+              icon={isDark ? 'moon' : 'moon-outline'}
+              label="Dark Mode"
+              isToggle
+              toggleValue={isDark}
+              onToggleChange={toggleTheme}
+            />
+          )}
           <SettingsItem icon="language-outline" label="Change Language"         onPress={() => setLanguageModal(true)} />
          <SettingsItem icon="card-outline" label="Payment History"      onPress={() => navigation.navigate('PaymentHistory')} />
          <SettingsItem icon="ban-outline" label="People you blocked"      onPress={() => navigation.navigate('BlockedUsersScreen')} />
@@ -512,12 +522,4 @@ function SettingsScreen__Inner({ navigation }) {
     </View>
     </SafeAreaView>
   );
-}
-
-
-// Desktop web par ye page hamesha sidebar wale shell (QuickMenu) ke andar khulta hai
-export default function SettingsScreen(props) {
-  const redirecting = useQuickMenuRedirect(props.navigation, 'Settings');
-  if (redirecting) return null;
-  return <SettingsScreen__Inner {...props} />;
 }

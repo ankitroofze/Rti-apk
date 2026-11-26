@@ -651,6 +651,7 @@ export default function CertificatePreviewScreen({ navigation, route }) {
 
         <View
           style={styles.templateCard}
+          dataSet={Platform.OS === 'web' ? { colorScheme: 'light' } : undefined}
           onLayout={(e) => {
             const nextWidth = Math.round(e?.nativeEvent?.layout?.width || 0);
             if (nextWidth > 0 && nextWidth !== webPreviewWidth) setWebPreviewWidth(nextWidth);

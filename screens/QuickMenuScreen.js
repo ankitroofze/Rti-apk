@@ -1,3 +1,4 @@
+import { themeWebCss, themeWebStyle, themeWebValue } from '../theme/webColors';
 // screens/QuickMenuScreen.js
 import React, { useEffect, useRef } from 'react';
 import {
@@ -59,7 +60,6 @@ import MyAttemptsScreen from '../pages/MyAttemptsScreen';
 import MyEcomSubscriptionScreen from '../pages/MyEcomSubscriptionScreen';
 import SbMyAdsPage from '../pages/MyAdsScreen';
 import SbPaymentHistoryPage from '../pages/Paymenthistoryscreen';
-import SbSettingsPage from '../pages/SettingsScreen';
 import SbMyListingsPage from '../pages/MyListingsScreen';
 import SbSellerEnquiryDashboardPage from '../pages/SellerEnquiryDashboardScreen';
 import SbSellerReportsPage from '../pages/SellerReportsScreen';
@@ -540,7 +540,6 @@ const WEB_MODULES = [
   // Baaki saare pages bhi ab sidebar ke andar khulte hain
   { label: 'My Ads', icon: 'document-outline', screen: 'MyAds', iconStyle: 'orange', component: SbMyAdsPage, hideInSidebar: true },
   { label: 'Payment History', icon: 'document-outline', screen: 'PaymentHistory', iconStyle: 'orange', component: SbPaymentHistoryPage, hideInSidebar: true },
-  { label: 'Settings', icon: 'document-outline', screen: 'Settings', iconStyle: 'orange', component: SbSettingsPage, hideInSidebar: true },
   { label: 'My Listings', icon: 'document-outline', screen: 'MyListings', iconStyle: 'orange', component: SbMyListingsPage, hideInSidebar: true },
   { label: 'Received Enquiries', icon: 'document-outline', screen: 'SellerEnquiryDashboard', iconStyle: 'orange', component: SbSellerEnquiryDashboardPage, hideInSidebar: true },
   { label: 'Seller Reports', icon: 'document-outline', screen: 'SellerReports', iconStyle: 'orange', component: SbSellerReportsPage, hideInSidebar: true },
@@ -586,7 +585,6 @@ const SLUG_TO_SCREEN = {
   enquiries: 'MyEnquiries',
   'ads-enquiries': 'AdsEnquiries',
   'ads-enquiry': 'AdsEnquiries',
-  settings: 'Settings',
   'my-ads': 'MyAds',
   advertise: 'Advertise',
   'ad-plans': 'AdPlans',
@@ -612,7 +610,6 @@ const SCREEN_TO_SLUG = {
   Sell: 'sell',
   MyEnquiries: 'ecom-enquiries',
   AdsEnquiries: 'ads-enquiries',
-  Settings: 'settings',
   MyAds: 'my-ads',
   Advertise: 'advertise',
   AdPlans: 'ad-plans',
@@ -683,7 +680,13 @@ function QuickMenuWeb({ navigation, route }) {
     if (!_el) {
       _el = document.createElement('style');
       _el.id = _styleId;
-      _el.textContent = QM_CSS;
+      _el.textContent = themeWebCss(QM_CSS) + `
+        [data-theme="dark"] .qm-sidebar {
+          background:
+            linear-gradient(rgba(10, 15, 29, 0.78), rgba(10, 15, 29, 0.78)),
+            var(--qm-sidebar-bg, #131c31) center / cover no-repeat;
+        }
+      `;
       document.head.appendChild(_el);
     }
     return () => {
@@ -877,7 +880,7 @@ function QuickMenuWeb({ navigation, route }) {
                           onMouseLeave={(e) => { e.currentTarget.style.background = subActive ? 'rgba(255,255,255,0.28)' : 'transparent'; }}
                           style={{
                             display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 6,
-                            cursor: 'pointer', fontSize: 12.5, fontWeight: subActive ? 800 : 600, color: subTextColor,
+                            cursor: 'pointer', fontSize: 12.5, fontWeight: subActive ? 800 : 600, color: themeWebValue(subTextColor, 'color'),
                             background: subActive ? 'rgba(255,255,255,0.28)' : 'transparent',
                             fontFamily: "'Roboto', sans-serif",
                           }}
@@ -901,7 +904,7 @@ function QuickMenuWeb({ navigation, route }) {
           <div className="qm-content-panel">
             <div className="qm-embedded-page">
               <ActiveComponent
-                key={`${activeScreen}:${screenParams[activeScreen]?.editItem?.id ?? ''}`}
+                key={`${activeScreen}:${screenParams[activeScreen]?.editItem?.id ?? screenParams[activeScreen]?.editAd?.id ?? ''}`}
                 navigation={embeddedNavigation}
                 route={{ key: activeScreen, name: activeScreen, params: screenParams[activeScreen] }}
               />
@@ -936,7 +939,7 @@ function QuickMenuWeb({ navigation, route }) {
                   </div>
                   <div className="qm-stat-label">{s.label}</div>
                   <div className="qm-stat-value">{statValue}</div>
-                  <div className="qm-stat-sub" style={{ color: s.subColor || '#111827' }}>{statSub}</div>
+                  <div className="qm-stat-sub" style={themeWebStyle({ color: s.subColor || '#111827' })}>{statSub}</div>
                 </div>
               );
             })}
@@ -962,16 +965,16 @@ function QuickMenuWeb({ navigation, route }) {
                       onClick={() => handlePress(item)}
                     >
                       {item.badge && (
-                        <span className={`qm-card-badge${isLive ? ' qm-live-badge' : ''}`} style={{
+                        <span className={`qm-card-badge${isLive ? ' qm-live-badge' : ''}`} style={themeWebStyle({
                           background: item.badgeColor ? item.badgeColor + '18' : '#eff6ff',
                           color: item.badgeColor || '#2563eb',
-                        }}>{item.badge}</span>
+                        })}>{item.badge}</span>
                       )}
-                      <div className={`qm-card-icon${isLive ? ' qm-live-icon' : ''}`} style={{ background: item.isDestructive ? '#ffe4e6' : ic.bg }}>
+                      <div className={`qm-card-icon${isLive ? ' qm-live-icon' : ''}`} style={themeWebStyle({ background: item.isDestructive ? '#ffe4e6' : ic.bg })}>
                         <Ionicons name={item.icon} size={22} color={item.isDestructive ? '#e11d48' : ic.color} />
                       </div>
                       <div>
-                        <div className="qm-card-name" style={{ color: item.isDestructive ? '#e11d48' : ic.color }}>{item.label}</div>
+                        <div className="qm-card-name" style={themeWebStyle({ color: item.isDestructive ? '#e11d48' : ic.color })}>{item.label}</div>
                         <div className="qm-card-desc">{CARD_DESCS[item.label]}</div>
                       </div>
                     </div>

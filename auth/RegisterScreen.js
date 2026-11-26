@@ -166,7 +166,7 @@ export default function RegisterScreen({ navigation, route }) {
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     const style = document.createElement('style');
-    style.textContent = `html, body, #root { height: 100%; margin: 0; padding: 0; background-color: #F0F0F5; overflow: hidden; }`;
+    style.textContent = `html, body, #root { height: 100%; margin: 0; padding: 0; background-color: rgb(var(--rti-raised, 240, 240, 245)); overflow: hidden; }`;
     document.head.appendChild(style);
     return () => { style.remove(); };
   }, []);
@@ -187,6 +187,7 @@ export default function RegisterScreen({ navigation, route }) {
   const [passwordTouched, setPasswordTouched] = useState(false);
   const [mobileTouched, setMobileTouched] = useState(false);
   const [formStep, setFormStep] = useState(1);
+  const formScrollRef = useRef(null);
 
   const [otpModalVisible, setOtpModalVisible] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
@@ -481,7 +482,14 @@ export default function RegisterScreen({ navigation, route }) {
     }
   };
 
-  const handleClose = () => navigation.navigate('Home');
+  const handleBack = () => {
+    if (formStep === 2) {
+      setFormStep(1);
+      formScrollRef.current?.scrollTo({ y: 0, animated: false });
+      return;
+    }
+    navigation.popTo('Login', undefined, { merge: true });
+  };
   const mobileShowError = mobileTouched && mobile.length > 0 && !mobileOk;
 
   return (
@@ -492,6 +500,7 @@ export default function RegisterScreen({ navigation, route }) {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined} enabled={Platform.OS === 'ios'}
         >
           <KeyboardAwareScroll
+            ref={formScrollRef}
             style={styles.scrollView}
             contentContainerStyle={styles.formScroll}
             keyboardShouldPersistTaps="handled"
@@ -501,7 +510,7 @@ export default function RegisterScreen({ navigation, route }) {
             <View style={styles.formContainer}>
 
               {/* ── Close Button ── */}
-              <TouchableOpacity style={styles.closeButton} onPress={handleClose} activeOpacity={0.7}>
+              <TouchableOpacity style={styles.closeButton} onPress={handleBack} activeOpacity={0.7}>
                 <Ionicons name="arrow-back" size={22} color="#ffffff" />
               </TouchableOpacity>
 

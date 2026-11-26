@@ -122,7 +122,7 @@ function WebRichField({ label, value, onChange }) {
     <div style={{ marginBottom: 14 }}>
       <style>{`
         .rte-toolbar-${label?.replace(/\s/g,'_')} {
-          background:#2a2a2a; border:1px solid #444; border-bottom:none;
+          background:rgb(var(--rti-raised, 42, 42, 42)); border:1px solid rgb(var(--rti-border, 68, 68, 68)); border-bottom:none;
           border-radius:6px 6px 0 0; padding:5px 7px;
           display:flex; flex-wrap:wrap; gap:3px; align-items:center;
         }
@@ -132,13 +132,13 @@ function WebRichField({ label, value, onChange }) {
         .rte-select option { background:#2a2a2a; }
         .rte-sep { width:1px; height:18px; background:#555; margin:0 2px; flex-shrink:0; }
         .rte-editor {
-          background:#1e1e1e; border:1px solid #444; border-radius:0 0 6px 6px;
+          background:rgb(var(--rti-surface, 30, 30, 30)); border:1px solid rgb(var(--rti-border, 68, 68, 68)); border-radius:0 0 6px 6px;
           min-height:120px; color:#fff; padding:10px 12px;
           font-family:'Mukta','Noto Sans Devanagari',sans-serif;
           font-size:13px; outline:none; line-height:1.6;
           word-break:break-word; overflow-wrap:break-word;
         }
-        .rte-editor:empty:before { content:attr(data-placeholder); color:#555; pointer-events:none; }
+        .rte-editor:empty:before { content:attr(data-placeholder); color:rgb(var(--rti-muted, 133, 133, 133)); pointer-events:none; }
         .rte-editor h1 { font-size:24px; font-weight:900; color:#fff; }
         .rte-editor h2 { font-size:20px; font-weight:800; color:#fff; }
         .rte-editor h3 { font-size:16px; font-weight:700; color:#fff; }

@@ -1,3 +1,4 @@
+import { themeWebStyle } from '../theme/webColors';
 // pages/EPaperScreen.js
 // ═══════════════════════════════════════════════════════════════════════════
 //  Newspapers — User side (backend driven)
@@ -245,7 +246,7 @@ export default function EPaperScreen({ navigation }) {
             value: dateInput,
             max: todayStr(),
             onChange: (e) => setDateInput(e.target.value),
-            style: { flex: 1, border: '1px solid #e2e8f0', borderRadius: 10, padding: '8px 10px', fontSize: 14, outline: 'none', minWidth: 0 },
+            style: themeWebStyle({ flex: 1, border: '1px solid #e2e8f0', borderRadius: 10, padding: '8px 10px', fontSize: 14, outline: 'none', minWidth: 0, color: '#0f172a', backgroundColor: '#fff' }),
           })
         ) : (
           <TextInput onSubmitEditing={applyDate}

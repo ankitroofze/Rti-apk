@@ -1,3 +1,4 @@
+import { themeWebStyle } from '../theme/webColors';
 import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -708,7 +709,11 @@ const editAd = route?.params?.editAd || null;
 
   useEffect(() => {
     if (!editAd) return;
-    setPhoto(editAd.photo || null);
+    setPhoto(editAd.photo || editAd.image || null);
+    setAdVideo(editAd.video || editAd.video_url || null);
+    setExtraPhotos(Array.isArray(editAd.images)
+      ? editAd.images.filter((image) => image && image !== (editAd.photo || editAd.image))
+      : []);
     setTitle(editAd.title || '');
     setDescription(editAd.description || '');
     setSelectedRedirect(editAd.redirect || 'whatsapp');
@@ -1055,6 +1060,10 @@ const editAd = route?.params?.editAd || null;
 
   const handlePreviewNext = async () => {
     if (submittingAdRef.current) return;
+    if (editAd && !isEditing) {
+      showToast('Advertisement ID is missing. Open the ad again from your dashboard.', 'error');
+      return;
+    }
     submittingAdRef.current = true;
     setShowPreview(false);
     await new Promise(resolve => setTimeout(resolve, 300));
@@ -1091,7 +1100,7 @@ const editAd = route?.params?.editAd || null;
       return;
     }
 
-    await AsyncStorage.removeItem(AD_DRAFT_KEY).catch(() => {});
+    if (!isEditing) await AsyncStorage.removeItem(AD_DRAFT_KEY).catch(() => {});
     showToast(isEditing ? 'Ad updated successfully!' : 'Ad posted successfully!', 'success');
     setTimeout(() => {
       submittingAdRef.current = false;
@@ -1295,7 +1304,7 @@ const editAd = route?.params?.editAd || null;
                       const [y, m, d] = val.split('-').map(Number);
                       setSelectedDate(new Date(y, m - 1, d));
                     }}
-                    style={{
+                    style={themeWebStyle({
                       marginLeft: 'auto',
                       border: '1.5px solid #FFE8D6',
                       borderRadius: 6,
@@ -1304,7 +1313,7 @@ const editAd = route?.params?.editAd || null;
                       fontFamily: "'Roboto', sans-serif",
                       color: '#111111',
                       backgroundColor: '#ffffff',
-                    }}
+                    })}
                   />
                 ) : (
                   <TouchableOpacity
@@ -1482,7 +1491,7 @@ const editAd = route?.params?.editAd || null;
                   const [y, m, d] = val.split('-').map(Number);
                   setSelectedDate(new Date(y, m - 1, d));
                 }}
-                style={{
+                style={themeWebStyle({
                   marginLeft: 'auto',
                   border: '1.5px solid #FFE8D6',
                   borderRadius: 6,
@@ -1491,7 +1500,7 @@ const editAd = route?.params?.editAd || null;
                   fontFamily: "'Roboto', sans-serif",
                   color: '#111111',
                   backgroundColor: '#ffffff',
-                }}
+                })}
               />
             ) : (
               <TouchableOpacity
@@ -1858,7 +1867,7 @@ const ws = StyleSheet.create({
 
 // Desktop web par ye page hamesha sidebar wale shell (QuickMenu) ke andar khulta hai
 export default function AdvertiseScreen(props) {
-  const redirecting = useQuickMenuRedirect(props.navigation, 'Advertise');
+  const redirecting = useQuickMenuRedirect(props.navigation, 'Advertise', props.route?.params);
   if (redirecting) return null;
   return <AdvertiseScreen__Inner {...props} />;
 }

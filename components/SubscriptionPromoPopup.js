@@ -36,20 +36,36 @@ const ROBOTO_BLACK   = IS_WEB ? "'Roboto', sans-serif" : 'Roboto_900Black';
 
 let sessionDismissed = false;
 const SESSION_DISMISS_KEY = '@subscription_promo_dismissed_v1';
+const PROMO_DELAY_MS = 4000;
 
 export default function SubscriptionPromoPopup({
   navigation,
   currentUser = null,
   selectedStateName = '',
   selectedDistrictName = '',
+  canShow = false,
   onClose,
 }) {
   const insets = useSafeAreaInsets();
   const isFocused = useIsFocused();
-  const [visible, setVisible] = useState(false);
+  const [delayElapsed, setDelayElapsed] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [plans, setPlans] = useState([]);
   const [userLocationLabel, setUserLocationLabel] = useState('');
+  const isSubscribed = Boolean(
+    UserStore.hasActiveSubscription?.(currentUser)
+    || UserStore.hasActiveRolePlan?.(currentUser)
+    || currentUser?.is_subscribed
+  );
+  const eligibleToShow = canShow && isFocused && !isSubscribed && !dismissed && !sessionDismissed;
+
+  useEffect(() => {
+    setDelayElapsed(false);
+    if (!eligibleToShow) return undefined;
+    const timer = setTimeout(() => setDelayElapsed(true), PROMO_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [eligibleToShow]);
 
   const userState = useMemo(() => {
     return selectedStateName
@@ -68,11 +84,6 @@ export default function SubscriptionPromoPopup({
   useEffect(() => {
     let alive = true;
     (async () => {
-      const isSubscribed = Boolean(
-        UserStore.hasActiveSubscription?.(currentUser)
-        || UserStore.hasActiveRolePlan?.(currentUser)
-        || (currentUser?.is_subscribed)
-      );
       if (isSubscribed) return;
 
       if (sessionDismissed) return;
@@ -80,6 +91,7 @@ export default function SubscriptionPromoPopup({
         const dismissedAt = await AsyncStorage.getItem(SESSION_DISMISS_KEY);
         if (dismissedAt && Date.now() - Number(dismissedAt) < 4 * 60 * 60 * 1000) {
           sessionDismissed = true;
+          if (alive) setDismissed(true);
           return;
         }
       } catch (_) { }
@@ -100,9 +112,6 @@ export default function SubscriptionPromoPopup({
         const available = rawPlans.filter((p) => !p?.is_sold && Number(p?.price) > 0);
         if (alive) {
           setPlans(available.slice(0, 4));
-          if (available.length > 0) {
-            setVisible(true);
-          }
         }
       } catch (err) {
         console.warn('[SubscriptionPromoPopup] failed to load plans:', err);
@@ -112,11 +121,11 @@ export default function SubscriptionPromoPopup({
     })();
 
     return () => { alive = false; };
-  }, [currentUser, userState, userDistrict]);
+  }, [isSubscribed, userState, userDistrict]);
 
   const handleDismiss = useCallback(() => {
     sessionDismissed = true;
-    setVisible(false);
+    setDismissed(true);
     AsyncStorage.setItem(SESSION_DISMISS_KEY, String(Date.now())).catch(() => {});
     if (onClose) onClose();
   }, [onClose]);
@@ -136,11 +145,11 @@ export default function SubscriptionPromoPopup({
     openWithSidebar(navigation, 'Subscription Plans', { returnTo: 'Home' });
   }, [handleDismiss, navigation]);
 
-  if (!visible || !isFocused) return null;
+  if (!eligibleToShow || !delayElapsed || !plans.length) return null;
 
   return (
     <Modal
-      visible={visible}
+      visible
       transparent
       animationType="fade"
       statusBarTranslucent

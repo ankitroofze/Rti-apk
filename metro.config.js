@@ -1,3 +1,4 @@
+const path = require('node:path');
 const { getDefaultConfig } = require('expo/metro-config');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 
@@ -5,6 +6,21 @@ const config = getDefaultConfig(__dirname);
 
 // expo-sqlite web fix (yahi 500 error ki wajah thi)
 config.resolver.assetExts.push('wasm');
+
+const resolveRequest = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  // Keep the native compiler untouched and use the same palette for every RN Web route.
+  const origin = context.originModulePath.replace(/\\/g, '/');
+  if (
+    platform === 'web' &&
+    /^\.\.?\/.*normalizeValueWithProperty$/.test(moduleName) &&
+    origin.includes('/react-native-web/') &&
+    origin.includes('/StyleSheet/')
+  ) {
+    return { type: 'sourceFile', filePath: path.join(__dirname, 'theme', 'normalizeWebStyle.js') };
+  }
+  return (resolveRequest || context.resolveRequest)(context, moduleName, platform);
+};
 
 config.server = {
   ...config.server,

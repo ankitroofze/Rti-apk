@@ -244,7 +244,7 @@ const orderBySeen = (src = [], seen = {}) => {
   });
 };
 
-export default function HomePromoPopup({ ad, ads, onPress }) {
+export default function HomePromoPopup({ ad, ads, onPress, onOpen, onClose }) {
   const insets = useSafeAreaInsets();
   const { width: winW, height: winH } = useWindowDimensions();
 
@@ -316,7 +316,8 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
     setIndex(0);
     setRemaining(AD_SECONDS);
     setUnlocked(false);
-  }, []);
+    onOpen?.();
+  }, [onOpen]);
 
   // Screen focus par dekhe hue ads load karke popup open karo
   useFocusEffect(
@@ -415,6 +416,7 @@ export default function HomePromoPopup({ ad, ads, onPress }) {
     promoDismissedThisSession = true;
     visibleRef.current = false;
     setVisible(false);
+    onClose?.();
   };
   const handleSkip = () => { if (canSkip) close(); };
 

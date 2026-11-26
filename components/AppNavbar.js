@@ -19,7 +19,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
-import { useTheme } from '../contexts/ThemeContext';
+import ThemeToggle from './ThemeToggle';
 import { subscribeBadgeRefresh } from '../utils/Pushnotifications';
 import useLiveRefresh from '../utils/useLiveRefresh';
 import { getSiteCopy } from '../constants/siteCopy';
@@ -554,7 +554,6 @@ function GallerySlider({ handleNavigate, handleHomeShortcut }) {
 function MobileTopHeader({ navigation, handleNavigate, handleHomeShortcut }) {
   const insets = useSafeAreaInsets();
   const { language } = useLanguage();
-  const { isDark, toggleTheme } = useTheme();
   const hc = useMemo(() => getHeaderCopy(language), [language]);
 
   return (
@@ -571,14 +570,7 @@ function MobileTopHeader({ navigation, handleNavigate, handleHomeShortcut }) {
         </View>
         <View style={styles.mobileTopHeaderActions}>
           <NavbarLanguageSelector compact />
-          <TouchableOpacity
-            style={styles.mobileThemeToggleBtn}
-            onPress={toggleTheme}
-            activeOpacity={0.8}
-            accessibilityLabel="Toggle Dark/Light Mode"
-          >
-            <Ionicons name={isDark ? 'sunny' : 'moon-outline'} size={19} color={isDark ? '#f59e0b' : '#334155'} />
-          </TouchableOpacity>
+          <ThemeToggle compact />
           <RefreshButton style={styles.mobileRefreshBtn} />
           <NotificationBell navigation={navigation} style={styles.mobileBellBtn} />
           <ProfileDropdown navigation={navigation} />
@@ -686,7 +678,6 @@ function MobileBottomBar({ activeScreen, handleNavigate }) {
 // ─── Main Export ──────────────────────────────────────────────────────────
 export default function AppNavbar({ activeScreen, navigation, hideTopHeader = false, hideBottomBar = false }) {
   const { language } = useLanguage();
-  const { isDark, toggleTheme } = useTheme();
   const copy = useMemo(() => getSiteCopy(language), [language]);
   const hc = useMemo(() => getHeaderCopy(language), [language]);
   const isDesktop = useIsDesktop();
@@ -754,14 +745,7 @@ export default function AppNavbar({ activeScreen, navigation, hideTopHeader = fa
 
         <View style={styles.desktopUtilityRow}>
           <NavbarLanguageSelector />
-          <TouchableOpacity
-            style={[styles.notificationBellBtn, { marginHorizontal: 0 }]}
-            onPress={toggleTheme}
-            activeOpacity={0.85}
-            accessibilityLabel="Toggle Dark/Light Mode"
-          >
-            <Ionicons name={isDark ? 'sunny' : 'moon-outline'} size={20} color={isDark ? '#f59e0b' : '#0f172a'} />
-          </TouchableOpacity>
+          <ThemeToggle />
           <NotificationBell navigation={navigation} style={{ marginRight: 0 }} />
           {/* Bell ke just right side me: sirf Subscription icon (naam nahi) */}
           <TouchableOpacity
@@ -856,6 +840,7 @@ const styles = StyleSheet.create({
     }),
   },
   brandLogo: {
+    backgroundColor: IS_WEB ? 'var(--rti-logo-background, transparent)' : undefined,
     width: 90,
     height: 90,
     borderRadius: 45,
@@ -1032,14 +1017,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 2,
     flexShrink: 0,
-  },
-  mobileThemeToggleBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
   },
   // ─── Web overlay ───────────────────────────────────────────────────────
   webOverlay: {

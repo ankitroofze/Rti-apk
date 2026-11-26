@@ -1,11 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, Linking, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { openExternalUrl, buildWhatsappUrl, openAdRedirect } from '../utils/adRedirect';
 import AdOverlayCta from './AdOverlayCta';
 import VerifiedBadge from './VerifiedBadge';
 import useRotatingRandomAds, { AD_ROTATE_MS } from '../utils/useRotatingAds';
-import UserStore from '../store/UserStore';
+import { uniqueSponsoredAds } from '../utils/adGrouping';
+import AdvertiserFollowButton from './AdvertiserFollowButton';
+import { UserStore } from '../store/UserStore';
 import ProfileAvatar from './ProfileAvatar';
 import MediaGallery from './MediaGallery';
 import * as MediaDownloadButtonModule from './MediaDownloadButton';
@@ -187,23 +189,35 @@ function SponsoredAdGroup({ group = [], children }) {
   );
 }
 
-// Advertiser ka header: profile image + naam + Sponsored. Click karne par uske profile par jata hai.
 function SponsoredHeader({ ad, navigation, commonCopy }) {
-  const name = ad.owner_name || 'Advertiser';
+  const email = String(ad.owner_email || '').trim().toLowerCase();
+  const rawId = String(ad.owner_id ?? ad.user_id ?? ad.userId ?? '').trim();
+  const ownerId = /^(null|undefined)?$/i.test(rawId) ? '' : rawId;
+  const hasOwner = Boolean(ownerId || email);
+  const [profile, setProfile] = useState(null);
+  const name = profile?.name || [profile?.firstname, profile?.lastname].filter(Boolean).join(' ') || ad.owner_name || 'Advertiser';
+  const avatar = ad.owner_profile_image || profile?.avatar || '';
+  const verified = Boolean(ad.owner_has_blue_tick || ad.verified || ad.has_blue_tick || profile?.has_blue_tick);
+  const isOwner = useCallback((user) => Boolean(
+    (email && String(user?.email || '').trim().toLowerCase() === email)
+    || (ownerId && String(user?.id ?? user?.user_id ?? '') === ownerId)
+  ), [email, ownerId]);
+
+  useEffect(() => {
+    if (!ownerId || (ad.owner_profile_image && ad.owner_name && ad.owner_name !== 'Advertiser')) return undefined;
+    let active = true;
+    UserStore.getPublicProfileById(ownerId).then((result) => {
+      if (active) setProfile(result);
+    });
+    return () => { active = false; };
+  }, [ownerId, ad.owner_name, ad.owner_profile_image]);
+
   const handlePress = async () => {
-    const email = String(ad.owner_email || '').trim().toLowerCase();
-    const rawUid = ad.user_id ?? ad.owner_id ?? ad.userId ?? null;
-    const cleanId = (s) => (s == null || s === '' || String(s) === 'null' || String(s) === 'undefined') ? null : String(s);
-    let userId = cleanId(rawUid);
-    if (!userId && email) {
-      userId = await UserStore.resolveUserIdByEmail(email);
-    }
-    if (!email && !userId) return;
+    const userId = ownerId || (email ? await UserStore.resolveUserIdByEmail(email) : null);
+    if (!hasOwner) return;
     try {
       const me = await UserStore.getCurrentUser();
-      const myEmail = String(me?.email || '').trim().toLowerCase();
-      const isMe = (myEmail && email && myEmail === email) || (me?.id && userId && String(me.id) === String(userId));
-      if (isMe) { navigation?.navigate?.('Profile'); return; }
+      if (isOwner(me)) { navigation?.navigate?.('Profile'); return; }
     } catch { /* ignore */ }
     navigation?.navigate?.('UserPublicProfile', {
       email: email || undefined,
@@ -212,24 +226,35 @@ function SponsoredHeader({ ad, navigation, commonCopy }) {
         id: userId || undefined,
         name,
         email,
-        profile_image: ad.owner_profile_image || '',
-        avatar: ad.owner_profile_image || '',
-        has_blue_tick: Boolean(ad.owner_has_blue_tick || ad.verified || ad.has_blue_tick),
-        author_has_blue_tick: Boolean(ad.owner_has_blue_tick || ad.verified || ad.has_blue_tick),
+        profile_image: avatar,
+        avatar,
+        has_blue_tick: verified,
+        author_has_blue_tick: verified,
       },
     });
   };
+
   return (
-    <TouchableOpacity style={styles.sponsoredHeader} activeOpacity={0.75} onPress={handlePress}>
-      <ProfileAvatar uri={ad.owner_profile_image} size={36} />
-      <View style={{ flex: 1 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Text style={styles.sponsoredName} numberOfLines={1}>{name}</Text>
-          {(ad.owner_has_blue_tick || ad.verified || ad.has_blue_tick) ? <VerifiedBadge size={14} /> : null}
+    <View style={styles.sponsoredHeader}>
+      <TouchableOpacity
+        style={styles.sponsoredProfile}
+        disabled={!hasOwner}
+        accessibilityRole="button"
+        accessibilityLabel={`View profile for ${name}`}
+        activeOpacity={0.75}
+        onPress={handlePress}
+      >
+        <ProfileAvatar uri={avatar} size={38} />
+        <View style={styles.sponsoredProfileIdentity}>
+          <View style={styles.sponsoredProfileNameRow}>
+            <Text style={styles.sponsoredProfileName} numberOfLines={1}>{name}</Text>
+            {verified ? <VerifiedBadge size={14} /> : null}
+          </View>
+          <Text style={styles.sponsoredProfileLabel}>{commonCopy?.sponsored || 'Sponsored'}</Text>
         </View>
-        <Text style={styles.sponsoredSub}>{commonCopy?.sponsored || 'Sponsored'}</Text>
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+      <AdvertiserFollowButton ownerId={ownerId} email={email} navigation={navigation} />
+    </View>
   );
 }
 
@@ -239,10 +264,9 @@ export default function RightUtilityPanel({
   onViewAllTrending, commonCopy, homeCopy,
 }) {
   // ✅ Ad-free subscription wale user ko bhi right-side ads dikhte hain (unka sirf POPUP band hota hai).
-  const ads = adsProp;
-  // ✅ Right panel me max 3 ad slots — har slot ka ad har 2 second me RANDOM badalta hai
+  const ads = useMemo(() => uniqueSponsoredAds(adsProp), [adsProp]);
+  // Pick up to three distinct ads for the rotating panel.
   const sideAds = useRotatingRandomAds(ads, Math.min(3, ads.length), AD_ROTATE_MS);
-  console.log('[ADS-DEBUG] right panel ads:', ads.length, '| showing:', sideAds.length);
   const [desk, setDesk] = useState(null);
   useEffect(() => {
     let alive = true;
@@ -456,31 +480,22 @@ const styles = StyleSheet.create({
   sponsoredHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 10,
     marginBottom: 14,
   },
 
-  sponsoredAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#64748b',
+  sponsoredProfile: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    flex: 1,
+    minWidth: 0,
+    gap: 8,
   },
-
-  sponsoredName: {
-    fontSize: 14.5,
-    fontWeight: '500',
-    color: '#0f172a',
-  },
-
-  sponsoredSub: {
-    fontSize: 13,
-    color: '#4b596d',
-    marginTop: 2,
-  },
-
+  sponsoredProfileIdentity: { flex: 1, minWidth: 0, gap: 2 },
+  sponsoredProfileNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  sponsoredProfileName: { flexShrink: 1, color: '#0f172a', fontSize: 14, fontWeight: '700' },
+  sponsoredProfileLabel: { color: '#4b596d', fontSize: 12 },
   sponsoredHeadline: {
     fontSize: 18,
     fontWeight: '600',

@@ -12,6 +12,7 @@ import WebLayout from '../components/WebLayout';
 import { UserStore } from '../store/UserStore';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useTheme } from '../contexts/ThemeContext';
 import { useToast } from '../components/ui/ToastProvider';
 import AdLeadFormModal from '../components/AdLeadFormModal';
 import HomePromoPopup from '../components/HomePromoPopup';
@@ -36,6 +37,7 @@ import RightUtilityPanel from '../components/RightUtilityPanel';
 import MarqueeMenuBar from '../components/MarqueeMenuBar';
 import AutoFitAdImage from '../components/AutoFitAdImage';
 import AdOverlayCta from '../components/AdOverlayCta';
+import AdvertiserFollowButton from '../components/AdvertiserFollowButton';
 import MediaGallery from '../components/MediaGallery';
 import * as MediaDownloadButtonModule from '../components/MediaDownloadButton';
 const MediaDownloadButton = MediaDownloadButtonModule.MediaDownloadButton || MediaDownloadButtonModule.default;
@@ -411,7 +413,65 @@ function TopRotatingAdSlot({ ads = [], onPress }) {
   );
 }
 
-function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
+function FeedAdProfile({ ad, label, onOpenProfile, navigation }) {
+  const ownerId = ad?.owner_id ?? ad?.user_id ?? ad?.author_id;
+  const ownerEmail = ad?.owner_email || ad?.createdBy;
+  const ownerName = ad?.owner_name || ad?.author_name || '';
+  const ownerAvatar = ad?.owner_profile_image || ad?.author_profile_image || '';
+  const [profile, setProfile] = useState(null);
+  const [failedAvatar, setFailedAvatar] = useState(null);
+
+  useEffect(() => {
+    if (!ownerId || (ownerAvatar && ownerName && ownerName !== 'Advertiser')) return undefined;
+    let active = true;
+    UserStore.getPublicProfileById(ownerId).then((data) => {
+      if (active) setProfile(data);
+    });
+    return () => { active = false; };
+  }, [ownerId, ownerName, ownerAvatar]);
+
+  const fullName = [profile?.firstname, profile?.lastname].filter(Boolean).join(' ');
+  const name = profile?.name || fullName || ownerName || 'Advertiser';
+  const avatar = ownerAvatar || profile?.avatar || '';
+  const verified = Boolean(ad?.owner_has_blue_tick || ad?.author_has_blue_tick || profile?.has_blue_tick);
+  const canOpenProfile = Boolean(ownerId || ownerEmail);
+
+  return (
+    <View style={styles.inFeedAdHeader}>
+      <TouchableOpacity
+        style={styles.inFeedAdProfile}
+        activeOpacity={0.82}
+        disabled={!canOpenProfile}
+        accessibilityRole={canOpenProfile ? 'button' : undefined}
+        accessibilityLabel={canOpenProfile ? `View profile for ${name}` : undefined}
+        onPress={() => onOpenProfile?.({
+          ...ad,
+          author_name: name,
+          author_profile_image: avatar,
+          author_has_blue_tick: verified,
+        })}
+      >
+        <View style={styles.inFeedAdAvatar}>
+          {avatar && avatar !== failedAvatar ? (
+            <Image source={{ uri: avatar }} style={styles.inFeedAdAvatarImage} onError={() => setFailedAvatar(avatar)} />
+          ) : (
+            <Text style={styles.inFeedAdAvatarInitial}>{name.trim().charAt(0).toUpperCase()}</Text>
+          )}
+        </View>
+        <View style={styles.inFeedAdIdentity}>
+          <View style={styles.inFeedAdNameRow}>
+            <Text style={styles.inFeedAdName} numberOfLines={1}>{name}</Text>
+            {verified && <Ionicons name="checkmark-circle" size={15} color="#60a5fa" accessibilityLabel="Verified" />}
+          </View>
+          <Text style={styles.inFeedAdLabel}>{label}</Text>
+        </View>
+      </TouchableOpacity>
+      <AdvertiserFollowButton ownerId={ownerId} email={ownerEmail} navigation={navigation} />
+    </View>
+  );
+}
+
+function InFeedAdSlot({ ad, onPress, onOpenLeadForm, onOpenProfile, navigation }) {
   const { language } = useLanguage();
   const copy = useMemo(() => getSiteCopy(language), [language]);
   const commonCopy = copy.common;
@@ -424,9 +484,15 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
   React.useEffect(() => { setPage(0); setSlideHeights({}); }, [groupKey]);
   const imageOf = (a) => a?.image || a?.photo || a?.image_url || a?.images?.[0] || a?.photos?.[0];
   const group = Array.isArray(ad?.adGroup) && ad.adGroup.length > 1 ? ad.adGroup : null;
-  // Content width matches card inner space with identical left/right padding
-  const contentW = slotWidth > 0 ? (slotWidth - 24) : Math.min(winW - 44, 516);
+  const contentW = slotWidth > 0 ? slotWidth - 2 : Math.min(winW - 22, 540);
   const slideW = contentW;
+  const activeAd = group ? group[Math.min(page, group.length - 1)] : ad;
+  const profileKey = activeAd?.owner_id ?? activeAd?.user_id ?? activeAd?.owner_email ?? activeAd?.id;
+  const label = commonCopy?.sponsored || commonCopy?.advertisement || 'Sponsored';
+  const profileHeader = <FeedAdProfile key={profileKey} ad={activeAd} label={label} onOpenProfile={onOpenProfile} navigation={navigation} />;
+  const actions = (
+    <AdOverlayCta ad={activeAd} placement="feed" onOpenLeadForm={onOpenLeadForm} onOpenProfile={onOpenProfile} />
+  );
 
   const handleLayout = (e) => {
     const w = Math.round(e.nativeEvent.layout.width);
@@ -436,7 +502,7 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
   if (group) {
     return (
       <View style={styles.inFeedAdSlot} onLayout={handleLayout}>
-        <Text style={styles.adCaption}>{(commonCopy?.advertisement ? commonCopy.advertisement.toUpperCase() : 'ADVERTISEMENT')}  •  {Math.min(page + 1, group.length)}/{group.length}</Text>
+        {profileHeader}
         <View style={{ width: slideW, position: 'relative' }}>
           <ScrollView
             horizontal
@@ -489,13 +555,13 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
               ) : null}
             </>
           ) : null}
-          {(() => { const cur = group[Math.min(page, group.length - 1)]; return <AdOverlayCta ad={cur} onOpenLeadForm={onOpenLeadForm} bottom={cur?.video ? 46 : 12} />; })()}
         </View>
-          <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 6, marginTop: 8 }}>
+          <View style={styles.inFeedAdPages}>
             {group.map((a, i) => (
               <View key={`group-dot-${a?.id ?? 'ad'}-${i}`} style={{ width: i === page ? 16 : 6, height: 6, borderRadius: 3, backgroundColor: i === page ? '#f97316' : '#cbd5e1' }} />
             ))}
           </View>
+        {actions}
       </View>
     );
   }
@@ -508,31 +574,29 @@ function InFeedAdSlot({ ad, onPress, onOpenLeadForm }) {
   if (gallery.length > 1 || hasVideo) {
     return (
       <View style={styles.inFeedAdSlot} onLayout={handleLayout}>
-        <Text style={styles.adCaption}>{commonCopy?.advertisement ? commonCopy.advertisement.toUpperCase() : 'ADVERTISEMENT'}</Text>
+        {profileHeader}
         <View style={{ width: contentW, position: 'relative' }}>
           <MediaGallery
-            images={gallery.length ? gallery : [image]}
+            images={gallery.length ? gallery : (image ? [image] : [])}
             video={ad.video}
             width={contentW}
             maxHeight={420}
             adAutoPlay
             onPressImage={() => onPress?.(ad)}
           />
-          <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={hasVideo ? 46 : 12} />
         </View>
+        {actions}
       </View>
     );
   }
 
   return (
     <View style={styles.inFeedAdSlot} onLayout={handleLayout}>
-      <TouchableOpacity style={{ width: '100%', alignItems: 'center' }} activeOpacity={0.92} onPress={() => onPress?.(ad)}>
-        <Text style={styles.adCaption}>{commonCopy?.advertisement ? commonCopy.advertisement.toUpperCase() : 'ADVERTISEMENT'}</Text>
-        <View style={{ width: contentW, position: 'relative', alignItems: 'center' }}>
-          <AutoFitAdImage uri={image} maxWidth={contentW} maxHeight={420} radius={10} />
-          <AdOverlayCta ad={ad} onOpenLeadForm={onOpenLeadForm} bottom={12} />
-        </View>
+      {profileHeader}
+      <TouchableOpacity style={{ width: contentW }} activeOpacity={0.92} onPress={() => onPress?.(ad)}>
+        <AutoFitAdImage uri={image} maxWidth={contentW} maxHeight={420} />
       </TouchableOpacity>
+      {actions}
     </View>
   );
 }
@@ -799,6 +863,8 @@ const subStyles = StyleSheet.create({
 
 // ── Main HomeScreen ───────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation, route }) {
+  const { isDark, theme } = useTheme();
+  const darkPageStyle = Platform.OS === 'web' && isDark && { backgroundColor: theme.pageBg };
   const { language } = useLanguage();
   const { showToast, showPopup } = useToast();
   const copy = useMemo(() => getSiteCopy(language), [language]);
@@ -860,6 +926,7 @@ export default function HomeScreen({ navigation, route }) {
   const [selectedStateName, setSelectedStateName] = useState(initialHomeState.nextStateName);
   const [selectedDistrictName, setSelectedDistrictName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [liveStories, setLiveStories] = useState(() => _memoryHomeFeedStories || []);
   const [activeAds, setActiveAds] = useState(() => _memoryHomeFeedAds || []);
   // ✅ ads_hidden (ad-free subscription) => SIRF POP-UP ad band. Right-side aur center feed ads phir bhi dikhte hain (2-2 sec me random).
@@ -901,6 +968,10 @@ export default function HomeScreen({ navigation, route }) {
   }, []);
   const [currentUser, setCurrentUser] = useState(() => UserStore.getCachedCurrentUser?.() || null);
   const [userChecked, setUserChecked] = useState(false); // popup ad se pehle user/plan load ho chuka hai ya nahi
+  const [promoAdsReady, setPromoAdsReady] = useState(false);
+  const [promoAdClosed, setPromoAdClosed] = useState(false);
+  const handlePromoAdOpen = useCallback(() => setPromoAdClosed(false), []);
+  const handlePromoAdClose = useCallback(() => setPromoAdClosed(true), []);
   const [leftRailHeight, setLeftRailHeight] = useState(0);
   const [rightRailHeight, setRightRailHeight] = useState(0);
 
@@ -1002,7 +1073,9 @@ export default function HomeScreen({ navigation, route }) {
               setLiveStories(withAds);
               persistHomeFeedCache(withAds, adStoriesRef.current);
             }
-          }).catch(() => {});
+          }).catch(() => {}).finally(() => {
+            setPromoAdsReady(true);
+          });
 
           // Background Ecom fetch
           UserStore.getEcomeMarketplaceSummary().then((ecomRes) => {
@@ -1019,7 +1092,10 @@ export default function HomeScreen({ navigation, route }) {
         }, 100);
       }
     } catch {
-      if (!loadMore && reqId === newsReqIdRef.current) setLiveStories([]);
+      if (!loadMore && reqId === newsReqIdRef.current) {
+        setLiveStories([]);
+        setPromoAdsReady(true);
+      }
     } finally {
       if (reqId === newsReqIdRef.current) {
         newsLoadingRef.current = false;
@@ -1319,18 +1395,25 @@ const handleOpenLeadForm = useCallback(async (story) => {
   setLeadFormAd(story);
 }, [navigation, showToast]);
 
+  const handleOpenAdvertiserProfile = useCallback((ad) => {
+    if (!ad) return;
+    const authorId = ad.owner_id ?? ad.user_id ?? ad.author_id;
+    const email = ad.createdBy || ad.owner_email || ad.created_by || '';
+    if (!authorId && !email) return;
+    return handleOpenAuthorProfile({
+      ...ad,
+      createdBy: email,
+      author_id: authorId,
+      author_name: ad.author_name || ad.owner_name || 'Advertiser',
+      author_profile_image: ad.author_profile_image || ad.owner_profile_image || '',
+      author_role_label: ad.author_role_label || ad.owner_role_label || 'Sponsored',
+      author_has_blue_tick: Boolean(ad.author_has_blue_tick || ad.owner_has_blue_tick),
+    });
+  }, [handleOpenAuthorProfile]);
+
   const handleSponsoredAdPress = useCallback((ad) => {
     if (!ad) return;
-    // Advertiser ka profile kholne wala fallback — jab ad par link / number set na ho to bhi click kuch kare
-    const openAdvertiserProfile = () => handleOpenAuthorProfile({
-        ...ad,
-        createdBy: ad.createdBy || ad.owner_email || ad.created_by || '',
-        author_name: ad.author_name || ad.owner_name || '',
-        author_profile_image: ad.author_profile_image || ad.owner_profile_image || '',
-        author_role_label: ad.author_role_label || ad.owner_role_label || 'Sponsored',
-        author_has_blue_tick: Boolean(ad.author_has_blue_tick || ad.owner_has_blue_tick),
-      });
-    const hasAdvertiser = Boolean(ad.createdBy || ad.owner_email || ad.created_by || ad.author_name || ad.owner_name);
+    const hasAdvertiser = Boolean(ad.owner_id || ad.user_id || ad.author_id || ad.createdBy || ad.owner_email || ad.created_by);
     const redirect = String(ad.redirect || '').trim();
     const extra = ad.extraValues || {};
 
@@ -1360,9 +1443,9 @@ const handleOpenLeadForm = useCallback(async (story) => {
     // redirect set nahi / link khaali: koi bhi available link, warna advertiser profile, warna details
     const anyLink = extra.website_url || extra.shop_url;
     if (!redirect && String(anyLink || '').trim()) { openExternalUrl(anyLink); return; }
-    if (hasAdvertiser) { openAdvertiserProfile(); return; }
+    if (hasAdvertiser) { handleOpenAdvertiserProfile(ad); return; }
     handleOpenDetails(ad);
-  }, [handleOpenAuthorProfile, handleOpenDetails, handleOpenLeadForm]);
+  }, [handleOpenAdvertiserProfile, handleOpenDetails, handleOpenLeadForm]);
 
   // ── Full-screen "promo" popup (Android home only) — built from the first
   // active sponsored ad, styled like a big brand offer card. ────────────
@@ -1387,6 +1470,10 @@ const handleOpenLeadForm = useCallback(async (story) => {
       ...source,
     };
   }).filter(Boolean), [allAdsList]);
+  const showHomePromoAd = viewMode !== 'states' && userChecked && !adsHidden;
+  const canShowRolePromo = viewMode !== 'states' && userChecked && (
+    adsHidden || promoAdClosed || (promoAdsReady && homePromoAds.length === 0)
+  );
 
   // Center feed ko upar scroll karo (desktop: center column, mobile/compact: page scroll)
   const scrollFeedToTop = useCallback(() => {
@@ -1422,39 +1509,43 @@ const handleOpenLeadForm = useCallback(async (story) => {
     [allStories]
   );
   const handleBackFromAds = useCallback(() => { setShowAllAds(false); scrollFeedToTop(); }, [scrollFeedToTop]);
-  // ── Search bar — ab feed column ke sabse upar, koi duplicate "post" bar
-  // uske niche nahi hai (wo fake input hata diya gaya hai). Android par
-  // thoda compact height rakha gaya hai. ──────────────────────────────────
   const renderSearchField = viewMode === 'states' ? null : (
-    <View style={[styles.sectionSearchRow, isCompactLayout && styles.sectionSearchRowCompact]}>
-      <View style={styles.sectionSearchField}>
-        <Ionicons name="search-outline" size={17} color="#334155" />
-        <TextInput
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholder={homeCopy.searchFeedPlaceholder}
-          placeholderTextColor="#64748b"
-          style={styles.sectionSearchInput}
-          autoCapitalize="none"
-          autoCorrect={false}
-          returnKeyType="search"
-        />
-        {Boolean(String(searchQuery || '').trim()) && (
-          <TouchableOpacity onPress={() => setSearchQuery('')} activeOpacity={0.7} style={{ padding: 4 }}>
-            <Ionicons name="close-circle" size={18} color="#64748b" />
+    <View style={[IS_WEB && styles.sectionSearchSticky, darkPageStyle]}>
+      <View style={[styles.sectionSearchRow, isCompactLayout && styles.sectionSearchRowCompact]}>
+        <View style={[styles.sectionSearchField, isSearchFocused && styles.sectionSearchFieldFocused]}>
+          <View style={styles.sectionSearchIcon}>
+            <Ionicons name="search-outline" size={20} color="#c2410c" />
+          </View>
+          <TextInput
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            onFocus={() => setIsSearchFocused(true)}
+            onBlur={() => setIsSearchFocused(false)}
+            accessibilityLabel={homeCopy.searchFeedPlaceholder}
+            placeholder={homeCopy.searchFeedPlaceholder}
+            placeholderTextColor="#64748b"
+            style={styles.sectionSearchInput}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+          />
+          {Boolean(String(searchQuery || '').trim()) && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} activeOpacity={0.7} accessibilityRole="button" accessibilityLabel="Clear search" style={styles.sectionClearSearch}>
+              <Ionicons name="close-circle" size={18} color="#64748b" />
+            </TouchableOpacity>
+          )}
+        </View>
+        {(selectedStateName || selectedMenuKey !== 'all' || searchQuery) ? (
+          <TouchableOpacity
+            style={styles.sectionResetButton}
+            onPress={() => { setViewMode('feed'); setSelectedMenuKey('all'); setSelectedStateName(''); setSelectedDistrictName(''); setSearchQuery(''); }}
+            activeOpacity={0.84}
+          >
+            <Ionicons name="refresh-outline" size={16} color="#f97316" />
+            <Text style={styles.sectionResetButtonText}>{homeCopy.resetFeed}</Text>
           </TouchableOpacity>
-        )}
+        ) : null}
       </View>
-      {(selectedStateName || selectedMenuKey !== 'all' || searchQuery) ? (
-        <TouchableOpacity
-          style={styles.sectionResetButton}
-          onPress={() => { setViewMode('feed'); setSelectedMenuKey('all'); setSelectedStateName(''); setSelectedDistrictName(''); setSearchQuery(''); }}
-          activeOpacity={0.84}
-        >
-          <Ionicons name="refresh-outline" size={16} color="#f97316" />
-          <Text style={styles.sectionResetButtonText}>{homeCopy.resetFeed}</Text>
-        </TouchableOpacity>
-      ) : null}
     </View>
   );
 
@@ -1494,7 +1585,7 @@ const handleOpenLeadForm = useCallback(async (story) => {
 
   const pageContent = (
     <>
-      <View style={[styles.pageBodyShell, isThreeColScroll && styles.pageBodyShellCols]}>
+      <View style={[styles.pageBodyShell, darkPageStyle, isThreeColScroll && styles.pageBodyShellCols]}>
 
         {/* ✅ FULL WIDTH MARQUEE — search bar ke niche, sidebar ke upar, sirf web desktop pe
         {IS_WEB && !isMobileDeviceWeb && viewMode !== 'states' && (
@@ -1655,7 +1746,16 @@ const handleOpenLeadForm = useCallback(async (story) => {
                         {story.isAd ? (
                           (() => {
                             const rotated = centerRotatingAds[adSlotByIndex.map[index]] || story;
-                            return <InFeedAdSlot key={`feed-ad-${adSlotByIndex.map[index]}-${rotated.id}`} ad={rotated} onPress={handleSponsoredAdPress} onOpenLeadForm={handleOpenLeadForm} />;
+                            return (
+                              <InFeedAdSlot
+                                key={`feed-ad-${adSlotByIndex.map[index]}-${rotated.id}`}
+                                ad={rotated}
+                                navigation={navigation}
+                                onPress={handleSponsoredAdPress}
+                                onOpenLeadForm={handleOpenLeadForm}
+                                onOpenProfile={handleOpenAdvertiserProfile}
+                              />
+                            );
                           })()
                         ) : story.isEcome ? (
                       (visibleStories.findIndex((x) => x.isEcome) === index
@@ -1712,11 +1812,11 @@ const handleOpenLeadForm = useCallback(async (story) => {
   );
 
   const page = (
-    <View style={[styles.screenShell, IS_WEB && windowHeight > 0 && { height: windowHeight, overflow: 'hidden' }]}>
+    <View style={[styles.screenShell, darkPageStyle, IS_WEB && windowHeight > 0 && { height: windowHeight, overflow: 'hidden' }]}>
       <AppNavbar navigation={navigation} activeScreen="Home" hideBottomBar={true} />
       {isThreeColScroll ? (
         <ScrollView
-          style={styles.colsPageBody}
+          style={[styles.colsPageBody, darkPageStyle]}
           contentContainerStyle={{ flexGrow: 1 }}
           showsVerticalScrollIndicator={Platform.OS === 'web'}
           onLayout={(e) => setColsViewportHeight(Math.round(e.nativeEvent.layout.height))}
@@ -1744,10 +1844,11 @@ const handleOpenLeadForm = useCallback(async (story) => {
         keyboardShouldPersistTaps="handled"
         nestedScrollEnabled
         scrollEventThrottle={16}
-        style={styles.pageScrollView}
+        style={[styles.pageScrollView, darkPageStyle]}
         contentContainerStyle={[
           styles.pageScrollContent,
           isMobileLayout && styles.pageScrollContentMobile,
+          darkPageStyle,
           isMobileLayout && styles.pageScrollContentWithMobileNav,
         ]}
         showsVerticalScrollIndicator={Platform.OS === 'web'}
@@ -1781,17 +1882,22 @@ const handleOpenLeadForm = useCallback(async (story) => {
 />
       {/* <RotatingSponsoredAd ads={allAdsList} onPress={handleSponsoredAdPress} /> */}
 
-            {/* ── Shuru-Style Attractive Role Subscription Popup (first open) ── */}
       <SubscriptionPromoPopup
         navigation={navigation}
         currentUser={currentUser}
         selectedStateName={selectedStateName}
         selectedDistrictName={selectedDistrictName}
+        canShow={canShowRolePromo}
       />
 
       {/* Popup ad: Premium / Role se band NAHI hota — sirf tab band jab user ki active subscription me `hide_ads: true` ho */}
-      {(Platform.OS === 'android' || Platform.OS === 'ios' || IS_WEB) && viewMode !== 'states' && userChecked && !adsHidden ? (
-        <HomePromoPopup ads={adsHidden ? [] : homePromoAds} onPress={handleSponsoredAdPress} />
+      {showHomePromoAd ? (
+        <HomePromoPopup
+          ads={homePromoAds}
+          onPress={handleSponsoredAdPress}
+          onOpen={handlePromoAdOpen}
+          onClose={handlePromoAdClose}
+        />
       ) : null}
     </View>
   );
@@ -1850,18 +1956,44 @@ const styles = StyleSheet.create({
     marginTop: 10,
     marginBottom: 6,
     alignItems: 'center',
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
+    backgroundColor: '#0d1424',
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    paddingVertical: 14,
-    paddingHorizontal: 12,
+    borderColor: '#26344d',
     overflow: 'hidden',
     ...Platform.select({
       web: { boxShadow: '0 2px 10px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04)' },
       default: { elevation: 2, shadowColor: '#0f172a', shadowOpacity: 0.06, shadowRadius: 6 },
     }),
   },
+  inFeedAdHeader: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    minHeight: 60,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  inFeedAdProfile: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  inFeedAdAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#5a7198',
+    backgroundColor: '#283958',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  inFeedAdAvatarImage: { width: '100%', height: '100%' },
+  inFeedAdAvatarInitial: { color: '#ffffff', fontSize: 14, fontWeight: '700' },
+  inFeedAdIdentity: { flex: 1, minWidth: 0, gap: 2 },
+  inFeedAdNameRow: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  inFeedAdName: { flexShrink: 1, color: '#ffffff', fontSize: 14, fontWeight: '700' },
+  inFeedAdLabel: { color: '#c6d2e5', fontSize: 11, fontWeight: '600' },
+  inFeedAdPages: { flexDirection: 'row', justifyContent: 'center', gap: 6, paddingVertical: 9 },
   inFeedAdImage: { width: '100%', height: 230, backgroundColor: '#e2e8f0' },
 
   sidebarStickyWrapper: {
@@ -1880,7 +2012,7 @@ const styles = StyleSheet.create({
   workspaceShellMobile: { paddingHorizontal: 0, gap: 0 },
   feedColumnShell: { width: 560, minWidth: 0, alignItems: 'center', paddingHorizontal: 0 },
   feedColumnShellStatesView: { width: 840 },
-  feedColumnShellScroll: { width: 560, minWidth: 0, flexShrink: 1 },
+  feedColumnShellScroll: { width: 560, minWidth: 0, flexShrink: 1, ...(IS_WEB ? { overscrollBehaviorY: 'contain' } : {}) },
   feedColumnShellCompact: { width: '100%' },
   feedColumnShellMobile: { paddingHorizontal: 0, alignItems: 'stretch' },
   feedColumn: { width: '100%', minWidth: 0, maxWidth: 560, paddingBottom: 24, paddingTop: 4 },
@@ -1896,31 +2028,51 @@ const styles = StyleSheet.create({
   },
   utilityStickyWrapperCompact: { width: '100%', position: 'relative' },
 
-  // ── Search bar — sabse upar, chota + gol shape. Android par thoda
-  // compact rakha gaya hai (kam height/padding). ──────────────────────────
-  sectionSearchRow: { marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 4, marginHorizontal: 10 },
+  sectionSearchSticky: {
+    position: 'sticky',
+    top: 0,
+    zIndex: 10,
+    backgroundColor: '#f1f5f9',
+    paddingVertical: 6,
+  },
+  sectionSearchRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 4, marginHorizontal: 10 },
   sectionSearchRowCompact: { flexDirection: 'column', alignItems: 'stretch' },
   sectionSearchField: {
     flex: 1,
-    minHeight: Platform.OS === 'web' ? 42 : 38,
-    borderRadius: 999,
-    backgroundColor: '#ffffff',
-    borderWidth: 1.5,
-    borderColor: '#94a3b8',
-    paddingHorizontal: Platform.OS === 'web' ? 14 : 12,
+    minHeight: IS_WEB ? 48 : 40,
+    borderRadius: 14,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    paddingHorizontal: 7,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
+    ...(IS_WEB ? { boxShadow: '0 2px 8px rgba(15, 23, 42, 0.10)' } : {}),
+  },
+  sectionSearchFieldFocused: {
+    borderColor: '#ea580c',
+    ...(IS_WEB ? { boxShadow: '0 0 0 3px rgba(249, 115, 22, 0.22)' } : {}),
+  },
+  sectionSearchIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 9,
+    backgroundColor: '#ffedd5',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sectionSearchInput: {
     flex: 1,
-    fontSize: Platform.OS === 'web' ? 13 : 12.5,
+    minWidth: 0,
+    minHeight: IS_WEB ? 42 : 34,
+    fontSize: IS_WEB ? 15 : 13,
     fontWeight: '600',
     color: '#0f172a',
-    paddingVertical: Platform.OS === 'android' ? 2 : 0,
-    fontFamily: Platform.OS === 'web' ? "'Roboto', sans-serif" : 'Roboto_500Medium',
-    ...Platform.select({ web: { outlineStyle: 'none' } }),
+    paddingVertical: 0,
+    fontFamily: IS_WEB ? "'Roboto', sans-serif" : 'Roboto_500Medium',
   },
+  sectionClearSearch: { padding: 8 },
   sectionResetButton: {
     minHeight: Platform.OS === 'web' ? 42 : 36,
     borderRadius: 999,

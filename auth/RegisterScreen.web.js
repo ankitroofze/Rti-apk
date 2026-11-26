@@ -151,6 +151,7 @@ export default function RegisterScreen({ navigation, route }) {
   const [passwordTouched, setPasswordTouched] = useState(false);
   const [mobileTouched, setMobileTouched] = useState(false);
   const [formStep, setFormStep] = useState(1);
+  const formScrollRef = useRef(null);
 
   const [otpModalVisible, setOtpModalVisible] = useState(false);
   const [emailVerified, setEmailVerified] = useState(false);
@@ -441,7 +442,14 @@ export default function RegisterScreen({ navigation, route }) {
     }
   };
 
-  const handleClose = () => navigation.navigate('Home');
+  const handleBack = () => {
+    if (formStep === 2) {
+      setFormStep(1);
+      formScrollRef.current?.scrollTo({ y: 0, animated: false });
+      return;
+    }
+    navigation.popTo('Login', undefined, { merge: true });
+  };
   const openInfoPage = (pageKey) => { try { navigation.navigate('InfoPage', { pageKey }); } catch (_) { /* ignore */ } };
   const mobileShowError = mobileTouched && mobile.length > 0 && !mobileOk;
 
@@ -458,7 +466,7 @@ export default function RegisterScreen({ navigation, route }) {
       )}
 
       <View style={webStyles.formPanel}>
-        <ScrollView contentContainerStyle={webStyles.formPanelScroll} showsVerticalScrollIndicator={false}>
+        <ScrollView ref={formScrollRef} contentContainerStyle={webStyles.formPanelScroll} showsVerticalScrollIndicator={false}>
           <View style={webStyles.formInner}>
             <Image
               source={require('../assets/images/certificate_logo.jpg')}
@@ -467,7 +475,7 @@ export default function RegisterScreen({ navigation, route }) {
               accessibilityLabel="RTI News logo"
             />
 
-            <BackTitleRow onBack={handleClose} style={{ marginTop: 8, marginBottom: 20 }} titleHeight={32}>
+            <BackTitleRow onBack={handleBack} style={{ marginTop: 8, marginBottom: 20 }} titleHeight={32}>
               <View style={{ alignItems: 'center' }}>
               <Text style={[styles.formTitle, webStyles.formTitle]}>Register</Text>
             </View>

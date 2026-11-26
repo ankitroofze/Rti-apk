@@ -1312,24 +1312,29 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
     mediaType = mediaTypeMap[Number(mediaTypeRaw)] || 'None';
   }
 
-  const rawVideo = apiItem.video || apiItem.video_url || apiItem.videoUrl || apiItem.videoUri || '';
+  const mediaPath = (value) => {
+    const path = typeof value === 'string' ? value : (value?.uri || value?.url || value?.path);
+    const normalized = String(path || '').trim();
+    return /^(null|undefined)$/i.test(normalized) ? '' : normalized;
+  };
+  const rawVideo = [apiItem.video, apiItem.video_url, apiItem.videoUrl, apiItem.videoUri]
+    .map(mediaPath).find(Boolean) || '';
   // ✅ FIX: kuch responses (/news list) me video ka URL media/video ke bajay doosri key me aata hai — fallback ke taur par lo
-  const altVideoRaw = apiItem.branded_video || apiItem.brandedVideo || apiItem.processed_video || apiItem.video_path
-    || (Array.isArray(apiItem.videos) ? (typeof apiItem.videos[0] === 'string' ? apiItem.videos[0] : (apiItem.videos[0]?.url || apiItem.videos[0]?.path || '')) : '')
-    || '';
+  const altVideoRaw = [apiItem.branded_video, apiItem.brandedVideo, apiItem.processed_video, apiItem.video_path,
+    ...(Array.isArray(apiItem.videos) ? apiItem.videos : [])].map(mediaPath).find(Boolean) || '';
   const isVideoExt = (u) => {
     const raw = String(u || '').split('?')[0].split('#')[0].toLowerCase();
-    return /\.(mp4|m4v|webm|mov|mkv|3gp|avi|flv)$/i.test(raw);
+    return /\.(mp4|m4v|webm|mov|mkv|3gp|avi|flv|ogv|m3u8)$/i.test(raw);
   };
 
   // ✅ Video ke liye backend ka `media` hi final processed video hai (music/voice/frame apply ho chuka) —
   // wahi URL player me use hota hai. Local selected video ka URL kabhi dobara nahi banate.
   const mediaUrl = (mediaType === 'Video'
-    ? (apiItem.media || apiItem.media_url || rawVideo || altVideoRaw)
-    : (apiItem.media_url || apiItem.media || rawVideo || (isVideoExt(altVideoRaw) ? altVideoRaw : ''))) || '';
+    ? (mediaPath(apiItem.media) || mediaPath(apiItem.media_url) || altVideoRaw || rawVideo)
+    : (mediaPath(apiItem.media_url) || mediaPath(apiItem.media) || rawVideo || altVideoRaw)) || '';
 
   // Agar media_type 0/None ho lekin URL me video ho ya rawVideo ho, to mediaType Video treat karo
-  if (mediaType === 'None' && (isVideoExt(mediaUrl) || isVideoExt(rawVideo) || Boolean(rawVideo))) {
+  if (mediaType === 'None' && (isVideoExt(mediaUrl) || rawVideo || altVideoRaw)) {
     mediaType = 'Video';
   }
 
@@ -1412,7 +1417,7 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
     media: mediaType === 'Image' ? undefined : mediaUrl,
     images: mediaType === 'Image' ? collectedImages : [],
     // video hamesha plain string URL (cards String(video) karte hain; object => "[object Object]")
-    video: (mediaType === 'Video' || isVideoExt(mediaUrl) || Boolean(rawVideo)) && (rawVideo || mediaUrl) ? resolveMediaUrl(rawVideo || mediaUrl) : null,
+    video: (mediaType === 'Video' || isVideoExt(mediaUrl) || rawVideo) && (rawVideo || mediaUrl) ? resolveMediaUrl(rawVideo || mediaUrl) : null,
     file: mediaType === 'File' && mediaUrl ? { uri: mediaUrl, name: apiItem.media_name || 'file' } : null,
     author_name: author.name || apiItem.author_name || 'RTI News',
     author_profile_image: author.profile_image_url || author.profile_image || '',
@@ -3260,7 +3265,7 @@ export const UserStore = {
       if (!updatedUser) return { ok: false, message: 'Could not save the subscription.' };
       try {
         const { sendInvoiceEmailCopy } = require('../utils/invoiceGenerator');
-        sendInvoiceEmailCopy(quizPayment, updatedUser).catch(() => { });
+        sendInvoiceEmailCopy(quizPayment).catch(() => { });
       } catch (_) { }
       await recordQualifyingTransaction({
         buyerEmail: user.email,
@@ -4943,7 +4948,7 @@ export const UserStore = {
           plan_name: activePlan.plan_name,
           module: 'role',
           status: 'paid',
-        }, updatedUser).catch(() => { });
+        }).catch(() => { });
       } catch (_) { }
 
       return { ok: true, role_label: getRoleLabel(newRole), user: updatedUser };
@@ -5202,14 +5207,7 @@ export const UserStore = {
               }
             }
           }
-          // Filter out broken reels (media_type === 2 par na video hai na media)
-          apiItems = rawList.filter((item) => {
-            const isVid = Number(item.media_type) === 2 || item.type === 2 || String(item.mediaType).toLowerCase() === 'video';
-            if (isVid) {
-              return Boolean(item.media || item.video || item.media_url);
-            }
-            return true;
-          });
+          apiItems = rawList;
         } else if (feedType === 'all') {
           // Home screen: sabhi users ke news, backend ke /news (index) route se
           let singleItemRes = null;
@@ -7367,9 +7365,25 @@ export const UserStore = {
         }
       } catch (e) { /* ignore */ }
       const backendAdsById = new Map(backendAdsList.map((b) => [String(b.id), b]));
-      const adsWithViews = (Array.isArray(user.ads) ? user.ads : [])
-        // ✅ FIX: local list me same ad do baar ho to ek hi card dikhao
-        .filter((ad, idx, arr) => ad?.id == null || arr.findIndex((x) => String(x?.id) === String(ad.id)) === idx)
+      const localAds = (Array.isArray(user.ads) ? user.ads : []).filter((ad) => ad?.id != null);
+      const ownAdsById = new Map(localAds.map((ad) => [String(ad.id), ad]));
+      for (const ad of backendAdsList) {
+        const ownerId = ad.user_id ?? ad.owner_id;
+        if (ad.id == null || ownerId == null || String(ownerId) !== String(user.id) || ownAdsById.has(String(ad.id))) continue;
+
+        const redirect = ad.redirect || ({ 1: 'profile', 2: 'website', 3: 'shop', 4: 'lead_form', 5: 'whatsapp' })[ad.redirection] || 'profile';
+        const url = ad.redirection_url || ad.url || '';
+        const redirectField = ({ website: 'website_url', shop: 'shop_url', whatsapp: 'whatsapp_number' })[redirect];
+        const redirectValue = redirect === 'whatsapp' ? url.match(/wa\.me\/(?:\+?91)?(\d{10})(?!\d)/)?.[1] || '' : url;
+        ownAdsById.set(String(ad.id), {
+          ...ad,
+          photo: ad.image || ad.photo || '',
+          redirect,
+          extraValues: redirectField ? { ...ad.extraValues, [redirectField]: redirectValue } : ad.extraValues,
+          status: 'active',
+        });
+      }
+      const adsWithViews = [...ownAdsById.values()]
         .map((ad) => {
           const b = backendAdsById.get(String(ad.id)) || {};
           return {
@@ -7782,7 +7796,7 @@ export const UserStore = {
       if (!updatedUser) return { ok: false, message: 'Could not save the credits.' };
       try {
         const { sendInvoiceEmailCopy } = require('../utils/invoiceGenerator');
-        sendInvoiceEmailCopy(adPayment, updatedUser).catch(() => { });
+        sendInvoiceEmailCopy(adPayment).catch(() => { });
       } catch (_) { }
       return { ok: true, credits: newCredits };
     } catch (err) {
@@ -7850,7 +7864,7 @@ export const UserStore = {
           plan_id: ecomSubscription.plan_id,
           plan_name: ecomSubscription.plan_name,
           module: 'ecom',
-        }, updatedUser).catch(() => { });
+        }).catch(() => { });
       } catch (_) { }
       await recordQualifyingTransaction({
         buyerEmail: user.email,
@@ -7908,6 +7922,9 @@ export const UserStore = {
   // useAdCredit ko replace karo — ab yeh POST /ads-details call karega
   useAdCredit: async (reason = 'post', adData = {}) => {
     try {
+      if (reason === 'post' && adData.id != null) return { ok: false, message: 'Use the edit action to update an existing advertisement.' };
+      if (reason !== 'post' && !adData.id) return { ok: false, message: 'Ad not found.' };
+
       const user = await UserStore.getCurrentUser();
       if (!user) return { ok: false, message: 'Please login again.' };
 
@@ -7921,9 +7938,8 @@ export const UserStore = {
 
       const today = new Date().toISOString().slice(0, 10);
 
-      if (reason === 'post') {
-        const redirectType = String(adData.redirection || adData.redirect || '').trim().toLowerCase();
-        const redirectUrl = redirectType === 'whatsapp'
+      const redirectType = String(adData.redirection || adData.redirect || '').trim().toLowerCase();
+      const redirectUrl = redirectType === 'whatsapp'
           ? `https://wa.me/91${String(adData.extraValues?.whatsapp_number || '').replace(/\D/g, '')}`
           : redirectType === 'website'
             ? String(adData.extraValues?.website_url || '').trim()
@@ -7932,6 +7948,8 @@ export const UserStore = {
               : redirectType === 'lead_form'
                 ? 'rti-news://lead-form'
                 : `rti-news://profile/${encodeURIComponent(user.email || '')}`;
+
+      if (reason === 'post') {
         const startDate = adData.startDate || new Date().toISOString().slice(0, 10);
         // ✅ FIX: end_date ab fixed 30 din nahi jaayega — jo ad-subscription plan
         // purchase kiya hai (uska "days"/validity_days, e.g. 20) usi ke hisaab se jayega
@@ -7967,7 +7985,8 @@ export const UserStore = {
           id: backendAd.id, // ✅ ab real backend id
           title: backendAd.title || adData.title,
           description: backendAd.description || adData.description,
-          image: backendAd.image || adData.image,
+          image: backendAd.image || adData.image || adData.photo || '',
+          photo: backendAd.image || adData.image || adData.photo || '',
           // ✅ FIX: local blob:/file: uri session ke baad mar jaati hai — backend ka URL prefer karo
           video: backendAd.video || backendAd.video_url || (Number(backendAd.media_type) === 2 ? backendAd.media : '') || adData.video,
           media_type: Number(backendAd.media_type) || (adData.video ? 2 : 1),
@@ -7987,40 +8006,43 @@ export const UserStore = {
       }
 
       // ── reason !== 'post' → yeh update path hai ──
-      if (!adData?.id) return { ok: false, message: 'Ad not found.' };
       const apiRes = await AuthAPI.updateAdsDetails(adData.id, {
         title: adData.title || '',
         description: adData.description || '',
         image: adData.image || adData.photo || '',
         video: adData.video || '',
-        url: adData.url || '',
+        ...(redirectType ? {
+          redirection: ({ profile: 1, website: 2, shop: 3, lead_form: 4, whatsapp: 5 })[redirectType] || 1,
+          redirection_url: redirectUrl,
+        } : {}),
       });
       if (!apiRes.ok) return { ok: false, message: apiRes.message || 'Unable to update ad on server.' };
 
       // ✅ FIX: edit ke baad backend ki nayi image/video use karo (purani `image` + nayi `photo` dono
       // rehne se same ad ke 2 images/cards ban jaate the) aur id String se compare karo (1 vs '1').
       const backendAd = apiRes.ad || {};
-      const freshImage = backendAd.image || adData.image || adData.photo || '';
-      let updatedAd = null;
       const existingAds = Array.isArray(user.ads) ? user.ads : [];
-      const merged = existingAds.map((ad) => {
-        if (String(ad.id) !== String(adData.id)) return ad;
-        updatedAd = {
-          ...ad,
-          ...adData,
-          image: freshImage,
-          photo: freshImage,
-          images: (Array.isArray(backendAd.images) && backendAd.images.length) ? backendAd.images : (freshImage ? [freshImage] : []),
-          video: backendAd.video || backendAd.video_url || adData.video || '',
-          updated_at: today,
-        };
-        return updatedAd;
-      });
-      // Ad sirf backend par thi (local list me nahi) — duplicate nahi, ek entry add karo
-      if (!updatedAd) {
-        updatedAd = { ...adData, image: freshImage, photo: freshImage, updated_at: today, status: 'active' };
-        merged.unshift(updatedAd);
-      }
+      const existingAd = existingAds.find((ad) => String(ad?.id) === String(adData.id));
+      const mediaType = Number(backendAd.media_type) || (adData.video ? 2 : 1);
+      const freshImage = mediaType === 1 ? backendAd.image || adData.image || adData.photo || '' : '';
+      const updatedAd = {
+        ...existingAd,
+        ...adData,
+        id: existingAd?.id ?? adData.id,
+        image: freshImage,
+        photo: freshImage,
+        images: Array.isArray(backendAd.images) ? backendAd.images : (freshImage ? [freshImage] : []),
+        video: mediaType === 2 ? backendAd.video || backendAd.video_url || backendAd.media || adData.video || '' : '',
+        media_type: mediaType,
+        start_date: backendAd.start_date ?? existingAd?.start_date,
+        end_date: backendAd.end_date ?? existingAd?.end_date,
+        created_at: backendAd.created_at ?? existingAd?.created_at,
+        updated_at: backendAd.updated_at || today,
+        status: existingAd?.status || 'active',
+      };
+      const merged = existingAd
+        ? existingAds.map((ad) => String(ad?.id) === String(adData.id) ? updatedAd : ad)
+        : [updatedAd, ...existingAds];
       const updatedAds = merged.filter((a, idx, arr) => arr.findIndex((x) => String(x?.id) === String(a.id)) === idx);
       const nextCredits = Math.max(0, currentCredits - 1);
       const updatedUser = await UserStore.updateUser(user.email, { ad_credits: nextCredits, ads: updatedAds });
@@ -8180,6 +8202,8 @@ export const UserStore = {
               .some((o) => (myEmailLc && o === myEmailLc) || (myIdStr && o === myIdStr));
           };
 
+          const isRemoved = (raw) => Boolean(raw?.deleted_at) || raw?.is_deleted === 0 || raw?.is_deleted === '0';
+          const removedIds = new Set(backendList.filter(isRemoved).map((item) => String(item.id)));
           const baseDetails = [...backendList];
           // Mere add kiye product jo list me nahi aaye (pagination / backend filter) — id se alag laao
           if (currentUser && myLocalIds.size) {
@@ -8187,18 +8211,16 @@ export const UserStore = {
             const missing = Array.from(myLocalIds).filter((id) => !present.has(id)).slice(0, 20);
             if (missing.length) {
               const fetched = await Promise.all(missing.map((id) => AuthAPI.getEcomDetailsById(id).catch(() => null)));
-              const stale = [];
               fetched.forEach((r, i) => {
-                if (r?.ok && r.detail && r.detail.id != null) baseDetails.push(r.detail);
-                else if (r && !r.ok && !r.isNetwork) stale.push(missing[i]);
+                if (r?.status === 404 || isRemoved(r?.detail)) removedIds.add(missing[i]);
+                else if (r?.ok && r.detail?.id != null) baseDetails.push(r.detail);
               });
-              if (stale.length) writeMyEcomIds(currentUser.email, Array.from(myLocalIds).filter((id) => !stale.includes(id)));
             }
           }
 
           // 1. Normalize backend listings
           const normalizedBackend = baseDetails
-            .filter((raw) => !raw.deleted_at)
+            .filter((raw) => !removedIds.has(String(raw.id)))
             .map(normalizeEcomDetail)
             .map(applyRecentEcomUpdate)
             .map((item) => ({ ...item, is_mine: isOwnedByMe(item) }))
@@ -8208,7 +8230,7 @@ export const UserStore = {
 
           // 2. Local user listings (guarantees local additions always appear immediately!)
           const localListings = (Array.isArray(currentUser?.ecome_listings) ? currentUser.ecome_listings : [])
-            .filter((it) => it && !it.is_deleted)
+            .filter((it) => it && !it.is_deleted && !removedIds.has(String(it.id)))
             .map(normalizeEcomDetail)
             .map((it) => ({
               ...it,
@@ -8244,7 +8266,7 @@ export const UserStore = {
           const presentIds = new Set(finalMerged.map((x) => String(x.id)));
           recentEcomListings.forEach((entry, rid) => {
             if (Date.now() - entry.at > RECENT_ECOM_UPDATE_TTL_MS) { recentEcomListings.delete(rid); return; }
-            if (!presentIds.has(rid) && entry.listing && !entry.listing.is_deleted) {
+            if (!removedIds.has(rid) && !presentIds.has(rid) && entry.listing && !entry.listing.is_deleted) {
               finalMerged.push({ ...normalizeEcomDetail(entry.listing), ...entry.listing, is_mine: true });
             }
           });

@@ -1,3 +1,4 @@
+import { themeWebStyle } from '../theme/webColors';
 import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import React, { useState, useMemo } from 'react';
 import {
@@ -727,7 +728,7 @@ function ChoosePlanScreen__Inner({ navigation, route }) {
                       value={toInputDateValue(selectedDate)}
                       min={toInputDateValue(todayDate)}
                       onChange={handleWebDateChange}
-                      style={{
+                      style={themeWebStyle({
                         marginLeft: 'auto',
                         border: `1.5px solid ${C.border}`,
                         borderRadius: RADIUS.input,
@@ -736,7 +737,7 @@ function ChoosePlanScreen__Inner({ navigation, route }) {
                        fontFamily: "'Roboto', sans-serif",
                         color: '#111111',
                         backgroundColor: C.orangeLight,
-                      }}
+                      })}
                     />
                   </View>
                 </View>

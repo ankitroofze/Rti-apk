@@ -787,29 +787,14 @@ export async function downloadInvoicePdf(html, name = 'invoice') {
 /**
  * Send subscription invoice copy to user's registered email
  * @param {object} payment
- * @param {object} user
  * @returns {Promise<{ok: boolean, message: string}>}
  */
-export async function sendInvoiceEmailCopy(payment = {}, user = {}) {
+export async function sendInvoiceEmailCopy(payment = {}) {
   try {
-    const invNo = getPaymentInvoiceNo(payment);
-    const logoSrc = await loadInvoiceLogo().catch(() => '');
-    const html = buildSubscriptionInvoiceHtml(payment, user, logoSrc);
-    const email = user?.email || payment?.email || payment?.user_email || '';
-    if (!email) return { ok: false, message: 'User email address not found.' };
+    const paymentId = payment.payment_id || payment.id;
+    if (!paymentId) return { ok: false, message: 'Payment reference not found.' };
 
-    const planTitle = pick(payment, ['plan.title', 'plan.name', 'plan_name', 'plan_title']) || 'Subscription';
-    const amount = num(pick(payment, ['amount', 'total', 'paid_amount'])) || 0;
-
-    const res = await AuthAPI.sendInvoiceEmail({
-      email,
-      paymentId: payment.payment_id || payment.id,
-      invoiceNo: invNo,
-      html,
-      totalAmount: amount,
-      planName: planTitle,
-    });
-    return res.ok ? { ok: true, message: `Invoice copy sent to ${email}!` } : res;
+    return await AuthAPI.sendInvoiceEmail({ paymentId });
   } catch (err) {
     console.warn('[sendInvoiceEmailCopy] failed:', err);
     return { ok: false, message: err?.message || 'Could not send invoice email.' };

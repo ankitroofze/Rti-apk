@@ -1199,16 +1199,19 @@ export const AuthAPI = {
 
       const json = await res.json().catch(() => null);
       if (res.status === 200 || res.status === 201) {
-        // ✅ Image turant overwrite nahi hoti — admin approve na kare tab tak
-        // pending_profile_image_url me hi save rehti hai.
         const profile = json?.user?.profile || json?.profile || json?.data?.profile || json?.data || json;
+        const pendingImageUrl = profile?.pending_profile_image_url || '';
+        const requiresApproval = json?.requires_approval ?? Boolean(pendingImageUrl || profile?.pending_profile_image);
+        clearApiGetCache('/profile');
         return {
           ok: true,
           data: json,
-          pendingImageUrl: profile?.pending_profile_image_url || '',
+          pendingImageUrl,
+          pendingImagePath: profile?.pending_profile_image ?? null,
+          requiresApproval,
           imageUrl: profile?.profile_image_url || profile?.profile_image || '',
           profileUpdateStatus: profile?.profile_update_status ?? null,
-          message: 'Your profile image is pending admin approval.',
+          message: json?.message || (requiresApproval ? 'Your profile photo is pending admin approval.' : 'Profile photo updated.'),
           // Har successful upload par backend profile_image_change_count badhata hai
           imageChangeCount: (profile?.profile_image_change_count ?? json?.profile_image_change_count ?? null),
         };
@@ -2015,20 +2018,18 @@ export const AuthAPI = {
    * Send invoice copy to user's email
    * POST /payment/send-invoice
    */
-  sendInvoiceEmail: async ({ email, paymentId, invoiceNo, html, totalAmount, planName }) => {
+  sendInvoiceEmail: async ({ paymentId }) => {
     try {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
       const { status, data } = await postJSON('/payment/send-invoice', {
-        email: email ? String(email).trim().toLowerCase() : undefined,
-        payment_id: paymentId,
-        invoice_number: invoiceNo,
-        amount: totalAmount,
-        plan_name: planName,
-        html_content: html,
+        payment_id: String(paymentId),
       }, token);
       if (status >= 200 && status < 300) {
         return { ok: true, message: data?.message || 'Invoice sent to your email successfully.' };
+      }
+      if (status === 404 && data?.code !== 'payment_not_found') {
+        return { ok: false, status, message: 'Invoice email is unavailable. You can still download the PDF.' };
       }
       return { ok: false, status, message: data?.message || 'Could not send invoice email.' };
     } catch (err) {
@@ -3265,7 +3266,7 @@ export const AuthAPI = {
   getAdsDetailsById: async (id) => {
     try {
       const { status, data } = await getJSON(`/ads-details/${id}`);
-      if (status === 200 || status === 201) return { ok: true, ad: data?.data || data?.ad || data };
+      if (status === 200 || status === 201) return { ok: true, ad: data?.ads_details || data?.data || data?.ad || data };
       if (status === 404) return { ok: false, message: 'Ad not found.' };
       return { ok: false, message: data?.message || `Server error (${status}).` };
     } catch (err) {
@@ -3388,7 +3389,7 @@ export const AuthAPI = {
       }, formData, uploadTimeoutMs);
       if (resStatus === 200 || resStatus === 201) {
         clearApiGetCache('/ads');
-        return { ok: true, ad: data?.data || data?.ad || data };
+        return { ok: true, ad: data?.ads_details || data?.data || data?.ad || data };
       }
       console.warn('[AuthAPI.createAdsDetails] server said:', resStatus, JSON.stringify(data)?.slice(0, 500));
       if (resStatus === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
@@ -3461,7 +3462,8 @@ export const AuthAPI = {
           formData.append('media_type', '1');
           if (Platform.OS === 'web') {
             const imageBlob = await toWebBlob(image);
-            if (imageBlob) formData.append('image', imageBlob, 'ad-image.jpg');
+            if (!imageBlob) return { ok: false, message: 'Could not read the image. Please select it again.' };
+            formData.append('image', imageBlob, 'ad-image.jpg');
           } else {
             formData.append('image', { uri: image, type: 'image/jpeg', name: 'ad-image.jpg' });
           }
@@ -3478,7 +3480,14 @@ export const AuthAPI = {
         const res = await postFormData(`/ads-details/${id}`, { ...textFields, _method: 'PUT' }, token);
         status = res.status; data = res.data;
       }
-      if (status === 200 || status === 201) return { ok: true, ad: data?.data || data?.ad || data };
+      if (status === 200 || status === 201) {
+        const updatedAd = data?.ads_details || data?.data || data?.ad || data;
+        if (updatedAd?.id != null && String(updatedAd.id) !== String(id)) {
+          return { ok: false, message: 'The server returned a different advertisement ID.' };
+        }
+        clearApiGetCache('/ads');
+        return { ok: true, ad: updatedAd };
+      }
       if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
       if (status === 404) return { ok: false, message: 'Ad not found.' };
       if (status === 413 || status === 422 || status === 400) {
@@ -3998,7 +4007,7 @@ export const AuthAPI = {
         data = retry.data;
       }
       if (status === 200 || status === 201) return { ok: true, detail: data?.data || data?.ecom_detail || data?.ecom_details || data?.detail || data };
-      if (status === 404) return { ok: false, message: 'Product not found.' };
+      if (status === 404) return { ok: false, status, message: 'Product not found.' };
       return { ok: false, message: data?.message || `Server error (${status}).` };
     } catch (err) {
       console.error('[AuthAPI.getEcomDetailsById] Error:', err);
@@ -4191,18 +4200,16 @@ export const AuthAPI = {
     try {
       const token = await getAuthToken();
       if (!token) return { ok: false, isAuth: true, message: 'Not logged in.' };
-      const response = await fetch(`${BASE_URL}/ecom-details/${id}`, {
-        method: 'POST',
+      const { status, data } = await fetchWithDebug(`/ecom-details/${encodeURIComponent(String(id))}`, {
+        method: 'DELETE',
         headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
       });
-      const json = await response.json().catch(() => null);
-      if (response.status === 200 || response.status === 201 || response.status === 204) {
-        clearApiGetCache('/ecom');
-        return { ok: true, message: json?.message || 'Product deleted.' };
+      if (status === 200 || status === 204) {
+        return { ok: true, message: data?.message || 'Product deleted.' };
       }
-      if (response.status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
-      if (response.status === 404) return { ok: false, message: 'Product not found.' };
-      return { ok: false, message: json?.message || `Server error (${response.status}).` };
+      if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+      if (status === 404) return { ok: false, message: 'Product not found.' };
+      return { ok: false, message: data?.message || `Server error (${status}).` };
     } catch (err) {
       console.error('[AuthAPI.deleteEcomDetails] Error:', err);
       return { ok: false, isNetwork: true, message: 'Network error.' };
@@ -4456,7 +4463,7 @@ export const AuthAPI = {
 
       let lastRes = null;
       for (const endpoint of endpoints) {
-        const { status, data } = await getJSON(endpoint, token);
+        const { status, data } = await getJSON(endpoint, token, null, { noStore: true });
         lastRes = { status, data };
         if (status === 200 || status === 201) {
           const list = Array.isArray(data) ? data

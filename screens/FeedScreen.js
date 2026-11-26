@@ -95,12 +95,22 @@ function isPlayableVideoSource(uri) {
   if (typeof uri !== 'string' || !uri.trim()) return false;
   if (/(youtube\.com|youtu\.be)/i.test(uri)) return false;
 
+  if (/\.(jpe?g|png|gif|webp|bmp|svg|heic|avif|pdf)$/i.test(uri.split(/[?#]/)[0])) return false;
   if (Platform.OS !== 'web') return true;
   if (/^(blob:|data:|idb-media:)/i.test(uri)) return true;
   if (/^\/storage(-proxy)?\//i.test(uri)) return true;
   // Android se upload hue video ke URL me extension na ho ya alag ho (.3gp, bina extension) to bhi web par
   // chalna chahiye. Ye function sirf video items ke liye bulaya jaata hai, isliye sirf saaf-saaf image/pdf URL reject karo.
-  return (/^https?:/i.test(uri) || /^\//i.test(uri)) && !/\.(jpe?g|png|gif|webp|bmp|svg|heic|avif|pdf)(\?.*)?(#.*)?$/i.test(uri);
+  return /^https?:/i.test(uri) || /^\//i.test(uri);
+}
+
+function getReelVideoSources(item) {
+  const sources = [item.media, item.video].map((value) => {
+    const path = typeof value === 'string' ? value : value?.uri || value?.url || value?.path;
+    if (typeof path !== 'string' || !path.trim() || /^(null|undefined)$/i.test(path.trim())) return '';
+    return /^(idb-media:|\/storage-proxy\/)/i.test(path.trim()) ? path.trim() : resolveMediaUrl(path);
+  });
+  return [...new Set(sources.filter(isPlayableVideoSource))];
 }
 
 // Share Handler
@@ -1028,12 +1038,12 @@ function feedPostFromProfileItem(item = {}, currentEmail = '') {
   const isHttp = /^https?:/i.test(rawMedia);
   const videoFromItem = String(typeof item.video === 'string' ? item.video : item.video?.uri || '').trim();
   let kind;
-  if (mt === 'Video') kind = 'video';
+  if (mt === 'Video' || Number(item.media_type) === 2 || item.type === 'video') kind = 'video';
   else if (mt === 'File') kind = 'pdf';
   else if (mt === 'Link') kind = 'link';
   else if (mt === 'Image') kind = 'image';
   else kind = (videoFromItem || (isHttp && /\.(mp4|m4v|mov|webm|ogv|m3u8)(\?.*)?$/i.test(rawMedia))) ? 'video' : 'image';
-  const videoUri = kind === 'video' ? (videoFromItem || (isHttp ? rawMedia : '')) : '';
+  const [videoUri = '', fallbackVideoUri = videoUri] = kind === 'video' ? getReelVideoSources(item) : [];
   const imagesList = kind === 'image' && Array.isArray(item.images)
     ? item.images.filter((u) => typeof u === 'string' && u.trim())
     : [];
@@ -1048,7 +1058,7 @@ function feedPostFromProfileItem(item = {}, currentEmail = '') {
     id: String(item.id || Date.now()),
     type: kind,
     media: kind === 'video' ? videoUri : kind === 'image' ? imageUri : docUrl,
-    video: kind === 'video' ? videoUri : null,
+    video: kind === 'video' ? fallbackVideoUri : null,
     thumbnail: kind === 'video' ? String(item.thumbnail || '') : imageUri,
     image: imageUri,
     images: imagesList,
@@ -2192,7 +2202,11 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
     return t ? (Platform.OS === 'web' ? toCorsSafeMediaUrl(t) : t) : '';
   }, [resolvedThumbnailUrl, thumbnailError, postId]);
 
-  const mediaUri = String(safePost.media || '').trim();
+  const videoSources = useMemo(() => getReelVideoSources(safePost), [safePost.media, safePost.video]);
+  const [failedVideoUri, setFailedVideoUri] = useState('');
+  const [primaryVideoUri = '', fallbackVideoUri = ''] = videoSources;
+  const mediaUri = primaryVideoUri === failedVideoUri && fallbackVideoUri ? fallbackVideoUri : primaryVideoUri;
+  const videoViewRef = useRef(null);
 
   // ✅ FIX: Resolve IDB media URI to blob URL for web
   useEffect(() => {
@@ -2246,7 +2260,7 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
     const t = setTimeout(() => setNearDelayOk(true), 2500);
     return () => clearTimeout(t);
   }, [isNear]);
-  const activeSource = isNear && (isActive || nearDelayOk) ? videoSource : null;
+  const activeSource = isActive || (isNear && nearDelayOk) ? videoSource : null;
   const mountedRef = useRef(true);
   useEffect(() => {
     mountedRef.current = true;
@@ -2265,12 +2279,12 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
         if ((status === 'readyToPlay' || status === 'idle') && mountedRef.current) {
           if (status === 'readyToPlay') {
             setPlayerReady(true);
-            setShowPoster(false);
           }
         } else if (status === 'error' && mountedRef.current) {
           console.warn('[FeedScreen] video player error:', error);
           setPlayerReady(false);
           setShowPoster(true);
+          if (mediaUri === primaryVideoUri && fallbackVideoUri) setFailedVideoUri(mediaUri);
         }
       });
       p.addListener('playbackStateChange', ({ playbackState }) => {
@@ -2337,7 +2351,7 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
   const pausedRef = useRef(false);
   useEffect(() => { pausedRef.current = paused; }, [paused]);
   useEffect(() => {
-    if (!isActive || !canPlayVideo || !player || !activeSource) return undefined;
+    if (Platform.OS === 'web' || !isActive || !canPlayVideo || !player || !activeSource) return undefined;
     let lastT = -1;
     let stuck = 0;
     const id = setInterval(() => {
@@ -2375,7 +2389,6 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
     const t = setTimeout(() => {
       if (mountedRef.current) {
         setPlayerReady(true);
-        setShowPoster(false);
       }
     }, 1200);
     return () => clearTimeout(t);
@@ -2384,36 +2397,48 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
   // Handle play/pause based on active state + player readiness
   useEffect(() => {
     if (!canPlayVideo || !player || !activeSource) return;
+    let cancelled = false;
+    let retryTimer;
+    const isCurrentPlayback = () => !cancelled && mountedRef.current && isActive && !paused;
     const isReady = playerReady || player.status === 'readyToPlay' || player.playing;
-    if (!isReady) return;
+    if (!isReady) return () => { cancelled = true; };
 
     const playVideo = async () => {
       if (isActive && !paused) {
+        const webVideo = videoViewRef.current?.nativeRef?.current;
         try {
-          const r = player.play();
+          const r = webVideo ? webVideo.play() : player.play();
           if (r && typeof r.then === 'function') await r;
-          if (mountedRef.current) setShowPoster(false);
+          if (isCurrentPlayback()) setShowPoster(false);
         } catch (error) {
+          if (!isCurrentPlayback()) return;
           if (error && (error.name === 'NotSupportedError' || String(error).includes('no supported sources'))) {
             console.warn('[FeedScreen] Video source error:', error);
             if (mountedRef.current) {
               setPlayerReady(false);
               setShowPoster(true);
+              if (mediaUri === primaryVideoUri && fallbackVideoUri) setFailedVideoUri(mediaUri);
             }
             return;
           }
           // Browser kabhi awaaz ke saath autoplay rok deta hai — tab muted karke chala do
           // (user speaker button se unmute kar sakta hai), warna video ruka rahega.
           console.log('Auto-play with sound blocked:', error);
-          if (Platform.OS === 'web' && !getGlobalMuted()) {
+          if (webVideo && error?.name === 'NotAllowedError' && !webVideo.muted) {
             setGlobalMuted(true);
             safeSetMuted(player, true);
-            safePlay(player);
-            if (mountedRef.current) setShowPoster(false);
-          } else {
+            try {
+              await webVideo.play();
+              if (isCurrentPlayback()) setShowPoster(false);
+            } catch (retryError) {
+              if (isCurrentPlayback() && retryError?.name === 'NotAllowedError') setPaused(true);
+            }
+          } else if (webVideo && error?.name === 'NotAllowedError') {
+            setPaused(true);
+          } else if (!webVideo) {
             // pause mat dikhao (user ko tap na karna pade) — thodi der baad dobara try
-            setTimeout(() => {
-              if (mountedRef.current) {
+            retryTimer = setTimeout(() => {
+              if (isCurrentPlayback()) {
                 safePlay(player);
                 setShowPoster(false);
               }
@@ -2426,7 +2451,11 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
     };
 
     playVideo();
-  }, [canPlayVideo, activeSource, isActive, paused, player, playerReady]);
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [canPlayVideo, activeSource, isActive, paused, player, playerReady, mediaUri, primaryVideoUri, fallbackVideoUri]);
 
   // Cleanup on unmount
   // ✅ FIX (crash): expo-video unmount par player ko khud release kar deta hai. Release ho chuke
@@ -2460,9 +2489,10 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
     if (!canPlayVideo || !player || !activeSource || !playerReady) return;
 
     if (paused) {
+      const webVideo = videoViewRef.current?.nativeRef?.current;
+      if (webVideo) webVideo.play().catch(() => {});
+      else safePlay(player);
       setPaused(false);
-      setShowPoster(false);
-      safePlay(player);
       // center me pause icon dikhao, phir fade out
       flashAnim.stopAnimation();
       flashAnim.setValue(1);
@@ -2494,7 +2524,7 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
   const showPlayOverlay = paused && playerReady;
 
   return (
-    <View style={{
+    <View dataSet={Platform.OS === 'web' ? { reelCard: postId } : undefined} style={{
       width: cardWidth, 
       height: cardHeight, 
       backgroundColor: '#000',
@@ -2548,12 +2578,14 @@ const safeBot = Platform.OS === 'ios' ? 34 : 0;
                   />
                 ) : null}
                 <VideoView
+                  ref={videoViewRef}
                   player={player}
                   style={{ width: '100%', height: '100%', backgroundColor: '#000' }}
                   contentFit={(videoBox.boxed || Platform.OS === 'web') ? 'contain' : 'cover'}
                   nativeControls={false}
                   fullscreenOptions={{ enabled: false }}
                   playsInline
+                  onFirstFrameRender={() => setShowPoster(false)}
                   surfaceType={Platform.OS === 'android' ? 'textureView' : undefined}
                 />
                 {showPoster && safeThumbnailUrl ? (
@@ -2827,6 +2859,16 @@ const APPROX_NAVBAR_H = Platform.OS === 'web' ? 56 : (Platform.OS === 'ios' ? 94
 const MOBILE_CHROME_BAR = (Platform.OS === 'web' && isMobileLayout) ? 0 : 0;
 const browserHeight = typeof window !== 'undefined' ? window.innerHeight : windowHeight;
 const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
+const lastActiveIndexRef = useRef(0);
+const syncActiveIndex = useCallback((offsetY) => {
+  if (!posts.length || !(cardHeight > 0) || !Number.isFinite(offsetY)) return;
+  const index = Math.max(0, Math.min(posts.length - 1, Math.round(offsetY / cardHeight)));
+  lastActiveIndexRef.current = index;
+  setActiveIndex(index);
+}, [cardHeight, posts.length]);
+const syncActiveIndexFromScroll = useCallback((event) => {
+  syncActiveIndex(Number(event?.nativeEvent?.contentOffset?.y));
+}, [syncActiveIndex]);
   const feedListRef = useRef(null);
 
   // Profile ke Reels / Ads tab se tap -> yahin (Feed) khulta hai, usi reel / ad par.
@@ -2928,8 +2970,6 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
           if (nativeScrollTo) nativeScrollTo.call(node, { top, behavior: 'smooth' });
           else node.scrollTop = top;
         } catch (_) { node.scrollTop = top; }
-        // safety: smooth scroll na chale (kuch browsers / reduced-motion) to bhi reel badal jaye
-        setTimeout(() => { if (Math.abs(node.scrollTop - top) > 2 && Math.abs(node.scrollTop - top) > cardHeight * 0.9) node.scrollTop = top; }, 700);
       };
 
       // Card ke andar koi apna scroll (caption etc.) ho to wheel usi ko do
@@ -2982,6 +3022,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       // Touch / scrollbar drag: scroll ruke to sabse paas ke reel par exact snap
       let idleTimer = null;
       const onScroll = () => {
+        syncActiveIndex(node.scrollTop);
         if (idleTimer) clearTimeout(idleTimer);
         idleTimer = setTimeout(() => {
           const target = clampIdx(currentIdx()) * cardHeight;
@@ -2995,12 +3036,12 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       const isTouch = typeof window !== 'undefined' && ('ontouchstart' in window || (navigator && navigator.maxTouchPoints > 0));
       if (isTouch) {
         try {
-          node.style.scrollSnapType = 'y mandatory';
+              node.style.scrollSnapType = 'y proximity';
           node.style.overscrollBehaviorY = 'contain';
           const applySnap = () => {
             const holder = node.firstElementChild;
             if (!holder) return;
-            Array.from(holder.children).forEach((cell) => {
+            Array.from(holder.children).filter((cell) => cell.matches('[data-reel-card]') || cell.querySelector('[data-reel-card]')).forEach((cell) => {
               cell.style.scrollSnapAlign = 'start';
               cell.style.scrollSnapStop = 'always';
             });
@@ -3015,11 +3056,15 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
 
       node.addEventListener('wheel', onWheel, { passive: false });
       node.addEventListener('scroll', onScroll, { passive: true });
+      const previousOverflowAnchor = node.style.overflowAnchor;
+      node.style.overflowAnchor = 'none';
       window.addEventListener('keydown', onKey);
+      syncActiveIndex(node.scrollTop);
       return () => {
         if (snapObserver) snapObserver.disconnect();
         node.removeEventListener('wheel', onWheel);
         node.removeEventListener('scroll', onScroll);
+        node.style.overflowAnchor = previousOverflowAnchor;
         window.removeEventListener('keydown', onKey);
         if (idleTimer) clearTimeout(idleTimer);
       };
@@ -3045,7 +3090,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       if (pollTimer) clearInterval(pollTimer);
       if (detach) detach();
     };
-  }, [cardHeight, posts.length]);
+  }, [cardHeight, posts.length, syncActiveIndex]);
 
   const cardWidth = isMobileLayout ? responsiveWidth : Math.min(responsiveWidth * 0.6, 580);
   // ✅ YAHAN ADD KARO — cardWidth ke bilkul baad:
@@ -3638,21 +3683,6 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
   // ✅ Local `user.news` me copy save nahi hoti — data sirf server se aata hai.
 }, [currentUser, currentUserEmail]);
 
-const lastViewableIndexRef = useRef(0);
-const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
-    if (viewableItems.length > 0) {
-      lastViewableIndexRef.current = viewableItems[0].index ?? 0;
-      setActiveIndex(lastViewableIndexRef.current);
-    }
-  });
-
-  const viewabilityConfigCallbackPairs = useRef([
-    {
-      viewabilityConfig: { itemVisiblePercentThreshold: 60 },
-      onViewableItemsChanged: (params) => onViewableItemsChangedRef.current(params),
-    },
-  ]).current;
-
   const activeCommentData = posts.find(p => p.id === commentPost);
   const activeShareData   = posts.find(p => p.id === sharePost);
   const activeDescData    = posts.find(p => p.id === descPost);
@@ -3663,7 +3693,7 @@ const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
     } else {
       // ✅ FIX (auto-play): Feed par wapas aane par activeIndex -1 hi reh jaata tha (list ka viewable item
       // badla nahi to callback dobara chalta nahi) — isliye video khud play nahi hota tha, tap karna padta tha.
-      setActiveIndex((cur) => (cur < 0 ? (lastViewableIndexRef.current || 0) : cur));
+      setActiveIndex((cur) => (cur < 0 ? lastActiveIndexRef.current : cur));
     }
   }, [isScreenFocused]);
 
@@ -3805,8 +3835,7 @@ const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
   else if (mt === 'Image' || Number(item.media_type) === 1) kind = 'image';
   else kind = (videoFromItem || (isHttp && /\.(mp4|m4v|mov|webm|ogv|m3u8)(\?.*)?$/i.test(rawMedia))) ? 'video' : 'image';
 
-  const rawVideoUri = kind === 'video' ? (videoFromItem || (isHttp ? rawMedia : '')) : '';
-  const videoUri = (Platform.OS === 'web' && rawVideoUri) ? toCorsSafeMediaUrl(rawVideoUri) : rawVideoUri;
+  const [videoUri = '', fallbackVideoUri = videoUri] = kind === 'video' ? getReelVideoSources(item) : [];
   const imagesList = kind === 'image' && Array.isArray(item.images)
     ? item.images.filter((u) => typeof u === 'string' && u.trim()).map((u) => Platform.OS === 'web' ? toCorsSafeMediaUrl(u) : u)
     : [];
@@ -3826,7 +3855,7 @@ const onViewableItemsChangedRef = useRef(({ viewableItems }) => {
     id: String(item.id || Date.now()),
     type: kind,
     media: kind === 'video' ? videoUri : kind === 'image' ? imageUri : docUrl,
-    video: kind === 'video' ? videoUri : null,
+    video: kind === 'video' ? fallbackVideoUri : null,
     // video ko kabhi image/thumbnail ki tarah use nahi karna — poster sirf backend thumbnail se
     thumbnail: safeThumb,
     image: imageUri,
@@ -4026,6 +4055,9 @@ image: item.image || null,
               />
             )}
             ref={feedListRef}
+            onScroll={syncActiveIndexFromScroll}
+            onScrollEndDrag={syncActiveIndexFromScroll}
+            onMomentumScrollEnd={syncActiveIndexFromScroll}
             // ✅ FIX (Android reverse-scroll snap-back): pehle `pagingEnabled` + `snapToInterval` dono the —
             // do snapping engines ek saath lad rahe the. Ab sirf ek: exact snapToOffsets.
             snapToOffsets={snapOffsets}
@@ -4039,12 +4071,11 @@ image: item.image || null,
             onScrollToIndexFailed={(info) => {
               setTimeout(() => feedListRef.current?.scrollToOffset?.({ offset: info.averageItemLength * info.index, animated: false }), 60);
             }}
-            viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
             getItemLayout={(_, index) => ({ length: cardHeight, offset: cardHeight * index, index })}
-            initialNumToRender={2}
-            maxToRenderPerBatch={2}
-            updateCellsBatchingPeriod={60}
-            windowSize={3}
+            initialNumToRender={3}
+            maxToRenderPerBatch={3}
+            updateCellsBatchingPeriod={40}
+            windowSize={5}
             // ✅ FIX: removeClippedSubviews Android par video cards ke saath scroll jump/blank deta hai
             removeClippedSubviews={false}
             onEndReached={() => loadMoreFeedRef.current?.()}

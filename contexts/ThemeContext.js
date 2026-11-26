@@ -1,9 +1,26 @@
 // contexts/ThemeContext.js
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useColorScheme as useDeviceColorScheme, Platform, StatusBar } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { webThemeCss } from '../theme/webColors';
 
 const THEME_STORAGE_KEY = 'app_theme_mode';
+
+function isThemeMode(value) {
+  return value === 'light' || value === 'dark' || value === 'system';
+}
+
+function getInitialThemeMode() {
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    try {
+      const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+      if (isThemeMode(saved)) return saved;
+    } catch {
+      // The async storage path below also works when storage is unavailable.
+    }
+  }
+  return 'light';
+}
 
 export const lightTheme = {
   mode: 'light',
@@ -58,26 +75,25 @@ const ThemeContext = createContext({
 
 export function ThemeProvider({ children }) {
   const deviceColorScheme = useDeviceColorScheme();
-  const [themeMode, setThemeModeState] = useState('light'); // 'light' | 'dark' | 'system'
-  const [isReady, setIsReady] = useState(false);
+  const [themeMode, setThemeModeState] = useState(getInitialThemeMode);
+  const themeChanged = useRef(false);
 
   useEffect(() => {
     (async () => {
       try {
         const saved = await AsyncStorage.getItem(THEME_STORAGE_KEY);
-        if (saved && (saved === 'light' || saved === 'dark' || saved === 'system')) {
+        if (!themeChanged.current && isThemeMode(saved)) {
           setThemeModeState(saved);
         }
       } catch (e) {
         console.error('Failed to load theme mode:', e);
-      } finally {
-        setIsReady(true);
       }
     })();
   }, []);
 
   const setThemeMode = useCallback(async (mode) => {
     try {
+      themeChanged.current = true;
       setThemeModeState(mode);
       await AsyncStorage.setItem(THEME_STORAGE_KEY, mode);
     } catch (e) {
@@ -101,58 +117,24 @@ export function ThemeProvider({ children }) {
     return isDark ? darkTheme : lightTheme;
   }, [isDark]);
 
-  // Sync with Web DOM if on web
   useEffect(() => {
-    if (Platform.OS === 'web' && typeof document !== 'undefined') {
-      document.documentElement.setAttribute('data-theme', isDark ? 'dark' : 'light');
-      if (document.body) {
-        document.body.style.backgroundColor = isDark ? '#0a0f1d' : '#ffffff';
-        document.body.style.color = isDark ? '#f8fafc' : '#0f172a';
-      }
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
 
-      let styleEl = document.getElementById('app-theme-global-styles');
-      if (!styleEl) {
-        styleEl = document.createElement('style');
-        styleEl.id = 'app-theme-global-styles';
-        document.head.appendChild(styleEl);
-      }
-
-      if (isDark) {
-        styleEl.textContent = `
-          [data-theme="dark"] body {
-            background-color: #0a0f1d !important;
-            color: #f8fafc !important;
-          }
-          [data-theme="dark"] .qm-main,
-          [data-theme="dark"] .qm-root {
-            background-color: #0a0f1d !important;
-            color: #f8fafc !important;
-          }
-          [data-theme="dark"] .qm-stat,
-          [data-theme="dark"] .qm-card {
-            background-color: #131c31 !important;
-            color: #f8fafc !important;
-            border-color: #1e293b !important;
-          }
-          [data-theme="dark"] .qm-stat-value,
-          [data-theme="dark"] .qm-card-name {
-            color: #f8fafc !important;
-          }
-          [data-theme="dark"] .qm-topbar {
-            background-color: #0a0f1d !important;
-            border-bottom-color: #1e293b !important;
-          }
-          [data-theme="dark"] .qm-search {
-            background-color: #131c31 !important;
-            border-color: #1e293b !important;
-            color: #f8fafc !important;
-          }
-        `;
-      } else {
-        styleEl.textContent = '';
-      }
+    const root = document.documentElement;
+    root.setAttribute('data-theme', isDark ? 'dark' : 'light');
+    const existingStyle = document.getElementById('app-theme-global-styles');
+    if (!existingStyle) {
+      const sheet = document.createElement('style');
+      sheet.id = 'app-theme-global-styles';
+      sheet.textContent = webThemeCss();
+      document.head.appendChild(sheet);
     }
-  }, [isDark]);
+
+    if (document.body) {
+      document.body.style.backgroundColor = activeTheme.background;
+      document.body.style.color = activeTheme.text;
+    }
+  }, [isDark, activeTheme]);
 
   const contextValue = useMemo(() => ({
     themeMode,

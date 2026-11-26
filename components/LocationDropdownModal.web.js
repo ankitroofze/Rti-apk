@@ -1,3 +1,4 @@
+import { themeWebStyle } from '../theme/webColors';
 import React, { useState, useMemo, useEffect } from 'react';
 import { Modal } from 'react-native';
 
@@ -115,7 +116,7 @@ export default function LocationDropdownModal({ visible, title, items, selected,
                     style={{ ...st.item, ...(isSel ? st.itemSelected : null) }}
                   >
                     <span style={{ ...st.itemText, ...(isSel ? st.itemTextSelected : null) }}>{String(item)}</span>
-                    {isSel ? <span style={{ color: '#B91C1C', fontSize: 16 }}>✓</span> : null}
+                    {isSel ? <span style={themeWebStyle({ color: '#B91C1C', fontSize: 16 })}>✓</span> : null}
                   </div>
                 );
               })}
@@ -131,7 +132,7 @@ export default function LocationDropdownModal({ visible, title, items, selected,
 }
 
 const FONT = "'Roboto', sans-serif";
-const st = {
+const st = Object.fromEntries(Object.entries({
   overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, boxSizing: 'border-box', zIndex: 99999 },
   sheet: { width: '100%', maxWidth: 420, maxHeight: '85vh', display: 'flex', flexDirection: 'column', borderRadius: 20, background: '#ffffff', padding: '20px 20px 24px', boxSizing: 'border-box', fontFamily: FONT },
   handle: { width: 40, height: 4, background: '#EEEEEE', borderRadius: 99, alignSelf: 'center', marginBottom: 14, flexShrink: 0 },
@@ -146,4 +147,4 @@ const st = {
   itemTextSelected: { color: '#B91C1C', fontWeight: 700 },
   empty: { textAlign: 'center', color: '#9ca3af', padding: '20px 0', fontFamily: FONT },
   more: { textAlign: 'center', color: '#9ca3af', fontSize: 12, padding: '10px 0', fontFamily: FONT },
-};
+}).map(([name, style]) => [name, themeWebStyle(style)]));

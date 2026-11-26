@@ -801,20 +801,19 @@ function ProfileScreenInner({ navigation, route }) {
   ) || 0;
   const canEditProfile = isSubscribedUser || profileEditCount < 1;
 
-  const canChangePhoto = isSubscribedUser; // Role / Premium / Verified wale hamesha photo badal sakte hain
+  const canChangePhoto = UserStore.hasActiveSubscription(displayProfile);
   // ✅ Common user: sirf 1 baar photo FREE update kar sakta hai. Uske baad subscription zaroori hai.
-  const photoChangeCount = Number(
+  const photoChangeCount = Math.max(displayProfile?.pending_profile_image_url || displayProfile?.pending_profile_image ? 1 : 0, Number(
     displayProfile?.profile_image_change_count
     ?? displayProfile?.profile?.profile_image_change_count
-    ?? (displayProfile?.pending_profile_image_url ? 1 : 0)
     ?? 0
-  ) || 0;
+  ) || 0);
   const canPickPhoto = canChangePhoto || photoChangeCount < 1;
 
   const openEdit = () => {
     // 1st time common user bhi profile add/edit kar sakta hai.
     // 2nd time onwards common user bina subscription ke edit nahi kar sakta.
-    if (!canEditProfile) {
+    if (!canEditProfile && !canPickPhoto) {
       showToast('Profile editing is available only after purchasing a subscription.', 'error', { title: 'Subscription required' });
       navigation?.navigate?.('Subscription Plans', { returnTo: 'Profile' });
       return;
@@ -1153,43 +1152,35 @@ const handlePickImage = async () => {
   };
 
     const handleSave = async () => {
-    // Subscribed users can always save.
-    // Common user (unsubscribed) can save 1st time (profileEditCount < 1).
-    // 2nd time onwards subscription is required.
-    if (!canEditProfile) {
-      showToast('Profile editing is available only after purchasing a subscription.', 'error', { title: 'Subscription required' });
-      navigation?.navigate?.('Subscription Plans', { returnTo: 'Profile' });
-      return;
-    }
     const nextBio = String(form.bio || '').trim();
     const nextContactRaw = String(form.contact_number || '').trim();
     const nextContactDigits = nextContactRaw.replace(/\D/g, '');
 
-    if (nextContactDigits && nextContactDigits.length !== 10) { showToast('Enter a valid 10-digit mobile number.', 'error'); return; }
-
     // Sirf changed fields ka diff banao
     const prevBio = savedProfile.bio || '';
-    const prevContact = savedProfile.contact_number || '';
+    const prevContact = String(savedProfile.contact_number || '').replace(/\D/g, '');
 
     const changedFields = {};
     if (nextBio !== prevBio) changedFields.bio = nextBio;
     if ((nextContactDigits || '') !== prevContact) {
+      if (nextContactDigits && nextContactDigits.length !== 10) { showToast('Enter a valid 10-digit mobile number.', 'error'); return; }
       changedFields.contact_number = nextContactDigits || '';
       changedFields.phone_number = nextContactDigits || '';
       changedFields.mobile_number = nextContactDigits || '';
     }
 
-       const pendingImageUri = pendingImageUriRef.current;
-    const hasChanges = Object.keys(changedFields).length > 0 || Boolean(pendingImageUri);
-    if (!hasChanges) { showToast('No changes to save.', 'info'); return; }
+    const pendingImageUri = pendingImageUriRef.current;
+    const hasTextChanges = Object.keys(changedFields).length > 0;
+    if (!hasTextChanges && !pendingImageUri) { showToast('No changes to save.', 'info'); return; }
+    if (hasTextChanges && !canEditProfile) {
+      showToast('Profile details can be edited with an active subscription.', 'error', { title: 'Subscription required' });
+      navigation?.navigate?.('Subscription Plans', { returnTo: 'Profile' });
+      return;
+    }
 
     setSaving(true);
-    const hasExistingImage = Boolean(savedProfile.profile_image);
-
-    // NEW: image change ho to sabse pehle image hi upload karo — asli POST /profile
-    // (ya /profile/image agar pehle se image hai) yahi Save button click par hit hota hai.
-      let imageUpdatePayload = {};
-    let imageUploaded = false;
+    let imageUpdatePayload = {};
+    let imageMessage = '';
     if (pendingImageUri) {
       const imgResult = await AuthAPI.updateProfileImage(pendingImageUri);
 
@@ -1210,15 +1201,16 @@ const handlePickImage = async () => {
 
       // profile_image_url = approved/current, pending_profile_image_url = approval pending.
       // Pending image kabhi approved image ko overwrite nahi karti.
-      if (imgResult.pendingImageUrl) {
+      if (imgResult.requiresApproval) {
         imageUpdatePayload = {
+          pending_profile_image: imgResult.pendingImagePath,
           pending_profile_image_url: imgResult.pendingImageUrl,
           profile_update_status: imgResult.profileUpdateStatus ?? 1,
         };
-      } else if (!hasExistingImage && imgResult.imageUrl) {
-        imageUpdatePayload = { profile_image: imgResult.imageUrl };
+      } else if (imgResult.imageUrl) {
+        imageUpdatePayload = { profile_image: imgResult.imageUrl, pending_profile_image: null, pending_profile_image_url: null };
       }
-      imageUploaded = true;
+      imageMessage = imgResult.message;
       // Har successful upload par count +1 (backend value mile to wahi, warna local +1)
       imageUpdatePayload = {
         ...imageUpdatePayload,
@@ -1232,11 +1224,6 @@ const handlePickImage = async () => {
     // sirf phone+bio confirm karta hai), isliye unhe yahan se drop kar diya —
     // agar backend inhe bhi support karta hai to bata dena, alag se jod denge.
      let profile = {};
-    const hasTextChanges = changedFields.name !== undefined
-      || changedFields.email !== undefined
-      || changedFields.bio !== undefined
-      || changedFields.contact_number !== undefined;
-
     if (hasTextChanges) {
       const apiResult = await AuthAPI.updateProfile({
         name: changedFields.name !== undefined ? changedFields.name : undefined,
@@ -1245,6 +1232,13 @@ const handlePickImage = async () => {
         bio: changedFields.bio !== undefined ? changedFields.bio : undefined,
       });
       if (!apiResult.ok) {
+        if (imageMessage) {
+          const savedPhoto = await UserStore.updateUser(savedProfile.account_email || savedProfile.email, imageUpdatePayload);
+          if (savedPhoto) {
+            setSavedProfile(savedPhoto);
+            handleChange('profile_image', savedPhoto.profile_image || '');
+          }
+        }
         setSaving(false);
         if (apiResult.isAuth) { showToast('Session expired. Please login again.', 'error'); return; }
         showToast(apiResult.message || 'Unable to send request.', 'error');
@@ -1261,7 +1255,7 @@ const handlePickImage = async () => {
       .join(' ')
       .trim();
 
-    const nextEditCount = Number(savedProfile.profile_edit_count || profileEditCount || 0) + 1;
+    const nextEditCount = profileEditCount + (hasTextChanges ? 1 : 0);
 
     const updated = await UserStore.updateUser(savedProfile.account_email || savedProfile.email, {
       // Naam/email approval ke bina hi turant apply hote hain (pending nahi) —
@@ -1270,7 +1264,7 @@ const handlePickImage = async () => {
       email: profile.email || changedFields.email || savedProfile.email,
       pending_phone: profile.pending_phone ?? savedProfile.pending_phone ?? null,
       pending_bio: profile.pending_bio ?? savedProfile.pending_bio ?? null,
-      profile_update_status: profile.profile_update_status ?? savedProfile.profile_update_status ?? 1,
+      profile_update_status: profile.profile_update_status ?? imageUpdatePayload.profile_update_status ?? savedProfile.profile_update_status ?? null,
       profile_edit_count: nextEditCount,
       ...imageUpdatePayload,
     });
@@ -1285,9 +1279,7 @@ const handlePickImage = async () => {
 
     pendingImageUriRef.current = null; // NEW: save ke baad clear
     setSavedProfile(updated); setForm(updated); setIsEditing(false);
-    const doneMessage = imageUploaded
-      ? 'Your profile image is pending admin approval.'
-      : 'Request successfully sent.';
+    const doneMessage = imageMessage || 'Request successfully sent.';
     showToast(doneMessage, 'success');
     setSuccessMessage(doneMessage);
     setTimeout(() => setSuccessMessage(''), 3000);
@@ -1426,7 +1418,7 @@ const handlePickImage = async () => {
             </TouchableOpacity>
           </View>
           <Text style={{ fontSize: 12, color: canPickPhoto ? '#64748b' : '#dc2626', marginTop: 8, fontWeight: canPickPhoto ? '400' : '600' }}>
-            {uploading ? 'Opening...' : (canPickPhoto ? (photoChangeCount === 0 && !isSubscribedUser ? 'Tap to change photo (1 free change)' : 'Tap to change photo') : 'Free photo change used • Subscription required')}
+            {uploading ? 'Opening...' : (canPickPhoto ? (photoChangeCount === 0 ? 'Tap to change photo (1 free change)' : 'New photo will be sent for admin approval') : 'Free photo change used • Subscription required')}
           </Text>
         </View>
 
@@ -1446,14 +1438,14 @@ const handlePickImage = async () => {
             <Text style={ProfileStyles.inputLabel}>Mobile Number</Text>
             <View style={ProfileStyles.inputWrap}>
               <Feather name="smartphone" size={16} color="#8a94a6" />
-              <TextInput onSubmitEditing={handleSave} style={ProfileStyles.input} value={form.contact_number} onChangeText={(v) => handleChange('contact_number', v)} placeholder="10-digit mobile" placeholderTextColor="#94a3b8" keyboardType="phone-pad" maxLength={14} />
+              <TextInput editable={canEditProfile} onSubmitEditing={handleSave} style={ProfileStyles.input} value={form.contact_number} onChangeText={(v) => handleChange('contact_number', v)} placeholder="10-digit mobile" placeholderTextColor="#94a3b8" keyboardType="phone-pad" maxLength={14} />
             </View>
           </View>
           <View style={ProfileStyles.fullWidthGroup}>
             <Text style={ProfileStyles.inputLabel}>Bio</Text>
             <View style={[ProfileStyles.inputWrap, ProfileStyles.textAreaWrap]}>
               <Feather name="file-text" size={16} color="#8a94a6" style={ProfileStyles.textAreaIcon} />
-              <TextInput style={[ProfileStyles.input, ProfileStyles.textArea]} value={form.bio} onChangeText={(v) => handleChange('bio', v)} placeholder="Write something about you" placeholderTextColor="#94a3b8" multiline />
+              <TextInput editable={canEditProfile} style={[ProfileStyles.input, ProfileStyles.textArea]} value={form.bio} onChangeText={(v) => handleChange('bio', v)} placeholder="Write something about you" placeholderTextColor="#94a3b8" multiline />
             </View>
           </View>
         </View>

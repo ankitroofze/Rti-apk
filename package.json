@@ -39,6 +39,7 @@
     "@react-native-community/datetimepicker": "8.4.4",
     "@react-native-firebase/app": "^23.8.8",
     "@react-native-firebase/messaging": "^23.8.8",
+    "@react-native/normalize-colors": "0.81.5",
     "@react-navigation/bottom-tabs": "^7.15.6",
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.34",

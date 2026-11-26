@@ -20,6 +20,8 @@ import React, { useEffect, useState } from 'react';
 import { Platform, View, Text, TouchableOpacity, ImageBackground, Image, useWindowDimensions } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { UserStore } from '../store/UserStore';
+import { useTheme } from '../contexts/ThemeContext';
+import ThemeToggle from './ThemeToggle';
 import { getProfileTier, AVATAR_IMAGE } from '../utils/profileHelpers';
 import { MODULE_HEADER_HEIGHT_WEB, HEADER_BG_IMAGE } from '../constants/subscriptionThemes';
 import { isMobileWebDevice, getResponsiveWindowWidth } from '../utils/webDevice';
@@ -116,6 +118,7 @@ export default function ModuleWebHeader({
   showSubscription = true,   // ✅ sab module headers me Subscription button
   showReferral = true,       // ✅ Subscription ke just right side me Referral icon
 }) {
+  const { isDark, theme } = useTheme();
   const { width: headerWinW } = useWindowDimensions();
   // ✅ phone / mobile-web: Android jaisa compact header (sirf back arrow + title + chhote icons).
   // Phone browser ki width galat aaye tab bhi touch device ko compact hi maana jaata hai.
@@ -148,16 +151,17 @@ export default function ModuleWebHeader({
     if (onBack) return onBack();
     smartGoBack(navigation, 'QuickMenu');
   };
-  const readableColor = highContrast ? '#111111' : '#FFFFFF';   // yellow header par black
-  const controlSurface = highContrast ? 'rgba(255,255,255,0.62)' : 'rgba(255,255,255,0.16)';
-  const controlBorder = highContrast ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.35)';
+  const useDarkInk = highContrast && !isDark;
+  const readableColor = useDarkInk ? '#111111' : '#FFFFFF';
+  const controlSurface = useDarkInk ? 'rgba(255,255,255,0.62)' : 'rgba(255,255,255,0.16)';
+  const controlBorder = useDarkInk ? 'rgba(0,0,0,0.30)' : 'rgba(255,255,255,0.35)';
 
   return (
     <ImageBackground
       source={bgImage || HEADER_BG_IMAGE}
       resizeMode="cover"
-      imageStyle={S.barImg}
-      style={[S.bar, compactHeader && C.bar]}
+      imageStyle={[S.barImg, isDark && { opacity: 0.24 }]}
+      style={[S.bar, compactHeader && C.bar, isDark && { backgroundColor: theme.navBg }]}
     >
       <View style={[S.left, compactHeader && C.left]}>
         {showBack ? (
@@ -171,6 +175,7 @@ export default function ModuleWebHeader({
 
       <View style={[S.right, compactHeader && C.right]}>
         {rightExtra}
+        <ThemeToggle compact={compactHeader} lightIconColor={readableColor} />
 
         {/* Subscription */}
         {showSubscription ? (
