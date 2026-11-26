@@ -2,7 +2,7 @@
 
 ## Run on a physical Android phone
 
-This app includes custom native modules (for example, the RTMP broadcaster), so it **cannot run in Expo Go**. Build and install the Expo development client once, then scan the QR code from that installed RTI News development app.
+This app includes custom native modules (for example, the RTMP broadcaster), so it **cannot run in Expo Go**. Build and install the Expo development client once, then scan the QR code from that installed RTI News developmentpp.
 
 1. On the phone, enable **Developer options → USB debugging** and accept the computer's RSA prompt after connecting the USB cable.
 2. In PowerShell, run `adb devices`. The phone must appear as `device` (not blank or `unauthorized`).

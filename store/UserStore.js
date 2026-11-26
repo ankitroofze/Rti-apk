@@ -29,6 +29,7 @@ import {
   getReplyParent,
   removeReplyParent,
   buildNestedReplies,
+  countCommentTree,
 } from '../utils/commentPersistence';
 
 const MEDIA_ORIGIN = process.env.EXPO_PUBLIC_API_ORIGIN || 'https://189.72.144.238';
@@ -1238,7 +1239,9 @@ const normalizeNewsFeed = (items = []) => {
     views: Number(item.views || 0),
     shares: Number(item.shares || 0),
     likes: Number(item.likes || 0),
-    comments: Number(item.comments ?? (Array.isArray(item.comments_list) ? item.comments_list.length : 0)),
+    comments: Array.isArray(item.comments)
+      ? countCommentTree(item.comments)
+      : Number(item.comments ?? item.comments_count ?? (Array.isArray(item.comments_list) ? countCommentTree(item.comments_list) : 0)) || 0,
   }));
 };
 
@@ -1440,7 +1443,9 @@ const mapApiNewsToFeedItem = (apiItem = {}) => {
     views: toApiCount(apiItem.views, apiItem.views_count, apiItem.view_count, apiItem.total_views),
     shares: Number(apiItem.shares_count ?? apiItem.share_count ?? apiItem.shares ?? apiItem.share ?? 0),
     likes: Number(apiItem.likes || apiItem.likes_count || 0),
-    comments: Number(apiItem.comments || apiItem.comments_count || 0),
+    comments: Array.isArray(apiItem.comments)
+      ? countCommentTree(apiItem.comments)
+      : Number(apiItem.comments ?? apiItem.comments_count ?? 0) || 0,
     comments_list: Array.isArray(apiItem.comments_list) ? apiItem.comments_list : (Array.isArray(apiItem.comments) ? apiItem.comments : []),
     liked_by: Array.isArray(apiItem.liked_by) ? apiItem.liked_by : [],
     liked_by_me: apiItem.liked_by_me === undefined ? undefined : Boolean(apiItem.liked_by_me),
@@ -5511,7 +5516,7 @@ export const UserStore = {
           // ✅ FIX: likes/liked ab sirf backend API se (item.likes / item.liked) —
           // local SQLite stat.likes ab merge nahi hota, double-count avoid karne ke liye.
           next.likes = Number(item.likes || 0);
-          next.shares = Number(item.shares || 0) + Number(stat.shares || 0);
+          next.shares = Number(item.shares || 0);
           next.commentsCount = Number(stat.comments || 0);
           next.liked = Boolean(item.liked);
           next.bookmarked = Boolean(item.bookmarked || stat.bookmarkedByCurrentUser);
@@ -5608,7 +5613,7 @@ export const UserStore = {
         AuthAPI.clearApiGetCache?.('/news');
         AuthAPI.clearApiGetCache?.('/my-news');
         AuthAPI.clearApiGetCache?.('/feeds');
-        return { ok: true, shares: nextShares };
+        return { ok: true, shares: nextShares, shareCount: nextShares };
       }
 
       const user = await UserStore.getCurrentUser();
@@ -5877,9 +5882,15 @@ export const UserStore = {
           } catch (_) { }
         })
       );
+      const comments = applyEditedCommentsToTree(tree);
+      const commentsCount = countCommentTree(comments);
+      if (!res?.hasMore) {
+        publishEngagement(String(newsId || '').trim(), { comments: commentsCount }, 'userstore-comments-load');
+      }
       return {
         ok: true,
-        comments: applyEditedCommentsToTree(tree),
+        comments,
+        commentsCount,
         hasMore: res?.hasMore,
         nextCursor: res?.nextCursor,
       };
@@ -7703,7 +7714,6 @@ export const UserStore = {
       const res = await AuthAPI.shareNews(newsId);
       const serverCount = res?.ok && Number.isFinite(res.shareCount) ? res.shareCount : null;
       publishEngagement(newsId, { ...(serverCount != null ? { shares: serverCount } : {}) }, 'userstore');
-      await UserStore.updateNewsFeedItem(newsId, 'share').catch(() => {});
       return { ok: true, shareCount: serverCount };
     } catch (e) {
       return { ok: false };
@@ -8012,10 +8022,11 @@ export const UserStore = {
         merged.unshift(updatedAd);
       }
       const updatedAds = merged.filter((a, idx, arr) => arr.findIndex((x) => String(x?.id) === String(a.id)) === idx);
-      const updatedUser = await UserStore.updateUser(user.email, { ads: updatedAds });
+      const nextCredits = Math.max(0, currentCredits - 1);
+      const updatedUser = await UserStore.updateUser(user.email, { ad_credits: nextCredits, ads: updatedAds });
       UserStore._adsCache = null;
       if (!updatedUser) return { ok: false, message: 'Unable to save changes.' };
-      return { ok: true, credits: currentCredits, ad: updatedAd };
+      return { ok: true, credits: nextCredits, ad: updatedAd };
     } catch (e) {
       console.error('[UserStore.useAdCredit] failed:', e);
       return { ok: false, message: `Unable to use credit. (${e?.message || 'unknown error'})` };

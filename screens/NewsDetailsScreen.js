@@ -45,11 +45,14 @@ import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl } from '../utils/webMediaS
 import { getResponsiveWindowWidth, isMobileWebDevice } from '../utils/webDevice';
 import {
   applyEditedComment,
+  clearEditedComment,
   deleteCommentFromTree,
   findCommentNodeInTree,
   insertReplyInTree,
   toggleCommentLikeInTree,
+  recordEditedComment,
   updateCommentTextInTree,
+  countCommentTree,
 } from '../utils/commentPersistence';
 import { safePause, safePlay } from '../utils/videoPlayerSafe';
 import MediaGallery from '../components/MediaGallery';
@@ -251,7 +254,9 @@ function normalizeArticle(rawArticle) {
     date: article.date || '05 May 2026',
     publishedAgo: article.publishedAgo || 'Updated recently',
     likes: Number(article.likes || 0),
-    comments: Number(article.comments || 0),
+    comments: Array.isArray(article.comments)
+      ? countCommentTree(article.comments)
+      : Number(article.commentsCount ?? article.comments_count ?? article.comments ?? 0) || 0,
     shares: Number(article.shares || 0),
     views: Number(article.views || 0),
   };
@@ -304,13 +309,6 @@ function normalizeComment(rawComment) {
     replies_count: Math.max(Number(comment.replies_count || 0), replies.length),
     replies,
   });
-}
-
-function countNestedComments(comments = []) {
-  return (Array.isArray(comments) ? comments : []).reduce(
-    (total, comment) => total + 1 + countNestedComments(comment.replies),
-    0
-  );
 }
 
 function isCommentOwner(comment, currentUserEmail, currentUserName, currentUserId = null) {
@@ -813,7 +811,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
             const cRes = await UserStore.getNewsCommentsPage(articleId);
             if (cRes?.ok && Array.isArray(cRes.comments)) {
               setComments(cRes.comments.map(normalizeComment));
-              setCommentCount(cRes.comments.length);
+              setCommentCount(countCommentTree(cRes.comments));
             }
           } catch (_) {}
         }
@@ -866,18 +864,14 @@ export default function NewsDetailsScreen({ route, navigation }) {
 
       if (loadedComments.length > 0) {
         setComments(loadedComments);
-        setCommentCount(Number(matchedItem.comments ?? loadedComments.length));
+        setCommentCount(countCommentTree(loadedComments));
       } else {
         const rawComments = Array.isArray(matchedItem.comments_list)
           ? matchedItem.comments_list
           : (Array.isArray(matchedItem.comments) ? matchedItem.comments : []);
         const fallbackNormalized = rawComments.map(normalizeComment);
-        setComments((prev) => (prev.length > 0 && fallbackNormalized.length === 0 ? prev : fallbackNormalized));
-        setCommentCount(Number(
-          matchedItem.comments ??
-          matchedItem.comments_count ??
-          countNestedComments(fallbackNormalized)
-        ));
+        setComments(fallbackNormalized);
+        setCommentCount(countCommentTree(fallbackNormalized));
       }
       // card par like karne se server summary me liked na aaye to phone me saved like bhi maano
       const localSavedLikes = user?.email ? await getLikedLocal(user.email) : {};
@@ -1085,12 +1079,11 @@ export default function NewsDetailsScreen({ route, navigation }) {
       AuthAPI.clearApiGetCache?.('/news');
       AuthAPI.clearApiGetCache?.('/my-news');
       AuthAPI.clearApiGetCache?.('/feeds');
-      const shareResult = await UserStore.updateNewsFeedItem(article.id, 'share');
+      const shareResult = await AuthAPI.shareNews(article.id);
       if (shareResult?.ok && Number.isFinite(shareResult.shareCount)) {
         setShareCount(shareResult.shareCount);
         publishEngagement(article.id, { shares: shareResult.shareCount }, engId);
       }
-      await AuthAPI.shareNews(article.id);
     } catch (_) {}
   }, [article.id, shareCount, engId]);
 
@@ -1150,7 +1143,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
       is_mine: true,
     });
     setComments((prev) => [addedComment, ...prev.filter((c) => c.id !== addedComment.id)]);
-    const nextComments = Number.isFinite(result.commentsCount) ? result.commentsCount : Number(commentCount || 0) + 1;
+    const nextComments = Number(commentCount || 0) + 1;
     setCommentCount(nextComments);
     publishEngagement(article.id, { comments: nextComments }, engId);   // ✅ card par bhi
   }, [article.id, commentText, commentCount, currentUserEmail, currentUserName, engId, showToast]);
@@ -1185,6 +1178,9 @@ export default function NewsDetailsScreen({ route, navigation }) {
       }
       return;
     }
+    recordEditedComment(editingCommentId, trimmed, article.id);
+    setCommentCount((current) => Math.max(0, Number(current || 0)));
+    publishEngagement(article.id, { comments: Math.max(0, Number(commentCount || 0)) }, engId);
     setEditingCommentId(null);
     setEditingCommentText('');
     showToast('Comment updated successfully.', 'success');
@@ -1382,6 +1378,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
     if (!confirmed) return;
     const result = await UserStore.deleteNewsComment(article.id, commentId);
     if (!result?.ok) { showToast(result?.message || 'Could not delete comment', 'error'); return; }
+    clearEditedComment(commentId);
     showToast('Comment deleted successfully.', 'success');
     if (editingCommentId === commentId) { setEditingCommentId(null); setEditingCommentText(''); }
     if (replyingToCommentId === commentId) { setReplyingToCommentId(null); setReplyText(''); }
@@ -1730,9 +1727,9 @@ export default function NewsDetailsScreen({ route, navigation }) {
                       if (articleId) {
                         try {
                           const cRes = await UserStore.getNewsCommentsPage(articleId);
-                          if (cRes?.ok && Array.isArray(cRes.comments) && cRes.comments.length > 0) {
+                          if (cRes?.ok && Array.isArray(cRes.comments)) {
                             setComments(cRes.comments.map(normalizeComment));
-                            setCommentCount(cRes.comments.length);
+                            setCommentCount(countCommentTree(cRes.comments));
                           }
                         } catch (_) {}
                       }

@@ -51,12 +51,14 @@ import { exportOptsFromStory, toCorsSafeMediaUrl } from '../utils/videoWithMusic
 import {
   applyEditedComment,
   buildNestedReplies,
+  clearEditedComment,
   deleteCommentFromTree,
   findCommentNodeInTree,
   insertReplyInTree,
   isSameCommentNodeId,
   toggleCommentLikeInTree,
   updateCommentTextInTree,
+  countCommentTree,
 } from '../utils/commentPersistence';
 
 // ─────────────────────────────────────────────
@@ -573,6 +575,13 @@ const toCardComment = (c = {}) => ({
   replies: Array.isArray(c.replies) ? c.replies.map(toCardComment) : [],
 });
 
+const getStoryCommentCount = (story) => {
+  const value = story.commentsCount ?? story.comments_count ?? story.comments;
+  if (Array.isArray(value)) return countCommentTree(value);
+  const count = Number(value);
+  return Number.isFinite(count) ? Math.max(0, count) : 0;
+};
+
 // ✅ NEW: GET /news ke latest_comments[] (max 2) -> preview rows
 const mapPreviewComments = (list) => (Array.isArray(list) ? list : []).slice(0, 2).map((c) => {
   const mapped = applyEditedComment({
@@ -644,7 +653,7 @@ function NewsFeedCardInner({
   const engId = useRef(`card-${Math.random().toString(36).slice(2)}`).current;
   const [isLiked, setIsLiked] = useState(engInit?.liked ?? Boolean(story.liked_by_me));
   const [likesCount, setLikesCount] = useState(engInit?.likes ?? Number(story.likes || 0));
-  const [commentsCount, setCommentsCount] = useState(engInit?.comments ?? Number(story.comments || 0));
+  const [commentsCount, setCommentsCount] = useState(engInit?.comments ?? getStoryCommentCount(story));
   const [sharesCount, setSharesCount] = useState(engInit?.shares ?? Number(story.shares || 0));
   const [viewsCount, setViewsCount] = useState(engInit?.views ?? Number(story.views || 0));
   const viewsStoryIdRef = useRef(story.id);
@@ -698,7 +707,7 @@ function NewsFeedCardInner({
   useEffect(() => {
     const eng = getEngagement(story.id);   // taza shared count ho to wahi (stale props se upar)
     setLikesCount(eng?.likes ?? Number(story.likes || 0));
-    setCommentsCount(eng?.comments ?? Number(story.comments || 0));
+    setCommentsCount(eng?.comments ?? getStoryCommentCount(story));
     setSharesCount(eng?.shares ?? Number(story.shares || 0));
     // ✅ views: server ka count aaye to wahi lo; lekin stale refresh se local (abhi badha hua) count neeche na gire
     const srvViews = Math.max(Number(story.views || 0), eng?.views ?? 0);
@@ -708,7 +717,7 @@ function NewsFeedCardInner({
     } else {
       setViewsCount((prev) => Math.max(prev, srvViews));
     }
-  }, [story.id, story.likes, story.comments, story.shares, story.views]);
+  }, [story.id, story.likes, story.comments, story.commentsCount, story.comments_count, story.shares, story.views]);
 
   useEffect(() => {
     setPreviewComments(mapPreviewComments(story.latest_comments));
@@ -891,14 +900,14 @@ function NewsFeedCardInner({
     // ✅ same grace-window guard — apne hi like ke turant baad stale count se overwrite na ho
     const eng = getEngagement(story.id);
     if (Date.now() - lastOwnLikeActionAtRef.current < 15000) {
-      setCommentsCount(eng?.comments ?? Number(story.comments || 0));
+      setCommentsCount(eng?.comments ?? getStoryCommentCount(story));
       setSharesCount(eng?.shares ?? Number(story.shares || 0));
       return;
     }
     setLikesCount(eng?.likes ?? Number(story.likes || 0));
-    setCommentsCount(eng?.comments ?? Number(story.comments || 0));
+    setCommentsCount(eng?.comments ?? getStoryCommentCount(story));
     setSharesCount(eng?.shares ?? Number(story.shares || 0));
-  }, [story.comments, story.likes, story.shares]);
+  }, [story.comments, story.commentsCount, story.comments_count, story.likes, story.shares]);
 
   // ✅ Details page (ya kahin aur) par like / comment / share / view badla => is card par turant
   useEffect(() => {
@@ -1200,9 +1209,15 @@ const handleLike = async () => {
       if (!res?.ok) return;
       if (reset) { repliesMetaRef.current = {}; setRepliesMeta({}); setExpandedReplyThreads({}); }
       const page = res.comments.map(toCardComment);
-      setLocalComments((prev) => (
-        reset ? page : [...prev, ...page.filter((p) => !prev.some((x) => x.id === p.id))]
-      ));
+      const mergedComments = reset
+        ? page
+        : [...localComments, ...page.filter((p) => !localComments.some((x) => x.id === p.id))];
+      setLocalComments(mergedComments);
+      const boundCount = countCommentTree(mergedComments);
+      setCommentsCount(boundCount);
+      if (!res.hasMore && !isAdStory) {
+        publishEngagement(story.id, { comments: boundCount }, engId);
+      }
       commentsCursorRef.current = res.nextCursor || null;
       commentsHasMoreRef.current = Boolean(res.hasMore && res.nextCursor);
       setCommentsHasMore(commentsHasMoreRef.current);
@@ -1211,7 +1226,7 @@ const handleLike = async () => {
       commentsLoadingRef.current = false;
       setCommentsLoading(false);
     }
-  }, [story.id]);
+  }, [story.id, localComments, isAdStory, engId]);
 
   // Comments dekhna PUBLIC hai (guest bhi). Add comment par login maanga jaata hai.
   const handleComment = async () => {
@@ -1247,7 +1262,7 @@ const handleLike = async () => {
         { id: newComment.id, text: newComment.text, author: newComment.author, avatar: newComment.authorAvatar },
         ...prev,
       ].slice(0, 2));
-      const nextComments = Number.isFinite(result.commentsCount) ? result.commentsCount : commentsCount + 1;
+      const nextComments = commentsCount + 1;
       setCommentsCount(nextComments);
       publishEngagement(story.id, { comments: nextComments }, engId);
       setCommentText('');
@@ -1301,14 +1316,16 @@ const handleLike = async () => {
         else showToast(result?.message || 'Unable to delete comment.', 'error');
         return;
       }
+      clearEditedComment(commentId);
       showToast('Comment deleted successfully.', 'success');
-      setLocalComments((prev) => deleteCommentFromTree(prev, commentId).nextComments);
+      const deletion = deleteCommentFromTree(localComments, commentId);
+      setLocalComments(deletion.nextComments);
       if (!String(commentId).startsWith('rpl-')) {
         setPreviewComments((prev) => prev.filter((p) => !isSameCommentNodeId(p.id, commentId)));
-        const nextComments = Number.isFinite(result.commentsCount) ? result.commentsCount : Math.max(0, commentsCount - 1);
-        setCommentsCount(nextComments);
-        publishEngagement(story.id, { comments: nextComments }, engId);
       }
+      const nextComments = Math.max(0, commentsCount - deletion.removedCount);
+      setCommentsCount(nextComments);
+      publishEngagement(story.id, { comments: nextComments }, engId);
       if (editingCommentId === commentId) { setEditingCommentId(null); setEditingCommentText(''); }
       if (replyingToCommentId === commentId) { setReplyingToCommentId(null); setReplyText(''); }
     } catch {}
@@ -1359,7 +1376,11 @@ const handleLike = async () => {
         return;
       }
       const addedReply = toCardComment(result.comment || {});
-      setLocalComments((prev) => insertReplyInTree(prev, replyingToCommentId, addedReply).comments);
+      const nextCommentsTree = insertReplyInTree(localComments, replyingToCommentId, addedReply).comments;
+      setLocalComments(nextCommentsTree);
+      const nextComments = commentsCount + 1;
+      setCommentsCount(nextComments);
+      publishEngagement(story.id, { comments: nextComments }, engId);
       setExpandedReplyThreads((prev) => ({ ...prev, [rootCommentId]: true, [replyingToCommentId]: true }));
       setReplyingToCommentId(null);
       setReplyText('');
@@ -1418,7 +1439,6 @@ const handleLike = async () => {
       } else if (res?.rateLimited) {
         showToast('Please try again later.', 'info');
       }
-      await UserStore.updateNewsFeedItem(story.id, 'share');
     } catch (_) {}
   };
 

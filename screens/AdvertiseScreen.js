@@ -556,6 +556,7 @@ function AdvertiseScreen__Inner({ navigation, route }) {
 
 const editAd = route?.params?.editAd || null;
   const isEditing = Boolean(editAd?.id);
+  const submittingAdRef = useRef(false);
   const { showToast } = useToast();
   const { isLoggedIn, isAuthLoading } = useAuth();
 
@@ -1053,6 +1054,8 @@ const editAd = route?.params?.editAd || null;
   };
 
   const handlePreviewNext = async () => {
+    if (submittingAdRef.current) return;
+    submittingAdRef.current = true;
     setShowPreview(false);
     await new Promise(resolve => setTimeout(resolve, 300));
 
@@ -1083,29 +1086,18 @@ const editAd = route?.params?.editAd || null;
     });
 
     if (!result.ok) {
+      submittingAdRef.current = false;
       Alert.alert(isEditing ? 'Unable to Update' : 'Unable to Post', result.message || 'Unable to save advertisement.');
       return;
     }
 
-    await saveDraft();
-
-    navigation.navigate('ChoosePlan', {
-      adData: {
-        photo,
-        images: [photo, ...extraPhotos].filter(Boolean),
-                video: adVideo,
-        title,
-        description,
-        redirect: selectedRedirect,
-        extraValues: {
-          ...extraValues,
-          lead_form_fields: leadFormFields,
-          lead_form_submit_action: leadFormSubmitAction,
-        },
-        allowCalls
-      },
-      showSubscriptionToast: true,
-    });
+    await AsyncStorage.removeItem(AD_DRAFT_KEY).catch(() => {});
+    showToast(isEditing ? 'Ad updated successfully!' : 'Ad posted successfully!', 'success');
+    setTimeout(() => {
+      submittingAdRef.current = false;
+      if (navigation.canGoBack?.()) navigation.goBack();
+      else navigation.navigate('MyAds');
+    }, 400);
   };
 
   // ── Redirect option row (shared by mobile + web) ─────────────────────────────

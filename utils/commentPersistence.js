@@ -257,10 +257,14 @@ export function findCommentNodeInTree(comments = [], targetId) {
 }
 
 export function countCommentTree(comments = []) {
-  return (Array.isArray(comments) ? comments : []).reduce(
-    (sum, item) => sum + 1 + countCommentTree(item?.replies),
-    0
-  );
+  return (Array.isArray(comments) ? comments : []).reduce((sum, item) => {
+    const replies = Array.isArray(item?.replies) ? item.replies : [];
+    const declaredReplies = Number(item?.replies_count ?? item?.repliesCount ?? 0);
+    const missingReplies = Number.isFinite(declaredReplies)
+      ? Math.max(0, Math.floor(declaredReplies) - replies.length)
+      : 0;
+    return sum + 1 + missingReplies + countCommentTree(replies);
+  }, 0);
 }
 
 export function updateCommentTextInTree(comments = [], targetId, nextText) {

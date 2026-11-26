@@ -38,11 +38,14 @@ import { getFrameTemplate } from '../constants/frameTemplates';
 import ModuleMobileHeader from '../components/ModuleMobileHeader';
 import {
   applyEditedCommentsToTree,
+  clearEditedComment,
   deleteCommentFromTree,
   findCommentNodeInTree,
   insertReplyInTree,
   toggleCommentLikeInTree,
+  recordEditedComment,
   updateCommentTextInTree,
+  countCommentTree,
 } from '../utils/commentPersistence';
 // ── Design tokens — matched to the Advertise / Add News screens ────────────────
 const C = {
@@ -726,6 +729,7 @@ export default function NewsFeedScreen({ navigation }) {
       liked_by_me: Boolean(comment.liked_by_me),
       parent_comment_id: comment.parent_comment_id || comment.comment_id || null,
       parent_reply_id: comment.parent_reply_id || null,
+      replies_count: Number(comment.replies_count ?? comment.repliesCount ?? (Array.isArray(comment.replies) ? comment.replies.length : 0)),
       replies: formatCommentsForView(Array.isArray(comment.replies) ? comment.replies : []),
     }));
     return applyEditedCommentsToTree(mapped);
@@ -849,8 +853,17 @@ const syncFeed = useCallback(async (focusItemId = null, { silent = false } = {})
     try {
       AuthAPI.clearApiGetCache?.('/news');
       AuthAPI.clearApiGetCache?.('/my-news');
-      await UserStore.updateNewsFeedItem(itemId, 'share');
-      await AuthAPI.shareNews(itemId);
+      const res = await AuthAPI.shareNews(itemId);
+      if (res?.ok && Number.isFinite(res.shareCount)) {
+        setSelectedShareItem((prev) => prev ? { ...prev, shares: res.shareCount } : prev);
+        setNewsData((prev) => ({
+          ...prev,
+          items: (prev.items || []).map((entry) =>
+            String(entry.id) === itemId ? { ...entry, shares: res.shareCount } : entry
+          ),
+        }));
+        publishEngagement(itemId, { shares: res.shareCount }, 'newsfeed-share');
+      }
     } catch {}
   };
 
@@ -993,10 +1006,26 @@ const handleLike = async (item) => {
   const loadCommentsFor = async (itemId) => {
     if (!itemId) return;
     setCommentsLoading(true);
+    const bindComments = (rawComments, hasMore = false) => {
+      const comments = formatCommentsForView(rawComments);
+      const count = countCommentTree(comments);
+      setLocalComments(comments);
+      const feedItem = (newsData.items || []).find((item) => String(item.id) === String(itemId));
+      const activeRawCount = feedItem?.comments;
+      const activeCountValue = Array.isArray(activeRawCount)
+        ? countCommentTree(activeRawCount)
+        : Number(activeRawCount || 0);
+      const activeCount = Number.isFinite(activeCountValue) ? activeCountValue : 0;
+      setActiveCommentItem((prev) => (
+        String(prev?.id) === String(itemId) ? { ...prev, comments: count } : prev
+      ));
+      updateFeedCommentCount(itemId, count - activeCount);
+      if (!hasMore) publishEngagement(itemId, { comments: count }, 'newsfeed-comments-load');
+    };
     try {
       const pageRes = await UserStore.getNewsCommentsPage(itemId, { perPage: 50 });
-      if (pageRes?.ok && Array.isArray(pageRes.comments) && pageRes.comments.length > 0) {
-        setLocalComments(formatCommentsForView(pageRes.comments));
+      if (pageRes?.ok && Array.isArray(pageRes.comments)) {
+        bindComments(pageRes.comments, pageRes.hasMore);
         return;
       }
       try {
@@ -1004,7 +1033,7 @@ const handleLike = async (item) => {
         const rawNews = singleNews?.ok ? (singleNews.news || {}) : {};
         const fallbackList = Array.isArray(rawNews.comments) ? rawNews.comments : (Array.isArray(rawNews.comments_list) ? rawNews.comments_list : []);
         if (fallbackList.length > 0) {
-          setLocalComments(formatCommentsForView(fallbackList));
+          bindComments(fallbackList);
           return;
         }
       } catch (_) {}
@@ -1013,12 +1042,12 @@ const handleLike = async (item) => {
       if (match) {
         const raw = Array.isArray(match.comments_list) ? match.comments_list : (Array.isArray(match.comments) ? match.comments : []);
         if (raw.length > 0) {
-          setLocalComments(formatCommentsForView(raw));
+          bindComments(raw);
           return;
         }
       }
       if (pageRes?.ok && Array.isArray(pageRes.comments)) {
-        setLocalComments(formatCommentsForView(pageRes.comments));
+        bindComments(pageRes.comments, pageRes.hasMore);
       }
     } catch (e) {
       console.warn('loadCommentsFor error:', e);
@@ -1087,8 +1116,15 @@ const handleLike = async (item) => {
     setNewsData((prev) => ({
       ...prev,
       items: (prev.items || []).map((item) =>
-        item.id === itemId
-          ? { ...item, comments: Math.max(0, Number(item.comments || 0) + delta) }
+        String(item.id) === String(itemId)
+          ? {
+            ...item,
+            comments: Math.max(0, (Array.isArray(item.comments)
+              ? countCommentTree(item.comments)
+              : Number.isFinite(Number(item.comments))
+                ? Number(item.comments)
+                : 0) + delta),
+          }
           : item
       ),
     }));
@@ -1116,7 +1152,7 @@ const handleLike = async (item) => {
       replies: [],
     };
     setLocalComments((prev) => [newComment, ...prev]);
-    const nextCount = Number.isFinite(result.commentsCount) ? result.commentsCount : Number(activeCommentItem.comments || 0) + 1;
+    const nextCount = Number(activeCommentItem.comments || 0) + 1;
     setActiveCommentItem((prev) => prev ? { ...prev, comments: nextCount } : prev);
     updateFeedCommentCount(activeCommentItem.id, nextCount - Number(activeCommentItem.comments || 0));
     publishEngagement(activeCommentItem.id, { comments: nextCount }, 'newsfeed-list');   // details page / home cards par bhi
@@ -1155,6 +1191,9 @@ const handleLike = async (item) => {
       await loadCommentsFor(activeCommentItem.id);
       return;
     }
+    recordEditedComment(editingCommentId, trimmed, activeCommentItem.id);
+    setActiveCommentItem((prev) => prev ? { ...prev, comments: Math.max(0, Number(prev.comments || 0)) } : prev);
+    publishEngagement(activeCommentItem.id, { comments: Math.max(0, Number(activeCommentItem.comments || 0)) }, 'newsfeed-list');
     handleCancelEdit();
     showToast('Comment updated successfully.', 'success');
   };
@@ -1163,6 +1202,7 @@ const handleLike = async (item) => {
     if (!activeCommentItem) return;
     const result = await UserStore.deleteNewsComment(activeCommentItem.id, commentId);
     if (!result.ok) { showToast(result.message, 'error'); return; }
+    clearEditedComment(commentId);
     let removedCount = 0;
     setLocalComments((prev) => {
       const res = deleteCommentFromTree(prev, commentId);

@@ -114,6 +114,12 @@ export function reconcileServerCounts(items, sourceId = 'server-sync') {
       if (own.liked === true) srv.likes = Math.max(srv.likes, own.likes);
       else if (own.liked === false) srv.likes = Math.min(srv.likes, own.likes);
     }
+    if (ownFresh && srv.comments !== undefined && own.comments !== undefined) {
+      srv.comments = Math.max(Number(srv.comments || 0), Number(own.comments || 0));
+    }
+    if (ownFresh && srv.shares !== undefined && own.shares !== undefined) {
+      srv.shares = Math.max(Number(srv.shares || 0), Number(own.shares || 0));
+    }
 
     const prev = serverSnap.get(k) || {};
     const patch = {};
@@ -139,7 +145,10 @@ export function defaultApplyEngagement(item, patch, email = '') {
     next[key] = value;
   };
   if (patch.likes !== undefined) set('likes', patch.likes);
-  if (patch.comments !== undefined && !Array.isArray(item.comments)) set('comments', patch.comments);
+  if (patch.comments !== undefined) {
+    if (!Array.isArray(item.comments)) set('comments', patch.comments);
+    set('commentsCount', Math.max(Number(item.commentsCount || 0), Number(patch.comments || 0)));
+  }
   if (patch.shares !== undefined) set('shares', patch.shares);
   if (patch.views !== undefined) set('views', Math.max(Number(item.views || 0), patch.views));
   if (patch.liked !== undefined) {

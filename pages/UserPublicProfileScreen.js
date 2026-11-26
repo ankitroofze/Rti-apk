@@ -25,7 +25,7 @@ import { loginMessage } from '../utils/loginMessages';
 import VerifiedBadge from '../components/VerifiedBadge';
 import VideoPreview from '../components/VideoPreview';
 import { UserStore } from '../store/UserStore';
-import { getEngagement, defaultApplyEngagement, useEngagementSync, persistLikedLocal } from '../utils/newsEngagementStore';
+import { getEngagement, publishEngagement, defaultApplyEngagement, useEngagementSync, persistLikedLocal } from '../utils/newsEngagementStore';
 import useLiveRefresh from '../utils/useLiveRefresh';
 import ProfileContentTabs from '../components/ProfileContentTabs';
 import PostMenuButton from '../components/PostMenuButton';
@@ -37,10 +37,12 @@ import styles from '../styles/UserPublicProfileStyles';
 import ProfileStyles from '../styles/ProfileStyles';
 import {
   applyEditedCommentsToTree,
+  clearEditedComment,
   deleteCommentFromTree,
   findCommentNodeInTree,
   insertReplyInTree,
   toggleCommentLikeInTree,
+  recordEditedComment,
   updateCommentTextInTree,
 } from '../utils/commentPersistence';
 
@@ -1366,7 +1368,12 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       if (pageRes?.ok && Array.isArray(pageRes.comments)) {
         setActiveComments(pageRes.comments);
         patchPostById(pid, {
-          comments: Number(pageRes.commentsCount || pageRes.comments.length || 0),
+          comments: Math.max(
+            0,
+            Number(posts.find((post) => String(post?.id || '') === pid)?.comments || 0),
+            Number(pageRes.commentsCount || 0),
+            Number(pageRes.comments.length || 0)
+          ),
         });
         return;
       }
@@ -1471,9 +1478,16 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     const message = `📰 ${stripHtml(post?.title || 'News')}\n\n${stripHtml(post?.subtitle || post?.description || '')}`;
     try { await Share.share({ title: stripHtml(post?.title || 'RTI News'), message }); }
     catch { showToast('Share failed.', 'error'); return; }
-    patchPostById(pid, { shares: Number(post?.shares || 0) + 1 });
     const result = await UserStore.updateNewsFeedItem(pid, 'share');
-    if (!result?.ok) showToast(result?.message || 'Unable to update share.', 'error');
+    if (!result?.ok) {
+      showToast(result?.message || 'Unable to update share.', 'error');
+      return;
+    }
+    const updatedShares = Number.isFinite(result.shareCount)
+      ? result.shareCount
+      : Number(post?.shares || 0) + 1;
+    patchPostById(pid, { shares: updatedShares });
+    publishEngagement(pid, { shares: updatedShares }, 'public-profile-share');
   };
 
   const openCommentsForPost = async (post) => {
@@ -1549,6 +1563,13 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       await loadCommentsForPost(activeCommentPostId);
       return;
     }
+    recordEditedComment(commentId, textToSave, activeCommentPostId);
+    patchPostById(activeCommentPostId, {
+      comments: Math.max(
+        0,
+        Number(posts.find((post) => String(post?.id || '') === String(activeCommentPostId))?.comments || 0)
+      ),
+    });
     showToast('Comment updated successfully', 'success');
   };
 
@@ -1563,6 +1584,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       await loadCommentsForPost(activeCommentPostId);
       return;
     }
+    clearEditedComment(commentId);
   };
 
   const openImageModal = (imageUri, personName) => { setModalImage(imageUri || ''); setModalName(personName || ''); setModalVisible(true); };

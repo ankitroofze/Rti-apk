@@ -144,6 +144,7 @@ function normalizeFeedComment(comment = {}, fallbackId = 'cmt-temp', profileByEm
     liked_by: Array.isArray(comment.liked_by) ? comment.liked_by : [],
     liked_by_me: Boolean(comment.liked_by_me),
     parent_reply_id: comment.parent_reply_id || null,
+    replies_count: Number(comment.replies_count ?? comment.repliesCount ?? (Array.isArray(comment.replies) ? comment.replies.length : 0)),
     date: String(comment.date || ''),
     edited_at: comment.edited_at || null,
     replies: Array.isArray(comment.replies)
@@ -153,10 +154,14 @@ function normalizeFeedComment(comment = {}, fallbackId = 'cmt-temp', profileByEm
 }
 
 function countFeedComments(comments = []) {
-  return (Array.isArray(comments) ? comments : []).reduce(
-    (total, comment) => total + 1 + countFeedComments(comment.replies),
-    0
-  );
+  return (Array.isArray(comments) ? comments : []).reduce((total, comment) => {
+    const replies = Array.isArray(comment?.replies) ? comment.replies : [];
+    const declaredReplies = Number(comment?.replies_count ?? comment?.repliesCount ?? 0);
+    const missingReplies = Number.isFinite(declaredReplies)
+      ? Math.max(0, Math.floor(declaredReplies) - replies.length)
+      : 0;
+    return total + 1 + missingReplies + countFeedComments(replies);
+  }, 0);
 }
 
 // ✅ Shared engagement store (like / comment / share / view) ko reel post par lagao.
@@ -995,7 +1000,9 @@ function feedPostFromNewsItem(item = {}, currentEmail = '') {
     likes: Number(item.likes || 0),
     shares: Number(item.shares || 0),
     comments: commentsList,
-    commentsCount: Number(item.comments ?? commentsList.length ?? 0),
+    commentsCount: Array.isArray(item.comments)
+      ? countFeedComments(item.comments)
+      : Number(item.commentsCount ?? item.comments_count ?? item.comments ?? countFeedComments(commentsList)) || 0,
     views: Number(item.views ?? item.views_count ?? item.view_count ?? 0),
     liked: Boolean(currentEmail && likedBy.includes(currentEmail)),
     bookmarked: Boolean(item.bookmarked),
@@ -1047,7 +1054,9 @@ function feedPostFromProfileItem(item = {}, currentEmail = '') {
     images: imagesList,
     avatar: isValidImageUrl(avatarRaw) ? avatarRaw : null,
     comments: [],
-    commentsCount: Number(item.commentsCount ?? item.comments_count ?? (typeof item.comments === 'number' ? item.comments : 0)) || 0,
+    commentsCount: Array.isArray(item.comments)
+      ? countFeedComments(item.comments)
+      : Number(item.commentsCount ?? item.comments_count ?? item.comments ?? 0) || 0,
     liked: Boolean(
       item.liked_by_me === true ||
       item.liked === true ||
@@ -3125,7 +3134,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
             next = next.map((c, i) => (i === 0 ? { ...c, replies: [...(Array.isArray(c.replies) ? c.replies : []), rep] } : c));
           }
         }
-        const realCount = Math.max(countFeedComments(next), Number(post.commentsCount || 0));
+        const realCount = countFeedComments(next);
         return { ...post, comments: next, commentsCount: realCount };
       }));
     } catch {}
@@ -3159,10 +3168,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
         setPosts((prev) => prev.map((p) => (String(p.id) === key ? { ...p } : p)));
         return;
       }
-      const real = res.comments.reduce(
-        (sum, c) => sum + 1 + Number(c?.replies_count ?? (Array.isArray(c?.replies) ? c.replies.length : 0) ?? 0),
-        0
-      );
+      const real = countFeedComments(res.comments);
       setPosts((prev) => prev.map((p) => {
         if (String(p.id) !== key) return p;
         const server = Number(p.commentsCount || 0);
@@ -3312,11 +3318,10 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     try {
       AuthAPI.clearApiGetCache?.('/news');
       AuthAPI.clearApiGetCache?.('/feeds');
-      AuthAPI.shareNews(id).catch(() => {});
-      UserStore.updateNewsFeedItem(id, 'share').catch(() => {});
       const res = await UserStore.recordShare(id);
       if (res?.ok && Number.isFinite(res.shareCount)) {
         setPosts(prev => prev.map(p => String(p.id) === String(id) ? { ...p, shares: res.shareCount } : p));
+        publishEngagement(id, { shares: res.shareCount }, 'reels');
       }
     } catch (e) {
       console.warn('Error recording share:', e);
@@ -3447,6 +3452,11 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
       if (foundPost) targetPostId = foundPost.id;
     }
     updateCommentTextLocally(targetPostId, commentId, newText);
+    setPosts(prev => prev.map(p =>
+      String(p.id) === String(targetPostId)
+        ? { ...p, commentsCount: Math.max(0, Number(p.commentsCount || countFeedComments(p.comments) || 0)) }
+        : p
+    ));
     setPosts(prev =>
       prev.map(p => ({
         ...p,
@@ -3480,6 +3490,7 @@ const cardHeight = feedViewportHeight > 0 ? feedViewportHeight : browserHeight;
     );
     try {
       const res = await UserStore.deleteNewsComment(targetId, commentId);
+      if (res?.ok) clearEditedComment(commentId);
       if (!res?.ok) await syncPostComments(targetId, { keepIfEmpty: false });
     } catch {
       await syncPostComments(targetId, { keepIfEmpty: false });
@@ -3857,9 +3868,9 @@ image: item.image || null,
   commentsCount: Number(
     item.commentsCount ??
     item.comments_count ??
-    item.comments ??
+    (Array.isArray(item.comments) ? countFeedComments(item.comments) : item.comments) ??
     countFeedComments(normalizedComments)
-  ),
+  ) || countFeedComments(normalizedComments),
   likes: Number(item.likes) || 0,
   shares: Number(item.shares_count ?? item.share_count ?? item.shares ?? 0),
   liked: Boolean(item.liked),

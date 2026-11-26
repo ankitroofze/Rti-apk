@@ -2643,8 +2643,8 @@ export const AuthAPI = {
 
       // 1. Try clean POST /comments/{id} (API_ENDPOINTS.md: POST /comments/:commentId)
       let r = await authedJSON('POST', `/comments/${commentId}`, payload);
-      // 2. Fallback to PUT, _method:'PUT', or /edit if POST failed (404/405/422) or hit delete
-      if ((!r.ok && !r.isAuth && r.status !== 403) || isAccidentalDelete(r)) {
+      // 2. If 405 (Method Not Allowed) or 404, fallback to PUT or method override
+      if (!r.ok && (r?.status === 405 || r?.status === 404)) {
         const putR = await authedJSON('PUT', `/comments/${commentId}`, payload);
         if (putR.ok && !isAccidentalDelete(putR)) {
           r = putR;
@@ -2753,7 +2753,7 @@ export const AuthAPI = {
         ...(numericCommentId ? { comment_id: numericCommentId } : {}),
       };
       let r = await authedJSON('POST', `/comment-replies/${replyId}`, payload);
-      if (!r.ok && !r.isAuth && r.status !== 403) {
+      if (!r.ok && (r?.status === 405 || r?.status === 404)) {
         const putR = await authedJSON('PUT', `/comment-replies/${replyId}`, payload);
         if (putR.ok) r = putR;
         else {
