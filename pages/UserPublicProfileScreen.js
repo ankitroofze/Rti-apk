@@ -447,6 +447,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
   const [followLists, setFollowLists] = useState({ followers: [], following: [] });
   const [followModalType, setFollowModalType] = useState('');
   const [followModalLoading, setFollowModalLoading] = useState(false);
+  const [followModalError, setFollowModalError] = useState('');
   const [followOverrides, setFollowOverrides] = useState({});
   const [followActionInFlightId, setFollowActionInFlightId] = useState(null);
 
@@ -467,6 +468,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
   const openFollowListModal = useCallback(async (type) => {
     setFollowModalType(type);
+    setFollowModalError('');
+    setFollowModalLoading(true);
     UserStore.prefetchMyFollowing().catch(() => {});
     let targetId = cleanUserId || cleanId(profile?.id) || cleanId(safeAuthor?.id) || cleanId(safeAuthor?.author_id) || cleanId(safeAuthor?.user_id) || null;
     if (!targetId && resolvedEmail) {
@@ -476,37 +479,41 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       targetId = viewerId;
     }
 
-    if (!followLists[type] || followLists[type].length === 0) {
-      if (!targetId) return;
-      setFollowModalLoading(true);
-      try {
-        const res = type === 'followers'
-          ? await AuthAPI.getFollowersApi(targetId)
-          : await AuthAPI.getFollowingApi(targetId);
-        if (res?.ok && Array.isArray(res.list) && res.list.length > 0) {
-          const normList = res.list.map((u) => {
-            const rawUser = u?.user || u;
-            const fn = [rawUser.firstname, rawUser.lastname].filter(Boolean).join(' ').trim();
-            return {
-              ...rawUser,
-              id: rawUser.id ?? rawUser.user_id ?? u.id ?? null,
-              name: fn || rawUser.name || rawUser.username || 'User',
-              email: String(rawUser.email || rawUser.user_email || '').trim().toLowerCase(),
-              profile_image: rawUser.profile_image || rawUser.avatar || '',
-            };
-          });
-          setFollowLists((prev) => ({
-            ...prev,
-            [type]: normList,
-          }));
-        }
-      } catch (err) {
-        console.error('Error fetching follow list:', err);
-      } finally {
-        setFollowModalLoading(false);
+    try {
+      if (!targetId && !isOwnProfile) {
+        setFollowModalError('Unable to identify this profile.');
+        return;
       }
+      const res = type === 'followers'
+        ? await AuthAPI.getFollowersApi(isOwnProfile ? undefined : targetId, { skipCache: true })
+        : await AuthAPI.getFollowingApi(isOwnProfile ? undefined : targetId, { skipCache: true });
+      if (res?.ok && Array.isArray(res.list)) {
+        const normList = res.list.map((u) => {
+          const rawUser = u?.user || u;
+          const fn = [rawUser.firstname, rawUser.lastname].filter(Boolean).join(' ').trim();
+          return {
+            ...rawUser,
+            id: rawUser.id ?? rawUser.user_id ?? u.id ?? null,
+            name: fn || rawUser.name || rawUser.username || 'User',
+            email: String(rawUser.email || rawUser.user_email || '').trim().toLowerCase(),
+            profile_image: rawUser.profile_image || rawUser.avatar || '',
+          };
+        });
+        setFollowLists((prev) => ({
+          ...prev,
+          [type]: normList,
+        }));
+        setFollowStats((prev) => ({ ...prev, [type]: normList.length }));
+      } else {
+        setFollowModalError(res?.message || 'Unable to load this list.');
+      }
+    } catch (err) {
+      console.error('Error fetching follow list:', err);
+      setFollowModalError('Unable to load this list.');
+    } finally {
+      setFollowModalLoading(false);
     }
-  }, [cleanUserId, profile, safeAuthor, resolvedEmail, isOwnProfile, viewerId, followLists]);
+  }, [cleanUserId, profile, safeAuthor, resolvedEmail, isOwnProfile, viewerId]);
 
   const handleToggleFollowUser = useCallback(async (targetUser, currentlyFollowing) => {
     let curEmail = viewerEmailRef.current;
@@ -553,8 +560,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           });
           showToast(res?.message || 'Unable to unfollow user.', 'error');
         } else {
-          // If viewing MY OWN following list:
-          if (isOwnProfile && followModalType === 'following') {
+          if (isOwnProfile) {
+            setFollowLists((prev) => ({ ...prev, following: prev.following.filter((user) => user !== targetUser) }));
             setFollowStats((prev) => ({
               ...prev,
               following: Math.max(0, (Number(prev.following) || 1) - 1),
@@ -573,8 +580,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           });
           showToast(res?.message || 'Unable to follow user.', 'error');
         } else {
-          // If viewing MY OWN following list (re-following):
-          if (isOwnProfile && followModalType === 'following') {
+          if (isOwnProfile) {
+            setFollowLists((prev) => ({ ...prev, following: [targetUser, ...prev.following.filter((user) => user !== targetUser)] }));
             setFollowStats((prev) => ({
               ...prev,
               following: (Number(prev.following) || 0) + 1,
@@ -593,7 +600,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     } finally {
       setFollowActionInFlightId(null);
     }
-  }, [isOwnProfile, followModalType, followActionInFlightId, showToast]);
+  }, [isOwnProfile, followActionInFlightId, showToast]);
   const selfFollowActionRef = useRef(false);
   const followActionInFlightRef = useRef(false);
 
@@ -767,27 +774,15 @@ export default function UserPublicProfileScreen({ route, navigation }) {
 
         if (summary) {
           setFollowLists((prev) => ({
-            followers: (Array.isArray(summary.followers) && summary.followers.length > 0) ? summary.followers : (prev.followers || []),
-            following: (Array.isArray(summary.following) && summary.following.length > 0) ? summary.following : (prev.following || []),
+            followers: summary.followersCount != null ? summary.followers : prev.followers,
+            following: summary.followingCount != null ? summary.following : prev.following,
           }));
         }
 
-        setFollowStats((prev) => {
-          const currentFollowers = Math.max(profileFollowers, Number(prev.followers || 0));
-          const currentFollowing = Math.max(profileFollowing, Number(prev.following || 0));
-          const countFromSummary = summary?.followersCount != null && summary.followersCount > 0 ? summary.followersCount : null;
-          let resolvedFollowers = countFromSummary != null ? Math.max(countFromSummary, profileFollowers) : currentFollowers;
-          if (finalIsFollowing && resolvedFollowers === 0) {
-            resolvedFollowers = 1;
-          }
-          const resolvedFollowing = summary?.followingCount != null && summary.followingCount > 0
-            ? Math.max(summary.followingCount, profileFollowing)
-            : currentFollowing;
-          return {
-            followers: resolvedFollowers,
-            following: resolvedFollowing,
-          };
-        });
+        setFollowStats((prev) => ({
+          followers: summary?.followersCount ?? prev.followers,
+          following: summary?.followingCount ?? prev.following,
+        }));
       }
 
       const isSelfTarget = Boolean(
@@ -2053,6 +2048,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                     <ActivityIndicator size="small" color="#e8732a" />
                     <Text style={[styles.followEmptyText, { marginTop: 8 }]}>Loading...</Text>
                   </View>
+                ) : followModalError ? (
+                  <Text style={styles.followEmptyText}>{followModalError}</Text>
                 ) : (followLists[followModalType] || []).length ? (
                   (followLists[followModalType] || []).map((item) => {
                     const itemUid = item.id != null ? String(item.id).trim() : (item.user_id != null ? String(item.user_id).trim() : '');
@@ -2215,7 +2212,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                   </View>
                   <TouchableOpacity style={styles.statBox} onPress={() => openFollowListModal('followers')} activeOpacity={0.75}>
                     <Text style={styles.statValue}>
-                      {followersCount > 999 ? `${(followersCount / 1000).toFixed(1)}k` : String(followersCount)}
+                      {followersCount}
                     </Text>
                     <Text style={styles.statLabel}>followers</Text>
                   </TouchableOpacity>
@@ -2469,7 +2466,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                       <Text style={webSt.statLabel}>posts</Text>
                     </View>
                     <TouchableOpacity style={webSt.statItem} onPress={() => openFollowListModal('followers')} activeOpacity={0.75}>
-                      <Text style={webSt.statNum}>{followersCount > 999 ? `${(followersCount / 1000).toFixed(1)}k` : followersCount}</Text>
+                      <Text style={webSt.statNum}>{followersCount}</Text>
                       <Text style={webSt.statLabel}>followers</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={webSt.statItem} onPress={() => openFollowListModal('following')} activeOpacity={0.75}>
@@ -2673,7 +2670,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
               <Text style={ProfileStyles.profileStatLabelExact}>Posts</Text>
             </View>
             <TouchableOpacity style={ProfileStyles.profileStatExact} onPress={() => openFollowListModal('followers')} activeOpacity={0.75}>
-              <Text style={ProfileStyles.profileStatNumberExact}>{followersCount > 999 ? `${(followersCount / 1000).toFixed(1)}k` : String(followersCount)}</Text>
+              <Text style={ProfileStyles.profileStatNumberExact}>{followersCount}</Text>
               <Text style={ProfileStyles.profileStatLabelExact}>Followers</Text>
             </TouchableOpacity>
             <TouchableOpacity style={ProfileStyles.profileStatExact} onPress={() => openFollowListModal('following')} activeOpacity={0.75}>

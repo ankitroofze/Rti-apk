@@ -195,7 +195,7 @@
 | `POST` | `/ecom-details/:id` | Multipart Form-Data | लिस्टेड प्रोडक्ट की कीमत, फोटो, विवरण आदि अपडेट करने के लिए। |
 | `POST` (Status) | `/ecom-details/:id` | Form-Data: `{ status }` | प्रोडक्ट की एक्टिव / इन-एक्टिव स्थिति को बदलने के लिए। |
 | `POST` (Stock) | `/ecom-details/:id` | Form-Data: `{ in_stock: '1'/'0' }` | प्रोडक्ट का स्टॉक स्टेटस (In Stock / Out of Stock) टॉगल करने के लिए। |
-| `POST` (Delete) | `/ecom-details/:id` | URL Param: `id` | लिस्टेड प्रोडक्ट को मार्केटप्लेस से डिलीट करने के लिए। |
+| `DELETE` | `/ecom-details/:id` | URL Param: `id` | लिस्टेड प्रोडक्ट को मार्केटप्लेस से डिलीट करने के लिए। |
 | `GET` | `/ecom-enquiries` | None | वर्तमान यूजर द्वारा अन्य विक्रेताओं से की गई इन्क्वायरीज की सूची। |
 | `GET` | `/ecom-enquiries/received` | Query: `?cursor=...&ecom_id=...&status=...&per_page=20` | विक्रेता द्वारा अपने उत्पादों पर ग्राहकों से प्राप्त इन्क्वायरीज (Customer Leads) देखने के लिए। |
 | `GET` | `/ecom-enquiries/:id` | URL Param: `id` | किसी विशिष्ट ग्राहक इन्क्वायरी की पूरी बातचीत और संपर्क विवरण देखने के लिए। |

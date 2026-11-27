@@ -645,7 +645,6 @@ export default function NewsFeedScreen({ navigation }) {
     currentUser: null,
     items: [],
     totalViews: 0,
-    totalShares: 0,
   });
   const [adFeedItems, setAdFeedItems] = useState([]);
   const [shareModalVisible, setShareModalVisible] = useState(false);
@@ -757,8 +756,7 @@ const syncFeed = useCallback(async (focusItemId = null, { silent = false } = {})
     });
     const filteredItems = applyLocationFilter(withEngagement, data.currentUser);
     const totalViews = filteredItems.reduce((sum, item) => sum + (Number(item.views) || 0), 0);
-    const totalShares = filteredItems.reduce((sum, item) => sum + (Number(item.shares) || 0), 0);
-    const payload = { ...data, items: filteredItems, totalViews, totalShares };
+    const payload = { ...data, items: filteredItems, totalViews };
     setNewsData(payload);
     // Ads are loaded in My Ads, not while opening the News Feed.
     setAdFeedItems([]);
@@ -1383,6 +1381,7 @@ const handleLike = async (item) => {
   };
 
   const displayedItems = applyUIFilters(newsData.items.filter((item) => itemMatchesLanguage(item, language)));
+  const totalShares = newsData.items.reduce((sum, item) => sum + (Number(item.shares) || 0), 0);
   const displayedCards = interleaveSponsoredCards(displayedItems, adFeedItems);
   const currentUser = newsData.currentUser;
   const currentUserEmail = String(currentUser?.email || '').trim().toLowerCase();
@@ -1478,7 +1477,7 @@ const handleLike = async (item) => {
                 <Text style={styles.metricBadgeText}>Shares</Text>
               </View>
             </View>
-            <Text style={styles.metricValue}>{displayedItems.reduce((s, i) => s + (Number(i.shares) || 0), 0)}</Text>
+            <Text style={styles.metricValue}>{totalShares}</Text>
             <Text style={styles.metricLabel}>Total Shares</Text>
           </LinearGradient>
         </View>

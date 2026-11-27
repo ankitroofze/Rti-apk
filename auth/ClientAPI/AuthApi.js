@@ -3997,12 +3997,13 @@ export const AuthAPI = {
     }
   },
 
-  getEcomDetailsById: async (id) => {
+  getEcomDetailsById: async (id, { skipCache = false } = {}) => {
     try {
       const token = await getAuthToken();
-      let { status, data } = await getJSON(`/ecom-details/${id}`, token);
+      const endpoint = `/ecom-details/${encodeURIComponent(String(id))}`;
+      let { status, data } = await getJSON(endpoint, token, null, { skipCache });
       if (status === 401 && token) {
-        const retry = await getJSON(`/ecom-details/${id}`, null);
+        const retry = await getJSON(endpoint, null, null, { skipCache });
         status = retry.status;
         data = retry.data;
       }
@@ -4204,10 +4205,11 @@ export const AuthAPI = {
         method: 'DELETE',
         headers: { Accept: 'application/json', Authorization: `Bearer ${token}` },
       });
-      if (status === 200 || status === 204) {
+      if ((status === 200 || status === 204) && data?.success !== false && data?.ok !== false) {
         return { ok: true, message: data?.message || 'Product deleted.' };
       }
       if (status === 401) return { ok: false, isAuth: true, message: 'Session expired.' };
+      if (status === 403) return { ok: false, message: 'You can delete only your own product.' };
       if (status === 404) return { ok: false, message: 'Product not found.' };
       return { ok: false, message: data?.message || `Server error (${status}).` };
     } catch (err) {
@@ -4415,20 +4417,22 @@ export const AuthAPI = {
     }
   },
 
-  getFollowersApi: async (userId) => {
+  getFollowersApi: async (userId, { skipCache = false } = {}) => {
     try {
       const token = await getAuthToken().catch(() => null);
       const cleanUid = (userId != null && String(userId) !== '' && String(userId) !== 'null' && String(userId) !== 'undefined') ? String(userId).trim() : null;
-      if (!token && !cleanUid) return { ok: false, isAuth: true, message: 'Not logged in.' };
+      if (!token) return { ok: false, isAuth: true, message: 'Sign in to view followers.' };
       const endpoints = cleanUid
         ? [`/users/followers?user_id=${cleanUid}`, `/users/${cleanUid}/followers`, `/user/${cleanUid}/followers`]
         : ['/users/followers'];
 
       let lastRes = null;
       for (const endpoint of endpoints) {
-        const { status, data } = await getJSON(endpoint, token);
+        const { status, data } = await getJSON(endpoint, token, null, { skipCache });
+        if (status === 401) return { ok: false, isAuth: true, message: 'Sign in again to view followers.' };
         lastRes = { status, data };
         if (status === 200 || status === 201) {
+          if (cleanUid && endpoint.includes('?user_id=') && String(data?.user_id) !== cleanUid) continue;
           const list = Array.isArray(data) ? data
             : Array.isArray(data?.followers) ? data.followers
               : Array.isArray(data?.data) ? data.data
@@ -4445,27 +4449,29 @@ export const AuthAPI = {
           return { ok: true, list, count };
         }
       }
-      return { ok: false, message: lastRes?.data?.message || `Server error (${lastRes?.status}).` };
+      return { ok: false, message: cleanUid ? 'This profile’s followers list is currently unavailable.' : lastRes?.data?.message || `Server error (${lastRes?.status}).` };
     } catch (err) {
       console.error('[AuthAPI.getFollowersApi] Error:', err);
       return { ok: false, isNetwork: true, message: 'Network error.' };
     }
   },
 
-  getFollowingApi: async (userId) => {
+  getFollowingApi: async (userId, { skipCache = false } = {}) => {
     try {
       const token = await getAuthToken().catch(() => null);
       const cleanUid = (userId != null && String(userId) !== '' && String(userId) !== 'null' && String(userId) !== 'undefined') ? String(userId).trim() : null;
-      if (!token && !cleanUid) return { ok: false, isAuth: true, message: 'Not logged in.' };
+      if (!token) return { ok: false, isAuth: true, message: 'Sign in to view following.' };
       const endpoints = cleanUid
         ? [`/users/following?user_id=${cleanUid}`, `/users/${cleanUid}/following`, `/user/${cleanUid}/following`]
         : ['/users/following'];
 
       let lastRes = null;
       for (const endpoint of endpoints) {
-        const { status, data } = await getJSON(endpoint, token, null, { noStore: true });
+        const { status, data } = await getJSON(endpoint, token, null, { noStore: true, skipCache });
+        if (status === 401) return { ok: false, isAuth: true, message: 'Sign in again to view following.' };
         lastRes = { status, data };
         if (status === 200 || status === 201) {
+          if (cleanUid && endpoint.includes('?user_id=') && String(data?.user_id) !== cleanUid) continue;
           const list = Array.isArray(data) ? data
             : Array.isArray(data?.following) ? data.following
               : Array.isArray(data?.data) ? data.data
@@ -4483,7 +4489,7 @@ export const AuthAPI = {
           return { ok: true, list, count };
         }
       }
-      return { ok: false, message: lastRes?.data?.message || `Server error (${lastRes?.status}).` };
+      return { ok: false, message: cleanUid ? 'This profile’s following list is currently unavailable.' : lastRes?.data?.message || `Server error (${lastRes?.status}).` };
     } catch (err) {
       console.error('[AuthAPI.getFollowingApi] Error:', err);
       return { ok: false, isNetwork: true, message: 'Network error.' };

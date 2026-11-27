@@ -905,6 +905,7 @@ const MY_ECOM_IDS_PREFIX = 'my_ecom_ids::';
 // Product add/update/delete/stock par badhta hai — marketplace jaisi screens isse jaan leti hain ki reload zaroori hai
 let ecomChangeVersion = 0;
 const bumpEcomVersion = () => { ecomChangeVersion += 1; };
+const isRemovedEcomDetail = (detail) => Boolean(detail?.deleted_at) || detail?.is_deleted === 0 || detail?.is_deleted === '0';
 
 // 🐞 FIX (update ke baad data gayab): product update ke baad backend GET kabhi purana / adhura record deta tha aur merge me wahi jeet jaata tha,
 // isliye edit kiya hua data screen se gayab ya purana dikhta tha. Ab jo fields user ne abhi update kiye unhe kuch der (3 min) yaad rakhte hain
@@ -7118,9 +7119,9 @@ export const UserStore = {
         const followers = (followersRes.ok ? followersRes.list : []).map(_normalizeFollowListItem);
         const selfResult = {
           isFollowing: false,
-          followingCount: followingRes?.count ?? following.length,
+          followingCount: followingRes.ok ? following.length : null,
           following,
-          followersCount: followersRes?.count ?? followers.length,
+          followersCount: followersRes.ok ? followers.length : null,
           followers,
           resolvedId: myIdRaw,
         };
@@ -7173,7 +7174,7 @@ export const UserStore = {
         const uEmail = String(u?.email || '').trim().toLowerCase();
         return Boolean((myId && uId && uId === myId) || (myEmail && uEmail && uEmail === myEmail));
       };
-      if (isFollowing && !targetFollowers.some(isMe) && (myId || myEmail)) {
+      if (targetFollowersRes.ok && override === true && !targetFollowers.some(isMe) && (myId || myEmail)) {
         targetFollowers = [
           ...targetFollowers,
           _normalizeFollowListItem({
@@ -7183,17 +7184,15 @@ export const UserStore = {
             profile_image: currentUser?.profile_image || '',
           }),
         ];
-      } else if (!isFollowing) {
+      } else if (override === false) {
         targetFollowers = targetFollowers.filter((u) => !isMe(u));
       }
 
       const otherResult = {
         isFollowing,
-        followingCount: targetFollowingRes?.count ?? targetFollowing.length,
+        followingCount: targetFollowingRes.ok ? targetFollowing.length : null,
         following: targetFollowing,
-        followersCount: targetFollowersRes?.ok && (targetFollowersRes.count > 0 || targetFollowers.length > 0)
-          ? Math.max(targetFollowersRes.count || 0, targetFollowers.length)
-          : null,
+        followersCount: targetFollowersRes.ok ? targetFollowers.length : null,
         followers: targetFollowers,
         resolvedId,
       };
@@ -8202,8 +8201,7 @@ export const UserStore = {
               .some((o) => (myEmailLc && o === myEmailLc) || (myIdStr && o === myIdStr));
           };
 
-          const isRemoved = (raw) => Boolean(raw?.deleted_at) || raw?.is_deleted === 0 || raw?.is_deleted === '0';
-          const removedIds = new Set(backendList.filter(isRemoved).map((item) => String(item.id)));
+          const removedIds = new Set(backendList.filter(isRemovedEcomDetail).map((item) => String(item.id)));
           const baseDetails = [...backendList];
           // Mere add kiye product jo list me nahi aaye (pagination / backend filter) — id se alag laao
           if (currentUser && myLocalIds.size) {
@@ -8212,7 +8210,7 @@ export const UserStore = {
             if (missing.length) {
               const fetched = await Promise.all(missing.map((id) => AuthAPI.getEcomDetailsById(id).catch(() => null)));
               fetched.forEach((r, i) => {
-                if (r?.status === 404 || isRemoved(r?.detail)) removedIds.add(missing[i]);
+                if (r?.status === 404 || isRemovedEcomDetail(r?.detail)) removedIds.add(missing[i]);
                 else if (r?.ok && r.detail?.id != null) baseDetails.push(r.detail);
               });
             }
@@ -8701,7 +8699,10 @@ export const UserStore = {
       if (!user) return { ok: false, message: 'Please login again.' };
       const apiRes = await AuthAPI.deleteEcomDetails(id);
       if (!apiRes.ok) return { ok: false, message: apiRes.message || 'Unable to delete listing.' };
-      bumpEcomVersion();
+      const detailRes = await AuthAPI.getEcomDetailsById(id, { skipCache: true });
+      if (detailRes.status !== 404 && !isRemovedEcomDetail(detailRes.detail)) {
+        return { ok: false, message: 'The server has not confirmed deletion. Refresh the listing and check again.' };
+      }
       recentEcomUpdates.delete(String(id));
       recentEcomListings.delete(String(id));
       const ids = await readMyEcomIds(user.email);
@@ -8709,6 +8710,7 @@ export const UserStore = {
       const existingListings = Array.isArray(user.ecome_listings) ? user.ecome_listings : [];
       const updatedListings = existingListings.filter((it) => String(it?.id) !== String(id));
       await UserStore.updateUser(user.email, { ecome_listings: updatedListings });
+      bumpEcomVersion();
       return { ok: true };
     } catch {
       return { ok: false, message: 'Unable to delete listing.' };

@@ -929,8 +929,13 @@ function ProfileScreenInner({ navigation, route }) {
     if (followSummary) {
       setFollowLists((prev) => ({
         ...prev,
-        followers: Array.isArray(followSummary.followers) ? followSummary.followers : (prev.followers || []),
-        following: Array.isArray(followSummary.following) ? followSummary.following : (prev.following || []),
+        followers: followSummary.followersCount != null ? followSummary.followers : prev.followers,
+        following: followSummary.followingCount != null ? followSummary.following : prev.following,
+      }));
+      setProfileStats((prev) => ({
+        ...prev,
+        followers: followSummary.followersCount ?? prev.followers,
+        following: followSummary.followingCount ?? prev.following,
       }));
     }
   };
@@ -964,6 +969,7 @@ function ProfileScreenInner({ navigation, route }) {
           });
           showToast(res?.message || 'Unable to unfollow user.', 'error');
         } else {
+          setFollowLists((prev) => ({ ...prev, following: prev.following.filter((user) => user !== targetUser) }));
           setProfileStats((prev) => ({
             ...prev,
             following: Math.max(0, (Number(prev.following) || 1) - 1),
@@ -981,6 +987,7 @@ function ProfileScreenInner({ navigation, route }) {
           });
           showToast(res?.message || 'Unable to follow user.', 'error');
         } else {
+          setFollowLists((prev) => ({ ...prev, following: [targetUser, ...prev.following.filter((user) => user !== targetUser)] }));
           setProfileStats((prev) => ({
             ...prev,
             following: (Number(prev.following) || 0) + 1,
