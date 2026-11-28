@@ -214,6 +214,9 @@ const fetchWithDebug = async (endpoint, options = {}, debugBody = null, customTi
         if (endpoint.includes('/ads')) {
           clearApiGetCache('/ads');
         }
+        if (endpoint.startsWith('/notifications/')) {
+          clearApiGetCache('/notifications');
+        }
       }
 
       return result;

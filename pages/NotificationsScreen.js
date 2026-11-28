@@ -2,8 +2,10 @@ import { smartGoBack } from '../utils/smartBack';
 import { useQuickMenuRedirect } from '../utils/useQuickMenuRedirect';
 import ModuleAndroidHeader from '../components/ModuleAndroidHeader';
 import ModuleWebHeader from '../components/Modulewebheader';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
+  Animated,
   Platform,
   SafeAreaView,
   ScrollView,
@@ -100,6 +102,9 @@ export default function NotificationsScreen({ navigation }) {
     nextCursor: null,
   });
   const [loadingMore, setLoadingMore] = useState(false);
+  const [deletingRows, setDeletingRows] = useState(new Map());
+  const pendingDeletes = useRef(new Set());
+  const deleteVersion = useRef(0);
 
   // Silent refresh me "Load more" se khule purane items na girein: fresh pehla page + purane items jo us page me nahi
   const mergeFresh = (prev, data) => {
@@ -114,9 +119,11 @@ export default function NotificationsScreen({ navigation }) {
   };
 
   const loadNotifications = useCallback(async ({ silent = false } = {}) => {
+    const version = deleteVersion.current;
     if (!silent) setLoading(true);
     const data = await UserStore.getNotificationsSummary();
     if (!silent) setLoading(false);
+    if (version !== deleteVersion.current || pendingDeletes.current.size) return;
 
     if (!data) {
       if (!silent) navigation.replace('Login');
@@ -138,19 +145,18 @@ export default function NotificationsScreen({ navigation }) {
 
   // When a foreground push arrives, silently refresh the list
   useEffect(() => {
-    const unsub = subscribePushEvents(async () => {
-      const data = await UserStore.getNotificationsSummary();
-      if (data) setNotificationData((prev) => mergeFresh(prev, data));
-    });
+    const unsub = subscribePushEvents(() => loadNotifications({ silent: true }));
     return () => unsub?.();
-  }, []);
+  }, [loadNotifications]);
 
   const handleLoadMore = async () => {
     if (loadingMore || !notificationData.hasMore) return;
+    const version = deleteVersion.current;
     setLoadingMore(true);
     const res = await UserStore.getMoreNotifications(notificationData.nextCursor);
     setLoadingMore(false);
     if (!res.ok) { showToast(res.message || 'Unable to load more.', 'error'); return; }
+    if (version !== deleteVersion.current || pendingDeletes.current.size) return;
     setNotificationData((prev) => {
       const seen = new Set(prev.items.map((i) => i.id));
       const fresh = res.items.filter((i) => !seen.has(i.id));
@@ -172,10 +178,51 @@ export default function NotificationsScreen({ navigation }) {
   };
 
   const handleDelete = async (itemId) => {
-    const result = await UserStore.deleteNotificationItem(itemId);
-    if (!result.ok) { showToast(result.message, 'error'); return; }
-    await loadNotifications();
-    refreshBadge();
+    if (pendingDeletes.current.has(itemId)) return;
+    pendingDeletes.current.add(itemId);
+    const opacity = new Animated.Value(1);
+    setDeletingRows((prev) => new Map(prev).set(itemId, opacity));
+
+    try {
+      const result = await UserStore.deleteNotificationItem(itemId);
+      if (!result.ok) { showToast(result.message, 'error'); return; }
+
+      const reduceMotion = Platform.OS === 'web'
+        ? globalThis.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+        : await AccessibilityInfo.isReduceMotionEnabled().catch(() => false);
+      if (!reduceMotion) {
+        await new Promise((resolve) => {
+          Animated.timing(opacity, {
+            toValue: 0,
+            duration: 180,
+            useNativeDriver: Platform.OS !== 'web',
+          }).start(resolve);
+        });
+      }
+
+      deleteVersion.current += 1;
+      setNotificationData((prev) => {
+        const item = prev.items.find((notification) => notification.id === itemId);
+        if (!item) return prev;
+        const unread = item.status === 'Unread';
+        return {
+          ...prev,
+          items: prev.items.filter((notification) => notification.id !== itemId),
+          unreadCount: Math.max(0, prev.unreadCount - Number(unread)),
+          readCount: Math.max(0, prev.readCount - Number(!unread)),
+        };
+      });
+      refreshBadge();
+    } catch {
+      showToast('Unable to delete notification.', 'error');
+    } finally {
+      pendingDeletes.current.delete(itemId);
+      setDeletingRows((prev) => {
+        const next = new Map(prev);
+        next.delete(itemId);
+        return next;
+      });
+    }
   };
 
   const handleRead = async (itemId) => {
@@ -331,80 +378,90 @@ export default function NotificationsScreen({ navigation }) {
                 </View>
               </View>
 
-              {loading ? (
+              {loading && !sortedItems.length ? (
                 <View style={styles.stateCard}>
                   <Feather name="loader" size={18} color="#94a3b8" />
                   <Text style={styles.loadingText}>Loading notifications...</Text>
                 </View>
-              ) : sortedItems.length ? (
+              ) : sortedItems.length || notificationData.hasMore ? (
                 <View style={styles.notificationList}>
                   {sortedItems.map((item, index) => {
                     const accent = getNotificationAccent(item);
                     const unread = String(item.status || '').toLowerCase() === 'unread';
                     const isLeadForm = item.type === 'lead_form_submission';
                     const isLast = index === sortedItems.length - 1;
+                    const deleteOpacity = deletingRows.get(item.id);
 
                     return (
-                      <TouchableOpacity
-                        key={item.id}
-                        style={[
-                          styles.notificationRow,
-                          unread && styles.notificationRowUnread,
-                          isLast && { borderBottomWidth: 0 },
-                        ]}
-                        activeOpacity={0.86}
-                        onPress={() => handleItemPress(item)}
-                      >
-                        <View
+                      <Animated.View key={item.id} style={{ opacity: deleteOpacity ?? 1 }}>
+                        <TouchableOpacity
                           style={[
-                            styles.notificationIconWrap,
-                            { backgroundColor: accent.bg, borderWidth: 1, borderColor: accent.border },
+                            styles.notificationRow,
+                            unread && styles.notificationRowUnread,
+                            isLast && { borderBottomWidth: 0 },
                           ]}
+                          activeOpacity={0.86}
+                          disabled={Boolean(deleteOpacity)}
+                          onPress={() => handleItemPress(item)}
                         >
-                          <Feather name={accent.icon} size={18} color={accent.tint} />
-                        </View>
+                          <View
+                            style={[
+                              styles.notificationIconWrap,
+                              { backgroundColor: accent.bg, borderWidth: 1, borderColor: accent.border },
+                            ]}
+                          >
+                            <Feather name={accent.icon} size={18} color={accent.tint} />
+                          </View>
 
-                        <View style={styles.notificationContent}>
-                          <View style={styles.notificationTitleRow}>
-                            <Text style={styles.notificationTitle}>{item.title}</Text>
-                            {unread ? (
-                              <View style={styles.newBadge}>
-                                <Text style={styles.newBadgeText}>NEW</Text>
+                          <View style={styles.notificationContent}>
+                            <View style={styles.notificationTitleRow}>
+                              <Text style={styles.notificationTitle}>{item.title}</Text>
+                              {unread ? (
+                                <View style={styles.newBadge}>
+                                  <Text style={styles.newBadgeText}>NEW</Text>
+                                </View>
+                              ) : null}
+                            </View>
+                            <Text style={styles.notificationMessage}>{item.message}</Text>
+
+                            {isLeadForm ? (
+                              <View style={styles.rowAction}>
+                                <Feather name="clipboard" size={13} color={C.accent} />
+                                <Text style={styles.rowActionText}>View Response</Text>
                               </View>
                             ) : null}
                           </View>
-                          <Text style={styles.notificationMessage}>{item.message}</Text>
 
-                          {isLeadForm ? (
-                            <View style={styles.rowAction}>
-                              <Feather name="clipboard" size={13} color={C.accent} />
-                              <Text style={styles.rowActionText}>View Response</Text>
+                          <View style={styles.notificationRight}>
+                            <View style={styles.notificationTimeRow}>
+                              <Text style={styles.notificationTime}>
+                                {formatNotificationDate(item.date)}
+                              </Text>
+                              {unread ? <View style={styles.unreadDot} /> : null}
                             </View>
-                          ) : null}
-                        </View>
-
-                        <View style={styles.notificationRight}>
-                          <View style={styles.notificationTimeRow}>
-                            <Text style={styles.notificationTime}>
-                              {formatNotificationDate(item.date)}
-                            </Text>
-                            {unread ? <View style={styles.unreadDot} /> : null}
+                            <TouchableOpacity
+                              accessibilityRole="button"
+                              accessibilityLabel="Delete notification"
+                              disabled={Boolean(deleteOpacity)}
+                              onPress={(event) => {
+                                event.stopPropagation();
+                                handleDelete(item.id);
+                              }}
+                              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                              activeOpacity={0.7}
+                            >
+                              <Feather name="trash-2" size={15} color="#94a3b8" />
+                            </TouchableOpacity>
                           </View>
-                          <TouchableOpacity
-                            onPress={() => handleDelete(item.id)}
-                            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                            activeOpacity={0.7}
-                          >
-                            <Feather name="trash-2" size={15} color="#94a3b8" />
-                          </TouchableOpacity>
-                        </View>
-                      </TouchableOpacity>
+                        </TouchableOpacity>
+                      </Animated.View>
                     );
                   })}
                   {notificationData.hasMore ? (
                     <TouchableOpacity
                       style={[styles.markReadPill, { alignSelf: 'center', marginTop: 14 }]}
                       onPress={handleLoadMore}
+                      disabled={loadingMore}
                       activeOpacity={0.8}
                     >
                       <Feather name="chevrons-down" size={14} color={C.accent} />

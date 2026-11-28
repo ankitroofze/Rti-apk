@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as NavigationBar from 'expo-navigation-bar';
 import './components/initFontDefaults';
 import AppNavigator from './navigation/AppNavigator';
+import { WebMotionStyles } from './styles/WebMotion';
 import { ToastProvider } from './components/ui/ToastProvider';
 import ErrorBoundary from './components/ErrorBoundary';
 import { LanguageProvider } from './contexts/LanguageContext';
@@ -291,6 +292,7 @@ export default function App() {
               <ToastProvider>
                 {/* ✅ Push notifications: login par token register + foreground/tap handling */}
                 <PushNotificationBootstrap />
+                <WebMotionStyles />
                 <AppNavigator />
               </ToastProvider>
             </ErrorBoundary>

@@ -23,6 +23,7 @@ import ProfileAvatar from '../components/ProfileAvatar';
 import VerifiedBadge from '../components/VerifiedBadge';
 import WebLayout from '../components/WebLayout';
 import { UserStore } from '../store/UserStore';
+import { showFollowSparkle } from '../utils/followSparkle';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { isIdbMediaUri, resolveIdbMediaUriToObjectUrl, storeWebUriToIdbMedia } from '../utils/webMediaStore';
 import { resolveMediaUrl } from '../utils/storyHelpers';
@@ -2142,7 +2143,8 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
     return () => { unsubscribe?.(); };
   }, [authorEmail, authorId]);
 
-  const handleFollowPress = async () => {
+  const handleFollowPress = async (event) => {
+    const followButton = event?.currentTarget;
     if (!authorEmail && authorId == null) return;
     const next = !isFollowing;
     setIsFollowing(next);
@@ -2159,6 +2161,8 @@ function ReelCard({ post, onLike, onBookmark, onComment, onShare, onDownload, on
       if (result?.ok === false) {
         setIsFollowing(!next);
         showToast(result?.message || 'Unable to update follow status.', 'error');
+      } else if (next && result?.ok) {
+        showFollowSparkle(followButton);
       }
     } catch (error) {
       console.error('Error updating follow status:', error);

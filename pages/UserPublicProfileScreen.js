@@ -25,6 +25,7 @@ import { loginMessage } from '../utils/loginMessages';
 import VerifiedBadge from '../components/VerifiedBadge';
 import VideoPreview from '../components/VideoPreview';
 import { UserStore } from '../store/UserStore';
+import { showFollowSparkle } from '../utils/followSparkle';
 import { getEngagement, publishEngagement, defaultApplyEngagement, useEngagementSync, persistLikedLocal } from '../utils/newsEngagementStore';
 import useLiveRefresh from '../utils/useLiveRefresh';
 import ProfileContentTabs from '../components/ProfileContentTabs';
@@ -515,7 +516,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
     }
   }, [cleanUserId, profile, safeAuthor, resolvedEmail, isOwnProfile, viewerId]);
 
-  const handleToggleFollowUser = useCallback(async (targetUser, currentlyFollowing) => {
+  const handleToggleFollowUser = useCallback(async (targetUser, currentlyFollowing, event) => {
+    const followButton = event?.currentTarget;
     let curEmail = viewerEmailRef.current;
     if (!curEmail) {
       const activeMe = await UserStore.getCurrentUser().catch(() => null);
@@ -580,6 +582,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
           });
           showToast(res?.message || 'Unable to follow user.', 'error');
         } else {
+          if (res?.ok) showFollowSparkle(followButton);
           if (isOwnProfile) {
             setFollowLists((prev) => ({ ...prev, following: [targetUser, ...prev.following.filter((user) => user !== targetUser)] }));
             setFollowStats((prev) => ({
@@ -1680,7 +1683,8 @@ export default function UserPublicProfileScreen({ route, navigation }) {
       showToast('Something went wrong while blocking.', 'error');
     }
   };
-    const handleFollow = async () => {
+    const handleFollow = async (event) => {
+    const followButton = event?.currentTarget;
     let curEmail = viewerEmailRef.current;
     if (!curEmail) {
       const activeMe = await UserStore.getCurrentUser().catch(() => null);
@@ -1733,6 +1737,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
         setFollowStats((prev) => ({ ...prev, followers: Math.max(0, Number(prev.followers || 0) + (nextFollowing ? -1 : 1)) }));
         showToast(result?.message || 'Unable to update follow status.', 'error');
       } else {
+        if (nextFollowing && result?.ok) showFollowSparkle(followButton);
         // NOTE: follow API ke response ka followers_count yahan use nahi karte — wo
         // stale/alag user ka aa sakta hai (isse count 1 se wapas 0 ho jata tha).
         // ✅ success toast hata diya — button/followers count turant badalte hain
@@ -2104,7 +2109,7 @@ export default function UserPublicProfileScreen({ route, navigation }) {
                           <TouchableOpacity
                             style={isFollowedByViewer ? styles.modalFollowingBtn : styles.modalFollowBtn}
                             activeOpacity={0.8}
-                            onPress={() => handleToggleFollowUser(item, isFollowedByViewer)}
+                            onPress={(event) => handleToggleFollowUser(item, isFollowedByViewer, event)}
                             disabled={isBusy}
                           >
                             {isBusy ? (

@@ -1320,6 +1320,13 @@ const allStories = useMemo(() => dedupeStories([...liveStories]), [liveStories])
     viewMode, selectedMenuKey, selectedStateName,
     districtCount: stateDistrictOptions.length, commonCopy, homeCopy,
   }), [commonCopy, homeCopy, selectedMenuKey, selectedStateName, stateDistrictOptions.length, viewMode]);
+  const tabTitle = selectedStateName || viewMode === 'states' || selectedMenuKey !== 'latest'
+    ? panelContent.title
+    : 'Home';
+
+  useEffect(() => {
+    if (Platform.OS === 'web') navigation.setOptions({ title: tabTitle });
+  }, [navigation, tabTitle]);
 
   const utilityLocationOptions = useMemo(() => {
     if (selectedStateName) return stateDistrictOptions;

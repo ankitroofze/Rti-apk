@@ -143,6 +143,8 @@ export default function SettingsScreen({ navigation }) {
   const insets = useSafeAreaInsets();
   const { logout } = useAuth();
   const { isDark, theme, toggleTheme } = useTheme();
+  const themeLabel = isDark ? 'Dark Mode' : 'Light Mode';
+  const themeIcon = isDark ? 'moon-outline' : 'sunny-outline';
   const { language: appLanguage, changeLanguage } = useLanguage();
   const [languageModal, setLanguageModal] = useState(false);
   const languageItems = SUPPORTED_LANGUAGES.map(languageDisplay);
@@ -428,15 +430,15 @@ export default function SettingsScreen({ navigation }) {
           {Platform.OS === 'web' ? (
             <View style={s.item}>
               <View style={s.iconWrap}>
-                <Ionicons name="moon-outline" size={30} color="#94a3b8" />
+                <Ionicons name={themeIcon} size={30} color="#94a3b8" />
               </View>
-              <Text style={s.itemLabel}>Dark Mode</Text>
+              <Text style={s.itemLabel}>{themeLabel}</Text>
               <ThemeToggle />
             </View>
           ) : (
             <SettingsItem
-              icon={isDark ? 'moon' : 'moon-outline'}
-              label="Dark Mode"
+              icon={themeIcon}
+              label={themeLabel}
               isToggle
               toggleValue={isDark}
               onToggleChange={toggleTheme}

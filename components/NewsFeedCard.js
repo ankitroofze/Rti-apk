@@ -22,6 +22,7 @@ import { getEngagement, publishEngagement, subscribeEngagement } from '../utils/
 import { useGlobalMuted, getGlobalMuted, setGlobalMuted } from '../utils/Globalmutestore';
 import PostGridThumb from './PostGridThumb';
 import { UserStore } from '../store/UserStore';
+import { showFollowSparkle } from '../utils/followSparkle';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from './ui/ToastProvider';
@@ -1625,6 +1626,7 @@ const handleLike = async () => {
   const handleMenuShare = async () => { closeActionMenu(); await handleShare(); await UserStore.recordNewsFeedMenuAction(story.id, 'share', { link: postLink }); };
 
   const handleToggleFollowAuthor = async (event) => {
+    const followButton = event?.currentTarget;
     event?.stopPropagation?.();
     let activeEmail = effectiveUserEmail;
     if (!activeEmail) {
@@ -1652,6 +1654,8 @@ const handleLike = async () => {
         if (result?.ok === false) {
           setIsFollowingAuthor(!nextFollowing);
           showLoginToast(result?.message || 'Unable to update follow status.', 'info');
+        } else if (nextFollowing && result?.ok) {
+          showFollowSparkle(followButton);
         }
       } catch {
         setIsFollowingAuthor(!nextFollowing);

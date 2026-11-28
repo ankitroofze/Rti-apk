@@ -727,6 +727,14 @@ function QuickMenuWeb({ navigation, route }) {
   const isYellowSidebar = false;
   const activeModule = WEB_MODULES.find((item) => item.screen === activeScreen) || WEB_MODULES[0];
   const ActiveComponent = activeModule.component || ProfileScreen;
+  const activeSubmenuItem = WEB_MODULES
+    .find((item) => item.label === lastGroup)?.subMenu
+    ?.find((item) => item.screen === activeScreen);
+  const tabTitle = isMobileWeb ? 'Menu' : activeSubmenuItem?.label || activeModule.label;
+
+  useEffect(() => {
+    navigation.setOptions({ title: tabTitle });
+  }, [navigation, tabTitle]);
 
   const embeddedNavigation = React.useMemo(() => {
     const goToEmbedded = (screenName, params) => {

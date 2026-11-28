@@ -107,7 +107,7 @@ if (typeof document !== 'undefined') {
     @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700;800;900&display=swap');
     @keyframes ecomeFadeUp {
       from { opacity: 0; transform: translateY(8px); }
-      to   { opacity: 1; transform: translateY(0); }
+      to   { opacity: 1; transform: none; }
     }
     .ecome-root { display: flex; flex-direction: column; height: 100vh; font-family: 'Roboto', sans-serif; background: #fff; }
     .ecome-topbar { height: 56px; background-image: url(${PROFILE_RED_IMAGE_URI}); background-size: cover; background-position: center; border-bottom: 1px solid #EDEDED; display: flex; align-items: center; padding: 0 20px; gap: 14px; }
@@ -161,9 +161,8 @@ if (typeof document !== 'undefined') {
     .ecome-banner-cta {
       display: flex; align-items: center; gap: 8px; background: #fff; color: ${SHURU.primaryDark};
       font-size: 13.5px; font-weight: 800; padding: 11px 20px; border-radius: 999px; cursor: pointer;
-      flex-shrink: 0; white-space: nowrap; transition: transform 0.15s ease;
+      flex-shrink: 0; white-space: nowrap; border: 0; font-family: inherit;
     }
-    .ecome-banner-cta:hover { transform: translateY(-2px); }
 
     /* ── Section header ───────────────────────────────────── */
     .ecome-sec-header { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
@@ -175,10 +174,9 @@ if (typeof document !== 'undefined') {
     .ecome-card {
       position: relative; overflow: hidden; min-height: 190px; border-radius: 20px;
       padding: 26px 26px; display: flex; flex-direction: column; justify-content: center; gap: 8px;
-      cursor: pointer; animation: ecomeFadeUp 0.28s ease both; border: 1px solid rgba(0,0,0,0.04);
-      transition: box-shadow 0.16s ease, transform 0.16s ease;
+      cursor: pointer; border: 1px solid rgba(0,0,0,0.04);
+      font-family: inherit; text-align: start;
     }
-    .ecome-card:hover { box-shadow: 0 14px 28px rgba(0,0,0,0.10); transform: translateY(-3px); }
     .ecome-card--sell {
       background-image: url(${ECOM_SELL_IMAGE_URI});
       background-size: 240% auto;
@@ -199,12 +197,37 @@ if (typeof document !== 'undefined') {
       justify-content: center; margin-bottom: 10px; font-size: 22px; line-height: 1;
       box-shadow: 0 2px 8px rgba(0,0,0,0.06);
     }
-    .ecome-label { font-size: 24px; font-weight: 900; color: #1e293b; letter-spacing: -0.2px; }
-    .ecome-desc { font-size: 13px; color: #64748b; line-height: 1.5; margin-top: 4px; }
+    .ecome-label { display: block; font-size: 24px; font-weight: 900; color: #1e293b; letter-spacing: -0.2px; }
+    .ecome-desc { display: block; font-size: 13px; color: #64748b; line-height: 1.5; margin-top: 4px; }
     .ecome-go-btn {
       position: absolute; top: 16px; right: 16px; z-index: 3; width: 34px; height: 34px; border-radius: 999px;
       background: ${SHURU.primary}; color: #fff; display: flex; align-items: center; justify-content: center;
       font-size: 16px; font-weight: 800; box-shadow: 0 4px 10px rgba(220,38,38,0.35);
+    }
+
+    .ecome-card:focus-visible, .ecome-banner-cta:focus-visible {
+      outline: 2px solid currentColor;
+      outline-offset: 3px;
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .ecome-hero-left, .ecome-banner, .ecome-card {
+        animation: ecomeFadeUp 260ms ease-out backwards;
+      }
+      .ecome-banner { animation-delay: 40ms; }
+      .ecome-card { animation-delay: 70ms; }
+      .ecome-card--buy { animation-delay: 105ms; }
+
+      .ecome-card { transition: translate 180ms ease-out, box-shadow 180ms ease-out; }
+      .ecome-go-btn, .ecome-banner-cta { transition: translate 160ms ease-out; }
+
+      @media (hover: hover) and (pointer: fine) {
+        .ecome-card:hover { box-shadow: 0 14px 28px rgba(0,0,0,0.10); translate: 0 -3px; }
+        .ecome-card:hover .ecome-go-btn { translate: 3px 0; }
+        .ecome-banner-cta:hover { translate: 0 -2px; }
+      }
+
+      .ecome-card:active, .ecome-banner-cta:active { translate: 0 1px; }
     }
 
     /* ── Stat cards ────────────────────────────────────────── */
@@ -364,20 +387,21 @@ function EcomeWeb({ navigation }) {
   const webItems = ECOME_MENU.map((item) => {
     const ic = ICON_STYLES[item.iconStyle];
     return (
-      <div
+      <button
         key={item.id}
+        type="button"
         className={`ecome-card ecome-card--${item.id}`}
         onClick={() => openEcomeMenuItem(navigation, item)}
       >
-        <div className="ecome-go-btn">→</div>
-        <div className="ecome-card-body">
-          <div className="ecome-icon" style={themeWebStyle({ background: ic.bg })}>
+        <span className="ecome-go-btn" aria-hidden="true">→</span>
+        <span className="ecome-card-body">
+          <span className="ecome-icon" aria-hidden="true" style={themeWebStyle({ background: ic.bg })}>
             {item.emoji}
-          </div>
-          <div className="ecome-label">{tr(item.label)}</div>
-          <div className="ecome-desc">{tr(item.desc)}</div>
-        </div>
-      </div>
+          </span>
+          <span className="ecome-label">{tr(item.label)}</span>
+          <span className="ecome-desc">{tr(item.desc)}</span>
+        </span>
+      </button>
     );
   });
 
@@ -411,12 +435,13 @@ function EcomeWeb({ navigation }) {
               <div className="ecome-banner-title">{tr('Ecome Marketplace')}</div>
               <div className="ecome-banner-sub">{tr('Connect with sellers & buyers across your region')}</div>
             </div>
-            <div
+            <button
+              type="button"
               className="ecome-banner-cta"
               onClick={() => navigation.navigate('My Ecom Subscription')}
             >
-              {tr('View Plans')} <span>→</span>
-            </div>
+              {tr('View Plans')} <span aria-hidden="true">→</span>
+            </button>
           </div>
 
           {/* What would you like to do */}

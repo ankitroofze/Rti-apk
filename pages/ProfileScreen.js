@@ -47,6 +47,7 @@ import { PageLoader, useAppFontsReady } from '../components/WebReadyGate';
 import VerifiedBadge from '../components/VerifiedBadge';
 import { useToast } from '../components/ui/ToastProvider';
 import { UserStore } from '../store/UserStore';
+import { showFollowSparkle } from '../utils/followSparkle';
 import { PROFILE_TIERS, SEAT_ID_TO_TIER } from '../constants/profileConstants';
 import ProfileStyles from '../styles/ProfileStyles';
 import { AVATAR_IMAGE } from '../utils/profileHelpers';
@@ -940,7 +941,8 @@ function ProfileScreenInner({ navigation, route }) {
     }
   };
 
-  const handleToggleFollowUser = async (targetUser, currentlyFollowing) => {
+  const handleToggleFollowUser = async (targetUser, currentlyFollowing, event) => {
+    const followButton = event?.currentTarget;
     const targetId = targetUser?.id ?? targetUser?.user_id;
     const targetEmail = targetUser?.email;
     const key = String(targetId ?? targetEmail);
@@ -987,6 +989,7 @@ function ProfileScreenInner({ navigation, route }) {
           });
           showToast(res?.message || 'Unable to follow user.', 'error');
         } else {
+          if (res?.ok) showFollowSparkle(followButton);
           setFollowLists((prev) => ({ ...prev, following: [targetUser, ...prev.following.filter((user) => user !== targetUser)] }));
           setProfileStats((prev) => ({
             ...prev,
@@ -1540,7 +1543,7 @@ const handlePickImage = async () => {
                       <TouchableOpacity
                         style={isFollowed ? ProfileStyles.modalFollowingBtn : ProfileStyles.modalFollowBtn}
                         activeOpacity={0.8}
-                        onPress={() => handleToggleFollowUser(item, isFollowed)}
+                        onPress={(event) => handleToggleFollowUser(item, isFollowed, event)}
                         disabled={isBusy}
                       >
                         {isBusy ? (

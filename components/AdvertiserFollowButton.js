@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useAuth } from '../contexts/AuthContext';
 import { UserStore } from '../store/UserStore';
+import { showFollowSparkle } from '../utils/followSparkle';
 import { useToast } from './ui/ToastProvider';
 
 export default function AdvertiserFollowButton({ ownerId: rawId, email: rawEmail, navigation }) {
@@ -58,14 +59,17 @@ export default function AdvertiserFollowButton({ ownerId: rawId, email: rawEmail
     return () => { active = false; unsubscribe?.(); };
   }, [email, ownerId, hasOwner, isLoggedIn, isOwner]);
 
-  const handleFollow = async () => {
+  const handleFollow = async (event) => {
+    const followButton = event?.currentTarget;
     if (!isLoggedIn) { navigation?.navigate?.('Login'); return; }
     if (!followReady || savingFollow || ownAd) return;
     setSavingFollow(true);
     try {
       const result = await (following ? UserStore.unfollowUser(email, followTargetId) : UserStore.followUser(email, followTargetId));
-      if (result?.ok) setFollowing(!following);
-      else showToast(result?.message || 'Unable to update follow status.', 'error');
+      if (result?.ok) {
+        setFollowing(!following);
+        if (!following) showFollowSparkle(followButton);
+      } else showToast(result?.message || 'Unable to update follow status.', 'error');
     } catch {
       showToast('Unable to update follow status.', 'error');
     } finally {

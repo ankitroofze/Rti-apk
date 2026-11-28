@@ -827,6 +827,7 @@ export default function FarmingBuyScreen({ navigation, route }) {
                 {filteredListings.map((item) => (
                   <TouchableOpacity
                     key={`${item.owner_email}-${item.id}`}
+                    dataSet={Platform.OS === 'web' ? { rtiProductCard: '' } : undefined}
                     style={[styles.card, isWideWeb && styles.cardWeb, compactCards && styles.cardCompact]}
                     onPress={() => {
                       setSelectedImageIndex(0);

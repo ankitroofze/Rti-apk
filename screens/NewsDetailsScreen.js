@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import RightUtilityPanel from '../components/RightUtilityPanel';
 import ReportModal from '../components/ReportModal';
 import { normalizeStoryItem, dedupeStories } from '../utils/storyHelpers';
+import { MediaLogo } from '../components/MediaBrandOverlay';
 import NewsFrameOverlay, { getLowerBannerHeight } from '../components/NewsFrameOverlay';
 import { frameOptsFromStory, exportOptsFromStory, imageFrameOptsFromStory } from '../utils/videoWithMusic';
 import { shareNewsPackage, shareNewsLink } from '../utils/shareNews';
@@ -38,6 +39,7 @@ import WebLayout from '../components/WebLayout';
 import LeftEcomSidebar from '../components/LeftEcomSidebar';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { UserStore } from '../store/UserStore';
+import { showFollowSparkle } from '../utils/followSparkle';
 import { AuthAPI } from '../auth/ClientAPI/AuthApi';
 import PostMenuButton from '../components/PostMenuButton';
 import { isOwnPost } from '../components/profileContent';
@@ -1022,7 +1024,8 @@ export default function NewsDetailsScreen({ route, navigation }) {
       });
     } catch {}
   }, [navigation]);
-    const handleToggleFollowAuthor = useCallback(async () => {
+    const handleToggleFollowAuthor = useCallback(async (event) => {
+    const followButton = event?.currentTarget;
     const authorEmail = String(article.createdBy || article.author_email || '').trim().toLowerCase();
     const authorId = article.author_id || article.userId || null;
     if (!currentUserEmail) { showToast('Please login to follow this user.', 'info'); return; }
@@ -1039,6 +1042,7 @@ export default function NewsDetailsScreen({ route, navigation }) {
         showToast(result?.message || 'Unable to update follow status.', 'error');
         return;
       }
+      if (nextFollowing && result?.ok) showFollowSparkle(followButton);
       refreshAuthorFollowState(authorEmail, currentUserEmail).catch(() => {});
     } catch {
       setIsFollowingAuthor(!nextFollowing);
@@ -1701,6 +1705,9 @@ export default function NewsDetailsScreen({ route, navigation }) {
                       description={article.description || article.excerpt || ''}
                       templateId={getFrameTemplate(article.frameTemplate).id}
                     />
+                  ) : null}
+                  {!article.frameMerged && (canPlayVideo || isFilePost || article.images.length > 1 || heroImageSource?.uri) ? (
+                    <MediaLogo />
                   ) : null}
                 </View>
 

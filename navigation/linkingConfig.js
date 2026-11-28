@@ -164,45 +164,59 @@ const screensConfig = {
 };
 
 const routeTitleMap = {
-  Home: 'RTI News - Empowering Citizens Through Journalism',
-  About: 'About Us | RTI News',
-  Contact: 'Contact Us | RTI News',
-  WhatIsRTI: 'What is RTI | RTI News',
-  ImportantLaws: 'Important Laws | RTI News',
-  NewsDetails: 'News | RTI News',
-  Feed: 'Reels & Feeds | RTI News',
-  Login: 'Sign In | RTI News',
-  Register: 'Register | RTI News',
-  Profile: 'My Profile | RTI News',
-  UserPublicProfile: 'User Profile | RTI News',
-  UserProfile: 'User Profile | RTI News',
-  Wallet: 'My Wallet | RTI News',
-  Withdraw: 'Withdraw Funds | RTI News',
-  'Subscription Plans': 'Subscription Plans | RTI News',
-  'My News': 'My News | RTI News',
-  'News Feed': 'My News | RTI News',
-  'Add News': 'Submit News | RTI News',
-  'e-Paper': 'e-Paper | RTI News',
-  'Live Streaming': 'Live Streaming | RTI News',
-  'Start Live': 'Go Live | RTI News',
-  Certification: 'Press Certification | RTI News',
-  Ecome: 'Shop & Classifieds | RTI News',
-  Sell: 'Create Listing | RTI News',
-  Advertise: 'Advertise With Us | RTI News',
-  NewspaperList: 'Newspapers | RTI News',
-  LegalPolicy: 'Legal Policy & Terms | RTI News',
-  InfoPage: 'Information | RTI News',
-  Settings: 'Settings | RTI News',
-  MyEnquiries: 'Ecom Enquiries | RTI News',
-  MyListings: 'My Listings | RTI News',
-  'My Network': 'My Network | RTI News',
-  'My Subscriptions': 'My Subscriptions | RTI News',
-  Notifications: 'Notifications | RTI News',
-  QuickMenu: 'Quick Menu & Dashboard | RTI News',
-  ChatList: 'Messages | RTI News',
-  ChatConversation: 'Chat | RTI News',
-  PaymentHistory: 'Payment History | RTI News',
-  AdPlans: 'Advertising Plans | RTI News',
+  Home: 'Home',
+  About: 'About Us',
+  Contact: 'Contact Us',
+  WhatIsRTI: 'What is RTI',
+  ImportantLaws: 'Important Laws',
+  NewsDetails: 'News',
+  Feed: 'Reels & Feeds',
+  Login: 'Sign In',
+  Register: 'Register',
+  Profile: 'Profile',
+  UserPublicProfile: 'User Profile',
+  UserProfile: 'User Profile',
+  Wallet: 'Wallet',
+  Withdraw: 'Withdraw',
+  'Subscription Plans': 'Subscription Plans',
+  'My News': 'My News',
+  'News Feed': 'My News',
+  'Add News': 'Post News',
+  'e-Paper': 'e-Paper',
+  'Live Streaming': 'Live Streaming',
+  'Start Live': 'Go Live',
+  Certification: 'Certification',
+  Ecome: 'Shop & Classifieds',
+  FarmingBuy: 'Buy Product',
+  Sell: 'Sell Product',
+  CommerceAdsCenter: 'My Ecom Product',
+  Advertise: 'Advertisement Post',
+  MyAds: 'Advertisement Dashboard',
+  NewspaperList: 'Newspapers',
+  LegalPolicy: 'Legal Policy & Terms',
+  InfoPage: 'Information',
+  Settings: 'Settings',
+  MyEnquiries: 'Ecom Enquiries',
+  MyListings: 'My Listings',
+  'My Network': 'My Network',
+  'My Subscriptions': 'My Subscription',
+  Notifications: 'Notifications',
+  QuickMenu: 'Menu',
+  ChatList: 'Messages',
+  ChatConversation: 'Chat',
+  PaymentHistory: 'Payment History',
+  AdPlans: 'Advertisement Subscription Plans',
+};
+
+export const webDocumentTitle = {
+  formatter: (options, route) => {
+    const screen = route?.name;
+    const section = screen === 'MyEnquiries' && route.params?.type === 'ads'
+      ? 'Ads Enquiries'
+      : routeTitleMap[screen];
+    const title = options?.title || section || screen?.replace(/([a-z\d])([A-Z])/g, '$1 $2');
+    return title ? `RTI - Voice | ${title}` : 'RTI - Voice';
+  },
 };
 
 const PROTECTED_MENU_PATHS = [
@@ -353,15 +367,5 @@ export const linkingConfig = {
     } catch (_err) {
       return '/';
     }
-  },
-  documentTitle: {
-    formatter: (options, route) => {
-      const screenName = route?.name;
-      if (screenName && routeTitleMap[screenName]) {
-        return routeTitleMap[screenName];
-      }
-      const title = options?.title || screenName;
-      return title ? `${title} | RTI News` : 'RTI News';
-    },
   },
 };

@@ -3,6 +3,7 @@ import { Alert, BackHandler, Platform } from 'react-native';
 import { DarkTheme, DefaultTheme, NavigationContainer } from '@react-navigation/native';
 import { navigationRef } from '../utils/navigationRef';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { webScreenLayout } from '../styles/WebMotion';
 import PaymentHistoryScreen from '../pages/Paymenthistoryscreen';
 import HomeScreen from '../screens/HomeScreen';
 import AllAdsScreen from '../screens/AllAdsScreen';
@@ -80,7 +81,7 @@ import ChatConversationScreen from '../pages/ChatConversationScreen';
 import GroupInfoScreen from '../pages/GroupInfoScreen';
 import OtpScreen from '../auth/OtpScreen';
 import InfoPageScreen from '../screens/InfoPageScreen';
-import { linkingConfig } from './linkingConfig';
+import { linkingConfig, webDocumentTitle } from './linkingConfig';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -293,12 +294,14 @@ export default function AppNavigator() {
       ref={navigationRef}
       theme={Platform.OS === 'web' && isDark ? DarkTheme : DefaultTheme}
       linking={linkingConfig}
+      documentTitle={webDocumentTitle}
       onReady={enforceAuth}
       onStateChange={enforceAuth}
     >
       <Stack.Navigator
         initialRouteName="Home"
         screenOptions={{ headerShown: false }}
+        screenLayout={Platform.OS === 'web' ? webScreenLayout : undefined}
       >
         {stackScreens.map(({ name, component }) => (
           <Stack.Screen key={name} name={name} component={component} />
